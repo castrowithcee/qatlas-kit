@@ -94,7 +94,11 @@ func replace(path string, data []byte) error {
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("inspect configuration path %s: %w", path, err)
 	}
+	return replaceResolved(target, data, nil)
+}
 
+// replaceResolved is the final write step after all checks on this exact target.
+func replaceResolved(target string, data []byte, beforeRename func() error) error {
 	dir := filepath.Dir(target)
 	if err := mkdirPrivate(dir); err != nil {
 		return err
@@ -128,7 +132,14 @@ func replace(path string, data []byte) error {
 	if err := preservePermissions(target, name); err != nil {
 		return fmt.Errorf("preserve configuration permissions: %w", err)
 	}
-	if err := fileretry.Do(func() error { return os.Rename(name, target) }, fileretry.Transient, nil); err != nil {
+	if err := fileretry.Do(func() error {
+		if beforeRename != nil {
+			if err := beforeRename(); err != nil {
+				return err
+			}
+		}
+		return os.Rename(name, target)
+	}, fileretry.Transient, nil); err != nil {
 		return fmt.Errorf("replace configuration: %w", err)
 	}
 	moved = true

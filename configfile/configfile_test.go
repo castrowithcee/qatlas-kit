@@ -155,3 +155,18 @@ func TestReplaceCreatesPrivateFileAndDirectories(t *testing.T) {
 		t.Fatalf("file mode = %v", info.Mode().Perm())
 	}
 }
+
+func TestReplaceFinalCheckKeepsTargetUntouched(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "settings")
+	if err := os.WriteFile(path, []byte("old"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	stopped := errors.New("changed before rename")
+	if err := replaceResolved(path, []byte("new"), func() error { return stopped }); !errors.Is(err, stopped) {
+		t.Fatalf("replace = %v; want final check failure", err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil || string(data) != "old" {
+		t.Fatalf("target = %q, %v; want old", data, err)
+	}
+}

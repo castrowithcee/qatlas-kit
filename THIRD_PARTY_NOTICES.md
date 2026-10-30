@@ -21,4 +21,6 @@ Components derived from `qatlas-cli` retain their original AGPL-3.0 license.
 | `qatlas-cli/internal/config/store.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Configuration write preparation and atomic replacement |
 | `qatlas-cli/internal/config/fileio.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Retried file reads |
 | `qatlas-cli/internal/config/backup_other.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Private Unix file and directory modes |
-| `qatlas-cli/internal/config/backup_windows.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Private Windows file and directory ACLs |
+| `qatlas-cli/internal/config/backup_windows.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Private Windows file, directory, and lock ACLs |
+| `qatlas-cli/internal/config/transaction.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Configuration revisions, stable lock files, and transactions |
+| `qatlas-cli/internal/config/transaction_test.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Transaction and concurrent update tests |
