@@ -49,7 +49,14 @@ func ExitCode(err error) int {
 		return ExitSuccess
 	}
 	var failure *Failure
-	if errors.As(err, &failure) && failure.Usage {
+	if errors.As(err, &failure) {
+		if failure.Usage {
+			return ExitUsage
+		}
+		return ExitRuntime
+	}
+	var unsupported *output.UnsupportedValueError
+	if errors.As(err, &unsupported) {
 		return ExitUsage
 	}
 	return ExitRuntime
@@ -62,9 +69,17 @@ func WriteError(w io.Writer, program string, err error, usage string) error {
 	}
 	var failure *Failure
 	if !errors.As(err, &failure) {
-		failure = &Failure{
-			Code: output.CodeRuntime, Message: err.Error(),
-			NextStep: "Check the cause and try again.",
+		var unsupported *output.UnsupportedValueError
+		if errors.As(err, &unsupported) {
+			failure = &Failure{
+				Code: output.CodeUsage, Message: unsupported.Error(),
+				NextStep: "Choose a compatible format or select representable fields.", Usage: true,
+			}
+		} else {
+			failure = &Failure{
+				Code: output.CodeRuntime, Message: err.Error(),
+				NextStep: "Check the cause and try again.",
+			}
 		}
 	}
 	if program == "" {

@@ -25,6 +25,10 @@ func TestExitCode(t *testing.T) {
 	if got := ExitCode(fmt.Errorf("wrapped: %w", err)); got != 2 {
 		t.Fatalf("usage: got %d", got)
 	}
+	unsupported := &output.UnsupportedValueError{Format: output.FormatCompact, Field: "nested", Type: "map[string]interface {}"}
+	if got := ExitCode(fmt.Errorf("wrapped: %w", unsupported)); got != ExitUsage {
+		t.Fatalf("unsupported value: got %d", got)
+	}
 }
 
 func TestWriteError(t *testing.T) {
@@ -54,6 +58,13 @@ func TestWriteError(t *testing.T) {
 			name: "runtime",
 			err:  errors.New("connection failed"),
 			want: "tool: runtime: connection failed\nCheck the cause and try again.\n",
+		},
+		{
+			name: "unsupported output value",
+			err: &output.UnsupportedValueError{
+				Format: output.FormatCompact, Field: "nested", Type: "map[string]interface {}",
+			},
+			want: "tool: usage: field \"nested\" cannot be rendered as compact: value of type map[string]interface {} is not representable\nChoose a compatible format or select representable fields.\n",
 		},
 	}
 	for _, tc := range cases {

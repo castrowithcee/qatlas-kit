@@ -7,16 +7,64 @@ import (
 	"strconv"
 	"strings"
 	"text/tabwriter"
+	"unicode"
+	"unicode/utf8"
 )
 
-// Compact escaping. The replacer performs a single pass, so an escaped backslash is never escaped again.
-var (
-	compactCollection = strings.NewReplacer(`\`, `\\`, "|", `\|`, "\n", `\n`, "\r", `\r`)
-	compactObject     = strings.NewReplacer(`\`, `\\`, "|", `\|`, "=", `\=`, "\n", `\n`, "\r", `\r`)
-)
+// UnsupportedValueError marks a value that a text format cannot represent.
+type UnsupportedValueError struct {
+	Format Format
+	Field  string
+	Type   string
+}
+
+func (e *UnsupportedValueError) Error() string {
+	return fmt.Sprintf("field %q cannot be rendered as %s: value of type %s is not representable", e.Field, e.Format, e.Type)
+}
+
+// validateTextResult runs before any bytes are written. A text format cannot
+// recover from a nested value after it has emitted an earlier row.
+func validateTextResult(format Format, result Result) error {
+	check := func(field string, value any) error {
+		switch x := value.(type) {
+		case nil, bool, int, int8, int16, int32, int64,
+			uint, uint8, uint16, uint32, uint64, float32, float64, json.Number:
+			if _, err := json.Marshal(value); err == nil {
+				return nil
+			}
+		case string:
+			if utf8.ValidString(x) {
+				return nil
+			}
+		}
+		return &UnsupportedValueError{Format: format, Field: field, Type: fmt.Sprintf("%T", value)}
+	}
+	switch r := result.(type) {
+	case Object:
+		for _, field := range r.Fields {
+			if err := check(field.Name, field.Value); err != nil {
+				return err
+			}
+		}
+	case Collection:
+		for _, row := range r.Rows {
+			for _, column := range r.Columns {
+				if err := check(column, row[column]); err != nil {
+					return err
+				}
+			}
+		}
+	}
+	return nil
+}
 
 // Encode writes a result to w in the given format. Only requested payload data reaches w.
 func Encode(w io.Writer, format Format, result Result) error {
+	if format == FormatTable || format == FormatCompact {
+		if err := validateTextResult(format, result); err != nil {
+			return err
+		}
+	}
 	if format == FormatTOON {
 		return encodeTOONDocument(w, result)
 	}
@@ -98,7 +146,7 @@ func encodeObjectTable(w io.Writer, o Object) error {
 			continue
 		}
 		value := text(f.Value)
-		if _, err := fmt.Fprintf(tw, "%s\t%s\n", strings.ToUpper(f.Name), tableText(value)); err != nil {
+		if _, err := fmt.Fprintf(tw, "%s\t%s\n", tableText(strings.ToUpper(f.Name)), tableText(value)); err != nil {
 			return err
 		}
 	}
@@ -109,14 +157,14 @@ func encodeObjectTable(w io.Writer, o Object) error {
 func encodeCollectionCompact(w io.Writer, c Collection) error {
 	cells := make([]string, len(c.Columns))
 	for i, col := range c.Columns {
-		cells[i] = compactCollection.Replace(col)
+		cells[i] = compactEscape(col, false)
 	}
 	if _, err := fmt.Fprintln(w, strings.Join(cells, "|")); err != nil {
 		return err
 	}
 	for _, row := range c.Rows {
 		for i, col := range c.Columns {
-			cells[i] = compactCollection.Replace(text(row[col]))
+			cells[i] = compactEscape(text(row[col]), false)
 		}
 		if _, err := fmt.Fprintln(w, strings.Join(cells, "|")); err != nil {
 			return err
@@ -132,7 +180,7 @@ func encodeObjectCompact(w io.Writer, o Object) error {
 			continue
 		}
 		value := text(f.Value)
-		line := compactObject.Replace(f.Name) + "=" + compactObject.Replace(value)
+		line := compactEscape(f.Name, true) + "=" + compactEscape(value, true)
 		if _, err := fmt.Fprintln(w, line); err != nil {
 			return err
 		}
@@ -199,7 +247,7 @@ func writeJSONObject(b *strings.Builder, fields []Field) error {
 func upper(columns []string) []string {
 	out := make([]string, len(columns))
 	for i, c := range columns {
-		out[i] = strings.ToUpper(c)
+		out[i] = tableText(strings.ToUpper(c))
 	}
 	return out
 }
@@ -216,8 +264,40 @@ func tableText(value string) string {
 		case '\t':
 			b.WriteString(`\t`)
 		default:
-			if r < 0x20 || r == 0x7f {
+			if unicode.IsControl(r) {
 				fmt.Fprintf(&b, "\\x%02x", r)
+			} else {
+				b.WriteRune(r)
+			}
+		}
+	}
+	return b.String()
+}
+
+// compactEscape keeps delimiters unambiguous and exposes controls as text.
+func compactEscape(value string, object bool) string {
+	var b strings.Builder
+	for _, r := range value {
+		switch r {
+		case '\\':
+			b.WriteString(`\\`)
+		case '|':
+			b.WriteString(`\|`)
+		case '=':
+			if object {
+				b.WriteString(`\=`)
+			} else {
+				b.WriteRune(r)
+			}
+		case '\n':
+			b.WriteString(`\n`)
+		case '\r':
+			b.WriteString(`\r`)
+		case '\t':
+			b.WriteString(`\t`)
+		default:
+			if unicode.IsControl(r) {
+				fmt.Fprintf(&b, `\u%04x`, r)
 			} else {
 				b.WriteRune(r)
 			}

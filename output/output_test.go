@@ -3,6 +3,7 @@ package output
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"flag"
 	"os"
 	"path/filepath"
@@ -349,6 +350,54 @@ func TestTableEscapesControls(t *testing.T) {
 	}
 	if want := "VALUE  x\\x1by\\x00z\n"; got.String() != want {
 		t.Fatalf("table = %q, want %q", got.String(), want)
+	}
+}
+
+func TestEncodeEscapesControlBytesInNamesAndValues(t *testing.T) {
+	for _, format := range []Format{FormatTable, FormatCompact, FormatJSON, FormatTOON} {
+		for _, result := range []Result{
+			Object{Fields: []Field{{Name: "na\x1bme", Value: "va\x1blue"}}},
+			Collection{Columns: []string{"na\x1bme"}, Rows: []Row{{"na\x1bme": "va\x1blue"}}},
+		} {
+			var got bytes.Buffer
+			if err := Encode(&got, format, result); err != nil {
+				t.Fatalf("%s/%T: %v", format, result, err)
+			}
+			if strings.ContainsRune(got.String(), '\x1b') {
+				t.Errorf("%s/%T leaked ESC: %q", format, result, got.String())
+			}
+			if format == FormatTable && !strings.Contains(got.String(), `\x1b`) {
+				t.Errorf("%s/%T did not expose ESC visibly: %q", format, result, got.String())
+			}
+			if format == FormatCompact && !strings.Contains(got.String(), `\u001b`) {
+				t.Errorf("%s/%T did not expose ESC visibly: %q", format, result, got.String())
+			}
+		}
+	}
+}
+
+func TestTextFormatsRejectNestedValueBeforeOutput(t *testing.T) {
+	for _, format := range []Format{FormatTable, FormatCompact} {
+		for _, result := range []Result{
+			Object{Fields: []Field{
+				{Name: "first", Value: "safe"},
+				{Name: "nested", Value: map[string]any{"a": 1}},
+			}},
+			Collection{Columns: []string{"value"}, Rows: []Row{
+				{"value": "safe"},
+				{"value": map[string]any{"a": 1}},
+			}},
+		} {
+			var got bytes.Buffer
+			err := Encode(&got, format, result)
+			var unsupported *UnsupportedValueError
+			if !errors.As(err, &unsupported) {
+				t.Errorf("%s/%T: err = %v, want UnsupportedValueError", format, result, err)
+			}
+			if got.Len() != 0 {
+				t.Errorf("%s/%T emitted partial result %q", format, result, got.String())
+			}
+		}
 	}
 }
 
