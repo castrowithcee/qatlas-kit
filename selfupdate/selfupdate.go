@@ -13,6 +13,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"golang.org/x/crypto/ssh"
 )
 
 const (
@@ -29,6 +31,14 @@ type Client struct {
 	ArchiveName    func(version string) string
 	UserAgent      string
 	HTTPClient     *http.Client
+	Namespace      string
+	TrustedKeys    []ssh.PublicKey
+	ProgramName    string
+	ManpageName    string
+	Executable     string
+	ManpagePath    string
+	// ValidateRollback must check the prepared program against an isolated copy of caller configuration.
+	ValidateRollback func(context.Context, []byte) error
 }
 
 // Result describes the newest eligible stable release.
