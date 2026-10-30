@@ -29,7 +29,8 @@ func (e *ConflictError) Error() string {
 }
 func (e *ConflictError) Is(target error) bool { return target == ErrConflict }
 
-// Codec supplies the document-specific validation and serialization.
+// Codec supplies document-specific validation and serialization. Encode must produce
+// deterministic canonical bytes so a decoded hand edit can be recognized.
 type Codec[T any] struct {
 	Validate func(T) error
 	Encode   func(T) ([]byte, error)
@@ -163,14 +164,27 @@ func lockTarget(target string) (func(), error) {
 	return func() { _ = filelock.Unlock(f); _ = f.Close() }, nil
 }
 
-// saveLocked checks once before creating the temp file and again at the rename boundary.
-// Any future backup step belongs before replaceResolved so the final check catches outside writers.
+// saveLocked validates and encodes the caller's document before a guarded replacement.
 func (s *Store[T]) saveLocked(target string, value T, expected Revision) (Revision, error) {
 	data, err := prepare(value, s.codec.Validate, s.codec.Encode, s.codec.Decode)
 	if err != nil {
 		return RevisionAbsent, err
 	}
-	_, current, err := readRevision(target)
+	return s.saveDataLocked(target, data, expected)
+}
+
+func (s *Store[T]) saveDataLocked(target string, data []byte, expected Revision) (Revision, error) {
+	old, current, err := readRevision(target)
+	if err != nil {
+		return RevisionAbsent, err
+	}
+	if current != expected {
+		return RevisionAbsent, &ConflictError{Path: target}
+	}
+	if err := s.backupCurrent(old); err != nil {
+		return RevisionAbsent, err
+	}
+	_, current, err = readRevision(target)
 	if err != nil {
 		return RevisionAbsent, err
 	}
