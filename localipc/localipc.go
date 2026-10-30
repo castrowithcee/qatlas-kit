@@ -1,15 +1,17 @@
 // Package localipc provides a local process channel with checked peer identity.
 //
-// On Linux and macOS, both endpoints must have the same user ID and run the same program
-// file. A private runtime directory, socket permissions, and a lock also limit
-// accidental access and duplicate listeners. This limits access by other
-// same-user processes to what the peer check can identify; it cannot prevent
-// deliberate impersonation or access by root. Harden is optional. On Linux
-// it hides the executable from other same-user processes, so connections to
-// a hardened listener fail closed. On macOS it disables core dumps and
-// debugger attachment without hiding the executable identity. macOS reports
-// the path used at exec, so a peer whose program file was replaced after exec
-// can be identified only by the file currently at that path.
+// Linux checks the peer's user and program file. macOS and Windows check the
+// peer's user and the file currently at its reported image path; this cannot
+// prove which file a peer loaded if that path changed after start.
+// Unix uses a private runtime directory, socket permissions, and a lock.
+// Windows uses a protected named pipe that rejects network clients and another
+// first instance. These checks limit accidental access by other same-user
+// processes. They cannot prevent deliberate impersonation or access by root or
+// an administrator. Harden is optional. Linux Harden hides the executable from
+// same-user processes, so connections to a hardened listener fail closed.
+// Windows Harden limits process
+// access to identity queries, waiting, and termination while denying memory
+// access through the process DACL; debug privilege and existing handles bypass it.
 package localipc
 
 import (
@@ -21,12 +23,14 @@ import (
 
 // Endpoint contains names supplied by the consuming application. FallbackDir
 // is an absolute directory used when no private user runtime directory exists.
-// RuntimeDirName and SocketBase must each be a single path component.
+// RuntimeDirName and SocketBase must each be a single path component on Unix.
+// On Windows, PipePrefix and SocketBase form the pipe name with the user's SID.
 type Endpoint struct {
 	RuntimeDirName string
 	SocketBase     string
 	FallbackDir    string
 	ErrorName      string
+	PipePrefix     string
 }
 
 // ErrRunning means a listener already owns this endpoint.

@@ -14,3 +14,7 @@ The following files are derived from `castrowithcee/qatlas-cli`. Its original fi
 | `localipc/localipc_unix_test.go` | `internal/vaultproc/unix_test.go` | Copyright 2026 castrowithcee | AGPL-3.0 |
 | `localipc/localipc_linux_test.go` | `internal/vaultproc/unix_test.go` | Copyright 2026 castrowithcee | AGPL-3.0 |
 | `localipc/peer_darwin_test.go` | `internal/vaultproc/peer_darwin_test.go`, `internal/vaultproc/socketdir_darwin_test.go`, `internal/vaultproc/harden_darwin_test.go` | Copyright 2026 castrowithcee | AGPL-3.0 |
+| `localipc/pipe_windows.go` | `internal/vaultproc/pipe_windows.go` | Copyright 2026 castrowithcee | AGPL-3.0 |
+| `localipc/endpoint_windows.go` | `internal/vaultproc/pipe_windows.go` | Copyright 2026 castrowithcee | AGPL-3.0 |
+| `localipc/peer_windows.go` | `internal/vaultproc/peer_windows.go` | Copyright 2026 castrowithcee | AGPL-3.0 |
+| `localipc/localipc_windows_test.go` | `internal/vaultproc/windows_test.go`, `internal/vaultproc/harden_windows_test.go` | Copyright 2026 castrowithcee | AGPL-3.0 |
