@@ -1,4 +1,4 @@
-//go:build linux
+//go:build linux || darwin
 
 package localipc
 
@@ -10,7 +10,6 @@ import (
 	"net"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"syscall"
 )
@@ -20,20 +19,13 @@ const (
 	socketMode = 0o600
 )
 
-var userRuntimeRoot = "/run/user"
-
 func endpointPath(e Endpoint) (string, error) {
 	if !component(e.RuntimeDirName) || !component(e.SocketBase) || !filepath.IsAbs(e.FallbackDir) {
 		return "", fmt.Errorf("%s: runtime directory name, socket base, or absolute fallback directory is invalid", e.label())
 	}
-	root := e.FallbackDir
-	if xdg := os.Getenv("XDG_RUNTIME_DIR"); filepath.IsAbs(xdg) {
-		if err := privateExistingDir(xdg); err != nil {
-			return "", fmt.Errorf("%s: XDG_RUNTIME_DIR: %w", e.label(), err)
-		}
-		root = xdg
-	} else if user := filepath.Join(userRuntimeRoot, strconv.Itoa(os.Getuid())); privateExistingDir(user) == nil {
-		root = user
+	root, err := runtimeRoot(e.FallbackDir)
+	if err != nil {
+		return "", fmt.Errorf("%s: %w", e.label(), err)
 	}
 	dir := filepath.Join(root, e.RuntimeDirName)
 	if err := privateExistingDir(dir); err != nil && !errors.Is(err, fs.ErrNotExist) {
@@ -41,7 +33,7 @@ func endpointPath(e Endpoint) (string, error) {
 	}
 	path := filepath.Join(dir, e.SocketBase+".sock")
 	if len(path) > maxSocketPath {
-		return "", &PathTooLongError{Path: path}
+		return shortSocketPath(e, path)
 	}
 	return path, nil
 }

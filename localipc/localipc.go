@@ -1,11 +1,15 @@
 // Package localipc provides a local process channel with checked peer identity.
 //
-// On Linux, both endpoints must have the same user ID and run the same program
+// On Linux and macOS, both endpoints must have the same user ID and run the same program
 // file. A private runtime directory, socket permissions, and a lock also limit
-// accidental access and duplicate listeners. This does not protect against
-// root or a determined process with the same user's privileges. Harden is
-// optional: on Linux it hides the process's executable from other processes
-// of the same user, so connections to a hardened listener fail closed.
+// accidental access and duplicate listeners. This limits access by other
+// same-user processes to what the peer check can identify; it cannot prevent
+// deliberate impersonation or access by root. Harden is optional. On Linux
+// it hides the executable from other same-user processes, so connections to
+// a hardened listener fail closed. On macOS it disables core dumps and
+// debugger attachment without hiding the executable identity. macOS reports
+// the path used at exec, so a peer whose program file was replaced after exec
+// can be identified only by the file currently at that path.
 package localipc
 
 import (
