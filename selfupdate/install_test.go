@@ -167,6 +167,14 @@ func TestPrepareGuardsDoNotChangeInstallation(t *testing.T) {
 }
 
 func TestInstallPreparedAndRollbackCheck(t *testing.T) {
+	_, private, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	signer, err := ssh.NewSignerFromKey(private)
+	if err != nil {
+		t.Fatal(err)
+	}
 	dir := t.TempDir()
 	binary := filepath.Join(dir, "sample")
 	manpage := filepath.Join(dir, "sample.1")
@@ -175,8 +183,12 @@ func TestInstallPreparedAndRollbackCheck(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	c := &Client{RepositoryAPI: "https://api.github.com/repos/example/sample", CurrentVersion: "v2.0.0", MinimumVersion: "v1.0.0", ArchiveName: func(string) string { return "sample.zip" }, UserAgent: "sample/1", Executable: binary, ManpagePath: manpage, ProgramName: "sample", ManpageName: "sample.1"}
+	c := &Client{RepositoryAPI: "https://api.github.com/repos/example/sample", CurrentVersion: "v2.0.0", MinimumVersion: "v1.0.0", ArchiveName: func(string) string { return "sample.zip" }, UserAgent: "sample/1", Executable: binary, ManpagePath: manpage, ProgramName: "sample", ManpageName: "sample.1", Namespace: "sample-release", TrustedKeys: []ssh.PublicKey{signer.PublicKey()}}
 	p := &Prepared{version: "v1.5.0", executable: []byte("new"), manpage: []byte("new man")}
+	p.trust, err = c.binding(p.version)
+	if err != nil {
+		t.Fatal(err)
+	}
 	wrongBinary := filepath.Join(dir, "other")
 	if err := os.WriteFile(wrongBinary, []byte("other old"), 0o755); err != nil {
 		t.Fatal(err)
@@ -317,5 +329,91 @@ func TestExtractPayloadFormatsAndAmbiguity(t *testing.T) {
 		if _, _, err := extractPayload(body.Bytes(), "sample.zip", "sample", "sample.1"); err == nil {
 			t.Fatalf("accepted %v", entries)
 		}
+	}
+}
+
+func TestPreparedArtifactBoundToTrustPolicy(t *testing.T) {
+	newSigner := func() ssh.Signer {
+		_, private, err := ed25519.GenerateKey(rand.Reader)
+		if err != nil {
+			t.Fatal(err)
+		}
+		signer, err := ssh.NewSignerFromKey(private)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return signer
+	}
+	signerA, signerB := newSigner(), newSigner()
+	archive := zipArchive(t)
+	name := "sample_v1.1.0.zip"
+	sum := sha256.Sum256(archive)
+	checksums := []byte(fmt.Sprintf("%s  %s\n", hex.EncodeToString(sum[:]), name))
+	signature := signedChecksums(t, signerA, "sample-release", checksums)
+	var server *httptest.Server
+	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		prefix := "/repos/example/sample/releases/assets/"
+		switch r.URL.Path {
+		case "/repos/example/sample/releases/tags/v1.1.0":
+			fmt.Fprintf(w, `{"tag_name":"v1.1.0","assets":[{"name":%q,"url":%q},{"name":"checksums.txt","url":%q},{"name":"checksums.txt.sig","url":%q}]}`, name, server.URL+prefix+"1", server.URL+prefix+"2", server.URL+prefix+"3")
+		case prefix + "1":
+			w.Write(archive)
+		case prefix + "2":
+			w.Write(checksums)
+		case prefix + "3":
+			w.Write(signature)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	targetPath := filepath.Join(t.TempDir(), "sample")
+	if err := os.WriteFile(targetPath, []byte("old program"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	a := &Client{RepositoryAPI: server.URL + "/repos/example/sample", CurrentVersion: "v1.0.0", MinimumVersion: "v1.0.0", ArchiveName: func(string) string { return name }, UserAgent: "sample/1", HTTPClient: server.Client(), Namespace: "sample-release", TrustedKeys: []ssh.PublicKey{signerA.PublicKey()}, ProgramName: "sample", ManpageName: "sample.1", Executable: targetPath}
+	selected, err := a.Target(context.Background(), "v1.1.0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	prepared, err := a.Prepare(context.Background(), selected)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, mutate := range []struct {
+		name   string
+		change func(*Client)
+	}{
+		{"foreign key", func(c *Client) { c.TrustedKeys = []ssh.PublicKey{signerB.PublicKey()} }},
+		{"wrong namespace", func(c *Client) { c.Namespace = "foreign-release" }},
+		{"wrong repository", func(c *Client) { c.RepositoryAPI = server.URL + "/repos/example/foreign" }},
+	} {
+		t.Run(mutate.name, func(t *testing.T) {
+			b := *a
+			mutate.change(&b)
+			if err := b.InstallPrepared(context.Background(), prepared); err == nil {
+				t.Fatal("foreign client installed prepared release")
+			}
+			got, err := os.ReadFile(targetPath)
+			if err != nil || string(got) != "old program" {
+				t.Fatalf("target changed: %q, %v", got, err)
+			}
+		})
+	}
+	a.TrustedKeys[0] = signerB.PublicKey()
+	if err := a.InstallPrepared(context.Background(), prepared); err == nil {
+		t.Fatal("mutated trusted key set installed prepared release")
+	}
+	got, err := os.ReadFile(targetPath)
+	if err != nil || string(got) != "old program" {
+		t.Fatalf("target changed after key mutation: %q, %v", got, err)
+	}
+	a.TrustedKeys[0] = signerA.PublicKey()
+	if err := a.InstallPrepared(context.Background(), prepared); err != nil {
+		t.Fatal(err)
+	}
+	got, err = os.ReadFile(targetPath)
+	if err != nil || string(got) != "new program" {
+		t.Fatalf("own client did not install: %q, %v", got, err)
 	}
 }

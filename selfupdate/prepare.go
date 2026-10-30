@@ -28,6 +28,38 @@ const (
 type Prepared struct {
 	version             string
 	executable, manpage []byte
+	trust               trustBinding
+}
+
+type trustBinding struct {
+	repository, namespace, archive, program, manpage string
+	keys                                             [][]byte
+}
+
+func (c *Client) binding(version string) (trustBinding, error) {
+	if c.Namespace == "" || len(c.TrustedKeys) == 0 || !validPayloadName(c.ProgramName) || !validPayloadName(c.ManpageName) {
+		return trustBinding{}, errors.New("namespace, trusted keys, program and manpage names are required")
+	}
+	b := trustBinding{repository: c.RepositoryAPI, namespace: c.Namespace, archive: c.ArchiveName(version), program: c.ProgramName, manpage: c.ManpageName}
+	for _, key := range c.TrustedKeys {
+		if key == nil {
+			return trustBinding{}, errors.New("trusted key is nil")
+		}
+		b.keys = append(b.keys, bytes.Clone(key.Marshal()))
+	}
+	return b, nil
+}
+
+func (b trustBinding) matches(other trustBinding) bool {
+	if b.repository != other.repository || b.namespace != other.namespace || b.archive != other.archive || b.program != other.program || b.manpage != other.manpage || len(b.keys) != len(other.keys) {
+		return false
+	}
+	for i := range b.keys {
+		if !bytes.Equal(b.keys[i], other.keys[i]) {
+			return false
+		}
+	}
+	return true
 }
 
 func (p *Prepared) Version() string { return p.version }
@@ -43,10 +75,11 @@ func (c *Client) Prepare(ctx context.Context, target Target) (*Prepared, error) 
 	if !ok || target.Version != target.rel.TagName || version.compare(policy.minimum) < 0 {
 		return nil, errors.New("ineligible target release")
 	}
-	if c.Namespace == "" || len(c.TrustedKeys) == 0 || !validPayloadName(c.ProgramName) || !validPayloadName(c.ManpageName) {
-		return nil, errors.New("namespace, trusted keys, program and manpage names are required")
+	trust, err := c.binding(target.Version)
+	if err != nil {
+		return nil, err
 	}
-	name := c.ArchiveName(target.Version)
+	name := trust.archive
 	urls := make(map[string]string)
 	for _, asset := range target.rel.Assets {
 		urls[asset.Name] = asset.APIURL
@@ -70,7 +103,7 @@ func (c *Client) Prepare(ctx context.Context, target Target) (*Prepared, error) 
 	if err != nil {
 		return nil, err
 	}
-	return &Prepared{version: target.Version, executable: binary, manpage: manpage}, nil
+	return &Prepared{version: target.Version, executable: binary, manpage: manpage, trust: trust}, nil
 }
 
 func (c *Client) download(ctx context.Context, raw string, limit int64) ([]byte, error) {

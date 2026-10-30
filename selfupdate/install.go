@@ -28,8 +28,12 @@ func (c *Client) InstallPrepared(ctx context.Context, p *Prepared) error {
 	if err != nil || version.compare(policy.minimum) < 0 {
 		return errors.New("prepared release is below minimum version")
 	}
-	if !validPayloadName(c.ProgramName) || !validPayloadName(c.ManpageName) {
-		return errors.New("program and manpage names are required")
+	trust, err := c.binding(p.version)
+	if err != nil {
+		return err
+	}
+	if !p.trust.matches(trust) {
+		return errors.New("prepared release belongs to a different trust policy")
 	}
 	if c.Executable == "" || !filepath.IsAbs(c.Executable) {
 		return errors.New("absolute executable path is required")
