@@ -325,7 +325,7 @@ func TestResolveFormat(t *testing.T) {
 func TestAllCodes(t *testing.T) {
 	want := []Code{
 		CodeUsage, CodeInvalidRequest, CodeConfigMissing, CodeConfigInvalid,
-		CodeConfirmationRequired, CodeUnreachable, CodeAuth, CodePermission,
+		CodeConfirmationRequired, CodeConfirmationDeclined, CodeUnreachable, CodeAuth, CodePermission,
 		CodeNotFound, CodeTimeout, CodeRateLimited, CodeRuntime, "sample-error",
 	}
 	got, err := AllCodes("sample-error")

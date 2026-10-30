@@ -5,7 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"regexp"
+	"strconv"
+	"strings"
+	"unicode"
+
+	"github.com/castrowithcee/qatlas-kit/output"
 )
 
 const (
@@ -14,18 +18,9 @@ const (
 	ExitUsage   = 2
 )
 
-const (
-	CodeUsage                = "usage"
-	CodeRuntime              = "runtime"
-	CodeConfirmationRequired = "confirmation-required"
-	CodeConfirmationDeclined = "confirmation-declined"
-)
-
-var codePattern = regexp.MustCompile("^[a-z]+(?:-[a-z]+)*$")
-
 // Failure is a diagnostic with a stable code and an actionable next step.
 type Failure struct {
-	Code     string
+	Code     output.Code
 	Message  string
 	NextStep string
 	Detail   any
@@ -38,8 +33,8 @@ func (e *Failure) Error() string { return e.Message }
 func (e *Failure) Unwrap() error { return e.Cause }
 
 // NewFailure checks the public code before an application can emit it.
-func NewFailure(code, message, nextStep string, usage bool) (*Failure, error) {
-	if !codePattern.MatchString(code) {
+func NewFailure(code output.Code, message, nextStep string, usage bool) (*Failure, error) {
+	if !output.ValidCode(code) {
 		return nil, fmt.Errorf("invalid error code %q", code)
 	}
 	if message == "" || nextStep == "" {
@@ -68,26 +63,60 @@ func WriteError(w io.Writer, program string, err error, usage string) error {
 	var failure *Failure
 	if !errors.As(err, &failure) {
 		failure = &Failure{
-			Code: CodeRuntime, Message: err.Error(),
+			Code: output.CodeRuntime, Message: err.Error(),
 			NextStep: "Check the cause and try again.",
 		}
 	}
 	if program == "" {
 		return fmt.Errorf("program name is required")
 	}
-	if _, writeErr := fmt.Fprintf(w, "%s: %s: %s\n%s\n", program, failure.Code, failure.Message, failure.NextStep); writeErr != nil {
+	if !output.ValidCode(failure.Code) {
+		return fmt.Errorf("invalid error code %q", failure.Code)
+	}
+	var detail []byte
+	if failure.Detail != nil {
+		var marshalErr error
+		detail, marshalErr = json.Marshal(failure.Detail)
+		if marshalErr != nil {
+			return marshalErr
+		}
+	}
+	if _, writeErr := fmt.Fprintf(w, "%s: %s: %s\n%s\n",
+		escapeControl(program), failure.Code, escapeControl(failure.Message), escapeControl(failure.NextStep)); writeErr != nil {
 		return writeErr
 	}
-	if failure.Detail != nil {
-		if err := json.NewEncoder(w).Encode(failure.Detail); err != nil {
+	if detail != nil {
+		if _, err := w.Write(append(detail, '\n')); err != nil {
 			return err
 		}
 	}
 	if failure.Syntax && usage != "" {
-		_, err = io.WriteString(w, usage)
+		_, err = io.WriteString(w, escapeUsage(usage))
 		return err
 	}
 	return nil
+}
+
+// escapeControl makes untrusted text visible without letting it move the cursor or add diagnostic lines.
+func escapeControl(value string) string {
+	var b strings.Builder
+	for _, r := range value {
+		if unicode.IsControl(r) || !unicode.IsPrint(r) {
+			quoted := strconv.QuoteRune(r)
+			b.WriteString(quoted[1 : len(quoted)-1])
+		} else {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+
+func escapeUsage(usage string) string {
+	lines := strings.Split(usage, "\n")
+	for i := range lines {
+		lines[i] = escapeControl(lines[i])
+	}
+	return strings.Join(lines, "\n")
 }
 
 const (

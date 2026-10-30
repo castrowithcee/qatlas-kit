@@ -138,6 +138,7 @@ const (
 	CodeConfigMissing        Code = "config-missing"
 	CodeConfigInvalid        Code = "config-invalid"
 	CodeConfirmationRequired Code = "confirmation-required"
+	CodeConfirmationDeclined Code = "confirmation-declined"
 	CodeUnreachable          Code = "unreachable"
 	CodeAuth                 Code = "auth"
 	CodePermission           Code = "permission"
@@ -149,12 +150,15 @@ const (
 
 var codeName = regexp.MustCompile(`^[a-z]+(?:-[a-z]+)*$`)
 
+// ValidCode reports whether a caller-owned error code follows the public syntax.
+func ValidCode(code Code) bool { return codeName.MatchString(string(code)) }
+
 // AllCodes returns the generic codes followed by validated caller-owned codes.
 // It rejects collisions so each documented code has exactly one meaning.
 func AllCodes(extra ...Code) ([]Code, error) {
 	codes := []Code{
 		CodeUsage, CodeInvalidRequest, CodeConfigMissing, CodeConfigInvalid,
-		CodeConfirmationRequired, CodeUnreachable, CodeAuth, CodePermission,
+		CodeConfirmationRequired, CodeConfirmationDeclined, CodeUnreachable, CodeAuth, CodePermission,
 		CodeNotFound, CodeTimeout, CodeRateLimited, CodeRuntime,
 	}
 	seen := make(map[Code]bool, len(codes)+len(extra))
@@ -162,7 +166,7 @@ func AllCodes(extra ...Code) ([]Code, error) {
 		seen[code] = true
 	}
 	for _, code := range extra {
-		if !codeName.MatchString(string(code)) {
+		if !ValidCode(code) {
 			return nil, fmt.Errorf("invalid error code %q", code)
 		}
 		if seen[code] {

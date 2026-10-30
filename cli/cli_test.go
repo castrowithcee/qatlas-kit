@@ -7,6 +7,8 @@ import (
 	"io"
 	"strings"
 	"testing"
+
+	"github.com/castrowithcee/qatlas-kit/output"
 )
 
 func TestExitCode(t *testing.T) {
@@ -16,7 +18,7 @@ func TestExitCode(t *testing.T) {
 	if got := ExitCode(errors.New("failed")); got != 1 {
 		t.Fatalf("runtime: got %d", got)
 	}
-	err, makeErr := NewFailure(CodeUsage, "bad input", "Correct the input.", true)
+	err, makeErr := NewFailure(output.CodeUsage, "bad input", "Correct the input.", true)
 	if makeErr != nil {
 		t.Fatal(makeErr)
 	}
@@ -34,7 +36,7 @@ func TestWriteError(t *testing.T) {
 		{
 			name: "well formed refusal",
 			err: &Failure{
-				Code: CodeConfirmationRequired, Message: "confirmation missing",
+				Code: output.CodeConfirmationRequired, Message: "confirmation missing",
 				NextStep: "Repeat with --yes.", Usage: true,
 			},
 			want: "tool: confirmation-required: confirmation missing\nRepeat with --yes.\n",
@@ -42,7 +44,7 @@ func TestWriteError(t *testing.T) {
 		{
 			name: "syntax with detail",
 			err: &Failure{
-				Code: CodeUsage, Message: "unknown flag", NextStep: "Check the flag.",
+				Code: output.CodeUsage, Message: "unknown flag", NextStep: "Check the flag.",
 				Detail: struct{ Available []string }{[]string{"--output"}},
 				Usage:  true, Syntax: true,
 			},
@@ -67,9 +69,37 @@ func TestWriteError(t *testing.T) {
 	}
 }
 
+func TestWriteErrorEscapesControls(t *testing.T) {
+	failure := &Failure{
+		Code: output.CodeRuntime, Message: "failed\n\x1b[31m",
+		NextStep: "Retry\x00later.", Detail: map[string]string{"source": "bad\x1bdata"},
+		Syntax: true,
+	}
+	var out bytes.Buffer
+	if err := WriteError(&out, "tool\x1b[2J", failure, "Usage: tool\x1b[31m\n"); err != nil {
+		t.Fatal(err)
+	}
+	want := "tool\\x1b[2J: runtime: failed\\n\\x1b[31m\nRetry\\x00later.\n" +
+		"{\"source\":\"bad\\u001bdata\"}\nUsage: tool\\x1b[31m\n"
+	if got := out.String(); got != want {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+	if strings.ContainsRune(out.String(), '\x1b') {
+		t.Fatal("diagnostic contains an escape byte")
+	}
+}
+
+func TestWriteErrorRejectsInvalidCodeBeforeOutput(t *testing.T) {
+	var out bytes.Buffer
+	err := WriteError(&out, "tool", &Failure{Code: "invalid_code", Message: "bad", NextStep: "retry"}, "")
+	if err == nil || out.Len() != 0 {
+		t.Fatalf("invalid code: err %v, output %q", err, out.String())
+	}
+}
+
 func TestFailureCodeValidation(t *testing.T) {
 	for _, code := range []string{"Usage", "bad_code", "bad--code", ""} {
-		if _, err := NewFailure(code, "message", "next", true); err == nil {
+		if _, err := NewFailure(output.Code(code), "message", "next", true); err == nil {
 			t.Fatalf("accepted invalid code %q", code)
 		}
 	}

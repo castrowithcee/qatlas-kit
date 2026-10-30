@@ -8,6 +8,8 @@ import (
 	"strings"
 
 	"golang.org/x/term"
+
+	"github.com/castrowithcee/qatlas-kit/output"
 )
 
 // Confirmation describes the two distinct gates of a changing command.
@@ -51,7 +53,7 @@ func Interactive() bool {
 func confirmWith(options Confirmation, interactive func() bool, open func() (terminalPair, error)) error {
 	if options.RequiresConfirm && !options.Confirm {
 		return &Failure{
-			Code: CodeConfirmationRequired, Usage: true,
+			Code: output.CodeConfirmationRequired, Usage: true,
 			Message:  "this request needs --confirm",
 			NextStep: "Review the effects, then repeat this request with --confirm.",
 		}
@@ -61,7 +63,7 @@ func confirmWith(options Confirmation, interactive func() bool, open func() (ter
 	}
 	if options.Agent || !interactive() {
 		return &Failure{
-			Code: CodeConfirmationRequired, Usage: true,
+			Code: output.CodeConfirmationRequired, Usage: true,
 			Message:  "this request needs an explicit answer",
 			NextStep: "Review the effects, then repeat this request with --yes.",
 		}
@@ -69,7 +71,7 @@ func confirmWith(options Confirmation, interactive func() bool, open func() (ter
 	tty, err := open()
 	if err != nil {
 		return &Failure{
-			Code: CodeConfirmationRequired, Usage: true,
+			Code: output.CodeConfirmationRequired, Usage: true,
 			Message:  "no terminal is available for confirmation",
 			NextStep: "Repeat this request with --yes after reviewing its effects.",
 			Cause:    err,
@@ -92,7 +94,7 @@ func confirmWith(options Confirmation, interactive func() bool, open func() (ter
 
 func declined() error {
 	return &Failure{
-		Code: CodeConfirmationDeclined, Usage: true,
+		Code: output.CodeConfirmationDeclined, Usage: true,
 		Message:  "confirmation was declined",
 		NextStep: "No change was made; repeat the request if you want to continue.",
 	}
