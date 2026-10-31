@@ -32,6 +32,18 @@ Components derived from `qatlas-cli` retain their original AGPL-3.0 license.
 | `qatlas-cli/internal/vaultproc/harden_darwin_test.go` | Copyright 2026 castrowithcee | AGPL-3.0 | macOS hardening tests (`localipc/peer_darwin_test.go`) |
 | `qatlas-cli/internal/vaultproc/windows_test.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Windows channel tests (`localipc/localipc_windows_test.go`) |
 | `qatlas-cli/internal/vaultproc/harden_windows_test.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Windows hardening tests (`localipc/localipc_windows_test.go`) |
+| `qatlas-cli/internal/vaultproc/serve.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Report words and start timeout (`background/background.go`, `background/start.go`) |
+| `qatlas-cli/internal/vaultproc/serve_unix.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Detached process start with handover and report pipes on Linux and macOS (`background/start_unix.go`, `background/child.go`) |
+| `qatlas-cli/internal/vaultproc/serve_windows.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Detached process start with handover and report pipes on Windows (`background/start_windows.go`) |
+| `qatlas-cli/internal/vaultproc/serve_other.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Unsupported platform start (`background/unsupported.go`) |
+| `qatlas-cli/internal/vaultproc/serve_unix_test.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Process start tests (`background/background_test.go`) |
+| `qatlas-cli/internal/cli/vaultproc_unix.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Inherited descriptors on Linux and macOS (`background/start_unix.go`) |
+| `qatlas-cli/internal/cli/vaultproc_windows.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Inherited standard streams on Windows (`background/start_windows.go`) |
+| `qatlas-cli/internal/cli/vaultproc_serve.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Handover reading and report handling (`background/child.go`) |
+| `qatlas-cli/internal/cli/vaultproc_linux.go` | Copyright 2026 castrowithcee | AGPL-3.0 | systemd-logind KillUserProcesses detection (`background/logind_linux.go`) |
+| `qatlas-cli/internal/cli/vaultproc_linux_test.go` | Copyright 2026 castrowithcee | AGPL-3.0 | logind detection tests (`background/logind_linux_test.go`) |
+| `qatlas-cli/internal/cli/vaultproc_darwin.go` | Copyright 2026 castrowithcee | AGPL-3.0 | macOS logout behavior (`background/logind_other.go`) |
+| `qatlas-cli/internal/cli/vaultproc_other.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Logout behavior on other systems (`background/logind_other.go`) |
 | `qatlas-cli` | Copyright 2026 castrowithcee | AGPL-3.0 | CLI output formats and TOON encoder; error and confirmation handling; help topics and manpage helpers |
 | `qatlas-cli/internal/config/config.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Configuration path precedence |
 | `qatlas-cli/internal/config/store.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Configuration write preparation and atomic replacement |
