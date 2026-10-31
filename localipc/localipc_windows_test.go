@@ -140,6 +140,10 @@ func TestWindowsConnectionAndPermissions(t *testing.T) {
 	_ = restarted.Close()
 }
 
+// fileAllAccess is FILE_ALL_ACCESS, which the kernel stores for a requested
+// GENERIC_ALL on a pipe.
+const fileAllAccess = windows.STANDARD_RIGHTS_REQUIRED | windows.SYNCHRONIZE | 0x1ff
+
 func checkWindowsPipeACL(t *testing.T, h windows.Handle) {
 	t.Helper()
 	sd, err := windows.GetSecurityInfo(h, windows.SE_KERNEL_OBJECT, windows.DACL_SECURITY_INFORMATION)
@@ -170,7 +174,7 @@ func checkWindowsPipeACL(t *testing.T, h windows.Handle) {
 		if err := windows.GetAce(dacl, uint32(i), &ace); err != nil {
 			t.Fatal(err)
 		}
-		if ace.Header.AceType != want.kind || !want.sid.Equals((*windows.SID)(unsafe.Pointer(&ace.SidStart))) || uint32(ace.Mask) != windows.GENERIC_ALL {
+		if ace.Header.AceType != want.kind || !want.sid.Equals((*windows.SID)(unsafe.Pointer(&ace.SidStart))) || uint32(ace.Mask) != fileAllAccess {
 			t.Fatalf("pipe ACE %d does not deny network or allow only the user: %s", i, sd)
 		}
 	}

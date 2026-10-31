@@ -60,6 +60,8 @@ func TestMacLongSocketPathUsesPrivateTempDir(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = os.RemoveAll(tmp) })
+	// t.TempDir reads TMPDIR, which this test later sets to a relative path.
+	linkDir := t.TempDir()
 	t.Setenv("TMPDIR", tmp)
 	t.Setenv("XDG_RUNTIME_DIR", "")
 	e := Endpoint{RuntimeDirName: "session", SocketBase: "control", FallbackDir: filepath.Join("/", strings.Repeat("d", maxSocketPath))}
@@ -77,7 +79,7 @@ func TestMacLongSocketPathUsesPrivateTempDir(t *testing.T) {
 	if _, err := e.Path(); !errors.As(err, &tooLong) {
 		t.Fatalf("overlong path without private temp directory accepted: %v", err)
 	}
-	linked := filepath.Join(t.TempDir(), "linked")
+	linked := filepath.Join(linkDir, "linked")
 	if err := os.Symlink(tmp, linked); err != nil {
 		t.Fatal(err)
 	}
