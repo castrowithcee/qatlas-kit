@@ -17,3 +17,4 @@ Components derived from `qatlas-cli` retain their original AGPL-3.0 license.
 | `qatlas-cli/internal/fileretry/fileretry_test.go` | Copyright 2026 castrowithcee | AGPL-3.0 | File retry tests |
 | `qatlas-cli/internal/fileretry/transient_other.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Transient file error classification on non-Windows systems |
 | `qatlas-cli/internal/fileretry/transient_windows.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Transient Windows file error classification |
+| `qatlas-cli` | Copyright 2026 castrowithcee | AGPL-3.0 | CLI output formats and TOON encoder; error and confirmation handling; help topics and manpage helpers |
