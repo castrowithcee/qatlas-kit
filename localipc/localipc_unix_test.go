@@ -66,8 +66,10 @@ func TestValidConnectionAndPermissions(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// macOS cannot read peer credentials once the client has closed.
+	err = <-accepted
 	_ = conn.Close()
-	if err := <-accepted; err != nil {
+	if err != nil {
 		t.Fatal(err)
 	}
 	if err := listener.Close(); err != nil {
