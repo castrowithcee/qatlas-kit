@@ -46,3 +46,10 @@ Components derived from `qatlas-cli` retain their original AGPL-3.0 license.
 | `qatlas-cli/internal/config/restore.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Backup listing, reading, and restore |
 | `qatlas-cli/internal/config/backup_test.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Backup behavior tests |
 | `qatlas-cli/internal/config/restore_test.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Restore behavior tests |
+| `qatlas-cli/internal/release/release.go` | Copyright 2026 castrowithcee | AGPL-3.0 | SSH signature and checksum verification |
+| `qatlas-cli/internal/release/release_test.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Signature verification tests |
+| `qatlas-cli/internal/release/releasetest/releasetest.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Test signing helper |
+| `qatlas-cli/internal/selfupdate/semver.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Release version comparison |
+| `qatlas-cli/internal/selfupdate/releases.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Release listing and selection |
+| `qatlas-cli/internal/selfupdate/selfupdate.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Verified release download and archive extraction |
+| `qatlas-cli/internal/selfupdate/replace.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Staged executable replacement and Windows retry |
