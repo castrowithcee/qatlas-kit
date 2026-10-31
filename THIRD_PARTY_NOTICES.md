@@ -18,3 +18,7 @@ The following files are derived from `castrowithcee/qatlas-cli`. Its original fi
 | `localipc/endpoint_windows.go` | `internal/vaultproc/pipe_windows.go` | Copyright 2026 castrowithcee | AGPL-3.0 |
 | `localipc/peer_windows.go` | `internal/vaultproc/peer_windows.go` | Copyright 2026 castrowithcee | AGPL-3.0 |
 | `localipc/localipc_windows_test.go` | `internal/vaultproc/windows_test.go`, `internal/vaultproc/harden_windows_test.go` | Copyright 2026 castrowithcee | AGPL-3.0 |
+| `output/` | `internal/output/` | Copyright 2026 castrowithcee | AGPL-3.0 |
+| `cli/` | `internal/cli/cli.go` | Copyright 2026 castrowithcee | AGPL-3.0 |
+| `helptopics/` | `internal/helptopics/helptopics.go` | Copyright 2026 castrowithcee | AGPL-3.0 |
+| `manpage/` | `cmd/gen-man/main.go` | Copyright 2026 castrowithcee | AGPL-3.0 |

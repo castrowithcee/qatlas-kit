@@ -1,0 +1,8 @@
+NAME             alpha|beta
+NOTE             back\slash
+KEY=WITH=EQUALS  a=b
+BODY             line1\nline2
+COUNT            42
+ACTIVE           false
+RATIO            0.125
+BLANK            
