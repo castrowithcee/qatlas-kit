@@ -1,24 +1,35 @@
 # Third-party notices
 
-The following files are derived from `castrowithcee/qatlas-cli`. Its original files and these derivatives are licensed under AGPL-3.0.
+Components derived from `qatlas-cli` retain their original AGPL-3.0 license.
 
-| Included file | Source file relative to `qatlas-cli` | Copyright | License |
+| Source | Copyright | License | Included components |
 | --- | --- | --- | --- |
-| `localipc/localipc.go` | `internal/vaultproc/vaultproc.go` | Copyright 2026 castrowithcee | AGPL-3.0 |
-| `localipc/endpoint_unix.go` | `internal/vaultproc/vaultproc.go`, `internal/vaultproc/dial_socket.go`, `internal/vaultproc/listen_unix.go` | Copyright 2026 castrowithcee | AGPL-3.0 |
-| `localipc/listen_unix.go` | `internal/vaultproc/listen_unix.go` | Copyright 2026 castrowithcee | AGPL-3.0 |
-| `localipc/runtime_linux.go` | `internal/vaultproc/runtimedir_linux.go` | Copyright 2026 castrowithcee | AGPL-3.0 |
-| `localipc/runtime_darwin.go` | `internal/vaultproc/socketdir_darwin.go` | Copyright 2026 castrowithcee | AGPL-3.0 |
-| `localipc/peer_linux.go` | `internal/vaultproc/peer_linux.go` | Copyright 2026 castrowithcee | AGPL-3.0 |
-| `localipc/peer_darwin.go` | `internal/vaultproc/peer_darwin.go` | Copyright 2026 castrowithcee | AGPL-3.0 |
-| `localipc/localipc_unix_test.go` | `internal/vaultproc/unix_test.go` | Copyright 2026 castrowithcee | AGPL-3.0 |
-| `localipc/localipc_linux_test.go` | `internal/vaultproc/unix_test.go` | Copyright 2026 castrowithcee | AGPL-3.0 |
-| `localipc/peer_darwin_test.go` | `internal/vaultproc/peer_darwin_test.go`, `internal/vaultproc/socketdir_darwin_test.go`, `internal/vaultproc/harden_darwin_test.go` | Copyright 2026 castrowithcee | AGPL-3.0 |
-| `localipc/pipe_windows.go` | `internal/vaultproc/pipe_windows.go` | Copyright 2026 castrowithcee | AGPL-3.0 |
-| `localipc/endpoint_windows.go` | `internal/vaultproc/pipe_windows.go` | Copyright 2026 castrowithcee | AGPL-3.0 |
-| `localipc/peer_windows.go` | `internal/vaultproc/peer_windows.go` | Copyright 2026 castrowithcee | AGPL-3.0 |
-| `localipc/localipc_windows_test.go` | `internal/vaultproc/windows_test.go`, `internal/vaultproc/harden_windows_test.go` | Copyright 2026 castrowithcee | AGPL-3.0 |
-| `output/` | `internal/output/` | Copyright 2026 castrowithcee | AGPL-3.0 |
-| `cli/` | `internal/cli/cli.go` | Copyright 2026 castrowithcee | AGPL-3.0 |
-| `helptopics/` | `internal/helptopics/helptopics.go` | Copyright 2026 castrowithcee | AGPL-3.0 |
-| `manpage/` | `cmd/gen-man/main.go` | Copyright 2026 castrowithcee | AGPL-3.0 |
+| `qatlas-cli/internal/i18n/detect_unix.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Locale detection on non-Windows systems |
+| `qatlas-cli/internal/i18n/detect_windows.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Windows preferred UI language detection |
+| `qatlas-cli/internal/i18n/i18n.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Language parsing and catalog lookup |
+| `qatlas-cli/internal/i18n/i18n_test.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Language package tests |
+| `qatlas-cli/internal/projectpath/projectpath.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Project path resolution |
+| `qatlas-cli/internal/projectpath/projectpath_test.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Project path tests |
+| `qatlas-cli/internal/filelock/doc.go` | Copyright 2026 castrowithcee | AGPL-3.0 | File lock package documentation |
+| `qatlas-cli/internal/filelock/lock_unix.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Advisory file locking on non-Windows systems |
+| `qatlas-cli/internal/filelock/lock_windows.go` | Copyright 2026 castrowithcee | AGPL-3.0 | File locking on Windows |
+| `qatlas-cli/internal/fileretry/fileretry.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Bounded retry for transient file errors |
+| `qatlas-cli/internal/fileretry/fileretry_test.go` | Copyright 2026 castrowithcee | AGPL-3.0 | File retry tests |
+| `qatlas-cli/internal/fileretry/transient_other.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Transient file error classification on non-Windows systems |
+| `qatlas-cli/internal/fileretry/transient_windows.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Transient Windows file error classification |
+| `qatlas-cli/internal/vaultproc/vaultproc.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Local channel endpoint, socket path and peer checks (`localipc/localipc.go`, `localipc/endpoint_unix.go`) |
+| `qatlas-cli/internal/vaultproc/dial_socket.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Unix socket dialing (`localipc/endpoint_unix.go`) |
+| `qatlas-cli/internal/vaultproc/listen_unix.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Unix socket listener with single-instance lock (`localipc/listen_unix.go`, `localipc/endpoint_unix.go`) |
+| `qatlas-cli/internal/vaultproc/runtimedir_linux.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Linux runtime directory (`localipc/runtime_linux.go`) |
+| `qatlas-cli/internal/vaultproc/socketdir_darwin.go` | Copyright 2026 castrowithcee | AGPL-3.0 | macOS socket directory (`localipc/runtime_darwin.go`) |
+| `qatlas-cli/internal/vaultproc/peer_linux.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Linux peer verification and hardening (`localipc/peer_linux.go`) |
+| `qatlas-cli/internal/vaultproc/peer_darwin.go` | Copyright 2026 castrowithcee | AGPL-3.0 | macOS peer verification and hardening (`localipc/peer_darwin.go`) |
+| `qatlas-cli/internal/vaultproc/peer_windows.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Windows peer verification and hardening (`localipc/peer_windows.go`) |
+| `qatlas-cli/internal/vaultproc/pipe_windows.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Windows named pipe (`localipc/pipe_windows.go`, `localipc/endpoint_windows.go`) |
+| `qatlas-cli/internal/vaultproc/unix_test.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Unix channel tests (`localipc/localipc_unix_test.go`, `localipc/localipc_linux_test.go`) |
+| `qatlas-cli/internal/vaultproc/peer_darwin_test.go` | Copyright 2026 castrowithcee | AGPL-3.0 | macOS channel tests (`localipc/peer_darwin_test.go`) |
+| `qatlas-cli/internal/vaultproc/socketdir_darwin_test.go` | Copyright 2026 castrowithcee | AGPL-3.0 | macOS socket directory tests (`localipc/peer_darwin_test.go`) |
+| `qatlas-cli/internal/vaultproc/harden_darwin_test.go` | Copyright 2026 castrowithcee | AGPL-3.0 | macOS hardening tests (`localipc/peer_darwin_test.go`) |
+| `qatlas-cli/internal/vaultproc/windows_test.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Windows channel tests (`localipc/localipc_windows_test.go`) |
+| `qatlas-cli/internal/vaultproc/harden_windows_test.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Windows hardening tests (`localipc/localipc_windows_test.go`) |
+| `qatlas-cli` | Copyright 2026 castrowithcee | AGPL-3.0 | CLI output formats and TOON encoder; error and confirmation handling; help topics and manpage helpers |
