@@ -16,11 +16,20 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
 	"golang.org/x/crypto/ssh"
 )
+
+// programFile is the file name InstallPrepared expects for the configured program on this platform.
+func programFile(name string) string {
+	if runtime.GOOS == "windows" {
+		return name + ".exe"
+	}
+	return name
+}
 
 func signedChecksums(t *testing.T, signer ssh.Signer, namespace string, data []byte) []byte {
 	t.Helper()
@@ -104,7 +113,7 @@ func TestPrepareGuardsDoNotChangeInstallation(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			dir := t.TempDir()
-			targetPath := filepath.Join(dir, "sample")
+			targetPath := filepath.Join(dir, programFile("sample"))
 			if err := os.WriteFile(targetPath, []byte("old program"), 0o755); err != nil {
 				t.Fatal(err)
 			}
@@ -176,7 +185,7 @@ func TestInstallPreparedAndRollbackCheck(t *testing.T) {
 		t.Fatal(err)
 	}
 	dir := t.TempDir()
-	binary := filepath.Join(dir, "sample")
+	binary := filepath.Join(dir, programFile("sample"))
 	manpage := filepath.Join(dir, "sample.1")
 	for file, body := range map[string]string{binary: "old", manpage: "old man"} {
 		if err := os.WriteFile(file, []byte(body), 0o755); err != nil {
@@ -367,7 +376,7 @@ func TestPreparedArtifactBoundToTrustPolicy(t *testing.T) {
 		}
 	}))
 	defer server.Close()
-	targetPath := filepath.Join(t.TempDir(), "sample")
+	targetPath := filepath.Join(t.TempDir(), programFile("sample"))
 	if err := os.WriteFile(targetPath, []byte("old program"), 0o755); err != nil {
 		t.Fatal(err)
 	}
