@@ -33,7 +33,7 @@ One line per package, in alphabetical order. The package documentation holds the
 - [`release/releasebuild`](release/releasebuild): builds reproducible release archives, installers and checksums.txt, and documents the reusable release workflow.
 - [`release/releasetest`](release/releasetest): builds signed test releases and serves them from a local release server in tests.
 - [`selfupdate`](selfupdate): selects, verifies and installs signed releases of the running program.
-- [`tui`](tui): merges the general and application text catalogs of a terminal user interface and resolves key placeholders.
+- [`tui`](tui): provides the text catalogs, themes, styles and basic widgets of a terminal user interface.
 - [`uiprefs`](uiprefs): holds the device-local preferences of a terminal user interface.
 - [`vault`](vault): stores secrets in an age-encrypted directory unlocked by a passphrase.
 

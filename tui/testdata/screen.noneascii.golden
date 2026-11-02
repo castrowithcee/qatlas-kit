@@ -1,0 +1,9 @@
+Example                           v0.0.0
+ Overview  [Items] |  Settings 
+#= Items ===================== 2 of 3 =#
+| > # alpha  * ready                   |
+|   # beta   * stopped                 |
+|   [x] a very long description tha~   |
+#======================================#
+[ Cancel ] > Delete <
+warning: two items share one name

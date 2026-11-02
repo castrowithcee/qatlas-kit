@@ -144,6 +144,24 @@ Components derived from `qatlas-cli` and `qatlas-sysmin` retain their original A
 | `qatlas-sysmin/internal/vault/snapshot.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Opening with the vault key alone (`vault/snapshot.go`) |
 | `qatlas-sysmin/internal/vault/vault.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Concurrency-safe vault value (`vault/vault.go`) |
 | `qatlas-sysmin/internal/vault/vault_test.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Vault rejection tests (`vault/vault_test.go`) |
+| `qatlas-cli/internal/tui/theme.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Palette roles, hand-picked dark and light palettes, theme registry and text styles (`tui/palette.go`, `tui/theme.go`, `tui/styles.go`) |
+| `qatlas-cli/internal/tui/colorprofile.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Colour profile detection and NO_COLOR handling (`tui/color.go`) |
+| `qatlas-cli/internal/tui/termtheme.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Contrast, mixed terminal palette, plain palette and 256-colour stepping (`tui/color.go`, `tui/palette.go`, `tui/theme.go`) |
+| `qatlas-cli/internal/tui/themes_builtin.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Built-in scheme themes (`tui/theme.go`) |
+| `qatlas-cli/internal/tui/canvas.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Painting every cell with the ground colour (`tui/styles.go`) |
+| `qatlas-cli/internal/tui/widgets.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Panel, tab strip, status mark, button and category mark (`tui/widgets.go`) |
+| `qatlas-cli/internal/tui/render.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Cell clipping, truncation, wrapping, padding and selected rows (`tui/widgets.go`, `tui/styles.go`) |
+| `qatlas-cli/internal/tui/titleline.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Title line (`tui/widgets.go`) |
+| `qatlas-cli/internal/tui/pickerbox.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Tick box (`tui/widgets.go`) |
+| `qatlas-cli/internal/tui/icons.go` | Copyright 2026 castrowithcee | AGPL-3.0 | UTF-8 terminal detection (`tui/color.go`) |
+| `qatlas-cli/internal/tui/icons_test.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Icon width rules (`tui/icon.go`, `tui/icon_test.go`) |
+| `qatlas-cli/internal/tui/theme_test.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Theme, contrast, terminal theme and painting tests (`tui/theme_test.go`, `tui/widgets_test.go`) |
+| `qatlas-cli/internal/tui/themes_builtin_test.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Built-in theme tests (`tui/themes_builtin_test.go`) |
+| `qatlas-cli/scripts/gen_tui_themes.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Theme generator (`scripts/gen_tui_themes.go`) |
+| `qatlas-cli/scripts/gen_tui_themes_notices.txt` | Copyright 2026 castrowithcee | AGPL-3.0 | Scheme selection and upstream copyright notices (`scripts/gen_tui_themes_schemes.txt`) |
+| `qatlas-sysmin/internal/tui/theme.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Palette roles and text styles, compared with the CLI (`tui/palette.go`, `tui/styles.go`) |
+| `qatlas-sysmin/internal/tui/colorprofile.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Colour profile detection, compared with the CLI (`tui/color.go`) |
+| `qatlas-sysmin/internal/tui/widgets.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Widgets, compared with the CLI (`tui/widgets.go`) |
 | `qatlas-sysmin/internal/auditlog/auditlog.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Damaged-line markers and the chain end behind a damaged line (`auditlog/auditlog.go`) |
 | `qatlas-sysmin/internal/auditlog/verify.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Problem kinds and lines, documented damage and signature state (`auditlog/verify.go`) |
 | `qatlas-sysmin/internal/auditlog/read.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Filtered, paged reading (`auditlog/read.go`) |
@@ -157,3 +175,10 @@ Components derived from `qatlas-cli` and `qatlas-sysmin` retain their original A
 | `qatlas-cli/scripts/install_ps1_test.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Installer tests for Windows (`release/installer/install_ps1_test.go`) |
 | `qatlas-cli/.github/workflows/release.yml` | Copyright 2026 castrowithcee | AGPL-3.0 | Release workflow with an isolated signing job (`.github/workflows/release.yml`) |
 | `qatlas-sysmin/.github/workflows/release.yml` | Copyright 2026 castrowithcee | AGPL-3.0 | Format check before the release build (`.github/workflows/release.yml`) |
+
+## Built-in TUI themes
+
+The colour values and names of the built-in themes in `tui/themes_builtin_gen.go` come from the
+[iTerm2-Color-Schemes](https://github.com/mbadolato/iTerm2-Color-Schemes) collection (MIT, Copyright (c) 2011
+to Present Mark Badolato). Each scheme is licensed by its creators under the MIT licence; the licence text of
+the collection and the credit and copyright notice of every scheme are in `tui/themes_builtin_licenses.txt`.

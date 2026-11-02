@@ -1,0 +1,18 @@
+# The built-in TUI schemes, in the order a settings screen offers them, with the copyright notices of their
+# upstream repositories copied verbatim from their licence files.
+# Fields separated by " | ": scheme name in the collection, text of CREDITS.md that names its creators,
+# upstream repository, licence file, commit read, notice.
+# Each licence is MIT; the collection's MIT text in the notice file covers the permission text.
+# Not here: Dracula, the Solarized pair and the Tokyo Night themes, whose licence is unknown, GPL or
+# Apache-2.0 without its text in the collection, and Gruvbox, whose repository has no licence file with a
+# copyright notice.
+Catppuccin Mocha | The Catppuccin themes | https://github.com/catppuccin/palette | LICENSE | 07d02aa110ef9eb7e7427afca5c73ba9cf7f8ebd | Copyright (c) 2021 Catppuccin
+Catppuccin Latte | The Catppuccin themes | https://github.com/catppuccin/palette | LICENSE | 07d02aa110ef9eb7e7427afca5c73ba9cf7f8ebd | Copyright (c) 2021 Catppuccin
+Nord | Nord theme was created | https://github.com/nordtheme/iterm2 | license | 233a2462e04e07a9676386a52dad0c2ff6666d72 | Copyright (c) 2016-present Sven Greb <development@svengreb.de> (https://www.svengreb.de)
+Atom One Dark | The AtomOneDark theme | https://github.com/atom/atom | LICENSE.md | 1c3bd35ce238dc0491def9e1780d04748d8e18af | Copyright (c) 2011-2022 GitHub Inc.
+Atom One Light | The AtomOneLight theme | https://github.com/atom/atom | LICENSE.md | 1c3bd35ce238dc0491def9e1780d04748d8e18af | Copyright (c) 2011-2022 GitHub Inc.
+Rose Pine | The Rosé Pine themes | https://github.com/rose-pine/build | LICENSE | 1111ed6c610e13eeec99a5112aa937942f663b1d | Copyright (c) mvllow
+Rose Pine Dawn | The Rosé Pine themes | https://github.com/rose-pine/build | LICENSE | 1111ed6c610e13eeec99a5112aa937942f663b1d | Copyright (c) mvllow
+Selenized Dark | The themes Selenized Dark and Light | https://github.com/jan-warchol/selenized | LICENSE.txt | 9a753d5c575c48e29eeb2be745d9571b4cec42b3 | Copyright (c) 2021 Jan Warchoł
+Selenized Light | The themes Selenized Dark and Light | https://github.com/jan-warchol/selenized | LICENSE.txt | 9a753d5c575c48e29eeb2be745d9571b4cec42b3 | Copyright (c) 2021 Jan Warchoł
+Tomorrow Night | The Tomorrow themes | https://github.com/chriskempson/tomorrow-theme | LICENSE.md | ccf6666d888198d341b26b3a99d0bc96500ad503 | Copyright (C) 2011 [Chris Kempson](https://github.com/chriskempson)

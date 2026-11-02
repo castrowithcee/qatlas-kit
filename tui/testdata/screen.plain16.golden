@@ -1,0 +1,9 @@
+[1mExample[m                           [90mv0.0.0[m
+[90m Overview [m [1;44m Items [m [90m|[m [90m Settings [m
+[34m╭─[m[1m Items [m[34m─────────────────────[m[90m 2 of 3 [m[34m─╮[m
+[34m│[m [1;7m>[m[1;7m [36m■[m[1;7m alpha  [1;32m●[m[1;7m ready                [m   [34m│[m
+[34m│[m   [94m■[m beta   [1;31m●[m stopped                 [34m│[m
+[34m│[m   [1;32m[x][m [90ma very long description tha[m…   [34m│[m
+[34m╰──────────────────────────────────────╯[m
+[ Cancel ] [1;7;41m> Delete <[m
+[1;33mwarning: two items share one name[m
