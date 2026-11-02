@@ -1,0 +1,9 @@
+[1mExample[m                           [2mv0.0.0[m
+[2m Overview [m [1;7m[Items][m [2m|[m [2m Settings [m
+╔═[1m Items [m═════════════════════[2m 2 of 3 [m═╗
+║ [1;7m>[m[1;7m ■ alpha  [1m●[m[1;7m ready                [m   ║
+║   ■ beta   [1m●[m stopped                 ║
+║   [1m[x][m [2ma very long description tha[m…   ║
+╚══════════════════════════════════════╝
+[ Cancel ] [1;7m> Delete <[m
+[1mwarning: two items share one name[m
