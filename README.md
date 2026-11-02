@@ -21,6 +21,7 @@ One line per package, in alphabetical order. The package documentation holds the
 - [`output`](output): renders ordered results in the CLI output formats and defines the shared error codes.
 - [`projectpath`](projectpath): expands, resolves and compares paths and finds Git working tree roots.
 - [`release`](release): verifies signed release checksums and archive contents offline.
+- [`release/releasetest`](release/releasetest): builds signed test releases and serves them from a local release server in tests.
 - [`selfupdate`](selfupdate): selects, verifies and installs signed releases of the running program.
 - [`tui`](tui): merges the general and application text catalogs of a terminal user interface and resolves key placeholders.
 - [`uiprefs`](uiprefs): holds the device-local preferences of a terminal user interface.
