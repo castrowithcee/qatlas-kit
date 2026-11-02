@@ -78,3 +78,16 @@ Components derived from `qatlas-cli` and `qatlas-sysmin` retain their original A
 | `qatlas-sysmin/internal/tui/text_en.go` | Copyright 2026 castrowithcee | AGPL-3.0 | General English texts (`tui/catalog.go`) |
 | `qatlas-sysmin/internal/tui/text_de.go` | Copyright 2026 castrowithcee | AGPL-3.0 | General German texts (`tui/catalog.go`) |
 | `qatlas-sysmin/internal/tui/text_test.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Catalog key, format verb and fallback tests (`tui/text_test.go`) |
+| `qatlas-cli/internal/redact/redact.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Redaction of registered values (`redact/redact.go`, `redact/doc.go`) |
+| `qatlas-cli/internal/redact/redact_test.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Redaction tests (`redact/redact_test.go`) |
+| `qatlas-sysmin/internal/redact/redact.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Redaction of registered values (`redact/redact.go`) |
+| `qatlas-cli/internal/provider/ratelimit/ratelimit.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Per-key request spacing and registry (`ratelimit/ratelimit.go`, `ratelimit/doc.go`) |
+| `qatlas-cli/internal/provider/ratelimit/ratelimit_test.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Rate limit tests (`ratelimit/ratelimit_test.go`) |
+| `qatlas-cli/internal/provider/transport.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Client without redirects and Retry-After (`httpx/transport.go`) |
+| `qatlas-cli/internal/provider/cursor.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Request-bound cursors (`httpx/cursor.go`) |
+| `qatlas-cli/internal/provider/status.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Status classification and bounded JSON reading (`httpx/status.go`) |
+| `qatlas-cli/internal/provider/provider.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Error classes and answer types (`httpx/status.go`, `httpx/original.go`) |
+| `qatlas-cli/internal/provider/original.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Bounded error answer reading (`httpx/original.go`) |
+| `qatlas-cli/internal/provider/transport_test.go`, `cursor_test.go`, `status_test.go`, `original_test.go` | Copyright 2026 castrowithcee | AGPL-3.0 | HTTP mechanics tests (`httpx/*_test.go`) |
+| `qatlas-cli/internal/application/schema.go` | Copyright 2026 castrowithcee | AGPL-3.0 | JSON Schema subset validation (`jsonschema/jsonschema.go`) |
+| `qatlas-cli/internal/application/application_test.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Schema validation tests (`jsonschema/jsonschema_test.go`) |
