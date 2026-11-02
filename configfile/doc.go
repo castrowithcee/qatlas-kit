@@ -15,5 +15,5 @@
 // regular backups and the first hand-edited version are kept. RestoreBackup returns a Restored that
 // UndoRestore can put back. Copies made with BackupCopy are kept apart from rotation.
 //
-// File names, directories, schemas, and messages belong to the caller.
+// The file path and the document schema belong to the caller.
 package configfile
