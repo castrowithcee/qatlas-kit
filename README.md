@@ -9,6 +9,7 @@ security fix, reaches each of them with a version upgrade.
 
 One line per package, in alphabetical order. The package documentation holds the contract.
 
+- [`archtest`](archtest): checks import boundaries, forbidden names, key literals and text catalogs of a module's source against exceptions that can only shrink.
 - [`background`](background): starts a detached background process and waits for its report.
 - [`cli`](cli): maps errors to exit codes and diagnostics and checks the confirmation of commands.
 - [`configfile`](configfile): writes configuration documents atomically, with locking, transactions and backups.
