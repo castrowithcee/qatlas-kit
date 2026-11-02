@@ -1,15 +1,16 @@
 # qatlas-kit
 
-qatlas-kit is a Go module with reusable building blocks for terminal and command-line applications: CLI
-output and diagnostics, terminal user interface texts and preferences, configuration files, local processes
-and channels, an encrypted vault, and signed updates. Several independent applications build on it, so a
-fix, especially a security fix, reaches each of them with a version upgrade.
+qatlas-kit is a Go module with reusable building blocks for terminal and command-line applications: CLI output
+and diagnostics, terminal user interface texts and preferences, configuration files, hash-chained logs, local
+processes and channels, an encrypted vault, and signed updates. Several independent applications build on it,
+so a fix, especially a security fix, reaches each of them with a version upgrade.
 
 ## Packages
 
 One line per package, in alphabetical order. The package documentation holds the contract.
 
 - [`archtest`](archtest): checks import boundaries, forbidden names, key literals and text catalogs of a module's source against exceptions that can only shrink.
+- [`auditlog`](auditlog): appends entries to daily files linked by a signed hash chain and verifies, reads and aggregates them.
 - [`background`](background): starts a detached background process and waits for its report.
 - [`cli`](cli): maps errors to exit codes and diagnostics and checks the confirmation of commands.
 - [`cobracli`](cobracli): applies the shared flags, help, version and error conventions to a Cobra command tree.

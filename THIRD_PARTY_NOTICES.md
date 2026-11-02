@@ -91,6 +91,13 @@ Components derived from `qatlas-cli` and `qatlas-sysmin` retain their original A
 | `qatlas-cli/internal/tui/text_test.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Catalog key, format verb and fallback tests (`tui/text_test.go`, `uiprefs/language_test.go`) |
 | `qatlas-cli/internal/tui/text_catalog_test.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Declared ID and placeholder tests (`tui/text_test.go`) |
 | `qatlas-cli/internal/uiprefs/uiprefs.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Language preference values (`uiprefs/language.go`) |
+| `qatlas-cli/internal/invokelog/invokelog.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Day files, hash chain, retention cut, tail reading and locked append (`auditlog/auditlog.go`) |
+| `qatlas-cli/internal/invokelog/mac.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Log key derivation, check values and checker (`auditlog/key.go`) |
+| `qatlas-cli/internal/invokelog/verify.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Chain and check value verification with line results (`auditlog/verify.go`) |
+| `qatlas-cli/internal/invokelog/summary.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Day ranges in a location (`auditlog/read.go`) |
+| `qatlas-cli/internal/invokelog/activity.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Daily activity (`auditlog/read.go`) |
+| `qatlas-cli/internal/invokelog/invokelog_test.go`, `lastline_test.go`, `mac_test.go`, `lines_test.go`, `activity_test.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Chain, retention, concurrency, check value and line result tests (`auditlog/*_test.go`) |
+| `qatlas-cli/internal/invokelog` | Copyright 2026 castrowithcee | AGPL-3.0 | Compatibility test data written by the original logger with invented values (`auditlog/testdata/compat`) |
 | `qatlas-sysmin/internal/tui/text.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Catalog lookup (`tui/text.go`) |
 | `qatlas-sysmin/internal/tui/text_en.go` | Copyright 2026 castrowithcee | AGPL-3.0 | General English texts (`tui/catalog.go`) |
 | `qatlas-sysmin/internal/tui/text_de.go` | Copyright 2026 castrowithcee | AGPL-3.0 | General German texts (`tui/catalog.go`) |
@@ -137,3 +144,7 @@ Components derived from `qatlas-cli` and `qatlas-sysmin` retain their original A
 | `qatlas-sysmin/internal/vault/snapshot.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Opening with the vault key alone (`vault/snapshot.go`) |
 | `qatlas-sysmin/internal/vault/vault.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Concurrency-safe vault value (`vault/vault.go`) |
 | `qatlas-sysmin/internal/vault/vault_test.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Vault rejection tests (`vault/vault_test.go`) |
+| `qatlas-sysmin/internal/auditlog/auditlog.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Damaged-line markers and the chain end behind a damaged line (`auditlog/auditlog.go`) |
+| `qatlas-sysmin/internal/auditlog/verify.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Problem kinds and lines, documented damage and signature state (`auditlog/verify.go`) |
+| `qatlas-sysmin/internal/auditlog/read.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Filtered, paged reading (`auditlog/read.go`) |
+| `qatlas-sysmin/internal/auditlog/auditlog_test.go`, `damage_test.go`, `key_test.go`, `read_test.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Chain, damage, check value and reading tests (`auditlog/*_test.go`) |
