@@ -148,3 +148,12 @@ Components derived from `qatlas-cli` and `qatlas-sysmin` retain their original A
 | `qatlas-sysmin/internal/auditlog/verify.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Problem kinds and lines, documented damage and signature state (`auditlog/verify.go`) |
 | `qatlas-sysmin/internal/auditlog/read.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Filtered, paged reading (`auditlog/read.go`) |
 | `qatlas-sysmin/internal/auditlog/auditlog_test.go`, `damage_test.go`, `key_test.go`, `read_test.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Chain, damage, check value and reading tests (`auditlog/*_test.go`) |
+| `qatlas-cli/scripts/release.sh` | Copyright 2026 castrowithcee | AGPL-3.0 | SemVer check, target matrix, build flags, archive layout and checksums (`release/releasebuild/build.go`, `release/releasebuild/archive.go`) |
+| `qatlas-sysmin/scripts/release.sh` | Copyright 2026 castrowithcee | AGPL-3.0 | Reproducible archives with fixed order, owner, time and modes (`release/releasebuild/archive.go`) |
+| `qatlas-cli/scripts/install.sh` | Copyright 2026 castrowithcee | AGPL-3.0 | Installer for Linux, macOS and WSL (`release/installer/install.sh.tmpl`) |
+| `qatlas-sysmin/scripts/install.sh` | Copyright 2026 castrowithcee | AGPL-3.0 | Mandatory signature check before any change (`release/installer/install.sh.tmpl`) |
+| `qatlas-cli/scripts/install.ps1` | Copyright 2026 castrowithcee | AGPL-3.0 | Installer for Windows (`release/installer/install.ps1.tmpl`) |
+| `qatlas-cli/scripts/install_test.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Installer tests for Linux and macOS (`release/installer/install_sh_test.go`, `release/installer/installer_test.go`) |
+| `qatlas-cli/scripts/install_ps1_test.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Installer tests for Windows (`release/installer/install_ps1_test.go`) |
+| `qatlas-cli/.github/workflows/release.yml` | Copyright 2026 castrowithcee | AGPL-3.0 | Release workflow with an isolated signing job (`.github/workflows/release.yml`) |
+| `qatlas-sysmin/.github/workflows/release.yml` | Copyright 2026 castrowithcee | AGPL-3.0 | Format check before the release build (`.github/workflows/release.yml`) |

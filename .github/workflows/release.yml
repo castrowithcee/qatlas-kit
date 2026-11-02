@@ -1,0 +1,170 @@
+# Reusable release workflow for applications built on this module; the releasebuild package documents
+# how to call it. It never runs for this repository itself.
+name: Release
+
+on:
+  workflow_call:
+    inputs:
+      program:
+        description: Program file name without .exe.
+        type: string
+        required: true
+      namespace:
+        description: SSH signature namespace, <program>-release.
+        type: string
+        required: true
+      config:
+        description: Release configuration file of the application.
+        type: string
+        default: release.json
+      allowed-signers:
+        description: Allowed signers file with the release keys.
+        type: string
+        default: .github/release-allowed-signers
+      environment:
+        description: Protected environment of the signing job.
+        type: string
+        default: release
+    secrets:
+      RELEASE_SIGNING_KEY:
+        description: Private Ed25519 release key; passed by the caller or set in the environment.
+        required: false
+
+permissions: {}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Check inputs
+        env:
+          PROGRAM: ${{ inputs.program }}
+          NAMESPACE: ${{ inputs.namespace }}
+          ENVIRONMENT: ${{ inputs.environment }}
+        run: |
+          set -euo pipefail
+          [ "$GITHUB_REF_TYPE" = tag ] || { echo "a release runs on a tag, not on $GITHUB_REF_TYPE $GITHUB_REF_NAME"; exit 1; }
+          printf '%s\n' "$PROGRAM" | grep -Eqx '[a-z][a-z0-9-]{0,63}' || { echo "invalid program name"; exit 1; }
+          [ "$NAMESPACE" = "$PROGRAM-release" ] || { echo "namespace must be $PROGRAM-release"; exit 1; }
+          [ -n "$ENVIRONMENT" ] || { echo "the signing job needs a protected environment"; exit 1; }
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Verify
+        run: |
+          set -euo pipefail
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            printf 'gofmt reports unformatted files:\n%s\n' "$unformatted"
+            exit 1
+          fi
+          go vet ./...
+          go test -count=1 ./...
+      - name: Build release assets
+        env:
+          PROGRAM: ${{ inputs.program }}
+          NAMESPACE: ${{ inputs.namespace }}
+          CONFIG: ${{ inputs.config }}
+          ALLOWED_SIGNERS: ${{ inputs.allowed-signers }}
+        run: |
+          set -euo pipefail
+          SOURCE_DATE_EPOCH=$(git show -s --format=%ct "refs/tags/$GITHUB_REF_NAME^{commit}")
+          export SOURCE_DATE_EPOCH
+          go run github.com/castrowithcee/qatlas-kit/cmd/releasebuild \
+            -config "$CONFIG" -program "$PROGRAM" -namespace "$NAMESPACE" -allowed-signers "$ALLOWED_SIGNERS" \
+            -releases-url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases" -version "$GITHUB_REF_NAME" -out dist
+      - name: Collect signing input
+        env:
+          ALLOWED_SIGNERS: ${{ inputs.allowed-signers }}
+        run: |
+          mkdir signing-input
+          cp dist/checksums.txt signing-input/checksums.txt
+          cp "$ALLOWED_SIGNERS" signing-input/allowed-signers
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-dist
+          path: dist
+          if-no-files-found: error
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: signing-input
+          path: signing-input
+          if-no-files-found: error
+
+  # The only job that sees the signing key. It checks out and runs no application code and receives only
+  # checksums.txt and the allowed signers file the build job took from the tagged state.
+  sign:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: signing-input
+          path: signing-input
+      - name: Sign checksums.txt
+        env:
+          NAMESPACE: ${{ inputs.namespace }}
+          RELEASE_SIGNING_KEY: ${{ secrets.RELEASE_SIGNING_KEY }}
+        run: |
+          set -euo pipefail
+          [ -n "$RELEASE_SIGNING_KEY" ] || { echo "the secret RELEASE_SIGNING_KEY is not set"; exit 1; }
+          cd signing-input
+          [ -s checksums.txt ] || { echo "checksums.txt is empty"; exit 1; }
+          if grep -Evqx '[0-9a-f]{64}  [A-Za-z0-9._-]+' checksums.txt; then
+            echo "checksums.txt holds lines other than <sha256>  <asset>"
+            exit 1
+          fi
+          if grep -Ev '^[[:space:]]*(#|$)' allowed-signers | grep -Evq "^$NAMESPACE ssh-ed25519 "; then
+            echo "allowed-signers must list only ssh-ed25519 keys for $NAMESPACE"
+            exit 1
+          fi
+          key="$RUNNER_TEMP/release-signing-key"
+          trap 'rm -f "$key"' EXIT
+          (umask 077 && printf '%s\n' "$RELEASE_SIGNING_KEY" > "$key")
+          ssh-keygen -Y sign -f "$key" -n "$NAMESPACE" checksums.txt
+          ssh-keygen -Y verify -f allowed-signers -I "$NAMESPACE" -n "$NAMESPACE" \
+            -s checksums.txt.sig < checksums.txt
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-signature
+          path: signing-input/checksums.txt.sig
+          if-no-files-found: error
+
+  publish:
+    needs: sign
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: release-dist
+          path: dist
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: release-signature
+          path: dist
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          prerelease=()
+          if [[ "$GITHUB_REF_NAME" == *-* ]]; then
+            prerelease=(--prerelease)
+          fi
+          gh release create "$GITHUB_REF_NAME" dist/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --verify-tag \
+            --generate-notes \
+            "${prerelease[@]}"

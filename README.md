@@ -2,8 +2,8 @@
 
 qatlas-kit is a Go module with reusable building blocks for terminal and command-line applications: CLI output
 and diagnostics, terminal user interface texts and preferences, configuration files, hash-chained logs, local
-processes and channels, an encrypted vault, and signed updates. Several independent applications build on it,
-so a fix, especially a security fix, reaches each of them with a version upgrade.
+processes and channels, an encrypted vault, and signed updates and releases. Several independent applications
+build on it, so a fix, especially a security fix, reaches each of them with a version upgrade.
 
 ## Packages
 
@@ -13,6 +13,7 @@ One line per package, in alphabetical order. The package documentation holds the
 - [`auditlog`](auditlog): appends entries to daily files linked by a signed hash chain and verifies, reads and aggregates them.
 - [`background`](background): starts a detached background process and waits for its report.
 - [`cli`](cli): maps errors to exit codes and diagnostics and checks the confirmation of commands.
+- [`cmd/releasebuild`](cmd/releasebuild): runs `release/releasebuild` for the module in the current directory.
 - [`cobracli`](cobracli): applies the shared flags, help, version and error conventions to a Cobra command tree.
 - [`configfile`](configfile): writes configuration documents atomically, with locking, transactions and backups.
 - [`filelock`](filelock): provides an exclusive whole-file lock across processes.
@@ -28,6 +29,8 @@ One line per package, in alphabetical order. The package documentation holds the
 - [`ratelimit`](ratelimit): spaces the requests of one credential and holds them when the remote side asks to wait.
 - [`redact`](redact): replaces registered secret values, also quoted or JSON-escaped, in text, errors and writers.
 - [`release`](release): verifies signed release checksums and archive contents offline.
+- [`release/installer`](release/installer): renders the install.sh and install.ps1 installers of a signed release.
+- [`release/releasebuild`](release/releasebuild): builds reproducible release archives, installers and checksums.txt, and documents the reusable release workflow.
 - [`release/releasetest`](release/releasetest): builds signed test releases and serves them from a local release server in tests.
 - [`selfupdate`](selfupdate): selects, verifies and installs signed releases of the running program.
 - [`tui`](tui): merges the general and application text catalogs of a terminal user interface and resolves key placeholders.
