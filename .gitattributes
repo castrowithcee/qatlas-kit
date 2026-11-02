@@ -2,3 +2,4 @@
 *.golden text eol=lf
 *.jsonl text eol=lf
 *.age binary
+*.tmpl text eol=lf

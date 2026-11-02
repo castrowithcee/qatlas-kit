@@ -1,0 +1,221 @@
+# {{.DisplayName}} installer for Windows (Windows PowerShell 5.1 and PowerShell 7).
+#
+#   irm {{.ReleasesURL}}/latest/download/install.ps1 | iex
+#   $env:{{.Env}}_VERSION = "v1.2.3-rc.1"; irm {{.ReleasesURL}}/latest/download/install.ps1 | iex
+#
+# Installs the newest stable release, or the tag in {{.Env}}_VERSION, into %LOCALAPPDATA%\Programs\{{.Program}}
+# without administrator rights; running it again updates the installation. Nothing is installed unless
+# checksums.txt carries a valid signature of a release key embedded below, checked with ssh-keygen (the
+# OpenSSH client of Windows), and lists the SHA-256 of the archive exactly once. Every mismatch aborts
+# before the installation is touched. <prefix>\bin is added to the user PATH only if it is missing.
+#
+# Environment (all optional):
+#   {{.Env}}_VERSION                release tag to install instead of the newest stable release
+#   {{.Env}}_INSTALL_BASE_URL       releases URL to download from; it never changes which key is trusted
+#   {{.Env}}_INSTALL_PREFIX         installation prefix (default %LOCALAPPDATA%\Programs\{{.Program}})
+#   {{.Env}}_INSTALL_USER_PATH_FILE TEST ONLY: file holding the raw user PATH instead of the registry value
+#                                   HKCU\Environment\Path, so tests never change the real one
+
+function Install-{{.Env}} {
+    $ErrorActionPreference = 'Stop'
+    $ProgressPreference = 'SilentlyContinue'
+
+    $program = {{ps .Program}}
+    $display = {{ps .DisplayName}}
+    $repoUrl = {{ps .ReleasesURL}}
+    $namespace = {{ps .Namespace}}
+    $signers = {{ps .Signers}}
+    $archs = @({{range $i, $a := .Windows}}{{if $i}}, {{end}}{{ps $a}}{{end}})
+    $nextStep = {{ps .NextStep}}
+    $tmp = $null
+    $stage = $null
+
+    try {
+        if ($env:OS -ne 'Windows_NT') {
+            throw 'this installer supports Windows only (use install.sh on Linux, macOS and WSL)'
+        }
+        $arch = $env:PROCESSOR_ARCHITEW6432
+        if (-not $arch) { $arch = $env:PROCESSOR_ARCHITECTURE }
+        $arch = ([string]$arch).ToLowerInvariant()
+        if ($archs -notcontains $arch) {
+            throw "no release for windows/$arch; available: $($archs -join ', ')"
+        }
+        $sshKeygen = Get-Command ssh-keygen -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+        if (-not $sshKeygen) {
+            throw 'ssh-keygen is required to verify the release; install the OpenSSH client of Windows'
+        }
+        try {
+            [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+        } catch {
+            # Not fatal: newer runtimes negotiate TLS themselves.
+        }
+
+        $base = $env:{{.Env}}_INSTALL_BASE_URL
+        if (-not $base) { $base = $repoUrl }
+        $base = $base.TrimEnd('/')
+        $prefix = $env:{{.Env}}_INSTALL_PREFIX
+        if (-not $prefix) {
+            if (-not $env:LOCALAPPDATA) { throw 'LOCALAPPDATA is not set' }
+            $prefix = Join-Path $env:LOCALAPPDATA "Programs\$program"
+        }
+        $prefix = $prefix.TrimEnd('\', '/')
+        $version = $env:{{.Env}}_VERSION
+
+        if (-not $version) {
+            try {
+                $request = [Net.WebRequest]::Create("$base/latest")
+                $request.UserAgent = "$program-install"
+                $response = $request.GetResponse()
+                $latest = $response.ResponseUri.AbsoluteUri
+                $response.Close()
+            } catch {
+                throw 'could not determine the latest release'
+            }
+            $version = $latest.TrimEnd('/').Split('/')[-1]
+        }
+        if ($version -cnotmatch '^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$') {
+            throw "invalid version '$version'; expected a tag such as v1.2.3 or v1.2.3-rc.1"
+        }
+
+        $archive = "${program}_${version}_windows_${arch}.zip"
+        $tmp = Join-Path ([IO.Path]::GetTempPath()) ("$program-install." + [Guid]::NewGuid().ToString('N'))
+        [void](New-Item -ItemType Directory -Path $tmp)
+
+        Write-Host "Downloading $display $version for windows/$arch"
+        foreach ($name in @($archive, 'checksums.txt', 'checksums.txt.sig')) {
+            try {
+                Invoke-WebRequest -UseBasicParsing -Uri "$base/download/$version/$name" -OutFile (Join-Path $tmp $name)
+            } catch {
+                throw "download of $name failed"
+            }
+        }
+
+        $signersFile = Join-Path $tmp 'allowed-signers'
+        [IO.File]::WriteAllText($signersFile, $signers + "`n", (New-Object Text.UTF8Encoding($false)))
+        $verifyArgs = '-Y verify -f "{0}" -I {1} -n {1} -s "{2}"' -f $signersFile, $namespace, (Join-Path $tmp 'checksums.txt.sig')
+        $verify = Start-Process -FilePath $sshKeygen.Source -ArgumentList $verifyArgs -NoNewWindow -Wait -PassThru `
+            -RedirectStandardInput (Join-Path $tmp 'checksums.txt') `
+            -RedirectStandardOutput (Join-Path $tmp 'verify.out') -RedirectStandardError (Join-Path $tmp 'verify.err')
+        if ($verify.ExitCode -ne 0) {
+            throw 'signature of checksums.txt is invalid; nothing was installed'
+        }
+
+        $listed = @()
+        foreach ($line in [IO.File]::ReadAllLines((Join-Path $tmp 'checksums.txt'))) {
+            $fields = @($line.Trim() -split '\s+')
+            if ($fields.Count -eq 2 -and $fields[1].TrimStart('*') -ceq $archive) {
+                $listed += $fields[0].ToLowerInvariant()
+            }
+        }
+        if ($listed.Count -ne 1 -or $listed[0] -cnotmatch '^[0-9a-f]{64}$') {
+            throw "checksums.txt does not list $archive exactly once with a SHA-256; nothing was installed"
+        }
+        $got = (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $tmp $archive)).Hash.ToLowerInvariant()
+        if ($got -ne $listed[0]) { throw "SHA-256 mismatch for $archive; nothing was installed" }
+
+        [void](New-Item -ItemType Directory -Force -Path $prefix)
+        $stage = Join-Path $prefix (".$program-stage." + [Guid]::NewGuid().ToString('N'))
+        [void](New-Item -ItemType Directory -Path $stage)
+        try {
+            Add-Type -AssemblyName System.IO.Compression.FileSystem
+            [IO.Compression.ZipFile]::ExtractToDirectory((Join-Path $tmp $archive), $stage)
+        } catch {
+            throw 'could not extract the archive; nothing was installed'
+        }
+        $newExe = Join-Path $stage "bin\$program.exe"
+        $item = Get-Item -LiteralPath $newExe -Force -ErrorAction SilentlyContinue
+        if (-not $item -or $item.PSIsContainer -or ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+            throw "archive does not contain bin\$program.exe; nothing was installed"
+        }
+
+        $bindir = Join-Path $prefix 'bin'
+        $docdir = Join-Path $prefix "share\doc\$program"
+        [void](New-Item -ItemType Directory -Force -Path $bindir, $docdir)
+        $stagedDocs = Join-Path $stage "share\doc\$program"
+        if (Test-Path -LiteralPath $stagedDocs -PathType Container) {
+            foreach ($doc in @(Get-ChildItem -LiteralPath $stagedDocs -File -Force)) {
+                if ($doc.Attributes -band [IO.FileAttributes]::ReparsePoint) { continue }
+                Move-Item -LiteralPath $doc.FullName -Destination (Join-Path $docdir $doc.Name) -Force
+            }
+        }
+
+        # A running program cannot be overwritten but can be renamed; the program is replaced last.
+        $exe = Join-Path $bindir "$program.exe"
+        $old = $exe + '.old'
+        $renamed = $false
+        if (Test-Path -LiteralPath $exe) {
+            if (Test-Path -LiteralPath $old) {
+                try { Remove-Item -LiteralPath $old -Force } catch { }
+            }
+            Move-Item -LiteralPath $exe -Destination $old -Force
+            $renamed = $true
+        }
+        try {
+            Move-Item -LiteralPath $newExe -Destination $exe
+        } catch {
+            if ($renamed) { Move-Item -LiteralPath $old -Destination $exe -Force }
+            throw "could not install $exe"
+        }
+
+        # The raw (unexpanded) user PATH is read and written back as REG_EXPAND_SZ, so existing %VAR%
+        # entries survive; the session gets the directory too.
+        $pathChanged = $false
+        $pathFile = $env:{{.Env}}_INSTALL_USER_PATH_FILE
+        if ($pathFile) {
+            $userPath = ''
+            if (Test-Path -LiteralPath $pathFile) { $userPath = [IO.File]::ReadAllText($pathFile).Trim() }
+        } else {
+            $userPath = [string](Get-Item -LiteralPath 'HKCU:\Environment').GetValue('Path', '', 'DoNotExpandEnvironmentNames')
+        }
+        $hasDir = {
+            param([string]$list, [string]$dir)
+            foreach ($entry in ([string]$list -split ';')) {
+                $expanded = [Environment]::ExpandEnvironmentVariables($entry.Trim())
+                if ($expanded.TrimEnd('\') -ieq $dir.TrimEnd('\')) { return $true }
+            }
+            return $false
+        }
+        if (-not (& $hasDir $userPath $bindir)) {
+            if ($userPath) { $newPath = $userPath.TrimEnd(';') + ';' + $bindir } else { $newPath = $bindir }
+            if ($pathFile) {
+                [IO.File]::WriteAllText($pathFile, $newPath, (New-Object Text.UTF8Encoding($false)))
+            } else {
+                [void](New-ItemProperty -LiteralPath 'HKCU:\Environment' -Name 'Path' -Value $newPath -PropertyType ExpandString -Force)
+                # SetEnvironmentVariable would store REG_SZ, so running programs are told about the change
+                # directly. A failure here is not fatal.
+                try {
+                    if (-not ('{{.Env}}Install.NativeMethods' -as [type])) {
+                        Add-Type -Namespace {{.Env}}Install -Name NativeMethods -MemberDefinition '[DllImport("user32.dll", SetLastError = true, CharSet = CharSet.Unicode)] public static extern IntPtr SendMessageTimeout(IntPtr hWnd, uint Msg, UIntPtr wParam, string lParam, uint fuFlags, uint uTimeout, out UIntPtr lpdwResult);'
+                    }
+                    $result = [UIntPtr]::Zero
+                    [void][{{.Env}}Install.NativeMethods]::SendMessageTimeout([IntPtr]0xffff, 0x1A, [UIntPtr]::Zero, 'Environment', 2, 5000, [ref]$result)
+                } catch {
+                    Write-Warning "${program}-install: could not notify running programs about the PATH change; open a new terminal or sign in again"
+                }
+            }
+            $pathChanged = $true
+        }
+        if (-not (& $hasDir $env:Path $bindir)) {
+            $env:Path = $bindir + ';' + $env:Path
+        }
+
+        Write-Host ''
+        Write-Host "Installed $display $version"
+        Write-Host "  program: $exe"
+        if ($pathChanged) {
+            Write-Host "  PATH:    $bindir was added to your user PATH; open a new terminal to use ``$program``."
+        }
+        if ($nextStep) {
+            Write-Host ''
+            Write-Host $nextStep
+        }
+    } catch {
+        Write-Error ("${program}-install: " + $_.Exception.Message)
+        return
+    } finally {
+        if ($tmp -and (Test-Path -LiteralPath $tmp)) { Remove-Item -LiteralPath $tmp -Recurse -Force -ErrorAction SilentlyContinue }
+        if ($stage -and (Test-Path -LiteralPath $stage)) { Remove-Item -LiteralPath $stage -Recurse -Force -ErrorAction SilentlyContinue }
+    }
+}
+
+Install-{{.Env}}

@@ -144,6 +144,11 @@ Components derived from `qatlas-cli` and `qatlas-sysmin` retain their original A
 | `qatlas-sysmin/internal/vault/snapshot.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Opening with the vault key alone (`vault/snapshot.go`) |
 | `qatlas-sysmin/internal/vault/vault.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Concurrency-safe vault value (`vault/vault.go`) |
 | `qatlas-sysmin/internal/vault/vault_test.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Vault rejection tests (`vault/vault_test.go`) |
+| `qatlas-cli/internal/vault/approval.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Labelled SHA-256 fingerprint over canonical JSON, approval record with state and time (`approval/fingerprint.go`, `approval/store.go`) |
+| `qatlas-cli/internal/approval/approval.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Open changes between approved and current state (`approval/store.go`, `approval/diff.go`) |
+| `qatlas-cli/internal/cli/admin.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Admin check with terminal and passphrase before an approval (`approval/admin.go`) |
+| `qatlas-sysmin/internal/approval/approval.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Approval bound to the fingerprint of the state that was shown, integrity check of approved states (`approval/store.go`) |
+| `qatlas-sysmin/internal/approval/diff.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Path diff of canonical documents (`approval/diff.go`) |
 | `qatlas-cli/internal/tui/theme.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Palette roles, hand-picked dark and light palettes, theme registry and text styles (`tui/palette.go`, `tui/theme.go`, `tui/styles.go`) |
 | `qatlas-cli/internal/tui/colorprofile.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Colour profile detection and NO_COLOR handling (`tui/color.go`) |
 | `qatlas-cli/internal/tui/termtheme.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Contrast, mixed terminal palette, plain palette and 256-colour stepping (`tui/color.go`, `tui/palette.go`, `tui/theme.go`) |
@@ -170,11 +175,15 @@ Components derived from `qatlas-cli` and `qatlas-sysmin` retain their original A
 | `qatlas-cli/e2e_terminal_unix_test.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Program start at a controlling terminal, output collection and process checks on Linux and macOS (`ptytest/ptytest.go`, `ptytest/terminal_unix.go`) |
 | `qatlas-cli/e2e_terminal_windows_test.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Pseudo console start, environment block and process checks on Windows (`ptytest/terminal_windows.go`) |
 | `qatlas-sysmin/internal/cli/projects_test.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Linux pseudo-terminal unlock through x/sys (`ptytest/pty_linux.go`) |
-| `qatlas-cli/internal/vault/approval.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Labelled SHA-256 fingerprint over canonical JSON, approval record with state and time (`approval/fingerprint.go`, `approval/store.go`) |
-| `qatlas-cli/internal/approval/approval.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Open changes between approved and current state (`approval/store.go`, `approval/diff.go`) |
-| `qatlas-cli/internal/cli/admin.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Admin check with terminal and passphrase before an approval (`approval/admin.go`) |
-| `qatlas-sysmin/internal/approval/approval.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Approval bound to the fingerprint of the state that was shown, integrity check of approved states (`approval/store.go`) |
-| `qatlas-sysmin/internal/approval/diff.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Path diff of canonical documents (`approval/diff.go`) |
+| `qatlas-cli/scripts/release.sh` | Copyright 2026 castrowithcee | AGPL-3.0 | SemVer check, target matrix, build flags, archive layout and checksums (`release/releasebuild/build.go`, `release/releasebuild/archive.go`) |
+| `qatlas-sysmin/scripts/release.sh` | Copyright 2026 castrowithcee | AGPL-3.0 | Reproducible archives with fixed order, owner, time and modes (`release/releasebuild/archive.go`) |
+| `qatlas-cli/scripts/install.sh` | Copyright 2026 castrowithcee | AGPL-3.0 | Installer for Linux, macOS and WSL (`release/installer/install.sh.tmpl`) |
+| `qatlas-sysmin/scripts/install.sh` | Copyright 2026 castrowithcee | AGPL-3.0 | Mandatory signature check before any change (`release/installer/install.sh.tmpl`) |
+| `qatlas-cli/scripts/install.ps1` | Copyright 2026 castrowithcee | AGPL-3.0 | Installer for Windows (`release/installer/install.ps1.tmpl`) |
+| `qatlas-cli/scripts/install_test.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Installer tests for Linux and macOS (`release/installer/install_sh_test.go`, `release/installer/installer_test.go`) |
+| `qatlas-cli/scripts/install_ps1_test.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Installer tests for Windows (`release/installer/install_ps1_test.go`) |
+| `qatlas-cli/.github/workflows/release.yml` | Copyright 2026 castrowithcee | AGPL-3.0 | Release workflow with an isolated signing job (`.github/workflows/release.yml`) |
+| `qatlas-sysmin/.github/workflows/release.yml` | Copyright 2026 castrowithcee | AGPL-3.0 | Format check before the release build (`.github/workflows/release.yml`) |
 
 ## Built-in TUI themes
 
