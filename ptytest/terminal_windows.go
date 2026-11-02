@@ -169,7 +169,7 @@ func processAlive(pid int) (bool, error) {
 }
 
 func killProcess(pid int) error {
-	process, err := windows.OpenProcess(windows.PROCESS_TERMINATE, false, uint32(pid))
+	process, err := windows.OpenProcess(windows.PROCESS_TERMINATE|windows.SYNCHRONIZE, false, uint32(pid))
 	if errors.Is(err, windows.ERROR_INVALID_PARAMETER) {
 		return os.ErrProcessDone
 	}
@@ -177,5 +177,18 @@ func killProcess(pid int) error {
 		return err
 	}
 	defer windows.CloseHandle(process)
-	return windows.TerminateProcess(process, 1)
+	if exited(process) {
+		return os.ErrProcessDone
+	}
+	err = windows.TerminateProcess(process, 1)
+	// A process that ends while another handle keeps its object alive refuses termination with access denied.
+	if errors.Is(err, windows.ERROR_ACCESS_DENIED) && exited(process) {
+		return os.ErrProcessDone
+	}
+	return err
+}
+
+func exited(process windows.Handle) bool {
+	event, err := windows.WaitForSingleObject(process, 0)
+	return err == nil && event == uint32(windows.WAIT_OBJECT_0)
 }
