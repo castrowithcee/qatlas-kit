@@ -72,7 +72,8 @@ func (e *psEnv) publish(tag, program string, mutate func(*release)) {
 }
 
 // run pipes install.ps1 into Invoke-Expression, like `irm ... | iex`, with errors made fatal so a failed
-// installation yields a non-zero exit code. env entries are added to the environment.
+// installation yields a non-zero exit code. env entries are added to the environment. The output comes
+// back with all whitespace collapsed to single spaces.
 func (e *psEnv) run(env ...string) (string, error) {
 	e.t.Helper()
 	command := "$ErrorActionPreference = 'Stop'; Get-Content -Raw -LiteralPath '" + e.script + "' | Invoke-Expression"
@@ -90,7 +91,8 @@ func (e *psEnv) run(env ...string) (string, error) {
 	)
 	cmd.Env = append(cmd.Env, env...)
 	out, err := cmd.CombinedOutput()
-	return string(out), err
+	// Windows PowerShell wraps error records at the console width, so words are compared, not lines.
+	return strings.Join(strings.Fields(string(out)), " "), err
 }
 
 func (e *psEnv) mustRun(env ...string) string {
