@@ -166,6 +166,10 @@ Components derived from `qatlas-cli` and `qatlas-sysmin` retain their original A
 | `qatlas-sysmin/internal/auditlog/verify.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Problem kinds and lines, documented damage and signature state (`auditlog/verify.go`) |
 | `qatlas-sysmin/internal/auditlog/read.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Filtered, paged reading (`auditlog/read.go`) |
 | `qatlas-sysmin/internal/auditlog/auditlog_test.go`, `damage_test.go`, `key_test.go`, `read_test.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Chain, damage, check value and reading tests (`auditlog/*_test.go`) |
+| `qatlas-cli/e2e_pty_linux_test.go`, `qatlas-cli/e2e_pty_darwin_test.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Pseudo-terminal opening and echo state on Linux and macOS (`ptytest/pty_linux.go`, `ptytest/pty_darwin.go`, `ptytest/terminal_unix.go`) |
+| `qatlas-cli/e2e_terminal_unix_test.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Program start at a controlling terminal, output collection and process checks on Linux and macOS (`ptytest/ptytest.go`, `ptytest/terminal_unix.go`) |
+| `qatlas-cli/e2e_terminal_windows_test.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Pseudo console start, environment block and process checks on Windows (`ptytest/terminal_windows.go`) |
+| `qatlas-sysmin/internal/cli/projects_test.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Linux pseudo-terminal unlock through x/sys (`ptytest/pty_linux.go`) |
 
 ## Built-in TUI themes
 
