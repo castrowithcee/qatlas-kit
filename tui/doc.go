@@ -15,6 +15,19 @@
 // text at once and an argument that holds braces stays as it is. A text that must show such a brace
 // sequence literally passes it as an argument. To change the language, build a new Translator.
 //
+// Keys come from one key table per TUI. NewKeymap takes the application's actions, each with a level,
+// default keys, a help text and whether a user may replace its key or add an extra one, and rejects a table
+// that would give one key two meanings: within the main levels, a key belongs to one action on every
+// screen, and only the overlay levels of a question's answers and of the help may repeat one. It also
+// rejects a key that terminals, multiplexers or text lines take for themselves, unless the action is the
+// second way of another. Screens ask the Keymap for an action, never for a key name; Match lets the overlay
+// levels a screen names win over the main levels. The input focus decides what reaches the table: where
+// text is typed, every key that types a character is text, and that is the zero value; while a key is
+// captured as a new binding only ctrl+c and esc act; in an embedded terminal no key does. Bind applies the
+// user's keys as a whole or not at all, and CheckBinding and Resolve apply the same rules of a binding and
+// name the reason of every refusal. A Keymap satisfies KeyLabels, so labels and the key placeholders of
+// every text follow a binding at once.
+//
 // Colours come from themes. Screen code names roles, never colour values: a Palette assigns one colour per
 // role, Styles build text styles and widgets on it. A ThemeSet holds the terminal theme, the application's
 // own themes and the built-in schemes; each theme is data, either hand-picked palettes per colour profile
