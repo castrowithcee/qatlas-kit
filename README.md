@@ -37,6 +37,7 @@ One line per package, in alphabetical order. The package documentation holds the
 - [`tui`](tui): provides the text catalogs, themes, styles and basic widgets of a terminal user interface.
 - [`uiprefs`](uiprefs): holds the device-local preferences of a terminal user interface.
 - [`vault`](vault): stores secrets in an age-encrypted directory unlocked by a passphrase.
+- [`vaultproc`](vaultproc): keeps an unlocked vault in a hardened background process and hands it to the program an update installs.
 
 ## Installation
 

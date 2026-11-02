@@ -233,7 +233,7 @@ func TestUpdateInstallsReleaseBuiltFromDirectory(t *testing.T) {
 			}
 			return body
 		}
-		if files.ArchiveName != tarName("v1.1.0") || filepath.Base(files.Archive) != files.ArchiveName {
+		if files.ArchiveName != tarName("v1.1.0") || filepath.Base(files.Archive) != files.ArchiveName || files.Rollback {
 			t.Fatalf("release files: %+v", files)
 		}
 		if err := release.VerifyArchive(read(files.Checksums), read(files.Signature), read(files.Archive), testNamespace, files.ArchiveName, c.TrustedKeys); err != nil {
@@ -469,9 +469,18 @@ func TestInstallPreparedRollbackNeedsValidation(t *testing.T) {
 	assertFile(t, manpage, "old man")
 	assertTree(t, prefix, "bin/"+programFile("sample"), "sample.1")
 	c.ValidateRollback = func(context.Context, *Prepared) error { return nil }
+	var before, after bool
+	c.BeforeReplace = func(_ context.Context, files ReleaseFiles) error {
+		before = files.Rollback
+		return nil
+	}
+	c.AfterReplace = func(_ context.Context, files ReleaseFiles) { after = files.Rollback }
 	result, err := c.InstallPrepared(context.Background(), p)
 	if err != nil || !result.Updated || result.UpdateAvailable || result.Latest != "v1.5.0" {
 		t.Fatalf("rollback: %+v, %v", result, err)
+	}
+	if !before || !after {
+		t.Fatalf("hooks were not told of the rollback: before %v, after %v", before, after)
 	}
 	assertFile(t, executable, "new")
 	assertFile(t, manpage, "new man")
