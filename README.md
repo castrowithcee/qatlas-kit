@@ -15,11 +15,15 @@ One line per package, in alphabetical order. The package documentation holds the
 - [`filelock`](filelock): provides an exclusive whole-file lock across processes.
 - [`fileretry`](fileretry): repeats a file operation that fails only because another process holds the file.
 - [`helptopics`](helptopics): shares plain-text help topics between CLI, TUI and manpage.
+- [`httpx`](httpx): provides a client without redirects, bound cursors, status classes and bounded reading of answers.
 - [`i18n`](i18n): holds the language choice of an application and the lookup of its texts.
+- [`jsonschema`](jsonschema): checks JSON values against a strict subset of JSON Schema and names the first violation.
 - [`localipc`](localipc): provides a local channel between processes with checked peer identity.
 - [`manpage`](manpage): adds help topics to a manpage generated from a command tree.
 - [`output`](output): renders ordered results in the CLI output formats and defines the shared error codes.
 - [`projectpath`](projectpath): expands, resolves and compares paths and finds Git working tree roots.
+- [`ratelimit`](ratelimit): spaces the requests of one credential and holds them when the remote side asks to wait.
+- [`redact`](redact): replaces registered secret values, also quoted or JSON-escaped, in text, errors and writers.
 - [`release`](release): verifies signed release checksums and archive contents offline.
 - [`release/releasetest`](release/releasetest): builds signed test releases and serves them from a local release server in tests.
 - [`selfupdate`](selfupdate): selects, verifies and installs signed releases of the running program.
