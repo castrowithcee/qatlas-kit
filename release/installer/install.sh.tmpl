@@ -1,0 +1,167 @@
+#!/bin/sh
+# {{.DisplayName}} installer for Linux, macOS and WSL.
+#
+#   curl -fsSL {{.ReleasesURL}}/latest/download/install.sh | sh
+#   curl -fsSL {{.ReleasesURL}}/latest/download/install.sh | sh -s -- v1.2.3
+#
+# Installs the newest stable release, or the tag given as argument or in {{.Env}}_VERSION, into ~/.local
+# without sudo; running it again updates the installation. Nothing is installed unless checksums.txt
+# carries a valid signature of a release key embedded below and lists the SHA-256 of the archive exactly
+# once. Every mismatch aborts before the installation is touched.
+#
+# Environment (all optional):
+#   {{.Env}}_VERSION           release tag to install instead of the newest stable release
+#   {{.Env}}_INSTALL_BASE_URL  releases URL to download from; it never changes which key is trusted
+#   {{.Env}}_INSTALL_PREFIX    installation prefix (default $HOME/.local)
+#   HOME, SHELL                select the login profile that receives the PATH line
+set -eu
+
+program={{sh .Program}}
+display={{sh .DisplayName}}
+repo_url={{sh .ReleasesURL}}
+namespace={{sh .Namespace}}
+signers={{sh .Signers}}
+targets={{sh (join .Unix " ")}}
+next_step={{sh .NextStep}}
+marker="# added by the $display installer"
+
+fail() {
+	printf '%s-install: %s\n' "$program" "$*" >&2
+	exit 1
+}
+
+warn() {
+	printf '%s-install: warning: %s\n' "$program" "$*" >&2
+}
+
+main() {
+	[ -n "${HOME:-}" ] || fail 'HOME is not set'
+	base=${ {{- .Env}}_INSTALL_BASE_URL:-$repo_url}
+	base=${base%/}
+	prefix=${ {{- .Env}}_INSTALL_PREFIX:-$HOME/.local}
+	prefix=${prefix%/}
+	version=${1:-${ {{- .Env}}_VERSION:-}}
+
+	for tool in curl tar awk ssh-keygen; do
+		command -v "$tool" >/dev/null 2>&1 || fail "$tool is required to download and verify the release"
+	done
+	if command -v sha256sum >/dev/null 2>&1; then
+		sha256() { sha256sum "$1" | cut -d ' ' -f 1; }
+	elif command -v shasum >/dev/null 2>&1; then
+		sha256() { shasum -a 256 "$1" | cut -d ' ' -f 1; }
+	else
+		fail 'sha256sum or shasum is required to verify the download'
+	fi
+
+	case $(uname -s) in
+	Linux) os=linux ;;
+	Darwin) os=darwin ;;
+	*) fail "unsupported operating system $(uname -s)" ;;
+	esac
+	case $(uname -m) in
+	x86_64 | amd64) arch=amd64 ;;
+	arm64 | aarch64) arch=arm64 ;;
+	*) arch=$(uname -m) ;;
+	esac
+	case " $targets " in
+	*" $os/$arch "*) ;;
+	*) fail "no release for $os/$arch; available: $targets" ;;
+	esac
+
+	if [ -z "$version" ]; then
+		latest=$(curl -fsSIL -o /dev/null -w '%{url_effective}' "$base/latest") || fail 'could not determine the latest release'
+		version=${latest##*/}
+	fi
+	if ! printf '%s\n' "$version" | grep -Eq '^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$'; then
+		fail "invalid version '$version'; expected a tag such as v1.2.3 or v1.2.3-rc.1"
+	fi
+
+	archive="${program}_${version}_${os}_${arch}.tar.gz"
+	tmp=$(mktemp -d "${TMPDIR:-/tmp}/$program-install.XXXXXX")
+	stage=
+	cleanup() {
+		rm -rf "$tmp"
+		[ -z "$stage" ] || rm -rf "$stage"
+	}
+	trap cleanup EXIT
+	trap 'exit 1' HUP INT TERM
+
+	printf 'Downloading %s %s for %s/%s\n' "$display" "$version" "$os" "$arch"
+	for name in "$archive" checksums.txt checksums.txt.sig; do
+		curl -fsSL -o "$tmp/$name" "$base/download/$version/$name" || fail "download of $name failed"
+	done
+
+	printf '%s\n' "$signers" >"$tmp/allowed-signers"
+	ssh-keygen -Y verify -f "$tmp/allowed-signers" -I "$namespace" -n "$namespace" \
+		-s "$tmp/checksums.txt.sig" <"$tmp/checksums.txt" >/dev/null 2>&1 ||
+		fail 'signature of checksums.txt is invalid; nothing was installed'
+
+	want=$(awk -v n="$archive" 'NF == 2 { f = $2; sub(/^\*/, "", f) } NF == 2 && f == n { c++; h = tolower($1) } END { if (c == 1) print h }' "$tmp/checksums.txt")
+	printf '%s\n' "$want" | grep -Eq '^[0-9a-f]{64}$' ||
+		fail "checksums.txt does not list $archive exactly once with a SHA-256; nothing was installed"
+	got=$(sha256 "$tmp/$archive")
+	[ "$got" = "$want" ] || fail "SHA-256 mismatch for $archive; nothing was installed"
+
+	mkdir -p "$prefix"
+	stage=$(mktemp -d "$prefix/.$program-stage.XXXXXX")
+	tar -xzf "$tmp/$archive" -C "$stage" || fail 'could not extract the archive; nothing was installed'
+	[ -f "$stage/bin/$program" ] && [ ! -L "$stage/bin/$program" ] || fail "archive does not contain bin/$program; nothing was installed"
+	chmod 755 "$stage/bin/$program"
+
+	# Same filesystem as the target, so every mv is an atomic rename; the program is replaced last.
+	mkdir -p "$prefix/bin" "$prefix/share/man/man1" "$prefix/share/doc/$program"
+	for page in "$stage"/share/man/man1/*.1; do
+		[ -f "$page" ] && [ ! -L "$page" ] || continue
+		mv -f "$page" "$prefix/share/man/man1/${page##*/}"
+	done
+	for doc in "$stage/share/doc/$program"/*; do
+		[ -f "$doc" ] && [ ! -L "$doc" ] || continue
+		mv -f "$doc" "$prefix/share/doc/$program/${doc##*/}"
+	done
+	mv -f "$stage/bin/$program" "$prefix/bin/$program"
+
+	path_changed=
+	bindir=$prefix/bin
+	case ":${PATH:-}:" in
+	*":$bindir:"*) ;;
+	*)
+		if [ "$bindir" = "$HOME/.local/bin" ]; then
+			path_dir='$HOME/.local/bin'
+		else
+			path_dir=$bindir
+		fi
+		shell_name=${SHELL:-}
+		shell_name=${shell_name##*/}
+		case $shell_name in
+		zsh) profile=$HOME/.zprofile ;;
+		bash)
+			if [ -f "$HOME/.bash_profile" ]; then profile=$HOME/.bash_profile; else profile=$HOME/.profile; fi
+			;;
+		fish) profile= ;;
+		*) profile=$HOME/.profile ;;
+		esac
+		if [ "$shell_name" = fish ]; then
+			if command -v fish >/dev/null 2>&1; then
+				fish -c "fish_add_path -U '$bindir'" && path_changed=1 || warn "could not update the fish PATH; add $bindir to your PATH"
+			else
+				warn "fish not found; add $bindir to your PATH"
+			fi
+		elif [ -f "$profile" ] && grep -Fqx "$marker" "$profile"; then
+			path_changed=1
+		else
+			printf '\n%s\nexport PATH="%s:$PATH"\n' "$marker" "$path_dir" >>"$profile"
+			path_changed=1
+		fi
+		;;
+	esac
+
+	printf '\nInstalled %s %s\n  program: %s\n' "$display" "$version" "$bindir/$program"
+	if [ -n "$path_changed" ]; then
+		printf '  PATH:    %s was added to your login profile; open a new terminal to use `%s`.\n' "$bindir" "$program"
+	fi
+	if [ -n "$next_step" ]; then
+		printf '\n%s\n' "$next_step"
+	fi
+}
+
+main "$@"

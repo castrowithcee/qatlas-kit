@@ -170,6 +170,15 @@ Components derived from `qatlas-cli` and `qatlas-sysmin` retain their original A
 | `qatlas-cli/e2e_terminal_unix_test.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Program start at a controlling terminal, output collection and process checks on Linux and macOS (`ptytest/ptytest.go`, `ptytest/terminal_unix.go`) |
 | `qatlas-cli/e2e_terminal_windows_test.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Pseudo console start, environment block and process checks on Windows (`ptytest/terminal_windows.go`) |
 | `qatlas-sysmin/internal/cli/projects_test.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Linux pseudo-terminal unlock through x/sys (`ptytest/pty_linux.go`) |
+| `qatlas-cli/scripts/release.sh` | Copyright 2026 castrowithcee | AGPL-3.0 | SemVer check, target matrix, build flags, archive layout and checksums (`release/releasebuild/build.go`, `release/releasebuild/archive.go`) |
+| `qatlas-sysmin/scripts/release.sh` | Copyright 2026 castrowithcee | AGPL-3.0 | Reproducible archives with fixed order, owner, time and modes (`release/releasebuild/archive.go`) |
+| `qatlas-cli/scripts/install.sh` | Copyright 2026 castrowithcee | AGPL-3.0 | Installer for Linux, macOS and WSL (`release/installer/install.sh.tmpl`) |
+| `qatlas-sysmin/scripts/install.sh` | Copyright 2026 castrowithcee | AGPL-3.0 | Mandatory signature check before any change (`release/installer/install.sh.tmpl`) |
+| `qatlas-cli/scripts/install.ps1` | Copyright 2026 castrowithcee | AGPL-3.0 | Installer for Windows (`release/installer/install.ps1.tmpl`) |
+| `qatlas-cli/scripts/install_test.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Installer tests for Linux and macOS (`release/installer/install_sh_test.go`, `release/installer/installer_test.go`) |
+| `qatlas-cli/scripts/install_ps1_test.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Installer tests for Windows (`release/installer/install_ps1_test.go`) |
+| `qatlas-cli/.github/workflows/release.yml` | Copyright 2026 castrowithcee | AGPL-3.0 | Release workflow with an isolated signing job (`.github/workflows/release.yml`) |
+| `qatlas-sysmin/.github/workflows/release.yml` | Copyright 2026 castrowithcee | AGPL-3.0 | Format check before the release build (`.github/workflows/release.yml`) |
 
 ## Built-in TUI themes
 
