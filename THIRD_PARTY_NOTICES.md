@@ -101,3 +101,25 @@ Components derived from `qatlas-cli` and `qatlas-sysmin` retain their original A
 | `qatlas-cli/internal/provider/transport_test.go`, `cursor_test.go`, `status_test.go`, `original_test.go` | Copyright 2026 castrowithcee | AGPL-3.0 | HTTP mechanics tests (`httpx/*_test.go`) |
 | `qatlas-cli/internal/application/schema.go` | Copyright 2026 castrowithcee | AGPL-3.0 | JSON Schema subset validation (`jsonschema/jsonschema.go`) |
 | `qatlas-cli/internal/application/application_test.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Schema validation tests (`jsonschema/jsonschema_test.go`) |
+| `qatlas-cli/internal/vault/vault.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Vault states and file layout (`vault/vault.go`) |
+| `qatlas-cli/internal/vault/crypto.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Key wrapping with scrypt and age encryption (`vault/crypto.go`) |
+| `qatlas-cli/internal/vault/format.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Permission error, permission-checked reads and atomic private writes (`vault/file.go`) |
+| `qatlas-cli/internal/vault/operations.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Unlock, document reads and writes (`vault/operations.go`) |
+| `qatlas-cli/internal/vault/pending.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Pending entries and their merge (`vault/pending.go`) |
+| `qatlas-cli/internal/vault/switch.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Encrypt, decrypt, passphrase change and verification (`vault/switch.go`) |
+| `qatlas-cli/internal/vault/checkpoint.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Checkpoint and restore (`vault/checkpoint.go`) |
+| `qatlas-cli/internal/vault/snapshot.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Snapshot and recipient (`vault/snapshot.go`) |
+| `qatlas-cli/internal/vault/status.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Vault status (`vault/vault.go`) |
+| `qatlas-cli/internal/vault/settings.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Key derivation and check values from the vault key (`vault/sealed.go`) |
+| `qatlas-cli/internal/vault/workfactor.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Work factor limited to test binaries (`vault/vault.go`) |
+| `qatlas-cli/internal/vault/terminal.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Passphrase from the controlling terminal (`vault/terminal.go`) |
+| `qatlas-cli/internal/vault/terminal_test.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Non-interactive prompt test (`vault/terminal_test.go`) |
+| `qatlas-cli/internal/vault/mode_other.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Private Unix file modes (`vault/perm_other.go`) |
+| `qatlas-cli/internal/vault/mode_windows.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Windows ACL check and private ACLs (`vault/perm_windows.go`) |
+| `qatlas-cli/internal/vault/mode_windows_test.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Windows ACL tests (`vault/perm_windows_test.go`) |
+| `qatlas-cli/internal/vault/vault_test.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Vault behavior tests (`vault/vault_test.go`) |
+| `qatlas-sysmin/internal/vault/operations.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Create with the key file written last, kept documents on failed writes (`vault/operations.go`) |
+| `qatlas-sysmin/internal/vault/crypto.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Refusal of an empty passphrase on unlock (`vault/crypto.go`) |
+| `qatlas-sysmin/internal/vault/snapshot.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Opening with the vault key alone (`vault/snapshot.go`) |
+| `qatlas-sysmin/internal/vault/vault.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Concurrency-safe vault value (`vault/vault.go`) |
+| `qatlas-sysmin/internal/vault/vault_test.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Vault rejection tests (`vault/vault_test.go`) |
