@@ -166,6 +166,11 @@ Components derived from `qatlas-cli` and `qatlas-sysmin` retain their original A
 | `qatlas-sysmin/internal/auditlog/verify.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Problem kinds and lines, documented damage and signature state (`auditlog/verify.go`) |
 | `qatlas-sysmin/internal/auditlog/read.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Filtered, paged reading (`auditlog/read.go`) |
 | `qatlas-sysmin/internal/auditlog/auditlog_test.go`, `damage_test.go`, `key_test.go`, `read_test.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Chain, damage, check value and reading tests (`auditlog/*_test.go`) |
+| `qatlas-cli/internal/vault/approval.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Labelled SHA-256 fingerprint over canonical JSON, approval record with state and time (`approval/fingerprint.go`, `approval/store.go`) |
+| `qatlas-cli/internal/approval/approval.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Open changes between approved and current state (`approval/store.go`, `approval/diff.go`) |
+| `qatlas-cli/internal/cli/admin.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Admin check with terminal and passphrase before an approval (`approval/admin.go`) |
+| `qatlas-sysmin/internal/approval/approval.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Approval bound to the fingerprint of the state that was shown, integrity check of approved states (`approval/store.go`) |
+| `qatlas-sysmin/internal/approval/diff.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Path diff of canonical documents (`approval/diff.go`) |
 
 ## Built-in TUI themes
 
