@@ -2,8 +2,8 @@
 
 qatlas-kit is a Go module with reusable building blocks for terminal and command-line applications: CLI
 output and diagnostics, terminal user interface texts and preferences, configuration files, local processes
-and channels, and signed updates. Several independent applications build on it, so a fix, especially a
-security fix, reaches each of them with a version upgrade.
+and channels, an encrypted vault, and signed updates. Several independent applications build on it, so a
+fix, especially a security fix, reaches each of them with a version upgrade.
 
 ## Packages
 
@@ -30,6 +30,7 @@ One line per package, in alphabetical order. The package documentation holds the
 - [`selfupdate`](selfupdate): selects, verifies and installs signed releases of the running program.
 - [`tui`](tui): merges the general and application text catalogs of a terminal user interface and resolves key placeholders.
 - [`uiprefs`](uiprefs): holds the device-local preferences of a terminal user interface.
+- [`vault`](vault): stores secrets in an age-encrypted directory unlocked by a passphrase.
 
 ## Installation
 
