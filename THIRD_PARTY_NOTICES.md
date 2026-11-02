@@ -1,6 +1,6 @@
 # Third-party notices
 
-Components derived from `qatlas-cli` retain their original AGPL-3.0 license.
+Components derived from `qatlas-cli` and `qatlas-sysmin` retain their original AGPL-3.0 license.
 
 | Source | Copyright | License | Included components |
 | --- | --- | --- | --- |
@@ -66,3 +66,14 @@ Components derived from `qatlas-cli` retain their original AGPL-3.0 license.
 | `qatlas-cli/internal/selfupdate/releases.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Release listing and selection |
 | `qatlas-cli/internal/selfupdate/selfupdate.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Verified release download and archive extraction |
 | `qatlas-cli/internal/selfupdate/replace.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Staged executable replacement and Windows retry |
+| `qatlas-cli/internal/tui/text.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Catalog lookup, key placeholders and language preference resolution (`tui/text.go`, `uiprefs/language.go`) |
+| `qatlas-cli/internal/tui/keymap.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Key placeholder replacement (`tui/text.go`) |
+| `qatlas-cli/internal/tui/text_en.go` | Copyright 2026 castrowithcee | AGPL-3.0 | General English texts (`tui/catalog.go`) |
+| `qatlas-cli/internal/tui/text_de.go` | Copyright 2026 castrowithcee | AGPL-3.0 | General German texts (`tui/catalog.go`) |
+| `qatlas-cli/internal/tui/text_test.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Catalog key, format verb and fallback tests (`tui/text_test.go`, `uiprefs/language_test.go`) |
+| `qatlas-cli/internal/tui/text_catalog_test.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Declared ID and placeholder tests (`tui/text_test.go`) |
+| `qatlas-cli/internal/uiprefs/uiprefs.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Language preference values (`uiprefs/language.go`) |
+| `qatlas-sysmin/internal/tui/text.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Catalog lookup (`tui/text.go`) |
+| `qatlas-sysmin/internal/tui/text_en.go` | Copyright 2026 castrowithcee | AGPL-3.0 | General English texts (`tui/catalog.go`) |
+| `qatlas-sysmin/internal/tui/text_de.go` | Copyright 2026 castrowithcee | AGPL-3.0 | General German texts (`tui/catalog.go`) |
+| `qatlas-sysmin/internal/tui/text_test.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Catalog key, format verb and fallback tests (`tui/text_test.go`) |
