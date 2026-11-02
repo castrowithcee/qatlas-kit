@@ -22,6 +22,8 @@ type ReleaseFiles struct {
 	Checksums, Signature, Archive string
 	// ArchiveName is the archive's file name in the release, by which Checksums lists it.
 	ArchiveName string
+	// Rollback reports that the release is older than the running version.
+	Rollback bool
 }
 
 type companionPlan struct {
@@ -146,6 +148,7 @@ func (c *Client) InstallPrepared(ctx context.Context, p *Prepared) (Result, erro
 		if files, err = writeReleaseFiles(dir, p); err != nil {
 			return Result{}, err
 		}
+		files.Rollback = version.compare(policy.current) < 0
 	}
 	if err := ctx.Err(); err != nil {
 		return Result{}, err

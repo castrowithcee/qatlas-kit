@@ -179,6 +179,16 @@ Components derived from `qatlas-cli` and `qatlas-sysmin` retain their original A
 | `qatlas-cli/scripts/install_ps1_test.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Installer tests for Windows (`release/installer/install_ps1_test.go`) |
 | `qatlas-cli/.github/workflows/release.yml` | Copyright 2026 castrowithcee | AGPL-3.0 | Release workflow with an isolated signing job (`.github/workflows/release.yml`) |
 | `qatlas-sysmin/.github/workflows/release.yml` | Copyright 2026 castrowithcee | AGPL-3.0 | Format check before the release build (`.github/workflows/release.yml`) |
+| `qatlas-cli/internal/vaultproc/protocol.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Bounded JSON lines, challenge and proof, fixed answer codes (`vaultproc/protocol.go`, `vaultproc/errors.go`) |
+| `qatlas-cli/internal/vaultproc/server.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Vault process server with idle and maximum unlock time, requests in flight and lock on a replaced program (`vaultproc/server.go`) |
+| `qatlas-cli/internal/vaultproc/client.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Vault process client with challenge, retry on a replaced process and handover phases (`vaultproc/client.go`) |
+| `qatlas-cli/internal/vaultproc/handover.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Handover prepare and commit, release and program verification (`vaultproc/handover.go`) |
+| `qatlas-cli/internal/vaultproc/vaultproc.go`, `serve.go`, `serve_unix.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Socket name from the vault path, start and wait for the vault process (`vaultproc/run.go`) |
+| `qatlas-cli/internal/cli/vaultproc_serve.go`, `vaultproc_unix.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Hardening before the handover is read, successor wait, stop signals and socket watch (`vaultproc/run.go`, `vaultproc/server.go`) |
+| `qatlas-cli/internal/cli/update.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Vault process handover around the program replacement (`vaultproc/replace.go`) |
+| `qatlas-cli/internal/vaultproc/server_test.go`, `protocol_test.go`, `handover_unix_test.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Vault process tests (`vaultproc/*_test.go`) |
+| `qatlas-sysmin/internal/daemon/server.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Registered operations, fixed error codes and recovery from a failing handler (`vaultproc/server.go`) |
+| `qatlas-sysmin/internal/cli/run.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Hardening before the vault is opened (`vaultproc/run.go`) |
 
 ## Built-in TUI themes
 
