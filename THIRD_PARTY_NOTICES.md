@@ -45,6 +45,10 @@ Components derived from `qatlas-cli` and `qatlas-sysmin` retain their original A
 | `qatlas-cli/internal/cli/vaultproc_darwin.go` | Copyright 2026 castrowithcee | AGPL-3.0 | macOS logout behavior (`background/logind_other.go`) |
 | `qatlas-cli/internal/cli/vaultproc_other.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Logout behavior on other systems (`background/logind_other.go`) |
 | `qatlas-cli` | Copyright 2026 castrowithcee | AGPL-3.0 | CLI output formats and TOON encoder; error and confirmation handling; help topics and manpage helpers |
+| `qatlas-cli/internal/application/compact.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Dropping null members, empty lists, and empty objects (`output/empty.go`) |
+| `qatlas-cli/internal/application/original.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Redacting and bounding an external answer (`cli/external.go`) |
+| `qatlas-cli/internal/cli/errors.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Next step per route and external answer block (`cli/errors.go`, `cli/external.go`) |
+| `qatlas-cli/cmd/gen-man/main.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Help topics section of the manpage (`manpage/manpage.go`) |
 | `qatlas-cli/internal/config/config.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Configuration path precedence |
 | `qatlas-cli/internal/config/store.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Configuration write preparation and atomic replacement |
 | `qatlas-cli/internal/config/store_test.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Atomic replacement, symlink, and permission tests |

@@ -138,7 +138,11 @@ const (
 	CodeConfigInvalid        Code = "config-invalid"
 	CodeConfirmationRequired Code = "confirmation-required"
 	CodeConfirmationDeclined Code = "confirmation-declined"
+	CodeAdminRequired        Code = "admin-required"
+	CodeApprovalRequired     Code = "approval-required"
+	CodeVaultLocked          Code = "vault-locked"
 	CodeUnreachable          Code = "unreachable"
+	CodeTLS                  Code = "tls"
 	CodeAuth                 Code = "auth"
 	CodePermission           Code = "permission"
 	CodeNotFound             Code = "not-found"
@@ -157,8 +161,9 @@ func ValidCode(code Code) bool { return codeName.MatchString(string(code)) }
 func AllCodes(extra ...Code) ([]Code, error) {
 	codes := []Code{
 		CodeUsage, CodeInvalidRequest, CodeConfigMissing, CodeConfigInvalid,
-		CodeConfirmationRequired, CodeConfirmationDeclined, CodeUnreachable, CodeAuth, CodePermission,
-		CodeNotFound, CodeTimeout, CodeRateLimited, CodeRuntime,
+		CodeConfirmationRequired, CodeConfirmationDeclined, CodeAdminRequired, CodeApprovalRequired,
+		CodeVaultLocked, CodeUnreachable, CodeTLS, CodeAuth, CodePermission, CodeNotFound, CodeTimeout,
+		CodeRateLimited, CodeRuntime,
 	}
 	seen := make(map[Code]bool, len(codes)+len(extra))
 	for _, code := range codes {

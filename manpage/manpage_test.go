@@ -12,7 +12,8 @@ import (
 func TestGenerateUsesCallerTreeAndName(t *testing.T) {
 	dir := t.TempDir()
 	topics := []helptopics.Topic{{Name: "start", Short: "Start here", Text: ".hidden\na\\b --flag"}}
-	err := Generate(dir, "example", "v1.0.0", topics, func(output, version string) error {
+	intro := `The same text is printed by \fBexample help\fP \fItopic\fP.`
+	err := Generate(dir, "example", "v1.0.0", intro, topics, func(output, version string) error {
 		if version != "v1.0.0" {
 			t.Errorf("generator got version %q", version)
 		}
@@ -26,7 +27,7 @@ func TestGenerateUsesCallerTreeAndName(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := string(page)
-	for _, want := range []string{"example help", ".SS start", `\&.hidden`, `a\eb \-\-flag`} {
+	for _, want := range []string{".SH HELP TOPICS\n.PP\n" + intro + "\n", ".SS start", `\&.hidden`, `a\eb \-\-flag`} {
 		if !strings.Contains(s, want) {
 			t.Errorf("manpage missing %q", want)
 		}
@@ -39,14 +40,33 @@ func TestGenerateUsesCallerTreeAndName(t *testing.T) {
 	}
 }
 
-func TestWithHelpTopicsRejectsUnsafeNames(t *testing.T) {
+func TestGenerateRejectsUnsafeProgram(t *testing.T) {
 	for _, program := range []string{"", "../other", "bad\n.SH FAKE"} {
-		if _, err := WithHelpTopics("", program, nil); err == nil {
+		err := Generate(t.TempDir(), program, "v1.0.0", "", nil, func(string, string) error { return nil })
+		if err == nil {
 			t.Errorf("program %q accepted", program)
 		}
 	}
-	if _, err := WithHelpTopics("", "example", []helptopics.Topic{{Name: "x\n.SH FAKE"}}); err == nil {
+}
+
+func TestWithHelpTopicsRejectsUnsafeText(t *testing.T) {
+	for _, intro := range []string{"Text\n.SH FAKE", ".SH FAKE", "'br", "Text\rmore", "Text\x00", "bad\xff"} {
+		if _, err := WithHelpTopics("", intro, nil); err == nil {
+			t.Errorf("intro %q accepted", intro)
+		}
+	}
+	if _, err := WithHelpTopics("", "", []helptopics.Topic{{Name: "x\n.SH FAKE"}}); err == nil {
 		t.Error("unsafe topic accepted")
+	}
+}
+
+func TestWithHelpTopicsWithoutIntro(t *testing.T) {
+	page, err := WithHelpTopics(".SH NAME\nexample\n", "", []helptopics.Topic{{Name: "start", Short: "Start here"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(page, ".SH HELP TOPICS\n.SS start\n") {
+		t.Errorf("page %q", page)
 	}
 }
 

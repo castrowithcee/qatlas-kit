@@ -70,7 +70,7 @@ func TestWriteError(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			var out bytes.Buffer
-			if err := WriteError(&out, "tool", tc.err, "Usage: tool [flags]\n"); err != nil {
+			if err := WriteError(&out, "tool", tc.err, ErrorOptions{Usage: "Usage: tool [flags]\n"}); err != nil {
 				t.Fatal(err)
 			}
 			if got := out.String(); got != tc.want {
@@ -87,7 +87,7 @@ func TestWriteErrorEscapesControls(t *testing.T) {
 		Syntax: true,
 	}
 	var out bytes.Buffer
-	if err := WriteError(&out, "tool\x1b[2J", failure, "Usage: tool\x1b[31m\n"); err != nil {
+	if err := WriteError(&out, "tool\x1b[2J", failure, ErrorOptions{Usage: "Usage: tool\x1b[31m\n"}); err != nil {
 		t.Fatal(err)
 	}
 	want := "tool\\x1b[2J: runtime: failed\\n\\x1b[31m\nRetry\\x00later.\n" +
@@ -102,7 +102,7 @@ func TestWriteErrorEscapesControls(t *testing.T) {
 
 func TestWriteErrorRejectsInvalidCodeBeforeOutput(t *testing.T) {
 	var out bytes.Buffer
-	err := WriteError(&out, "tool", &Failure{Code: "invalid_code", Message: "bad", NextStep: "retry"}, "")
+	err := WriteError(&out, "tool", &Failure{Code: "invalid_code", Message: "bad", NextStep: "retry"}, ErrorOptions{})
 	if err == nil || out.Len() != 0 {
 		t.Fatalf("invalid code: err %v, output %q", err, out.String())
 	}
