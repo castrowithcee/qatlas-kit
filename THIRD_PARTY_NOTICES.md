@@ -85,12 +85,14 @@ Components derived from `qatlas-cli` and `qatlas-sysmin` retain their original A
 | `qatlas-sysmin/internal/selfupdate/selfupdate.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Companion file replacement, directory sync and missing release status (`selfupdate/install.go`, `selfupdate/selfupdate.go`) |
 | `qatlas-cli/internal/selfupdate/replace.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Staged executable replacement and Windows retry |
 | `qatlas-cli/internal/tui/text.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Catalog lookup, key placeholders and language preference resolution (`tui/text.go`, `uiprefs/language.go`) |
-| `qatlas-cli/internal/tui/keymap.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Key placeholder replacement (`tui/text.go`) |
+| `qatlas-cli/internal/tui/keymap.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Key placeholder replacement, key table, levels, rebinding and key labels (`tui/text.go`, `tui/keymap.go`, `tui/keyrules.go`) |
+| `qatlas-cli/internal/tui/keys.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Text input before keys and shifted function key names (`tui/keymap.go`) |
+| `qatlas-cli/internal/uiprefs/keys.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Rules of a binding and fallback of colliding bindings (`tui/keyrules.go`) |
 | `qatlas-cli/internal/tui/text_en.go` | Copyright 2026 castrowithcee | AGPL-3.0 | General English texts (`tui/catalog.go`) |
 | `qatlas-cli/internal/tui/text_de.go` | Copyright 2026 castrowithcee | AGPL-3.0 | General German texts (`tui/catalog.go`) |
 | `qatlas-cli/internal/tui/text_test.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Catalog key, format verb and fallback tests (`tui/text_test.go`, `uiprefs/language_test.go`) |
 | `qatlas-cli/internal/tui/text_catalog_test.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Declared ID and placeholder tests (`tui/text_test.go`) |
-| `qatlas-cli/internal/uiprefs/uiprefs.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Language preference values (`uiprefs/language.go`) |
+| `qatlas-cli/internal/uiprefs/uiprefs.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Language preference values, preferences file, load fallbacks and save (`uiprefs/language.go`, `uiprefs/uiprefs.go`) |
 | `qatlas-cli/internal/invokelog/invokelog.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Day files, hash chain, retention cut, tail reading and locked append (`auditlog/auditlog.go`) |
 | `qatlas-cli/internal/invokelog/mac.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Log key derivation, check values and checker (`auditlog/key.go`) |
 | `qatlas-cli/internal/invokelog/verify.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Chain and check value verification with line results (`auditlog/verify.go`) |
@@ -117,11 +119,15 @@ Components derived from `qatlas-cli` and `qatlas-sysmin` retain their original A
 | `qatlas-cli/internal/application/application_test.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Schema validation tests (`jsonschema/jsonschema_test.go`) |
 | `qatlas-cli/internal/cli/architecture_test.go` | Copyright 2026 castrowithcee | AGPL-3.0 | File walk, import and qualified identifier checks, name matching and shrinking exception list (`archtest/archtest.go`, `archtest/checks.go`) |
 | `qatlas-cli/internal/provider/sdk_guard_test.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Declaration, construction and literal checks (`archtest/checks.go`) |
-| `qatlas-cli/internal/tui/keymap_test.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Key literal check (`archtest/checks.go`) |
+| `qatlas-cli/internal/tui/keymap_test.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Key literal check, key table, collision, label and rebinding tests (`archtest/checks.go`, `tui/keymap_test.go`, `tui/keyliterals_test.go`) |
+| `qatlas-cli/internal/tui/keybinding_test.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Extra key, capture and stored key name tests (`tui/keymap_test.go`) |
+| `qatlas-cli/internal/uiprefs/keys_test.go`, `uiprefs_test.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Rule, fallback and preferences file tests (`tui/keymap_test.go`, `uiprefs/uiprefs_test.go`) |
 | `qatlas-cli/internal/tui/color_test.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Colour constructor check (`archtest/checks.go`) |
 | `qatlas-cli/internal/tui/text_catalog_test.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Declared text ID check (`archtest/catalog.go`) |
 | `qatlas-sysmin/internal/cli/architecture_test.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Surface import and store handle checks (`archtest/checks.go`) |
 | `qatlas-sysmin/internal/tui/keymap_test.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Key literal check (`archtest/checks.go`) |
+| `qatlas-sysmin/internal/tui/keytable_test.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Keys terminals and multiplexers take and their second ways (`tui/keyrules.go`, `tui/keymap_test.go`) |
+| `qatlas-sysmin/internal/tui/keymap.go`, `qatlas-sysmin/internal/uiprefs/keys.go`, `qatlas-sysmin/internal/uiprefs/uiprefs.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Key table and preferences, compared with the CLI (`tui/keymap.go`, `uiprefs/uiprefs.go`) |
 | `qatlas-cli/internal/vault/vault.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Vault states and file layout (`vault/vault.go`) |
 | `qatlas-cli/internal/vault/crypto.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Key wrapping with scrypt and age encryption (`vault/crypto.go`) |
 | `qatlas-cli/internal/vault/format.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Permission error, permission-checked reads and atomic private writes (`vault/file.go`) |
