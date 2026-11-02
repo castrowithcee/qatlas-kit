@@ -237,7 +237,7 @@ func TestJSONIsLosslessAndTyped(t *testing.T) {
 	}
 }
 
-// Empty strings remain values; null object values are omitted from text formats.
+// Empty strings remain values; null object values are omitted from every format.
 func TestObjectEmptyHandling(t *testing.T) {
 	var jsonOut, compactOut, tableOut bytes.Buffer
 	for _, c := range []struct {
@@ -248,8 +248,8 @@ func TestObjectEmptyHandling(t *testing.T) {
 			t.Fatalf("Encode(%s) = %v", c.format, err)
 		}
 	}
-	if !strings.Contains(jsonOut.String(), `"nothing":null`) || !strings.Contains(jsonOut.String(), `"blank":""`) {
-		t.Errorf("JSON dropped an empty field: %s", jsonOut.String())
+	if strings.Contains(jsonOut.String(), "nothing") || !strings.Contains(jsonOut.String(), `"blank":""`) {
+		t.Errorf("JSON empty handling: %s", jsonOut.String())
 	}
 	if strings.Contains(compactOut.String(), "nothing") || !strings.Contains(compactOut.String(), "blank=\n") {
 		t.Errorf("compact empty handling: %s", compactOut.String())
@@ -326,14 +326,15 @@ func TestResolveFormat(t *testing.T) {
 func TestAllCodes(t *testing.T) {
 	want := []Code{
 		CodeUsage, CodeInvalidRequest, CodeConfigMissing, CodeConfigInvalid,
-		CodeConfirmationRequired, CodeConfirmationDeclined, CodeUnreachable, CodeAuth, CodePermission,
-		CodeNotFound, CodeTimeout, CodeRateLimited, CodeRuntime, "sample-error",
+		CodeConfirmationRequired, CodeConfirmationDeclined, CodeAdminRequired, CodeApprovalRequired,
+		CodeVaultLocked, CodeUnreachable, CodeTLS, CodeAuth, CodePermission, CodeNotFound, CodeTimeout,
+		CodeRateLimited, CodeRuntime, "sample-error",
 	}
 	got, err := AllCodes("sample-error")
 	if err != nil || !reflect.DeepEqual(got, want) {
 		t.Fatalf("AllCodes() = %v, %v; want %v", got, err, want)
 	}
-	for _, extra := range []Code{"usage", "sample_error", "Sample", "", "a--b"} {
+	for _, extra := range []Code{"usage", "vault-locked", "sample_error", "Sample", "", "a--b"} {
 		if _, err := AllCodes(extra); err == nil {
 			t.Errorf("AllCodes(%q) accepted invalid or duplicate code", extra)
 		}

@@ -58,8 +58,10 @@ func validateTextResult(format Format, result Result) error {
 	return nil
 }
 
-// Encode writes a result to w in the given format. Only requested payload data reaches w.
+// Encode writes a result to w in the given format after dropping its empty values. Only requested payload
+// data reaches w.
 func Encode(w io.Writer, format Format, result Result) error {
+	result = DropEmpty(result).(Result)
 	if format == FormatTable || format == FormatCompact {
 		if err := validateTextResult(format, result); err != nil {
 			return err
@@ -138,13 +140,10 @@ func encodeCollectionTable(w io.Writer, c Collection) error {
 	return tw.Flush()
 }
 
-// encodeObjectTable prints one key-value pair per line. Null values are omitted.
+// encodeObjectTable prints one key-value pair per line.
 func encodeObjectTable(w io.Writer, o Object) error {
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
 	for _, f := range o.Fields {
-		if f.Value == nil {
-			continue
-		}
 		value := text(f.Value)
 		if _, err := fmt.Fprintf(tw, "%s\t%s\n", tableText(strings.ToUpper(f.Name)), tableText(value)); err != nil {
 			return err
@@ -173,12 +172,9 @@ func encodeCollectionCompact(w io.Writer, c Collection) error {
 	return nil
 }
 
-// encodeObjectCompact writes key=value per line. Null values are omitted.
+// encodeObjectCompact writes key=value per line.
 func encodeObjectCompact(w io.Writer, o Object) error {
 	for _, f := range o.Fields {
-		if f.Value == nil {
-			continue
-		}
 		value := text(f.Value)
 		line := compactEscape(f.Name, true) + "=" + compactEscape(value, true)
 		if _, err := fmt.Fprintln(w, line); err != nil {
