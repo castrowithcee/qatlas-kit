@@ -276,7 +276,7 @@ func TestWindowsRejectsReplacedOwnProgram(t *testing.T) {
 		t.Fatalf("replace program: %v, %v", copyErr, closeErr)
 	}
 	line, err := lines.ReadString('\n')
-	if err != nil || !strings.Contains(line, "removed or replaced") {
+	if err != nil || !strings.Contains(line, "removed or replaced") || !strings.Contains(line, "replaced=true") {
 		t.Fatalf("replaced program accepted: %q, %v", line, err)
 	}
 }
@@ -291,7 +291,8 @@ func TestWindowsReplacementHelper(t *testing.T) {
 			break
 		}
 	}
-	fmt.Println(checkProcess(uint32(os.Getpid())))
+	_, replaced, err := ProgramReplaced()
+	fmt.Println(checkProcess(uint32(os.Getpid())), "replaced="+fmt.Sprint(replaced && err == nil))
 	os.Exit(0)
 }
 

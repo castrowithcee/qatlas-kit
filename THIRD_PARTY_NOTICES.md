@@ -19,12 +19,12 @@ Components derived from `qatlas-cli` and `qatlas-sysmin` retain their original A
 | `qatlas-cli/internal/fileretry/transient_windows.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Transient Windows file error classification |
 | `qatlas-cli/internal/vaultproc/vaultproc.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Local channel endpoint, socket path and peer checks (`localipc/localipc.go`, `localipc/endpoint_unix.go`) |
 | `qatlas-cli/internal/vaultproc/dial_socket.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Unix socket dialing (`localipc/endpoint_unix.go`) |
-| `qatlas-cli/internal/vaultproc/listen_unix.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Unix socket listener with single-instance lock (`localipc/listen_unix.go`, `localipc/endpoint_unix.go`) |
+| `qatlas-cli/internal/vaultproc/listen_unix.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Unix socket listener with single-instance lock and successor handover (`localipc/listen_unix.go`, `localipc/endpoint_unix.go`) |
 | `qatlas-cli/internal/vaultproc/runtimedir_linux.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Linux runtime directory (`localipc/runtime_linux.go`) |
 | `qatlas-cli/internal/vaultproc/socketdir_darwin.go` | Copyright 2026 castrowithcee | AGPL-3.0 | macOS socket directory (`localipc/runtime_darwin.go`) |
-| `qatlas-cli/internal/vaultproc/peer_linux.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Linux peer verification and hardening (`localipc/peer_linux.go`) |
-| `qatlas-cli/internal/vaultproc/peer_darwin.go` | Copyright 2026 castrowithcee | AGPL-3.0 | macOS peer verification and hardening (`localipc/peer_darwin.go`) |
-| `qatlas-cli/internal/vaultproc/peer_windows.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Windows peer verification and hardening (`localipc/peer_windows.go`) |
+| `qatlas-cli/internal/vaultproc/peer_linux.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Linux peer verification, user check of a hardened server, replaced program detection, and hardening (`localipc/peer_linux.go`) |
+| `qatlas-cli/internal/vaultproc/peer_darwin.go` | Copyright 2026 castrowithcee | AGPL-3.0 | macOS peer verification, replaced program detection, and hardening (`localipc/peer_darwin.go`) |
+| `qatlas-cli/internal/vaultproc/peer_windows.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Windows peer verification, replaced program detection, and hardening (`localipc/peer_windows.go`) |
 | `qatlas-cli/internal/vaultproc/pipe_windows.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Windows named pipe (`localipc/pipe_windows.go`, `localipc/endpoint_windows.go`) |
 | `qatlas-cli/internal/vaultproc/unix_test.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Unix channel tests (`localipc/localipc_unix_test.go`, `localipc/localipc_linux_test.go`) |
 | `qatlas-cli/internal/vaultproc/peer_darwin_test.go` | Copyright 2026 castrowithcee | AGPL-3.0 | macOS channel tests (`localipc/peer_darwin_test.go`) |
@@ -32,6 +32,12 @@ Components derived from `qatlas-cli` and `qatlas-sysmin` retain their original A
 | `qatlas-cli/internal/vaultproc/harden_darwin_test.go` | Copyright 2026 castrowithcee | AGPL-3.0 | macOS hardening tests (`localipc/peer_darwin_test.go`) |
 | `qatlas-cli/internal/vaultproc/windows_test.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Windows channel tests (`localipc/localipc_windows_test.go`) |
 | `qatlas-cli/internal/vaultproc/harden_windows_test.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Windows hardening tests (`localipc/localipc_windows_test.go`) |
+| `qatlas-cli/internal/vaultproc/client.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Server check before the challenge and peer process id in refusals (`localipc/localipc.go`) |
+| `qatlas-cli/internal/vaultproc/handover.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Successor process handle (`background/background.go`) |
+| `qatlas-cli/internal/vaultproc/handover_unix_test.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Handover tests (`localipc/channel_unix_test.go`) |
+| `qatlas-sysmin/internal/daemon/listen.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Service socket mode (`localipc/service_linux.go`) |
+| `qatlas-sysmin/internal/daemon/peer.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Root or group admission of service clients (`localipc/service_linux.go`) |
+| `qatlas-sysmin/internal/client/client.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Service user check of the server (`localipc/service_linux.go`) |
 | `qatlas-cli/internal/vaultproc/serve.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Report words and start timeout (`background/background.go`, `background/start.go`) |
 | `qatlas-cli/internal/vaultproc/serve_unix.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Detached process start with handover and report pipes on Linux and macOS (`background/start_unix.go`, `background/child.go`) |
 | `qatlas-cli/internal/vaultproc/serve_windows.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Detached process start with handover and report pipes on Windows (`background/start_windows.go`) |

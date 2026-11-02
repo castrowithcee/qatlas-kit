@@ -5,7 +5,8 @@
 // The caller supplies the program, its arguments and its environment; the arguments typically select a
 // hidden subcommand of the same binary. The started process uses Inherit to read the handover and to
 // report. Nothing is put on the command line or in the environment on the package's behalf, so a handover
-// never appears there.
+// never appears there. Start returns a Process handle: its Done channel closes when the process ends, and
+// Kill ends it, as a process that hands its state to a successor needs.
 //
 // The process gets the null device as its standard streams and a fixed working directory (the root
 // directory on Unix, the system directory on Windows). On Linux and macOS it also leads a session of its

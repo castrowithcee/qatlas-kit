@@ -26,12 +26,37 @@ type fileID struct {
 
 var ownProgram, ownProgramErr = selfProgram()
 
+// Harden leaves the image name queryable, so a client still checks it.
+const hardenedProgramCheck = true
+
+// VerifyPeer checks the peer's user and the file identity at its image path.
+// If any identity cannot be read, the connection is refused.
 func VerifyPeer(conn net.Conn) error {
+	pid, err := checkPeer(conn, true)
+	if err != nil {
+		return &PeerError{PID: pid, Err: err}
+	}
+	return nil
+}
+
+// PeerPID returns the process id of the peer as the system reported it.
+func PeerPID(conn net.Conn) (int, error) {
+	pid, err := peerProcessID(conn)
+	return int(pid), err
+}
+
+// PeerUID is unavailable on Windows, which identifies users by SID.
+func PeerUID(net.Conn) (uint32, error) {
+	return 0, fmt.Errorf("a peer user ID is unavailable on Windows: %w", errors.ErrUnsupported)
+}
+
+// Windows always checks the program; see hardenedProgramCheck.
+func checkPeer(conn net.Conn, _ bool) (int, error) {
 	pid, err := peerProcessID(conn)
 	if err != nil {
-		return err
+		return 0, err
 	}
-	return checkProcess(pid)
+	return int(pid), checkProcess(pid)
 }
 
 func peerProcessID(conn net.Conn) (uint32, error) {
@@ -64,8 +89,12 @@ func checkProcess(pid uint32) error {
 	if ownProgramErr != nil {
 		return fmt.Errorf("%w: this program %w", ErrRefused, ownProgramErr)
 	}
-	if replaced, err := ownProgramReplaced(); err != nil || replaced {
-		return fmt.Errorf("%w: this program was removed or replaced since it started", ErrRefused)
+	replaced, err := ownProgramReplaced()
+	if err != nil {
+		return fmt.Errorf("%w: this program cannot be read", ErrRefused)
+	}
+	if replaced {
+		return fmt.Errorf("%w: %w", ErrRefused, ErrProgramReplaced)
 	}
 	peer, err := programOf(process)
 	if err != nil {
@@ -89,6 +118,14 @@ func ownProgramReplaced() (bool, error) {
 		return false, err
 	}
 	return now != ownProgram.id, nil
+}
+
+func programReplaced() (string, bool, error) {
+	replaced, err := ownProgramReplaced()
+	if err != nil {
+		return "", false, fmt.Errorf("this program cannot be read: %w", err)
+	}
+	return ownProgram.path, replaced, nil
 }
 
 func openPeer(pid uint32) (windows.Handle, error) {
@@ -191,6 +228,8 @@ func plainPath(path string) string {
 
 const processAccess = windows.PROCESS_QUERY_LIMITED_INFORMATION | windows.SYNCHRONIZE | windows.PROCESS_TERMINATE
 
+// Harden limits access to this process to identity queries, waiting, and
+// termination through its DACL.
 func Harden() error {
 	sid, err := currentUserSID()
 	if err != nil {

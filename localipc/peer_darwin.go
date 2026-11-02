@@ -14,6 +14,9 @@ import (
 	"golang.org/x/sys/unix"
 )
 
+// Harden leaves the program path readable, so a client still checks it.
+const hardenedProgramCheck = true
+
 var errProgramGone = errors.New("was removed or replaced since it started")
 
 type programFile struct {
@@ -28,11 +31,34 @@ var ownProgram, ownProgramErr = selfProgram()
 // VerifyPeer checks both kernel-reported identity and the peer's program file.
 // If any identity cannot be read, the connection is refused.
 func VerifyPeer(conn net.Conn) error {
+	pid, err := checkPeer(conn, true)
+	if err != nil {
+		return &PeerError{PID: pid, Err: err}
+	}
+	return nil
+}
+
+// PeerPID returns the process id of the peer as the kernel reported it.
+func PeerPID(conn net.Conn) (int, error) {
+	_, pid, err := peerCred(conn)
+	return pid, err
+}
+
+// PeerUID returns the user id of the peer as the kernel reported it.
+func PeerUID(conn net.Conn) (uint32, error) {
+	uid, _, err := peerCred(conn)
+	return uid, err
+}
+
+func checkPeer(conn net.Conn, program bool) (int, error) {
 	uid, pid, err := peerCred(conn)
 	if err != nil {
-		return err
+		return 0, err
 	}
-	return checkProcess(pid, uid)
+	if !program {
+		return pid, checkUser(pid, uid)
+	}
+	return pid, checkProcess(pid, uid)
 }
 
 func peerCred(conn net.Conn) (uint32, int, error) {
@@ -61,18 +87,29 @@ func peerCred(conn net.Conn) (uint32, int, error) {
 	return cred.Uid, pid, nil
 }
 
-func checkProcess(pid int, uid uint32) error {
+func checkUser(pid int, uid uint32) error {
 	if uid != uint32(os.Getuid()) {
 		return fmt.Errorf("%w: peer has another user ID", ErrRefused)
 	}
 	if pid <= 0 {
 		return fmt.Errorf("%w: peer process cannot be identified", ErrRefused)
 	}
+	return nil
+}
+
+func checkProcess(pid int, uid uint32) error {
+	if err := checkUser(pid, uid); err != nil {
+		return err
+	}
 	if ownProgramErr != nil {
 		return fmt.Errorf("%w: this program cannot be read: %v", ErrRefused, ownProgramErr)
 	}
-	if replaced, err := ownProgramReplaced(); err != nil || replaced {
-		return fmt.Errorf("%w: this program was removed, replaced, or cannot be read: %v", ErrRefused, err)
+	replaced, err := ownProgramReplaced()
+	if err != nil {
+		return fmt.Errorf("%w: this program cannot be read: %v", ErrRefused, err)
+	}
+	if replaced {
+		return fmt.Errorf("%w: %w", ErrRefused, ErrProgramReplaced)
 	}
 	peer, err := programOf(pid)
 	if err != nil {
@@ -85,6 +122,9 @@ func checkProcess(pid int, uid uint32) error {
 }
 
 func ownProgramReplaced() (bool, error) {
+	if ownProgramErr != nil {
+		return false, ownProgramErr
+	}
 	_, now, err := resolveProgram(ownProgram.path)
 	if errors.Is(err, errProgramGone) {
 		return true, nil
@@ -93,6 +133,14 @@ func ownProgramReplaced() (bool, error) {
 		return false, err
 	}
 	return !os.SameFile(now, ownProgram.info), nil
+}
+
+func programReplaced() (string, bool, error) {
+	replaced, err := ownProgramReplaced()
+	if err != nil {
+		return "", false, fmt.Errorf("this program cannot be read: %w", err)
+	}
+	return ownProgram.path, replaced, nil
 }
 
 func selfProgram() (programFile, error) {

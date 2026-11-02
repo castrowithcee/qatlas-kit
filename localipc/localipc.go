@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"time"
 )
 
 // Endpoint contains names supplied by the consuming application. FallbackDir
@@ -25,8 +26,18 @@ var ErrRunning = errors.New("local channel is already running")
 // ErrRefused means the peer or the channel's filesystem permissions failed a check.
 var ErrRefused = errors.New("local channel refused")
 
+// ErrProgramReplaced means the program file this process started from was
+// removed or replaced since. Such a process refuses every peer.
+var ErrProgramReplaced = errors.New("this program was removed or replaced since it started")
+
+// ErrNoChallenge means CheckHardened was chosen without a Challenge.
+var ErrNoChallenge = errors.New("a hardened server check needs a challenge")
+
 // ErrUnsupported means the platform has no channel implementation yet.
 var ErrUnsupported = fmt.Errorf("local channel is unsupported on this platform: %w", errors.ErrUnsupported)
+
+var errHandoverUnsupported = fmt.Errorf("handing a local channel over is unsupported on this platform: %w",
+	errors.ErrUnsupported)
 
 // PathTooLongError reports a socket path that exceeds the portable Unix limit.
 type PathTooLongError struct{ Path string }
@@ -37,15 +48,170 @@ func (e *PathTooLongError) Error() string {
 
 const maxSocketPath = 103
 
+// PeerError is a refused peer. PID is its process id as the kernel reported
+// it, or 0 if it could not be told. Err wraps ErrRefused.
+type PeerError struct {
+	PID int
+	Err error
+}
+
+func (e *PeerError) Error() string {
+	if e.PID > 0 {
+		return fmt.Sprintf("%v (process %d)", e.Err, e.PID)
+	}
+	return e.Err.Error()
+}
+
+func (e *PeerError) Unwrap() error { return e.Err }
+
+// ServerCheck selects how a client checks the process that listens.
+type ServerCheck int
+
+const (
+	// CheckProgram requires the same user and the same program file.
+	CheckProgram ServerCheck = iota
+	// CheckHardened is for a server that called Harden. Where Harden hides its
+	// program file (Linux), the program check is replaced by the user check
+	// plus the mandatory Challenge; elsewhere the program is checked as well.
+	CheckHardened
+)
+
+// Challenge lets the listening process prove that it is the application's
+// own server. It runs after the kernel checks and before the dial returns,
+// bounded by the dial's context. It returns nil only for a peer that proved
+// itself; the client must send nothing of its own before it succeeds.
+type Challenge func(ctx context.Context, conn net.Conn) error
+
+// DialOptions tune DialWith. The zero value is the strict default.
+type DialOptions struct {
+	Server ServerCheck
+	// Challenge is required with CheckHardened and optional otherwise.
+	Challenge Challenge
+}
+
+// ListenOptions tune ListenWith. The zero value is the strict default.
+type ListenOptions struct {
+	// Successor listens beside the endpoint's channel, where clients do not
+	// reach it until the running listener calls HandOver and AwaitHandover
+	// returns. Windows does not support it.
+	Successor bool
+	// Refused, if set, receives each connection Accept refuses before Accept
+	// closes it, with the *PeerError. The peer is unverified: the function may
+	// send one short refusal and must treat anything read as untrusted. It
+	// runs under a short deadline and blocks Accept while it runs.
+	Refused func(conn net.Conn, err error)
+}
+
+// refusalWait bounds the Refused callback's writes and reads.
+const refusalWait = time.Second
+
+// handoverPoll is how often AwaitHandover looks for the moved socket.
+const handoverPoll = 10 * time.Millisecond
+
 // Path returns the platform's channel path without creating it.
 func (e Endpoint) Path() (string, error) { return endpointPath(e) }
 
 // Listen owns one endpoint until the returned listener is closed. Accept checks
 // the user and program of every peer and closes rejected connections.
-func (e Endpoint) Listen() (net.Listener, error) { return listen(e) }
+func (e Endpoint) Listen() (net.Listener, error) { return listen(e, ListenOptions{}) }
+
+// ListenWith is Listen with options.
+func (e Endpoint) ListenWith(opts ListenOptions) (net.Listener, error) { return listen(e, opts) }
 
 // Dial connects to an endpoint and checks the user and program before returning.
-func (e Endpoint) Dial(ctx context.Context) (net.Conn, error) { return dial(ctx, e) }
+func (e Endpoint) Dial(ctx context.Context) (net.Conn, error) { return e.DialWith(ctx, DialOptions{}) }
+
+// DialWith connects to an endpoint and checks the listening process as opts
+// select. A refusal is a *PeerError; the connection is closed then.
+func (e Endpoint) DialWith(ctx context.Context, opts DialOptions) (net.Conn, error) {
+	program, err := opts.programCheck()
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", e.label(), err)
+	}
+	conn, err := dial(ctx, e)
+	if err != nil {
+		return nil, err
+	}
+	return establish(ctx, conn, e.label(), func(c net.Conn) (int, error) { return checkPeer(c, program) },
+		opts.Challenge)
+}
+
+// HandOver moves the channel of l, a listener from Listen, to the successor
+// that listens beside it: first its lock, then its socket, each atomically.
+// The successor must hold its lock and own a private socket. Afterwards new
+// connections reach the successor, and closing l leaves its channel alone.
+func HandOver(l net.Listener) error { return handOver(l) }
+
+// AwaitHandover waits until the running listener moved l, a listener from
+// ListenWith with Successor, onto the endpoint's channel. ctx bounds the wait;
+// without a handover l keeps its place beside the channel.
+func AwaitHandover(ctx context.Context, l net.Listener) error { return awaitHandover(ctx, l) }
+
+// ProgramReplaced returns the path this process's program had at its start and
+// whether that file was removed or replaced since. An error means it cannot be
+// told; callers treat that as replaced.
+func ProgramReplaced() (path string, replaced bool, err error) { return programReplaced() }
+
+func (o DialOptions) programCheck() (bool, error) {
+	switch o.Server {
+	case CheckProgram:
+		return true, nil
+	case CheckHardened:
+		if o.Challenge == nil {
+			return false, ErrNoChallenge
+		}
+		return hardenedProgramCheck, nil
+	}
+	return false, fmt.Errorf("unknown server check %d", o.Server)
+}
+
+// establish checks a fresh client connection and runs the challenge. It closes
+// conn on any failure.
+func establish(ctx context.Context, conn net.Conn, label string, check func(net.Conn) (int, error),
+	challenge Challenge) (net.Conn, error) {
+	pid, err := check(conn)
+	if err == nil && challenge != nil {
+		err = runChallenge(ctx, conn, challenge)
+	}
+	if err != nil {
+		_ = conn.Close()
+		return nil, fmt.Errorf("%s: %w", label, &PeerError{PID: pid, Err: err})
+	}
+	return conn, nil
+}
+
+// runChallenge ties the connection's deadline to ctx so a silent peer cannot
+// hold the challenge longer than the caller allows.
+func runChallenge(ctx context.Context, conn net.Conn, challenge Challenge) error {
+	if deadline, ok := ctx.Deadline(); ok {
+		if err := conn.SetDeadline(deadline); err != nil {
+			return fmt.Errorf("%w: cannot bound the challenge: %v", ErrRefused, err)
+		}
+	}
+	stop := context.AfterFunc(ctx, func() { _ = conn.SetDeadline(time.Unix(1, 0)) })
+	err := challenge(ctx, conn)
+	if !stop() && err == nil {
+		err = ctx.Err()
+	}
+	if err != nil {
+		return fmt.Errorf("%w: the challenge failed: %w", ErrRefused, err)
+	}
+	if err := conn.SetDeadline(time.Time{}); err != nil {
+		return fmt.Errorf("%w: cannot reset the deadline: %v", ErrRefused, err)
+	}
+	return nil
+}
+
+// refuse hands a refused connection to the Refused callback and closes it.
+func refuse(conn net.Conn, pid int, reason error, refused func(net.Conn, error)) error {
+	err := &PeerError{PID: pid, Err: reason}
+	if refused != nil {
+		_ = conn.SetDeadline(time.Now().Add(refusalWait))
+		refused(conn, err)
+	}
+	_ = conn.Close()
+	return err
+}
 
 func (e Endpoint) label() string {
 	if e.ErrorName != "" {

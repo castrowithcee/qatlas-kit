@@ -58,14 +58,20 @@ func startProcess(ctx context.Context, c Command, handover []byte) (Result, erro
 	}
 	pid := cmd.Process.Pid
 
+	done := make(chan struct{})
+	go func() {
+		_ = cmd.Wait()
+		close(done)
+	}()
+
 	// An anonymous pipe takes no deadline. A process that neither took the handover nor reported when ctx
-	// ends is killed instead, which ends both pipes. Once the start is decided, the handle is released.
+	// ends is killed instead, which ends both pipes. Once the start is decided, ctx no longer matters.
 	var mu sync.Mutex
-	released := false
+	decided := false
 	stop := context.AfterFunc(ctx, func() {
 		mu.Lock()
 		defer mu.Unlock()
-		if !released {
+		if !decided {
 			_ = cmd.Process.Kill()
 		}
 	})
@@ -73,12 +79,11 @@ func startProcess(ctx context.Context, c Command, handover []byte) (Result, erro
 		stop()
 		mu.Lock()
 		defer mu.Unlock()
-		released = true
+		decided = true
 		if kill {
 			_ = cmd.Process.Kill()
-			_, _ = cmd.Process.Wait()
+			<-done
 		}
-		_ = cmd.Process.Release()
 	}
 
 	if len(handover) > 0 {
@@ -99,7 +104,8 @@ func startProcess(ctx context.Context, c Command, handover []byte) (Result, erro
 		return Result{}, err
 	}
 	release(false)
-	return Result{Report: trimReport(report), PID: pid}, nil
+	return Result{Report: trimReport(report), PID: pid,
+		Process: &Process{pid: pid, done: done, kill: cmd.Process.Kill}}, nil
 }
 
 // inherited returns the standard input and output Start passed, or false unless both are pipes.
