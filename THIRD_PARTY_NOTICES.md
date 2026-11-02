@@ -101,6 +101,13 @@ Components derived from `qatlas-cli` and `qatlas-sysmin` retain their original A
 | `qatlas-cli/internal/provider/transport_test.go`, `cursor_test.go`, `status_test.go`, `original_test.go` | Copyright 2026 castrowithcee | AGPL-3.0 | HTTP mechanics tests (`httpx/*_test.go`) |
 | `qatlas-cli/internal/application/schema.go` | Copyright 2026 castrowithcee | AGPL-3.0 | JSON Schema subset validation (`jsonschema/jsonschema.go`) |
 | `qatlas-cli/internal/application/application_test.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Schema validation tests (`jsonschema/jsonschema_test.go`) |
+| `qatlas-cli/internal/cli/architecture_test.go` | Copyright 2026 castrowithcee | AGPL-3.0 | File walk, import and qualified identifier checks, name matching and shrinking exception list (`archtest/archtest.go`, `archtest/checks.go`) |
+| `qatlas-cli/internal/provider/sdk_guard_test.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Declaration, construction and literal checks (`archtest/checks.go`) |
+| `qatlas-cli/internal/tui/keymap_test.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Key literal check (`archtest/checks.go`) |
+| `qatlas-cli/internal/tui/color_test.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Colour constructor check (`archtest/checks.go`) |
+| `qatlas-cli/internal/tui/text_catalog_test.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Declared text ID check (`archtest/catalog.go`) |
+| `qatlas-sysmin/internal/cli/architecture_test.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Surface import and store handle checks (`archtest/checks.go`) |
+| `qatlas-sysmin/internal/tui/keymap_test.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Key literal check (`archtest/checks.go`) |
 | `qatlas-cli/internal/vault/vault.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Vault states and file layout (`vault/vault.go`) |
 | `qatlas-cli/internal/vault/crypto.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Key wrapping with scrypt and age encryption (`vault/crypto.go`) |
 | `qatlas-cli/internal/vault/format.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Permission error, permission-checked reads and atomic private writes (`vault/file.go`) |
