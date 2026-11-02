@@ -165,6 +165,35 @@ func TestStartReportsReadyAndHandsOver(t *testing.T) {
 	}
 }
 
+func TestProcessHandleSignalsTheEnd(t *testing.T) {
+	e := testEndpoint(t)
+	res, err := Start(context.Background(), helperCommand("serve", e), nil, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	killOnCleanup(t, res.PID)
+	p := res.Process
+	if p == nil || p.PID() != res.PID {
+		t.Fatalf("Start() = %+v, want a handle of process %d", res, res.PID)
+	}
+	select {
+	case <-p.Done():
+		t.Fatal("Done is closed while the process runs")
+	default:
+	}
+	if err := p.Kill(); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-p.Done():
+	case <-time.After(10 * time.Second):
+		t.Fatal("Done is not closed after Kill")
+	}
+	if err := p.Kill(); err != nil {
+		t.Fatalf("Kill() of an ended process = %v", err)
+	}
+}
+
 func TestStartFailureAndTimeout(t *testing.T) {
 	e := testEndpoint(t)
 	_, err := Start(context.Background(), helperCommand("fail", e), nil, Options{})

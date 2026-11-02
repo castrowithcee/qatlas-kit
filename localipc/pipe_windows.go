@@ -58,7 +58,10 @@ func createPipe(path string, first bool, sa *windows.SecurityAttributes) (window
 	return windows.CreateNamedPipe(name, flags, mode, windows.PIPE_UNLIMITED_INSTANCES, pipeBuffer, pipeBuffer, 0, sa)
 }
 
-func listen(e Endpoint) (net.Listener, error) {
+func listen(e Endpoint, opts ListenOptions) (net.Listener, error) {
+	if opts.Successor {
+		return nil, fmt.Errorf("%s: %w", e.label(), errHandoverUnsupported)
+	}
 	path, err := e.Path()
 	if err != nil {
 		return nil, err
@@ -79,12 +82,17 @@ func listen(e Endpoint) (net.Listener, error) {
 		_ = windows.CloseHandle(first)
 		return nil, fmt.Errorf("cannot create the local pipe %s: %w", path, err)
 	}
-	return &pipeListener{path: path, sa: sa, next: first, closing: closing}, nil
+	return &pipeListener{path: path, sa: sa, next: first, closing: closing, refused: opts.Refused}, nil
 }
 
+func handOver(net.Listener) error { return errHandoverUnsupported }
+
+func awaitHandover(context.Context, net.Listener) error { return errHandoverUnsupported }
+
 type pipeListener struct {
-	path string
-	sa   *windows.SecurityAttributes
+	path    string
+	sa      *windows.SecurityAttributes
+	refused func(net.Conn, error)
 
 	acceptMu   sync.Mutex
 	mu         sync.Mutex
@@ -131,9 +139,8 @@ func (l *pipeListener) Accept() (net.Conn, error) {
 		return nil, fmt.Errorf("cannot accept a client of the local pipe: %w", err)
 	}
 	conn := newPipeConn(h, l.path, true)
-	if err := VerifyPeer(conn); err != nil {
-		_ = conn.Close()
-		return nil, err
+	if pid, err := checkPeer(conn, true); err != nil {
+		return nil, refuse(conn, pid, err, l.refused)
 	}
 	return conn, nil
 }
@@ -224,12 +231,7 @@ func dial(ctx context.Context, e Endpoint) (net.Conn, error) {
 				_ = windows.CloseHandle(h)
 				return nil, fmt.Errorf("%s is not a named pipe: %w", path, fs.ErrNotExist)
 			}
-			conn := newPipeConn(h, path, false)
-			if err := VerifyPeer(conn); err != nil {
-				_ = conn.Close()
-				return nil, fmt.Errorf("%s: %w", e.label(), err)
-			}
-			return conn, nil
+			return newPipeConn(h, path, false), nil
 		}
 		if !errors.Is(err, windows.ERROR_PIPE_BUSY) {
 			return nil, &os.PathError{Op: "open", Path: path, Err: err}

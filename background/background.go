@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 )
@@ -44,6 +45,35 @@ type Result struct {
 	Report string
 	// PID is the process id of the started process.
 	PID int
+	// Process is the handle of the started process.
+	Process *Process
+}
+
+// Process is a started background process as its starter sees it. The process keeps running
+// independently of the handle.
+type Process struct {
+	pid  int
+	done chan struct{}
+	kill func() error
+}
+
+// PID returns the process id.
+func (p *Process) PID() int { return p.pid }
+
+// Done is closed once the process ended.
+func (p *Process) Done() <-chan struct{} { return p.done }
+
+// Kill ends the process at once. It returns nil if the process already ended.
+func (p *Process) Kill() error {
+	select {
+	case <-p.done:
+		return nil
+	default:
+	}
+	if err := p.kill(); err != nil && !errors.Is(err, os.ErrProcessDone) {
+		return err
+	}
+	return nil
 }
 
 // ReportError means the started process reported a reason instead of ReportReady or ReportRunning.

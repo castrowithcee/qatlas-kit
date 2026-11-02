@@ -17,6 +17,7 @@ import (
 const (
 	dirMode    = 0o700
 	socketMode = 0o600
+	lockMode   = 0o600
 )
 
 func endpointPath(e Endpoint) (string, error) {
@@ -73,6 +74,14 @@ func ownedByMe(info fs.FileInfo) bool {
 	return ok && st.Uid == uint32(os.Getuid())
 }
 
+func ownerOf(info fs.FileInfo) (uid, gid uint32, ok bool) {
+	st, ok := info.Sys().(*syscall.Stat_t)
+	if !ok {
+		return 0, 0, false
+	}
+	return st.Uid, st.Gid, true
+}
+
 func checkSocket(path string) error {
 	if err := privateExistingDir(filepath.Dir(path)); err != nil {
 		return err
@@ -97,10 +106,6 @@ func dial(ctx context.Context, e Endpoint) (net.Conn, error) {
 	}
 	conn, err := (&net.Dialer{}).DialContext(ctx, "unix", path)
 	if err != nil {
-		return nil, fmt.Errorf("%s: %w", e.label(), err)
-	}
-	if err := VerifyPeer(conn); err != nil {
-		_ = conn.Close()
 		return nil, fmt.Errorf("%s: %w", e.label(), err)
 	}
 	return conn, nil
