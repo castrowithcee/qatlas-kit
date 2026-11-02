@@ -39,6 +39,7 @@ const (
 	TextCancelled      TextID = "tui.cancelled"
 	TextCopyHandedOver TextID = "tui.copyhandedover"
 	TextWarning        TextID = "tui.warning"
+	TextError          TextID = "tui.error"
 	TextResizeTitle    TextID = "tui.resize.title"
 	TextResizeNeed     TextID = "tui.resize.need"
 	TextResizeHave     TextID = "tui.resize.have"
@@ -74,6 +75,7 @@ const (
 	TextValueOn          TextID = "tui.value.on"
 	TextValueOff         TextID = "tui.value.off"
 	TextValueNone        TextID = "tui.value.none"
+	TextThemeUnknown     TextID = "tui.theme.unknown"
 )
 
 // ModuleCatalog returns the general texts of this package in English and German. Each call returns a new
@@ -116,6 +118,7 @@ func ModuleCatalog() i18n.Catalogs[TextID] {
 			TextCancelled:      "Cancelled",
 			TextCopyHandedOver: "Handed to the terminal for the clipboard; the terminal does not confirm it",
 			TextWarning:        "warning: %s",
+			TextError:          "error: %s",
 			TextResizeTitle:    "Resize terminal",
 			TextResizeNeed:     "Need %dx%d",
 			TextResizeHave:     "Have %dx%d",
@@ -151,6 +154,7 @@ func ModuleCatalog() i18n.Catalogs[TextID] {
 			TextValueOn:          "on",
 			TextValueOff:         "off",
 			TextValueNone:        "none",
+			TextThemeUnknown:     "theme %q is not a theme of this version, using %s",
 		},
 		i18n.German: {
 			TextKeyUp:        "Hoch",
@@ -188,6 +192,7 @@ func ModuleCatalog() i18n.Catalogs[TextID] {
 			TextCancelled:      "Abgebrochen",
 			TextCopyHandedOver: "An das Terminal für die Zwischenablage übergeben; das Terminal bestätigt es nicht",
 			TextWarning:        "Warnung: %s",
+			TextError:          "Fehler: %s",
 			TextResizeTitle:    "Terminal vergrößern",
 			TextResizeNeed:     "Benötigt: %dx%d",
 			TextResizeHave:     "Aktuell: %dx%d",
@@ -223,6 +228,7 @@ func ModuleCatalog() i18n.Catalogs[TextID] {
 			TextValueOn:          "an",
 			TextValueOff:         "aus",
 			TextValueNone:        "keine",
+			TextThemeUnknown:     "Theme %q gibt es in dieser Version nicht, verwendet wird %s",
 		},
 	}
 }
