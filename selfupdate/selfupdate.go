@@ -20,7 +20,60 @@ const (
 	pageSize         = 100
 	maxPages         = 20
 	maxMetadataBytes = 1 << 20
+	checksumsAsset   = "checksums.txt"
+	signatureAsset   = "checksums.txt.sig"
 )
+
+// ErrDevelopmentBuild reports a running build without a release version.
+var ErrDevelopmentBuild = errors.New("self-update is unavailable in a development build")
+
+// TargetReason says why a release cannot be chosen.
+type TargetReason int
+
+const (
+	// TargetInvalidVersion is a version that is not a v-prefixed semantic version.
+	TargetInvalidVersion TargetReason = iota + 1
+	// TargetBelowMinimum is a version older than Client.MinimumVersion.
+	TargetBelowMinimum
+	// TargetNotFound is a version the repository has no published release for.
+	TargetNotFound
+	// TargetIneligible is a release that is a draft, unsigned, incomplete, or has assets outside the
+	// repository.
+	TargetIneligible
+	// TargetRunning is the running version, which has nothing to install.
+	TargetRunning
+)
+
+// TargetError reports a release that cannot be chosen. The application words its message from Reason.
+type TargetError struct {
+	Version string
+	Reason  TargetReason
+}
+
+func (e *TargetError) Error() string {
+	switch e.Reason {
+	case TargetInvalidVersion:
+		return fmt.Sprintf("%q is not a release version", e.Version)
+	case TargetBelowMinimum:
+		return "release " + e.Version + " is older than the minimum version"
+	case TargetNotFound:
+		return "release " + e.Version + " does not exist"
+	case TargetRunning:
+		return "release " + e.Version + " is the running version"
+	default:
+		return "release " + e.Version + " is unpublished, unsigned, or incomplete"
+	}
+}
+
+// UnsupportedInstallationError reports an installed file that cannot be replaced safely in place.
+type UnsupportedInstallationError struct {
+	Path   string
+	Reason string
+}
+
+func (e *UnsupportedInstallationError) Error() string {
+	return "unsupported installation at " + e.Path + ": " + e.Reason
+}
 
 // Client holds the release source and policy supplied by the application.
 type Client struct {
@@ -30,21 +83,44 @@ type Client struct {
 	ArchiveName    func(version string) string
 	UserAgent      string
 	HTTPClient     *http.Client
-	Namespace      string
-	TrustedKeys    []ssh.PublicKey
-	ProgramName    string
-	ManpageName    string
-	Executable     string
-	ManpagePath    string
-	// ValidateRollback must check the prepared program against an isolated copy of caller configuration.
-	ValidateRollback func(context.Context, []byte) error
+	// Token, when set, is sent as a bearer token to the host of RepositoryAPI and to no other host.
+	Token       string
+	Namespace   string
+	TrustedKeys []ssh.PublicKey
+	ProgramName string
+	// Companions are installed together with the program and restored if the program cannot be replaced.
+	Companions []Companion
+	Executable string
+	// ValidateRollback must check the prepared program against an isolated copy of the application's
+	// configuration, for example with Prepared.ReadsConfig. Installing an older release requires it.
+	ValidateRollback func(context.Context, *Prepared) error
+	// BeforeReplace runs once everything is verified and staged, right before the first installed file is
+	// replaced. An error ends the installation with nothing replaced.
+	BeforeReplace func(context.Context, ReleaseFiles) error
+	// AfterReplace runs once the program is replaced. The installation is complete by then.
+	AfterReplace func(context.Context, ReleaseFiles)
+	// Progress is called while the archive downloads, with the bytes received and the announced size, or -1
+	// when the server does not announce it.
+	Progress func(done, total int64)
 }
 
-// Result describes the newest eligible stable release.
+// Companion is a file that the release archive carries next to the program, such as a manpage.
+type Companion struct {
+	// Entry is the canonical slash-separated path in the archive, for example "share/man/man1/tool.1".
+	Entry string
+	// Path is the absolute installation path. Its base name must equal the base name of Entry.
+	Path string
+}
+
+// Result describes the newest eligible stable release or, from InstallPrepared, the installed release.
 type Result struct {
 	Current         string
 	Latest          string
 	UpdateAvailable bool
+	Updated         bool
+	// Companions lists the companion paths that were written; a companion whose content is unchanged is
+	// left alone.
+	Companions []string
 }
 
 // Entry is a version offered in the release list.
@@ -58,10 +134,10 @@ type Entry struct {
 // Target is a selected release. Its metadata is retained for later verification.
 type Target struct {
 	Entry
-	rel release
+	rel githubRelease
 }
 
-type release struct {
+type githubRelease struct {
 	TagName    string  `json:"tag_name"`
 	Draft      bool    `json:"draft"`
 	Prerelease bool    `json:"prerelease"`
@@ -79,9 +155,19 @@ type policy struct {
 	minimum semver
 }
 
+type statusError struct {
+	code   int
+	status string
+}
+
+func (e *statusError) Error() string { return "release API returned " + e.status }
+
 func (c *Client) validate() (policy, error) {
 	if c == nil || c.ArchiveName == nil || c.UserAgent == "" || strings.ContainsAny(c.UserAgent, "\r\n") {
 		return policy{}, errors.New("archive name and user agent are required")
+	}
+	if strings.ContainsAny(c.Token, "\r\n") {
+		return policy{}, errors.New("invalid token")
 	}
 	base, err := url.Parse(c.RepositoryAPI)
 	if err != nil || base == nil || base.Host == "" || base.User != nil || base.RawQuery != "" || base.Fragment != "" ||
@@ -91,6 +177,9 @@ func (c *Client) validate() (policy, error) {
 	parts := strings.Split(strings.Trim(base.EscapedPath(), "/"), "/")
 	if len(parts) != 3 || parts[0] != "repos" || parts[1] == "" || parts[2] == "" || strings.Contains(base.EscapedPath(), "%") || strings.HasSuffix(base.Path, "/") {
 		return policy{}, errors.New("repository API URL must name /repos/owner/repository")
+	}
+	if c.CurrentVersion == "" || c.CurrentVersion == "dev" {
+		return policy{}, ErrDevelopmentBuild
 	}
 	current, err := parseSemver(c.CurrentVersion)
 	if err != nil {
@@ -105,13 +194,32 @@ func (c *Client) validate() (policy, error) {
 
 // Check reports the newest eligible stable release without downloading artifacts.
 func (c *Client) Check(ctx context.Context) (Result, error) {
+	result, _, err := c.newest(ctx)
+	return result, err
+}
+
+// Update installs the newest eligible stable release when it is newer than the running version. It never
+// installs an older release; a rollback goes through Target, Prepare and InstallPrepared.
+func (c *Client) Update(ctx context.Context) (Result, error) {
+	result, best, err := c.newest(ctx)
+	if err != nil || !result.UpdateAvailable {
+		return result, err
+	}
+	prepared, err := c.Prepare(ctx, Target{Entry: Entry{Version: best.TagName, Prerelease: best.Prerelease}, rel: *best})
+	if err != nil {
+		return result, err
+	}
+	return c.InstallPrepared(ctx, prepared)
+}
+
+func (c *Client) newest(ctx context.Context) (Result, *githubRelease, error) {
 	p, err := c.validate()
 	if err != nil {
-		return Result{}, err
+		return Result{}, nil, err
 	}
 	releases, err := c.releases(ctx, p)
 	if err != nil {
-		return Result{}, err
+		return Result{}, nil, err
 	}
 	best := c.stable(releases, p)
 	result := Result{Current: c.CurrentVersion, Latest: c.CurrentVersion}
@@ -120,7 +228,7 @@ func (c *Client) Check(ctx context.Context) (Result, error) {
 		v, _ := parseSemver(best.TagName)
 		result.UpdateAvailable = v.compare(p.current) > 0
 	}
-	return result, nil
+	return result, best, nil
 }
 
 // List shows ten newest stable releases, newer prereleases, and the running version if eligible.
@@ -165,7 +273,8 @@ func (c *Client) List(ctx context.Context) ([]Entry, error) {
 	return out, nil
 }
 
-// Target selects an exact release version, including an older version for rollback.
+// Target selects an exact release version, including an older version for rollback. A release that
+// cannot be chosen is a *TargetError.
 func (c *Client) Target(ctx context.Context, tag string) (Target, error) {
 	p, err := c.validate()
 	if err != nil {
@@ -173,27 +282,31 @@ func (c *Client) Target(ctx context.Context, tag string) (Target, error) {
 	}
 	v, err := parseSemver(tag)
 	if err != nil {
-		return Target{}, fmt.Errorf("invalid target version: %w", err)
+		return Target{}, &TargetError{tag, TargetInvalidVersion}
 	}
 	if v.compare(p.minimum) < 0 {
-		return Target{}, fmt.Errorf("release %s is older than minimum %s", tag, c.MinimumVersion)
+		return Target{}, &TargetError{tag, TargetBelowMinimum}
 	}
-	var r release
+	var r githubRelease
 	if err := c.getJSON(ctx, p, "/releases/tags/"+url.PathEscape(tag), &r); err != nil {
+		var status *statusError
+		if errors.As(err, &status) && status.code == http.StatusNotFound {
+			return Target{}, &TargetError{tag, TargetNotFound}
+		}
 		return Target{}, err
 	}
 	if r.TagName != tag {
-		return Target{}, errors.New("release tag does not match requested version")
+		return Target{}, &TargetError{tag, TargetNotFound}
 	}
 	if _, ok := c.eligible(r, p); !ok {
-		return Target{}, fmt.Errorf("release %s is unpublished, unsigned, or incomplete", tag)
+		return Target{}, &TargetError{tag, TargetIneligible}
 	}
 	cmp := v.compare(p.current)
 	return Target{Entry: Entry{tag, r.Prerelease, cmp == 0, cmp < 0}, rel: r}, nil
 }
 
-func (c *Client) stable(releases []release, p policy) *release {
-	var best *release
+func (c *Client) stable(releases []githubRelease, p policy) *githubRelease {
+	var best *githubRelease
 	var bestVersion semver
 	for i := range releases {
 		r := &releases[i]
@@ -205,12 +318,12 @@ func (c *Client) stable(releases []release, p policy) *release {
 	return best
 }
 
-func (c *Client) eligible(r release, p policy) (semver, bool) {
+func (c *Client) eligible(r githubRelease, p policy) (semver, bool) {
 	v, err := parseSemver(r.TagName)
 	if err != nil || r.Draft || r.Prerelease != (len(v.pre) > 0) || v.compare(p.minimum) < 0 {
 		return semver{}, false
 	}
-	names := []string{c.ArchiveName(r.TagName), "checksums.txt", "checksums.txt.sig"}
+	names := []string{c.ArchiveName(r.TagName), checksumsAsset, signatureAsset}
 	if names[0] == "" || names[0] == names[1] || names[0] == names[2] || strings.ContainsAny(names[0], "/\\") {
 		return semver{}, false
 	}
@@ -240,10 +353,10 @@ func validAssetURL(base *url.URL, raw string) bool {
 	return id != u.Path && id != "" && digits(id)
 }
 
-func (c *Client) releases(ctx context.Context, p policy) ([]release, error) {
-	var all []release
+func (c *Client) releases(ctx context.Context, p policy) ([]githubRelease, error) {
+	var all []githubRelease
 	for page := 1; page <= maxPages; page++ {
-		var batch []release
+		var batch []githubRelease
 		path := "/releases?per_page=" + strconv.Itoa(pageSize) + "&page=" + strconv.Itoa(page)
 		if err := c.getJSON(ctx, p, path, &batch); err != nil {
 			return nil, err
@@ -256,13 +369,26 @@ func (c *Client) releases(ctx context.Context, p policy) ([]release, error) {
 	return nil, errors.New("release list exceeds page limit")
 }
 
+// newRequest sets the headers of every request; the token goes only to the repository's API origin.
+func (c *Client) newRequest(ctx context.Context, p policy, raw, accept string) (*http.Request, error) {
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, raw, nil)
+	if err != nil {
+		return nil, err
+	}
+	request.Header.Set("Accept", accept)
+	request.Header.Set("User-Agent", c.UserAgent)
+	request.Header.Set("X-GitHub-Api-Version", "2022-11-28")
+	if c.Token != "" && request.URL.Scheme == p.base.Scheme && request.URL.Host == p.base.Host {
+		request.Header.Set("Authorization", "Bearer "+c.Token)
+	}
+	return request, nil
+}
+
 func (c *Client) getJSON(ctx context.Context, p policy, path string, out any) error {
-	request, err := http.NewRequestWithContext(ctx, http.MethodGet, p.base.String()+path, nil)
+	request, err := c.newRequest(ctx, p, p.base.String()+path, "application/vnd.github+json")
 	if err != nil {
 		return err
 	}
-	request.Header.Set("Accept", "application/vnd.github+json")
-	request.Header.Set("User-Agent", c.UserAgent)
 	client := c.HTTPClient
 	if client == nil {
 		client = &http.Client{Timeout: 30 * time.Second}
@@ -277,7 +403,7 @@ func (c *Client) getJSON(ctx context.Context, p policy, path string, out any) er
 	}
 	defer response.Body.Close()
 	if response.StatusCode != http.StatusOK {
-		return fmt.Errorf("release API returned %s", response.Status)
+		return &statusError{response.StatusCode, response.Status}
 	}
 	body, err := io.ReadAll(io.LimitReader(response.Body, maxMetadataBytes+1))
 	if err != nil {

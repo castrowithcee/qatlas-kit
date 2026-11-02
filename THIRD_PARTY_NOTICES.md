@@ -78,7 +78,11 @@ Components derived from `qatlas-cli` and `qatlas-sysmin` retain their original A
 | `qatlas-cli/internal/release/releasetest/server.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Test release server (`release/releasetest/server.go`) |
 | `qatlas-cli/internal/selfupdate/semver.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Release version comparison |
 | `qatlas-cli/internal/selfupdate/releases.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Release listing and selection |
-| `qatlas-cli/internal/selfupdate/selfupdate.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Verified release download and archive extraction |
+| `qatlas-cli/internal/selfupdate/selfupdate.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Verified release download, archive extraction, one-step update, token, progress, replacement hooks and release files |
+| `qatlas-cli/internal/selfupdate/configcheck.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Isolated configuration check of a prepared program (`selfupdate/configcheck.go`) |
+| `qatlas-cli/internal/selfupdate/consequences.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Installation consequences data (`selfupdate/consequences.go`) |
+| `qatlas-cli/internal/selfupdate/consequences_linux.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Process count through /proc (`selfupdate/consequences_linux.go`, `selfupdate/consequences_other.go`) |
+| `qatlas-sysmin/internal/selfupdate/selfupdate.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Companion file replacement, directory sync and missing release status (`selfupdate/install.go`, `selfupdate/selfupdate.go`) |
 | `qatlas-cli/internal/selfupdate/replace.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Staged executable replacement and Windows retry |
 | `qatlas-cli/internal/tui/text.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Catalog lookup, key placeholders and language preference resolution (`tui/text.go`, `uiprefs/language.go`) |
 | `qatlas-cli/internal/tui/keymap.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Key placeholder replacement (`tui/text.go`) |
