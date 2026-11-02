@@ -90,7 +90,9 @@ func startProcess(ctx context.Context, c Command, handover []byte) (Result, erro
 	if err := outcome(report, ended); err != nil {
 		return fail(err)
 	}
-	return Result{Report: trimReport(report), PID: cmd.Process.Pid}, nil
+	pid := cmd.Process.Pid
+	return Result{Report: trimReport(report), PID: pid,
+		Process: &Process{pid: pid, done: done, kill: cmd.Process.Kill}}, nil
 }
 
 // inherited returns the descriptors Start passed, or false unless both are pipes.

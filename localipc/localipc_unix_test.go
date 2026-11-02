@@ -6,6 +6,7 @@ import (
 	"bufio"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"io/fs"
 	"net"
@@ -321,6 +322,29 @@ func TestHelperProcess(t *testing.T) {
 			time.Sleep(2 * time.Second)
 			_ = c.Close()
 		}
+	case "harden-echo":
+		l, err := net.ListenUnix("unix", &net.UnixAddr{Name: path, Net: "unix"})
+		if err != nil || os.Chmod(path, 0o600) != nil || Harden() != nil {
+			os.Exit(2)
+		}
+		_, _ = os.Stdout.WriteString("ready\n")
+		c, _ := l.Accept()
+		if c != nil {
+			line, _ := bufio.NewReader(c).ReadString('\n')
+			_, _ = c.Write([]byte("proof:" + line))
+			time.Sleep(2 * time.Second)
+			_ = c.Close()
+		}
+	case "replaced":
+		// An update renames the new program over the old one.
+		self := os.Args[0]
+		data, err := os.ReadFile(self)
+		if err != nil || os.WriteFile(self+".new", data, 0o700) != nil || os.Rename(self+".new", self) != nil {
+			os.Exit(2)
+		}
+		_, replaced, err := ProgramReplaced()
+		refused := checkProcess(os.Getpid(), uint32(os.Getuid()))
+		fmt.Printf("replaced=%v err=%v refused=%v\n", replaced, err, errors.Is(refused, ErrProgramReplaced))
 	case "dial":
 		_, _ = os.Stdout.WriteString("ready\n")
 		c, err := net.Dial("unix", path)
