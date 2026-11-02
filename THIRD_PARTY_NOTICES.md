@@ -54,6 +54,9 @@ Components derived from `qatlas-cli` and `qatlas-sysmin` retain their original A
 | `qatlas-cli/internal/application/compact.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Dropping null members, empty lists, and empty objects (`output/empty.go`) |
 | `qatlas-cli/internal/application/original.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Redacting and bounding an external answer (`cli/external.go`) |
 | `qatlas-cli/internal/cli/errors.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Next step per route and external answer block (`cli/errors.go`, `cli/external.go`) |
+| `qatlas-cli/internal/cli/cli.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Global output and agent flags, format resolution, version template, syntax errors with usage, and help topic commands (`cobracli/cobracli.go`) |
+| `qatlas-cli/internal/cli/config.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Rejection of unexpected positional arguments (`cobracli/cobracli.go`) |
+| `qatlas-sysmin/internal/cli/cli.go`, `qatlas-sysmin/internal/cli/errors.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Root command conventions and syntax errors (`cobracli/cobracli.go`) |
 | `qatlas-cli/cmd/gen-man/main.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Help topics section of the manpage (`manpage/manpage.go`) |
 | `qatlas-cli/internal/config/config.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Configuration path precedence |
 | `qatlas-cli/internal/config/store.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Configuration write preparation and atomic replacement |
@@ -75,7 +78,11 @@ Components derived from `qatlas-cli` and `qatlas-sysmin` retain their original A
 | `qatlas-cli/internal/release/releasetest/server.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Test release server (`release/releasetest/server.go`) |
 | `qatlas-cli/internal/selfupdate/semver.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Release version comparison |
 | `qatlas-cli/internal/selfupdate/releases.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Release listing and selection |
-| `qatlas-cli/internal/selfupdate/selfupdate.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Verified release download and archive extraction |
+| `qatlas-cli/internal/selfupdate/selfupdate.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Verified release download, archive extraction, one-step update, token, progress, replacement hooks and release files |
+| `qatlas-cli/internal/selfupdate/configcheck.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Isolated configuration check of a prepared program (`selfupdate/configcheck.go`) |
+| `qatlas-cli/internal/selfupdate/consequences.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Installation consequences data (`selfupdate/consequences.go`) |
+| `qatlas-cli/internal/selfupdate/consequences_linux.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Process count through /proc (`selfupdate/consequences_linux.go`, `selfupdate/consequences_other.go`) |
+| `qatlas-sysmin/internal/selfupdate/selfupdate.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Companion file replacement, directory sync and missing release status (`selfupdate/install.go`, `selfupdate/selfupdate.go`) |
 | `qatlas-cli/internal/selfupdate/replace.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Staged executable replacement and Windows retry |
 | `qatlas-cli/internal/tui/text.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Catalog lookup, key placeholders and language preference resolution (`tui/text.go`, `uiprefs/language.go`) |
 | `qatlas-cli/internal/tui/keymap.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Key placeholder replacement (`tui/text.go`) |
