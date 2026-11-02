@@ -55,7 +55,7 @@ func start(c Command, size Size) (console, *os.Process, error) {
 	return &unixConsole{master: master}, cmd.Process, nil
 }
 
-// openSlave unlocks the terminal of master, sets its size and opens its slave side.
+// openSlave unlocks the terminal of master, opens its slave side and sets its size.
 func openSlave(master *os.File, size Size) (*os.File, error) {
 	var path string
 	var opErr error
@@ -64,13 +64,7 @@ func openSlave(master *os.File, size Size) (*os.File, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := raw.Control(func(fd uintptr) {
-		if path, opErr = unlock(int(fd)); opErr != nil {
-			return
-		}
-		opErr = unix.IoctlSetWinsize(int(fd), unix.TIOCSWINSZ,
-			&unix.Winsize{Col: uint16(size.Columns), Row: uint16(size.Rows)})
-	}); err != nil {
+	if err := raw.Control(func(fd uintptr) { path, opErr = unlock(int(fd)) }); err != nil {
 		return nil, err
 	}
 	if opErr != nil {
@@ -79,6 +73,12 @@ func openSlave(master *os.File, size Size) (*os.File, error) {
 	slave, err := os.OpenFile(path, os.O_RDWR|unix.O_NOCTTY, 0)
 	if err != nil {
 		return nil, fmt.Errorf("opening the pseudo-terminal: %w", err)
+	}
+	// macOS takes the size only on the slave side.
+	if err := unix.IoctlSetWinsize(int(slave.Fd()), unix.TIOCSWINSZ,
+		&unix.Winsize{Col: uint16(size.Columns), Row: uint16(size.Rows)}); err != nil {
+		_ = slave.Close()
+		return nil, fmt.Errorf("setting the terminal size: %w", err)
 	}
 	return slave, nil
 }
