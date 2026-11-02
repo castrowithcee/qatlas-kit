@@ -37,11 +37,9 @@ func readNumberFile(t *testing.T, path string) []byte {
 }
 
 func TestBackupCopiesReplacedBytesAndKeepsFirstHandVersion(t *testing.T) {
-	oldClock := backupNow
-	backupNow = func() time.Time { return time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC) }
-	t.Cleanup(func() { backupNow = oldClock })
 	path := filepath.Join(t.TempDir(), "settings.yaml")
 	store := numberStore(t, path)
+	store.now = func() time.Time { return time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC) }
 	mustSaveNumber(t, store, 1)
 	if backups, err := store.Backups(); err != nil || len(backups) != 0 {
 		t.Fatalf("first save backups = %v, %v", backups, err)
@@ -160,9 +158,9 @@ func TestBackupStaysBesideSymlinkAndRestoreReplacesTarget(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	written, err := store.RestoreBackup(backups[0].Name, rev)
-	if err != nil || written != revisionOf(data) {
-		t.Fatalf("restore revision = %q, %v", written, err)
+	restored, err := store.RestoreBackup(backups[0].Name, rev)
+	if err != nil || restored.Revision != revisionOf(data) {
+		t.Fatalf("restore revision = %q, %v", restored.Revision, err)
 	}
 	if got := readNumberFile(t, target); string(got) != "1" {
 		t.Fatalf("restored target = %q", got)
@@ -206,8 +204,7 @@ func TestRestoreConflictAndBackupFailureDoNotWrite(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	oldClock := backupNow
-	backupNow = func() time.Time {
+	store.now = func() time.Time {
 		if err := os.Rename(store.backupDir(), store.backupDir()+"-moved"); err != nil {
 			t.Fatal(err)
 		}
@@ -216,7 +213,6 @@ func TestRestoreConflictAndBackupFailureDoNotWrite(t *testing.T) {
 		}
 		return time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
 	}
-	t.Cleanup(func() { backupNow = oldClock })
 	if _, err := store.RestoreBackup(backups[0].Name, rev); err == nil {
 		t.Fatal("restore succeeded without creating backup")
 	}
@@ -229,14 +225,12 @@ func TestConflictAfterBackupDoesNotReplaceOutsideWrite(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "settings")
 	store := numberStore(t, path)
 	rev := mustSaveNumber(t, store, 1)
-	oldClock := backupNow
-	backupNow = func() time.Time {
+	store.now = func() time.Time {
 		if err := os.WriteFile(path, []byte("9"), 0o600); err != nil {
 			t.Fatal(err)
 		}
 		return time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
 	}
-	t.Cleanup(func() { backupNow = oldClock })
 	if _, err := store.SaveIfUnchanged(2, rev); !errors.Is(err, ErrConflict) {
 		t.Fatalf("save after outside write = %v", err)
 	}
@@ -254,7 +248,7 @@ func TestBackupsIgnoreForeignAndSymlinkEntries(t *testing.T) {
 	if err := os.WriteFile(foreign, []byte("foreign"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	name := fmt.Sprintf("settings-%s-999999.bak", backupNow().UTC().Format("20060102T150405Z"))
+	name := fmt.Sprintf("settings-%s-999999.bak", store.now().UTC().Format(stampLayout))
 	if err := os.Symlink(foreign, filepath.Join(store.backupDir(), name)); err == nil {
 		if _, err := store.ReadBackup(name); !errors.Is(err, os.ErrNotExist) {
 			t.Fatalf("symlink backup accepted: %v", err)

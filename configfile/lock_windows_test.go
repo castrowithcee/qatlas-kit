@@ -61,6 +61,45 @@ func TestExistingOpenLockACLIsRejectedWithoutChangingIt(t *testing.T) {
 	}
 }
 
+func TestNewPrivateFileAndBackupCopyHaveUserOnlyACL(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "export")
+	if err := WriteNewPrivateFile(path, []byte("data")); err != nil {
+		t.Fatal(err)
+	}
+	store := numberStore(t, filepath.Join(dir, "settings"))
+	copied, err := store.BackupCopy(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{path, copied} {
+		assertUserOnlyACL(t, name)
+	}
+}
+
+func assertUserOnlyACL(t *testing.T, name string) {
+	t.Helper()
+	user, err := windows.GetCurrentProcessToken().GetTokenUser()
+	if err != nil {
+		t.Fatal(err)
+	}
+	sd, err := windows.GetNamedSecurityInfo(name, windows.SE_FILE_OBJECT, windows.DACL_SECURITY_INFORMATION)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dacl, _, err := sd.DACL()
+	if err != nil || dacl == nil || dacl.AceCount != 1 {
+		t.Fatalf("%s ACL = %v, %v", name, dacl, err)
+	}
+	var ace *windows.ACCESS_ALLOWED_ACE
+	if err := windows.GetAce(dacl, 0, &ace); err != nil {
+		t.Fatal(err)
+	}
+	if !(*windows.SID)(unsafe.Pointer(&ace.SidStart)).Equals(user.User.Sid) {
+		t.Fatalf("%s ACL does not belong to current user", name)
+	}
+}
+
 func TestNewBackupAndDirectoryHaveUserOnlyACL(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "settings")
 	store := numberStore(t, path)
@@ -70,25 +109,7 @@ func TestNewBackupAndDirectoryHaveUserOnlyACL(t *testing.T) {
 	if err != nil || len(backups) != 1 {
 		t.Fatalf("backups = %v, %v", backups, err)
 	}
-	user, err := windows.GetCurrentProcessToken().GetTokenUser()
-	if err != nil {
-		t.Fatal(err)
-	}
 	for _, name := range []string{store.backupDir(), filepath.Join(store.backupDir(), backups[0].Name)} {
-		sd, err := windows.GetNamedSecurityInfo(name, windows.SE_FILE_OBJECT, windows.DACL_SECURITY_INFORMATION)
-		if err != nil {
-			t.Fatal(err)
-		}
-		dacl, _, err := sd.DACL()
-		if err != nil || dacl == nil || dacl.AceCount != 1 {
-			t.Fatalf("%s ACL = %v, %v", name, dacl, err)
-		}
-		var ace *windows.ACCESS_ALLOWED_ACE
-		if err := windows.GetAce(dacl, 0, &ace); err != nil {
-			t.Fatal(err)
-		}
-		if !(*windows.SID)(unsafe.Pointer(&ace.SidStart)).Equals(user.User.Sid) {
-			t.Fatalf("%s ACL does not belong to current user", name)
-		}
+		assertUserOnlyACL(t, name)
 	}
 }

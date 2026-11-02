@@ -162,7 +162,7 @@ func TestReplaceFinalCheckKeepsTargetUntouched(t *testing.T) {
 		t.Fatal(err)
 	}
 	stopped := errors.New("changed before rename")
-	if err := replaceResolved(path, []byte("new"), func() error { return stopped }); !errors.Is(err, stopped) {
+	if err := replaceResolved(path, []byte("new"), func() error { return stopped }, nil); !errors.Is(err, stopped) {
 		t.Fatalf("replace = %v; want final check failure", err)
 	}
 	data, err := os.ReadFile(path)
