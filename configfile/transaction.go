@@ -5,8 +5,11 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
+	"sync/atomic"
+	"time"
 
 	"github.com/castrowithcee/qatlas-kit/filelock"
 	"github.com/castrowithcee/qatlas-kit/fileretry"
@@ -37,10 +40,28 @@ type Codec[T any] struct {
 	Decode   func([]byte) (T, error)
 }
 
+// NotFoundError reports a file that does not exist. errors.Is(err, fs.ErrNotExist) is true for it.
+type NotFoundError struct{ Path string }
+
+func (e *NotFoundError) Error() string        { return fmt.Sprintf("%s does not exist", e.Path) }
+func (e *NotFoundError) Is(target error) bool { return target == fs.ErrNotExist }
+
+// Observer receives measurement events of one store. A nil member is ignored. Callbacks may run on any
+// goroutine that uses the store.
+type Observer struct {
+	// FileRetry is called before each wait of a file retry with the length of the wait.
+	FileRetry func(time.Duration)
+	// LockWaited is called with how long taking the cross-process lock blocked, also when it failed.
+	LockWaited func(time.Duration)
+}
+
 // Store holds a file path and its caller-supplied document codec.
 type Store[T any] struct {
-	path  string
-	codec Codec[T]
+	path      string
+	codec     Codec[T]
+	observe   Observer
+	now       func() time.Time
+	transient func(error) bool
 }
 
 // NewStore creates a store for one file. The path is made absolute at construction.
@@ -52,11 +73,35 @@ func NewStore[T any](path string, codec Codec[T]) (*Store[T], error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Store[T]{path: abs, codec: codec}, nil
+	return &Store[T]{path: abs, codec: codec, now: time.Now, transient: fileretry.Transient}, nil
+}
+
+// Observed returns a store like s that reports its file retries and lock waits to obs. s is unchanged.
+func (s *Store[T]) Observed(obs Observer) *Store[T] {
+	out := *s
+	out.observe = obs
+	return &out
 }
 
 // Path returns the path supplied to this store, made absolute.
 func (s *Store[T]) Path() string { return s.path }
+
+func (s *Store[T]) sleep() func(time.Duration) {
+	if s.observe.FileRetry == nil {
+		return nil
+	}
+	return func(d time.Duration) {
+		s.observe.FileRetry(d)
+		time.Sleep(d)
+	}
+}
+
+// retry repeats op while it fails transiently. A missing file is an answer, never transient.
+func (s *Store[T]) retry(op func() error) error {
+	return fileretry.Do(op, func(err error) bool {
+		return !errors.Is(err, os.ErrNotExist) && s.transient(err)
+	}, s.sleep())
+}
 
 func revisionOf(data []byte) Revision {
 	sum := sha256.Sum256(data)
@@ -108,12 +153,17 @@ func (s *Store[T]) resolvedTarget() (string, error) {
 	return target, nil
 }
 
-func readRevision(path string) ([]byte, Revision, error) {
+func (s *Store[T]) readFile(path string) ([]byte, error) {
 	var data []byte
-	err := fileretry.Do(func() (err error) {
+	err := s.retry(func() (err error) {
 		data, err = os.ReadFile(path)
 		return err
-	}, func(err error) bool { return !errors.Is(err, os.ErrNotExist) && fileretry.Transient(err) }, nil)
+	})
+	return data, err
+}
+
+func (s *Store[T]) readRevision(path string) ([]byte, Revision, error) {
+	data, err := s.readFile(path)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil, RevisionAbsent, nil
 	}
@@ -124,19 +174,19 @@ func readRevision(path string) ([]byte, Revision, error) {
 }
 
 // LoadVersioned reads without a lock and returns the SHA-256 revision of the bytes decoded.
-// A missing file returns os.ErrNotExist with RevisionAbsent. Decode errors keep the read revision.
+// A missing file returns a *NotFoundError with RevisionAbsent. Decode errors keep the read revision.
 func (s *Store[T]) LoadVersioned() (T, Revision, error) {
 	var zero T
 	target, err := s.resolvedTarget()
 	if err != nil {
 		return zero, RevisionAbsent, err
 	}
-	data, rev, err := readRevision(target)
+	data, rev, err := s.readRevision(target)
 	if err != nil {
 		return zero, rev, err
 	}
 	if rev == RevisionAbsent {
-		return zero, rev, os.ErrNotExist
+		return zero, rev, &NotFoundError{Path: target}
 	}
 	value, err := s.codec.Decode(data)
 	if err != nil {
@@ -148,7 +198,7 @@ func (s *Store[T]) LoadVersioned() (T, Revision, error) {
 	return value, rev, nil
 }
 
-func lockTarget(target string) (func(), error) {
+func (s *Store[T]) lockTarget(target string) (func(), error) {
 	if err := mkdirPrivate(filepath.Dir(target)); err != nil {
 		return nil, err
 	}
@@ -157,7 +207,12 @@ func lockTarget(target string) (func(), error) {
 	if err != nil {
 		return nil, fmt.Errorf("open configuration lock %s: %w", path, err)
 	}
-	if err := filelock.Lock(f); err != nil {
+	start := time.Now()
+	err = filelock.Lock(f)
+	if s.observe.LockWaited != nil {
+		s.observe.LockWaited(time.Since(start))
+	}
+	if err != nil {
 		_ = f.Close()
 		return nil, fmt.Errorf("lock configuration %s: %w", path, err)
 	}
@@ -170,29 +225,35 @@ func (s *Store[T]) saveLocked(target string, value T, expected Revision) (Revisi
 	if err != nil {
 		return RevisionAbsent, err
 	}
-	return s.saveDataLocked(target, data, expected)
+	rev, _, err := s.saveDataLocked(target, data, expected)
+	return rev, err
 }
 
-func (s *Store[T]) saveDataLocked(target string, data []byte, expected Revision) (Revision, error) {
-	old, current, err := readRevision(target)
+// saveDataLocked returns the new revision and the name of the backup of the replaced bytes, empty when
+// there was no file to replace.
+func (s *Store[T]) saveDataLocked(target string, data []byte, expected Revision) (Revision, string, error) {
+	old, current, err := s.readRevision(target)
 	if err != nil {
-		return RevisionAbsent, err
+		return RevisionAbsent, "", err
 	}
 	if current != expected {
-		return RevisionAbsent, &ConflictError{Path: target}
+		return RevisionAbsent, "", &ConflictError{Path: target}
 	}
-	if err := s.backupCurrent(old); err != nil {
-		return RevisionAbsent, err
-	}
-	_, current, err = readRevision(target)
+	backup, err := s.backupCurrent(old)
 	if err != nil {
-		return RevisionAbsent, err
+		return RevisionAbsent, "", err
 	}
-	if current != expected {
-		return RevisionAbsent, &ConflictError{Path: target}
+	if err := s.replaceIfUnchanged(target, data, expected); err != nil {
+		return RevisionAbsent, "", err
 	}
-	if err := replaceResolved(target, data, func() error {
-		_, latest, err := readRevision(target)
+	return revisionOf(data), backup, nil
+}
+
+// replaceIfUnchanged checks the revision again right before the rename, because a writer that bypasses
+// the lock may have replaced the file meanwhile.
+func (s *Store[T]) replaceIfUnchanged(target string, data []byte, expected Revision) error {
+	unchanged := func() error {
+		_, latest, err := s.readRevision(target)
 		if err != nil {
 			return err
 		}
@@ -200,10 +261,11 @@ func (s *Store[T]) saveDataLocked(target string, data []byte, expected Revision)
 			return &ConflictError{Path: target}
 		}
 		return nil
-	}); err != nil {
-		return RevisionAbsent, err
 	}
-	return revisionOf(data), nil
+	if err := unchanged(); err != nil {
+		return err
+	}
+	return replaceResolved(target, data, unchanged, s.retry)
 }
 
 // SaveIfUnchanged writes only if the file still has expected's revision.
@@ -214,7 +276,7 @@ func (s *Store[T]) SaveIfUnchanged(value T, expected Revision) (Revision, error)
 	if err != nil {
 		return RevisionAbsent, err
 	}
-	unlock, err := lockTarget(target)
+	unlock, err := s.lockTarget(target)
 	if err != nil {
 		return RevisionAbsent, err
 	}
@@ -233,12 +295,12 @@ func (s *Store[T]) Update(change func(T) (T, error)) (Revision, error) {
 	if err != nil {
 		return RevisionAbsent, err
 	}
-	unlock, err := lockTarget(target)
+	unlock, err := s.lockTarget(target)
 	if err != nil {
 		return RevisionAbsent, err
 	}
 	defer unlock()
-	data, expected, err := readRevision(target)
+	data, expected, err := s.readRevision(target)
 	if err != nil {
 		return RevisionAbsent, err
 	}
@@ -257,4 +319,69 @@ func (s *Store[T]) Update(change func(T) (T, error)) (Revision, error) {
 		return RevisionAbsent, err
 	}
 	return s.saveLocked(target, value, expected)
+}
+
+// RevisionOf returns the revision of the bytes a save writes for value, without reading the file. A caller
+// that just saved value and keeps it as its state uses this as the base of its next change instead of
+// reading the file again, which could pair a newer file with an older state.
+func (s *Store[T]) RevisionOf(value T) (Revision, error) {
+	data, err := prepare(value, s.codec.Validate, s.codec.Encode, s.codec.Decode)
+	if err != nil {
+		return RevisionAbsent, err
+	}
+	return revisionOf(data), nil
+}
+
+// Snapshot returns the bytes of the file as they are now and their revision, without decoding them.
+// A missing file returns a *NotFoundError.
+func (s *Store[T]) Snapshot() ([]byte, Revision, error) {
+	target, err := s.resolvedTarget()
+	if err != nil {
+		return nil, RevisionAbsent, err
+	}
+	data, rev, err := s.readRevision(target)
+	if err != nil {
+		return nil, RevisionAbsent, err
+	}
+	if rev == RevisionAbsent {
+		return nil, RevisionAbsent, &NotFoundError{Path: target}
+	}
+	return data, rev, nil
+}
+
+// Transact runs work under the cross-process lock if the file still has expected's revision, for a change
+// that must do something else before it saves and must not do it unless its base is still current.
+// A conflict is reported before work runs. save validates, backs up, and writes like SaveIfUnchanged
+// against expected, so a second save in one transaction conflicts with the first. If save fails, nothing
+// was written and work can undo its own steps before it returns. save fails once Transact has returned.
+// work must be short and must not call this store's write methods: the lock is not reentrant.
+// Whatever work returns is returned unchanged.
+func (s *Store[T]) Transact(expected Revision, work func(save func(T) (Revision, error)) error) error {
+	if work == nil {
+		return errors.New("missing configuration transaction callback")
+	}
+	target, err := s.resolvedTarget()
+	if err != nil {
+		return err
+	}
+	unlock, err := s.lockTarget(target)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	_, current, err := s.readRevision(target)
+	if err != nil {
+		return err
+	}
+	if current != expected {
+		return &ConflictError{Path: target}
+	}
+	var ended atomic.Bool
+	defer ended.Store(true)
+	return work(func(value T) (Revision, error) {
+		if ended.Load() {
+			return RevisionAbsent, errors.New("configuration transaction has ended")
+		}
+		return s.saveLocked(target, value, expected)
+	})
 }

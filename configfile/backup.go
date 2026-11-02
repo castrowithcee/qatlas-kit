@@ -15,9 +15,10 @@ import (
 const (
 	backupDirName = "backups"
 	keepBackups   = 10
+	stampLayout   = "20060102T150405Z"
+	// copyMarker keeps copies out of the regular backup set even when the source has the store's file name.
+	copyMarker = "copy-"
 )
-
-var backupNow = time.Now
 
 // Backup identifies a byte-for-byte copy of a replaced configuration.
 type Backup struct {
@@ -43,8 +44,8 @@ func (s *Store[T]) backupParts(name string) (Backup, bool) {
 	if !ok || len(seqText) != 6 {
 		return Backup{}, false
 	}
-	when, err := time.Parse("20060102T150405Z", stamp)
-	if err != nil || when.UTC().Format("20060102T150405Z") != stamp {
+	when, err := time.Parse(stampLayout, stamp)
+	if err != nil || when.UTC().Format(stampLayout) != stamp {
 		return Backup{}, false
 	}
 	seq, err := strconv.Atoi(seqText)
@@ -99,14 +100,14 @@ func (s *Store[T]) ReadBackup(name string) ([]byte, error) {
 	}
 	for _, backup := range backups {
 		if backup.Name == name {
-			data, err := os.ReadFile(filepath.Join(s.backupDir(), name))
+			data, err := s.readFile(filepath.Join(s.backupDir(), name))
 			if err != nil {
 				return nil, fmt.Errorf("read configuration backup: %w", err)
 			}
 			return data, nil
 		}
 	}
-	return nil, os.ErrNotExist
+	return nil, &NotFoundError{Path: name}
 }
 
 func (s *Store[T]) isHandVersion(data []byte) bool {
@@ -118,24 +119,17 @@ func (s *Store[T]) isHandVersion(data []byte) bool {
 	return err != nil || !bytes.Equal(data, canonical)
 }
 
-func (s *Store[T]) backupCurrent(data []byte) error {
+// backupCurrent stores data as a new regular backup and returns its name, or "" when data is nil.
+func (s *Store[T]) backupCurrent(data []byte) (string, error) {
 	if data == nil {
-		return nil
+		return "", nil
 	}
-	dir := s.backupDir()
-	info, err := os.Lstat(dir)
-	if errors.Is(err, os.ErrNotExist) {
-		if err := mkdirPrivate(dir); err != nil {
-			return fmt.Errorf("create configuration backup directory: %w", err)
-		}
-	} else if err != nil {
-		return fmt.Errorf("inspect configuration backup directory: %w", err)
-	} else if !info.IsDir() {
-		return errors.New("configuration backup path is not a directory")
+	if err := s.ensureBackupDir(); err != nil {
+		return "", err
 	}
 	backups, err := s.Backups()
 	if err != nil {
-		return err
+		return "", err
 	}
 	firstHand := false
 	if s.isHandVersion(data) {
@@ -147,10 +141,10 @@ func (s *Store[T]) backupCurrent(data []byte) error {
 			}
 		}
 	}
-	stamp := backupNow().UTC().Format("20060102T150405Z")
+	stamp := s.now().UTC().Format(stampLayout)
 	seq := 0
 	for _, backup := range backups {
-		if backup.Time.UTC().Format("20060102T150405Z") == stamp && backup.seq >= seq {
+		if backup.Time.UTC().Format(stampLayout) == stamp && backup.seq >= seq {
 			seq = backup.seq + 1
 		}
 	}
@@ -158,15 +152,45 @@ func (s *Store[T]) backupCurrent(data []byte) error {
 	if firstHand {
 		prefix += "first-hand-"
 	}
+	name, err := s.writeBackupFile(prefix+stamp+"-", seq, data)
+	if err != nil {
+		return "", err
+	}
+	s.rotateBackups()
+	return name, nil
+}
+
+func (s *Store[T]) ensureBackupDir() error {
+	dir := s.backupDir()
+	info, err := os.Lstat(dir)
+	if errors.Is(err, os.ErrNotExist) {
+		if err := mkdirPrivate(dir); err != nil {
+			return fmt.Errorf("create configuration backup directory: %w", err)
+		}
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("inspect configuration backup directory: %w", err)
+	}
+	if !info.IsDir() {
+		return errors.New("configuration backup path is not a directory")
+	}
+	return nil
+}
+
+// writeBackupFile creates <prefix><six-digit sequence>.bak exclusively from seq upwards, so a backup never
+// overwrites another one, and returns its name.
+func (s *Store[T]) writeBackupFile(prefix string, seq int, data []byte) (string, error) {
+	dir := s.backupDir()
 	for ; seq < 1000000; seq++ {
-		name := fmt.Sprintf("%s%s-%06d.bak", prefix, stamp, seq)
+		name := fmt.Sprintf("%s%06d.bak", prefix, seq)
 		path := filepath.Join(dir, name)
 		f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, fileMode)
 		if errors.Is(err, os.ErrExist) {
 			continue
 		}
 		if err != nil {
-			return fmt.Errorf("create configuration backup: %w", err)
+			return "", fmt.Errorf("create configuration backup: %w", err)
 		}
 		if err = restrictFile(path); err == nil {
 			_, err = f.Write(data)
@@ -179,12 +203,34 @@ func (s *Store[T]) backupCurrent(data []byte) error {
 		}
 		if err != nil {
 			_ = os.Remove(path)
-			return fmt.Errorf("write configuration backup: %w", err)
+			return "", fmt.Errorf("write configuration backup: %w", err)
 		}
-		s.rotateBackups()
-		return nil
+		return name, nil
 	}
-	return errors.New("configuration backup sequence exhausted")
+	return "", errors.New("configuration backup sequence exhausted")
+}
+
+// BackupCopy stores a byte-for-byte copy of src in this store's backup directory with the private
+// permissions of a backup and returns the copy's path. It is meant for files a change must be able to roll
+// back, including this store's own file before a migration. Copies are not part of Backups and never
+// rotate, so a rotation cannot evict the only copy of such a file. It takes no lock and may run inside
+// Transact.
+func (s *Store[T]) BackupCopy(src string) (string, error) {
+	data, err := s.readFile(src)
+	if errors.Is(err, os.ErrNotExist) {
+		return "", &NotFoundError{Path: src}
+	}
+	if err != nil {
+		return "", fmt.Errorf("read %s for backup: %w", src, err)
+	}
+	if err := s.ensureBackupDir(); err != nil {
+		return "", err
+	}
+	name, err := s.writeBackupFile(filepath.Base(src)+"-"+copyMarker+s.now().UTC().Format(stampLayout)+"-", 0, data)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(s.backupDir(), name), nil
 }
 
 func (s *Store[T]) rotateBackups() {
@@ -204,22 +250,70 @@ func (s *Store[T]) rotateBackups() {
 	}
 }
 
+// Restored records what RestoreBackup replaced, for UndoRestore.
+type Restored struct {
+	// Revision is the revision of the restored bytes.
+	Revision Revision
+	// Previous names the backup RestoreBackup made of the bytes it replaced, empty when there was no file.
+	Previous string
+}
+
 // RestoreBackup restores the exact bytes of a named backup under the store lock.
 // The current file is backed up first, and expected must match its current revision.
 // Backup bytes are not decoded, so an older schema can be recovered.
-func (s *Store[T]) RestoreBackup(name string, expected Revision) (Revision, error) {
+func (s *Store[T]) RestoreBackup(name string, expected Revision) (Restored, error) {
 	target, err := s.resolvedTarget()
 	if err != nil {
-		return RevisionAbsent, err
+		return Restored{}, err
 	}
-	unlock, err := lockTarget(target)
+	unlock, err := s.lockTarget(target)
 	if err != nil {
-		return RevisionAbsent, err
+		return Restored{}, err
 	}
 	defer unlock()
 	data, err := s.ReadBackup(name)
 	if err != nil {
-		return RevisionAbsent, err
+		return Restored{}, err
 	}
-	return s.saveDataLocked(target, data, expected)
+	rev, previous, err := s.saveDataLocked(target, data, expected)
+	if err != nil {
+		return Restored{}, err
+	}
+	return Restored{Revision: rev, Previous: previous}, nil
+}
+
+// UndoRestore puts back the bytes a RestoreBackup replaced, from the backup it made of them, or removes the
+// file when the restore created it. It writes only while the file still holds the restored bytes, so a
+// later change is never lost, and makes no further backup because the restored bytes are one already.
+func (s *Store[T]) UndoRestore(r Restored) error {
+	if r.Revision == RevisionAbsent {
+		return errors.New("configuration restore result is empty")
+	}
+	target, err := s.resolvedTarget()
+	if err != nil {
+		return err
+	}
+	unlock, err := s.lockTarget(target)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	if r.Previous == "" {
+		_, current, err := s.readRevision(target)
+		if err != nil {
+			return err
+		}
+		if current != r.Revision {
+			return &ConflictError{Path: target}
+		}
+		if err := s.retry(func() error { return os.Remove(target) }); err != nil {
+			return fmt.Errorf("remove restored configuration: %w", err)
+		}
+		return nil
+	}
+	data, err := s.ReadBackup(r.Previous)
+	if err != nil {
+		return err
+	}
+	return s.replaceIfUnchanged(target, data, r.Revision)
 }
