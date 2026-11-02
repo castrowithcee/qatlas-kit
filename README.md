@@ -26,6 +26,7 @@ One line per package, in alphabetical order. The package documentation holds the
 - [`manpage`](manpage): adds help topics to a manpage generated from a command tree.
 - [`output`](output): renders ordered results in the CLI output formats and defines the shared error codes.
 - [`projectpath`](projectpath): expands, resolves and compares paths and finds Git working tree roots.
+- [`ptytest`](ptytest): runs a program at a pseudo-terminal or pseudo console in tests, types input and waits for its output.
 - [`ratelimit`](ratelimit): spaces the requests of one credential and holds them when the remote side asks to wait.
 - [`redact`](redact): replaces registered secret values, also quoted or JSON-escaped, in text, errors and writers.
 - [`release`](release): verifies signed release checksums and archive contents offline.
