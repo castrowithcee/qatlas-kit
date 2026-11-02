@@ -3,6 +3,7 @@ package selfupdate
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -10,8 +11,8 @@ import (
 	"testing"
 )
 
-func testRelease(base, tag string, signed bool) release {
-	r := release{TagName: tag, Prerelease: strings.Contains(tag, "-")}
+func testRelease(base, tag string, signed bool) githubRelease {
+	r := githubRelease{TagName: tag, Prerelease: strings.Contains(tag, "-")}
 	for i, name := range []string{"sample_" + tag + ".zip", "checksums.txt", "checksums.txt.sig"} {
 		if i == 2 && !signed {
 			break
@@ -21,7 +22,7 @@ func testRelease(base, tag string, signed bool) release {
 	return r
 }
 
-func testClient(t *testing.T, releases []release) (*Client, *int) {
+func testClient(t *testing.T, releases []githubRelease) (*Client, *int) {
 	t.Helper()
 	requests := new(int)
 	var server *httptest.Server
@@ -34,7 +35,7 @@ func testClient(t *testing.T, releases []release) (*Client, *int) {
 		switch {
 		case r.URL.Path == "/repos/example/sample/releases":
 			if r.URL.Query().Get("page") != "1" {
-				response = []release{}
+				response = []githubRelease{}
 			} else {
 				response = releases
 			}
@@ -68,7 +69,7 @@ func testClient(t *testing.T, releases []release) (*Client, *int) {
 }
 
 func TestCheckAndList(t *testing.T) {
-	var releases []release
+	var releases []githubRelease
 	for i := 13; i >= 1; i-- {
 		releases = append(releases, testRelease("", fmt.Sprintf("v1.%d.0", i), true))
 	}
@@ -98,7 +99,7 @@ func TestCheckAndList(t *testing.T) {
 }
 
 func TestTargetRejectsIneligibleWithoutWriting(t *testing.T) {
-	releases := []release{
+	releases := []githubRelease{
 		testRelease("", "v1.2.0", true),
 		testRelease("", "v1.1.0", false),
 		testRelease("", "v1.0.0", true),
@@ -124,7 +125,7 @@ func TestTargetRejectsIneligibleWithoutWriting(t *testing.T) {
 
 func TestReleaseMetadataCannotRedirectAssets(t *testing.T) {
 	r := testRelease("", "v1.1.0", true)
-	c, _ := testClient(t, []release{r})
+	c, _ := testClient(t, []githubRelease{r})
 	for i := range r.Assets {
 		r.Assets[i].APIURL = fmt.Sprintf("%s/releases/assets/%d", c.RepositoryAPI, i+1)
 	}
@@ -155,5 +156,55 @@ func TestSemver(t *testing.T) {
 		if a.compare(b) >= 0 {
 			t.Errorf("%s should precede %s", pair[0], pair[1])
 		}
+	}
+}
+
+func TestTargetErrorsNameTheReason(t *testing.T) {
+	c, _ := testClient(t, []githubRelease{testRelease("", "v1.2.0", false)})
+	for tag, want := range map[string]TargetReason{"1.2.0": TargetInvalidVersion, "v0.9.0": TargetBelowMinimum, "v1.3.0": TargetNotFound, "v1.2.0": TargetIneligible} {
+		var te *TargetError
+		if _, err := c.Target(context.Background(), tag); !errors.As(err, &te) || te.Reason != want || te.Version != tag {
+			t.Errorf("%s: %v", tag, err)
+		}
+	}
+}
+
+func TestDevelopmentBuildCannotUpdate(t *testing.T) {
+	c, requests := testClient(t, nil)
+	for _, version := range []string{"", "dev"} {
+		c.CurrentVersion = version
+		if _, err := c.Check(context.Background()); !errors.Is(err, ErrDevelopmentBuild) {
+			t.Errorf("%q: %v", version, err)
+		}
+		if _, err := c.Update(context.Background()); !errors.Is(err, ErrDevelopmentBuild) {
+			t.Errorf("%q: %v", version, err)
+		}
+	}
+	if *requests != 0 {
+		t.Fatalf("development build sent %d requests", *requests)
+	}
+}
+
+func TestTokenGoesOnlyToRepositoryHost(t *testing.T) {
+	c := &Client{RepositoryAPI: "https://api.github.com/repos/example/sample", CurrentVersion: "v1.0.0", MinimumVersion: "v1.0.0",
+		ArchiveName: func(string) string { return "sample.zip" }, UserAgent: "sample/1", Token: "test-token"}
+	p, err := c.validate()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for raw, want := range map[string]string{
+		"https://api.github.com/repos/example/sample/releases/assets/1": "Bearer test-token",
+		"https://uploads.github.com/repos/example/sample":               "",
+		"http://api.github.com/repos/example/sample":                    "",
+		"https://api.github.com.example.org/repos/example/sample":       "",
+	} {
+		r, err := c.newRequest(context.Background(), p, raw, "application/octet-stream")
+		if err != nil || r.Header.Get("Authorization") != want {
+			t.Errorf("%s: %q, %v", raw, r.Header.Get("Authorization"), err)
+		}
+	}
+	c.Token = "test-token\r\nX-Injected: 1"
+	if _, err := c.validate(); err == nil {
+		t.Fatal("token with line break accepted")
 	}
 }
