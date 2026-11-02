@@ -54,6 +54,9 @@ Components derived from `qatlas-cli` and `qatlas-sysmin` retain their original A
 | `qatlas-cli/internal/application/compact.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Dropping null members, empty lists, and empty objects (`output/empty.go`) |
 | `qatlas-cli/internal/application/original.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Redacting and bounding an external answer (`cli/external.go`) |
 | `qatlas-cli/internal/cli/errors.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Next step per route and external answer block (`cli/errors.go`, `cli/external.go`) |
+| `qatlas-cli/internal/cli/cli.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Global output and agent flags, format resolution, version template, syntax errors with usage, and help topic commands (`cobracli/cobracli.go`) |
+| `qatlas-cli/internal/cli/config.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Rejection of unexpected positional arguments (`cobracli/cobracli.go`) |
+| `qatlas-sysmin/internal/cli/cli.go`, `qatlas-sysmin/internal/cli/errors.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Root command conventions and syntax errors (`cobracli/cobracli.go`) |
 | `qatlas-cli/cmd/gen-man/main.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Help topics section of the manpage (`manpage/manpage.go`) |
 | `qatlas-cli/internal/config/config.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Configuration path precedence |
 | `qatlas-cli/internal/config/store.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Configuration write preparation and atomic replacement |

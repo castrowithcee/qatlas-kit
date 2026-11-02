@@ -12,6 +12,7 @@ One line per package, in alphabetical order. The package documentation holds the
 - [`archtest`](archtest): checks import boundaries, forbidden names, key literals and text catalogs of a module's source against exceptions that can only shrink.
 - [`background`](background): starts a detached background process and waits for its report.
 - [`cli`](cli): maps errors to exit codes and diagnostics and checks the confirmation of commands.
+- [`cobracli`](cobracli): applies the shared flags, help, version and error conventions to a Cobra command tree.
 - [`configfile`](configfile): writes configuration documents atomically, with locking, transactions and backups.
 - [`filelock`](filelock): provides an exclusive whole-file lock across processes.
 - [`fileretry`](fileretry): repeats a file operation that fails only because another process holds the file.
