@@ -21,7 +21,8 @@ type FilterField struct {
 
 // FilterBarKeys are the actions of the key table a filter bar reads: Left and Right change the value of the
 // field, Next and Prev step through the fields, Enter opens the list of values and takes one, Up and Down
-// move in it, and Back closes it without change.
+// move in it, and Back closes it without change. In the filter modal Up and Down choose the field, Left and
+// Right change its value, Enter takes all changes and Back drops them.
 type FilterBarKeys struct {
 	Left, Right, Next, Prev, Up, Down, Enter, Back ActionID
 }
@@ -37,8 +38,11 @@ type FilterBarSpec struct {
 
 // The target items of a filter bar start with a control character, which no field or value ID holds.
 const (
-	fieldRef  = "\x00f"
-	optionRef = "\x00o"
+	fieldRef      = "\x00f"
+	optionRef     = "\x00o"
+	buttonRef     = "\x00b"
+	modalFieldRef = "\x00mf"
+	modalValueRef = "\x00mv"
 )
 
 // The width of the search field at the right end of the bar.
@@ -49,7 +53,7 @@ const (
 
 // FilterBar is the bar of choice fields above a list. It changes only what the list shows and in which
 // order: the application applies the values to the entries it hands to the list, never to its data. It holds
-// the values, the focused field and the open list of values.
+// the values, the focused field, the open list of values and the open filter modal with its pending values.
 type FilterBar struct {
 	fields []FilterField
 	nav    FilterBarKeys
@@ -60,6 +64,12 @@ type FilterBar struct {
 	focus  int
 	open   bool
 	choice int
+
+	// compact is set by View while the fields do not fit and a button stands for them.
+	compact bool
+	modal   bool
+	draft   []int
+	mfocus  int
 }
 
 // NewFilterBar checks spec and returns a bar without focus. It rejects a bar without fields, a field
@@ -156,31 +166,37 @@ func (b *FilterBar) Value(id FieldID) ChoiceID {
 // Focus gives the focus to the first field, or to the last one where fromEnd, as tab and shift+tab enter the
 // bar.
 func (b *FilterBar) Focus(fromEnd bool) {
-	b.focus, b.open = 0, false
+	b.focus, b.open, b.modal = 0, false, false
 	if fromEnd {
 		b.focus = len(b.fields) - 1
 	}
 }
 
-// Blur takes the focus from the bar and closes its list of values; the application calls it when the focus
-// leaves the bar.
-func (b *FilterBar) Blur() { b.focus, b.open = -1, false }
+// Blur takes the focus from the bar and closes its list of values and its modal, dropping pending changes;
+// the application calls it when the focus leaves the bar.
+func (b *FilterBar) Blur() { b.focus, b.open, b.modal = -1, false, false }
 
 // Focused reports whether a field of the bar has the focus.
 func (b *FilterBar) Focused() bool { return b.focus >= 0 }
 
-// Open reports whether the list of values of the focused field is open.
-func (b *FilterBar) Open() bool { return b.open }
+// Open reports whether the list of values of the focused field or the filter modal is open; either takes
+// every key.
+func (b *FilterBar) Open() bool { return b.open || b.modal }
 
-// Update handles a key while the bar has the focus. changed is the field whose value the key changed, the
-// zero field where none did; handled is false for a key the bar leaves to the application: tab past the last
-// field or shift+tab before the first, which go on to the next zone, and up, down and back on a closed field.
-// While the list of values is open it takes every key.
-func (b *FilterBar) Update(msg tea.KeyPressMsg) (changed FilterField, handled bool) {
+// Update handles a key while the bar has the focus. changed holds the fields whose value the key changed, in
+// the order of the bar, nil where none did; handled is false for a key the bar leaves to the application: tab
+// past the last field or shift+tab before the first, which go on to the next zone, and up, down and back on a
+// closed field. Where the fields give way to the filter button, it is one stop: tab and shift+tab leave the
+// bar at once, left and right are left to the application, and enter opens the modal. While the list of
+// values or the modal is open it takes every key.
+func (b *FilterBar) Update(msg tea.KeyPressMsg) (changed []FilterField, handled bool) {
 	if b.focus < 0 {
-		return FilterField{}, false
+		return nil, false
 	}
 	is := func(id ActionID) bool { return b.keys.Is(msg, id, InputNavigation) }
+	if b.modal {
+		return b.updateModal(is), true
+	}
 	f := &b.fields[b.focus]
 	if b.open {
 		switch {
@@ -193,7 +209,14 @@ func (b *FilterBar) Update(msg tea.KeyPressMsg) (changed FilterField, handled bo
 		case is(b.nav.Back):
 			b.open = false
 		}
-		return FilterField{}, true
+		return nil, true
+	}
+	if b.compact {
+		if is(b.nav.Enter) {
+			b.openModal()
+			return nil, true
+		}
+		return nil, false
 	}
 	switch {
 	case is(b.nav.Left), is(b.nav.Right):
@@ -204,47 +227,59 @@ func (b *FilterBar) Update(msg tea.KeyPressMsg) (changed FilterField, handled bo
 		return b.choose(b.focus, wrap(b.selected(b.focus)+step, len(f.Options))), true
 	case is(b.nav.Next):
 		if b.focus == len(b.fields)-1 {
-			return FilterField{}, false
+			return nil, false
 		}
 		b.focus++
 	case is(b.nav.Prev):
 		if b.focus == 0 {
-			return FilterField{}, false
+			return nil, false
 		}
 		b.focus--
 	case is(b.nav.Enter):
 		b.open, b.choice = true, b.selected(b.focus)
 	default:
-		return FilterField{}, false
+		return nil, false
 	}
-	return FilterField{}, true
+	return nil, true
 }
 
 // Click handles a click on a target the bar drew, as the MouseMap of its targets reports it: a click on a
 // field focuses it and opens its list of values, as enter does, a second one closes it, and a click on a
-// value of the open list takes it. A click on the search field is the search key of the list; List.Click
-// runs it.
-func (b *FilterBar) Click(r MouseResult) (changed FilterField, handled bool) {
+// value of the open list takes it. A click on the filter button opens the modal; in the modal a click on a
+// field focuses it, one on its value takes the next value, and one on a key of the key line acts as the key.
+// A click on the search field is the search key of the list; List.Click runs it.
+func (b *FilterBar) Click(r MouseResult) (changed []FilterField, handled bool) {
 	if !r.Handled {
-		return FilterField{}, false
+		return nil, false
+	}
+	if b.modal {
+		return b.clickModal(r)
+	}
+	if r.Item == buttonRef {
+		if !b.compact {
+			return nil, false
+		}
+		b.focus = max(b.focus, 0)
+		b.openModal()
+		return nil, true
 	}
 	if id, ok := strings.CutPrefix(r.Item, fieldRef); ok {
 		i := b.field(FieldID(id))
 		if i < 0 {
-			return FilterField{}, false
+			return nil, false
 		}
 		if b.open && b.focus == i {
 			b.open = false
-			return FilterField{}, true
+			return nil, true
 		}
 		b.focus, b.open, b.choice = i, true, b.selected(i)
-		return FilterField{}, true
+		return nil, true
 	}
 	if rest, ok := strings.CutPrefix(r.Item, optionRef); ok {
 		id, value, _ := strings.Cut(rest, "\x00")
 		i := b.field(FieldID(id))
 		if i < 0 || !b.open || b.focus != i {
-			return FilterField{}, false
+			return nil, false
 		}
 		for j, o := range b.fields[i].Options {
 			if string(o.ID) == value {
@@ -252,7 +287,81 @@ func (b *FilterBar) Click(r MouseResult) (changed FilterField, handled bool) {
 			}
 		}
 	}
-	return FilterField{}, false
+	return nil, false
+}
+
+func (b *FilterBar) openModal() {
+	b.open, b.modal, b.mfocus = false, true, 0
+	b.draft = make([]int, len(b.fields))
+	for i := range b.fields {
+		b.draft[i] = b.selected(i)
+	}
+}
+
+// updateModal handles a key in the modal; it takes every key.
+func (b *FilterBar) updateModal(is func(ActionID) bool) []FilterField {
+	switch {
+	case is(b.nav.Up):
+		b.mfocus = max(b.mfocus-1, 0)
+	case is(b.nav.Down):
+		b.mfocus = min(b.mfocus+1, len(b.fields)-1)
+	case is(b.nav.Left):
+		b.step(b.mfocus, -1)
+	case is(b.nav.Right):
+		b.step(b.mfocus, 1)
+	case is(b.nav.Enter):
+		return b.apply()
+	case is(b.nav.Back):
+		b.modal = false
+	}
+	return nil
+}
+
+func (b *FilterBar) step(i, by int) {
+	b.draft[i] = wrap(b.draft[i]+by, len(b.fields[i].Options))
+}
+
+func (b *FilterBar) clickModal(r MouseResult) ([]FilterField, bool) {
+	if id, ok := strings.CutPrefix(r.Item, modalFieldRef); ok {
+		if i := b.field(FieldID(id)); i >= 0 {
+			b.mfocus = i
+			return nil, true
+		}
+		return nil, false
+	}
+	if id, ok := strings.CutPrefix(r.Item, modalValueRef); ok {
+		if i := b.field(FieldID(id)); i >= 0 {
+			b.mfocus = i
+			b.step(i, 1)
+			return nil, true
+		}
+		return nil, false
+	}
+	switch r.Action {
+	case b.nav.Enter:
+		return b.apply(), true
+	case b.nav.Back:
+		b.modal = false
+		return nil, true
+	}
+	return nil, false
+}
+
+// apply takes every pending value of the modal and closes it; it returns the fields whose value changed.
+func (b *FilterBar) apply() []FilterField {
+	b.modal = false
+	var changed []FilterField
+	for i := range b.fields {
+		if b.draft[i] == b.selected(i) {
+			continue
+		}
+		f := &b.fields[i]
+		f.Selected = f.Options[b.draft[i]].ID
+		out := *f
+		out.Options = append([]Choice(nil), f.Options...)
+		changed = append(changed, out)
+	}
+	return changed
 }
 
 func (b *FilterBar) field(id FieldID) int {
@@ -274,16 +383,27 @@ func (b *FilterBar) selected(i int) int {
 }
 
 // choose gives field i its value j and closes the list; it returns the field where its value changed.
-func (b *FilterBar) choose(i, j int) FilterField {
+func (b *FilterBar) choose(i, j int) []FilterField {
 	b.open = false
 	f := &b.fields[i]
 	if f.Options[j].ID == f.Selected {
-		return FilterField{}
+		return nil
 	}
 	f.Selected = f.Options[j].ID
 	out := *f
 	out.Options = append([]Choice(nil), f.Options...)
-	return out
+	return []FilterField{out}
+}
+
+// differing is the number of fields whose value is not the first one of the field.
+func (b *FilterBar) differing() int {
+	n := 0
+	for _, f := range b.fields {
+		if f.Selected != f.Options[0].ID {
+			n++
+		}
+	}
+	return n
 }
 
 func (b *FilterBar) label(i int) (label, value string) {
@@ -341,9 +461,10 @@ func barMarker(focused bool) string {
 // View draws the bar on one line of width cells: the fields as choice fields "label: value", the focused one
 // behind the marker ">", and the search field of the list of the spec at the right end where the list draws
 // its search in the bar. Where the fields do not all fit, their values are cut; where even that is not
-// enough, the focused field stands alone, an unfocused bar shows its values dimmed or, while a search is
-// typed, the search field. It returns a target for the free area of the bar, one per drawn field and one for
-// the search field, counted from the left of the bar.
+// enough, a button stands for all fields with the number of those not at their first value, the search field
+// at its right and, where that has no room, only the search key. The button never goes, and is cut to the
+// width at last. It returns a target for the free area of the bar, one per drawn field or the button, and one
+// for the search field or key, counted from the left of the bar.
 func (b *FilterBar) View(styles Styles, width int) (string, []Target) {
 	width = max(width, 0)
 	list := b.list
@@ -403,24 +524,37 @@ func (b *FilterBar) View(styles Styles, width int) (string, []Target) {
 		}
 		return line.String()
 	}
+	b.compact = false
 	var line string
 	if widths, used, ok := fit(width - gap - searchFieldMin); search && ok {
 		line = draw(widths, used, min(searchFieldMax, width-used-gap))
 	} else if widths, used, ok := fit(width); ok && idle {
 		line = draw(widths, used, 0)
-	} else if b.focus >= 0 {
-		text := fieldText(styles, labels[b.focus], values[b.focus], max(width-2, 1))
-		targets = append(targets, Target{Rect: Rect{Width: width, Height: 1}, Zone: ZoneFilters,
-			Action: b.nav.Enter, Item: fieldRef + string(b.fields[b.focus].ID)})
-		line = barMarker(true) + fieldStyle(styles, true).Render(text)
-	} else if !idle {
-		line = searchField(0, width)
 	} else {
-		parts := make([]string, n)
-		for i := range parts {
-			parts[i] = labels[i] + ": " + values[i]
+		// The list of values hangs under a field that is no longer drawn.
+		b.compact, b.open = true, false
+		text := b.text.Lookup(TextFilterButton, b.differing())
+		button := styles.Button(ButtonNormal, styles.Truncate(text, max(width-4, 1)), b.focus >= 0)
+		bw := lipgloss.Width(button)
+		if r, ok := clipRect(Rect{Width: bw, Height: 1}, width); ok {
+			targets = append(targets, Target{Rect: r, Zone: ZoneFilters, Action: b.nav.Enter, Item: buttonRef})
 		}
-		line = "  " + styles.Render(StyleHint, styles.Truncate(strings.Join(parts, styles.Glyph(GlyphKeySeparator)), max(width-2, 0)))
+		line = button
+		if rest := width - bw - gap; search && rest > 0 {
+			sw, key := 0, ""
+			if list.spec.Search == SearchByKey && list.spec.Keys.Search != "" {
+				key = Escape(list.keys.Label(list.spec.Keys.Search))
+			}
+			switch {
+			case rest >= searchFieldMin || !idle:
+				sw = min(searchFieldMax, rest)
+				line += strings.Repeat(" ", width-bw-sw) + searchField(width-sw, sw)
+			case key != "" && lipgloss.Width(key) <= rest:
+				sw = lipgloss.Width(key)
+				targets = append(targets, Target{Rect: Rect{X: width - sw, Width: sw, Height: 1}, Zone: ZoneFilters, Action: list.spec.Keys.Search})
+				line += strings.Repeat(" ", width-bw-sw) + styles.Render(StyleHint, key)
+			}
+		}
 	}
 	return Pad(Clip(line, width), width), targets
 }
@@ -448,4 +582,120 @@ func (b *FilterBar) ValueList(styles Styles) (string, []Target) {
 			Action: b.nav.Enter, Item: optionRef + string(f.ID) + "\x00" + string(f.Options[j].ID)})
 	}
 	return strings.Join(styles.Panel(title, "", lines, inner+4, len(lines)+2, true), "\n"), targets
+}
+
+// Hints are the keys of the open modal for the key line: the answers, which stand in the modal itself where it
+// is drawn over the screen, and the moves. Where the modal does not fit, the application puts them into the
+// footer, whose targets then act on it. Empty while the modal is closed.
+func (b *FilterBar) Hints() []Hint {
+	if !b.modal {
+		return nil
+	}
+	n := b.nav
+	return []Hint{{Action: n.Enter, Label: TextFilterApply, Kind: HintAnswer}, {Action: n.Back, Label: TextKeyDiscard, Kind: HintAnswer},
+		{Action: n.Up, Label: TextKeyUp, Kind: HintNavigation}, {Action: n.Down, Label: TextKeyDown, Kind: HintNavigation},
+		{Action: n.Left, Label: TextKeyLeft, Kind: HintNavigation}, {Action: n.Right, Label: TextKeyRight, Kind: HintNavigation}}
+}
+
+// modalRows draws one row per field in width cells, label and pending value under a marker for the field in
+// focus, and returns two targets per row, counted from the top left of the rows: the label, which focuses the
+// field, and the value, which takes the next one.
+func (b *FilterBar) modalRows(styles Styles, width int) ([]string, []Target) {
+	n := len(b.fields)
+	labels, values := make([]string, n), make([]string, n)
+	lw := 0
+	for i, f := range b.fields {
+		labels[i], _ = b.label(i)
+		values[i] = Escape(b.text.Lookup(f.Options[b.draft[i]].Label))
+		lw = max(lw, lipgloss.Width(labels[i]))
+	}
+	rows := make([]string, n)
+	var targets []Target
+	for i, f := range b.fields {
+		label := Pad(labels[i], lw)
+		head, _ := fieldFrame(styles, label)
+		text := Pad(fieldText(styles, label, values[i], max(width-2, fieldLeast(styles, label))), max(width-2, 0))
+		rows[i] = barMarker(i == b.mfocus) + fieldStyle(styles, i == b.mfocus).Render(text)
+		split := 2 + lipgloss.Width(head)
+		if r, ok := clipRect(Rect{Y: i, Width: split, Height: 1}, width); ok {
+			targets = append(targets, Target{Rect: r, Zone: ZoneFilters, Item: modalFieldRef + string(f.ID)})
+		}
+		if r, ok := clipRect(Rect{X: split, Y: i, Width: width - split, Height: 1}, width); ok {
+			targets = append(targets, Target{Rect: r, Zone: ZoneFilters, Item: modalValueRef + string(f.ID)})
+		}
+	}
+	return rows, targets
+}
+
+// modalWidth is the width the rows want and the least they are drawn in.
+func (b *FilterBar) modalWidth(styles Styles) (want, least int) {
+	lw, vw := 0, 0
+	for i, f := range b.fields {
+		label, _ := b.label(i)
+		lw = max(lw, lipgloss.Width(label))
+		for _, o := range f.Options {
+			vw = max(vw, lipgloss.Width(Escape(b.text.Lookup(o.Label))))
+		}
+	}
+	head, tail := fieldFrame(styles, strings.Repeat(" ", lw))
+	frame := 2 + lipgloss.Width(head) + lipgloss.Width(tail)
+	return frame + vw, frame + 1
+}
+
+// ModalOverlay draws the open modal with styles over screen, the drawn screen of width by height cells, in the
+// way of Dialog.Overlay: the screen dimmed and the modal in its frame, with all fields one under the other and
+// the key line, centred in room. The targets are the modal's alone. ok is false where room is too small, and
+// while the modal is closed; the application then draws ModalView in the workspace and Hints in the footer.
+func (b *FilterBar) ModalOverlay(styles Styles, screen string, width, height int, room Rect) (view string, targets []Target, ok bool) {
+	if !b.modal {
+		return "", nil, false
+	}
+	want, least := b.modalWidth(styles)
+	inner := min(max(want, dialogMinInner), dialogMaxInner, room.Width-8)
+	if inner < max(dialogMinInner, least) {
+		return "", nil, false
+	}
+	lines, ts := b.modalRows(styles, inner)
+	lines = append(lines, "")
+	keyLine, kt := styles.footer(b.keys.Hints(b.Hints(), InputNavigation, b.text), "", inner)
+	ts = append(ts, OffsetTargets(kt, 0, len(lines))...)
+	lines = append(lines, keyLine)
+	for i, l := range lines {
+		lines[i] = Pad(Clip(l, inner), inner)
+	}
+	box := styles.Panel(b.text.Lookup(TextFilterTitle), "", lines, inner+4, len(lines)+2, true)
+	if len(box) > room.Height {
+		return "", nil, false
+	}
+	top := room.Y + (room.Height-len(box))/2
+	left := room.X + (room.Width-inner-4)/2
+	return overlay(screen, box, width, height, top, left, styles), OffsetTargets(ts, left+2, top+1), true
+}
+
+// ModalView draws the open modal with styles as the content of a workspace of width by height cells, for a
+// terminal too small to draw it over the screen: the fields without frame and key line, which stand in the
+// footer, scrolled so the field in focus is in view. Empty while the modal is closed.
+func (b *FilterBar) ModalView(styles Styles, width, height int) (string, []Target) {
+	width, height = max(width, 0), max(height, 0)
+	if !b.modal || height == 0 {
+		return "", nil
+	}
+	rows, targets := b.modalRows(styles, max(width-2, 1))
+	start := max(min(b.mfocus-height+1, len(rows)-height), 0)
+	out := make([]string, height)
+	for i := range out {
+		line := ""
+		if start+i < len(rows) {
+			line = "  " + rows[start+i]
+		}
+		out[i] = Pad(Clip(line, width), width)
+	}
+	var kept []Target
+	for _, t := range OffsetTargets(targets, 2, -start) {
+		if r, ok := clipRect(t.Rect, width); ok && r.Y >= 0 && r.Y < height {
+			t.Rect = r
+			kept = append(kept, t)
+		}
+	}
+	return strings.Join(out, "\n"), kept
 }

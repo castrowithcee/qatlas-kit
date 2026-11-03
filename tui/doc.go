@@ -104,7 +104,12 @@
 // without change, and tab and shift+tab step through the fields and leave the bar at its ends to the
 // application. Its values change only what the application hands to the list, never its data. A click on a
 // field opens its values and one on a value takes it; the search field of a list may stand at the right end
-// of the bar.
+// of the bar. On a narrow terminal the values are cut first; where the fields still do not fit, a single
+// button with the number of fields off their first value takes their place, always, with the search field
+// beside it or, with little room, only the search key. The button is one stop of the focus. Enter or a click
+// opens a modal with all fields one under the other: up and down choose a field, left and right change its
+// value, enter takes all changes at once and back drops them all. The modal takes every key; it is drawn over
+// the screen where it fits and otherwise in the workspace, with its keys in the footer.
 //
 // A Form shows the fields an application hands it, each with a stable ID, a kind, a label and a value, and
 // knows no schema: the application checks the values when the save key is pressed, from any field, and hands
