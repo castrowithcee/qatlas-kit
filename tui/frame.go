@@ -101,26 +101,27 @@ type frameRun struct {
 }
 
 // Workspace is the room the content of spec has: the full width between the rule and the footer, less the
-// rows of the message.
+// rows of the message. The footer takes one row, or two where its hints do not fit one.
 func (f *Frame) Workspace(spec FrameSpec) Rect {
-	// The rows of the message do not depend on the styles.
+	// The rows of the footer and the message do not depend on the styles.
 	return (&frameRun{text: f.text, keys: f.keys}).workspace(spec)
 }
 
 // Render draws spec with styles as exactly Height lines of exactly Width cells and returns the targets of the
-// drawn header keys, tabs and footer keys. The footer is always the last line; the workspace is cut or padded
-// to its rows, and a terminal lower than the frame loses the rows above the footer from the bottom up.
+// drawn header keys, tabs and footer keys. The footer is always the last line or the last two; the workspace
+// is cut or padded to its rows, and a terminal lower than the frame loses the rows above the footer from the
+// bottom up.
 func (f *Frame) Render(styles Styles, spec FrameSpec) (string, []Target) {
 	return (&frameRun{styles: styles, text: f.text, keys: f.keys}).render(spec)
 }
 
 func (f *frameRun) workspace(spec FrameSpec) Rect {
-	top, rows := f.rows(spec)
+	top, rows, _ := f.rows(spec)
 	return Rect{X: 0, Y: top, Width: max(spec.Width, 0), Height: rows - len(f.messageLines(spec, rows))}
 }
 
-// rows are the number of rows above the workspace and the rows of the workspace.
-func (f *frameRun) rows(spec FrameSpec) (top, workspace int) {
+// rows are the number of rows above the workspace, the rows of the workspace and the rows of the footer.
+func (f *frameRun) rows(spec FrameSpec) (top, workspace, footer int) {
 	top = 2 // header and rule
 	if len(spec.Areas) > 0 {
 		top++
@@ -128,7 +129,8 @@ func (f *frameRun) rows(spec FrameSpec) (top, workspace int) {
 	if _, ok := subTabs(spec); ok {
 		top++
 	}
-	return top, max(spec.Height-top-1, 0)
+	footer = footerRows(f.keys.Hints(spec.Footer, spec.Input, f.text), spec.Position, max(spec.Width, 0))
+	return top, max(spec.Height-top-footer, 0), footer
 }
 
 // messageLines are the lines of the message within room rows; a message longer than the room keeps its
@@ -164,7 +166,7 @@ func (f *frameRun) render(spec FrameSpec) (string, []Target) {
 		add(f.subTabLine(spec, area, width))
 	}
 	add(f.styles.Render(StyleBorder, strings.Repeat(f.ruleChar(), width)), nil)
-	_, rows := f.rows(spec)
+	_, rows, footerRows := f.rows(spec)
 	message := f.messageLines(spec, rows)
 	body := strings.Split(spec.Workspace, "\n")
 	for i := 0; i < rows-len(message); i++ {
@@ -177,18 +179,29 @@ func (f *frameRun) render(spec FrameSpec) (string, []Target) {
 	for _, line := range message {
 		add(line, nil)
 	}
-	if len(lines) > spec.Height-1 {
-		lines = lines[:spec.Height-1]
+	foot, footTargets := f.styles.footerLines(f.keys.Hints(spec.Footer, spec.Input, f.text), spec.Position, width, footerRows)
+	// A terminal lower than the frame loses the rows above the footer first, then the first footer row.
+	if drop := len(foot) - spec.Height; drop > 0 {
+		foot = foot[drop:]
+		footTargets = OffsetTargets(footTargets, 0, -drop)
+	}
+	if keep := spec.Height - len(foot); len(lines) > keep {
+		lines = lines[:keep]
 		kept := targets[:0]
 		for _, t := range targets {
-			if t.Rect.Y < spec.Height-1 {
+			if t.Rect.Y < keep {
 				kept = append(kept, t)
 			}
 		}
 		targets = kept
 	}
-	foot, footTargets := f.styles.footer(f.keys.Hints(spec.Footer, spec.Input, f.text), spec.Position, width)
-	add(foot, footTargets)
+	for _, t := range footTargets {
+		if t.Rect.Y >= 0 {
+			t.Rect.Y += len(lines)
+			targets = append(targets, t)
+		}
+	}
+	lines = append(lines, foot...)
 	return strings.Join(lines, "\n"), targets
 }
 

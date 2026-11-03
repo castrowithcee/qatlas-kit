@@ -38,20 +38,21 @@
 // A Frame draws the frame every screen stands in from the FrameSpec the application fills for each
 // render: the header with the product name, status marks, back button and header keys; the tab line with
 // one tab per Area as its digit and title; the sub-tabs of the active area where it has more than one; a
-// rule; the workspace, cut or padded to its rows, with the message under it; and the footer as the last
-// line. Workspace gives the room the content has, and Render returns the click targets of the drawn keys
-// and tabs for that frame only. The header stays one line: the status marks take their short words and go
-// before the header keys, and the header keys go before the back button. A tab line that runs short closes
-// its gaps and then shrinks the inactive tabs to their digit; the active tab stays whole. CheckAreas holds
-// areas to what the tab line can draw. The focus zones have a fixed order that CycleZone walks with
+// rule; the workspace, cut or padded to its rows, with the message under it; and the footer in the last
+// row, or the last two. Workspace gives the room the content has, less the rows the footer takes, and
+// Render returns the click targets of the drawn keys and tabs for that frame only. The header stays one
+// line: the status marks take their short words and go before the header keys, and the header keys go
+// before the back button. A tab line that runs short closes its gaps and then shrinks the inactive tabs to
+// their digit; the active tab stays whole. CheckAreas holds areas to what the tab line can draw. The focus zones have a fixed order that CycleZone walks with
 // wrap-around, as StepArea and StepTab do for the tabs.
 //
 // Header and footer show hints. Keymap.Hints resolves each hint to the keys of its action that act in the
 // input focus of the screen, so a line never names a key that does nothing, and folds hints whose labels
 // read the same into one group; a language with longer words folds two hints by giving them the same text,
-// never by an empty one. When the footer runs short, navigation and position at its right end go first,
-// then the normal hints by priority; a hint that always stays, such as help, is never dropped, and the
-// answers of an open question are shortened instead.
+// never by an empty one. When the footer does not fit one line it takes a second, never more, and groups
+// are never broken between them; navigation and position stand at the right end of the last line. Only when
+// two lines run short, navigation and position go first, then the normal hints by priority; a hint that
+// always stays, such as help, is never dropped, and the answers of an open question are shortened instead.
 //
 // The mouse is a second way to the same actions and never stronger than a key. Render and the other drawing
 // parts return the targets they drew; a MouseMap holds the targets of one drawn frame, so a target no longer
