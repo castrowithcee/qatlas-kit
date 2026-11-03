@@ -1,6 +1,7 @@
 // Package docker reads containers from a Docker Engine over its Unix socket: the container list, the
 // details of one container, the Compose projects the containers belong to, the containers that use a path,
-// one reading of a container's CPU and memory use, and a container's logs as a stream of lines.
+// one reading of a container's CPU and memory use, a container's logs as a stream of lines, and the
+// actions start, stop and restart, with a wait until containers are healthy.
 //
 // The application names the socket in Options. The package opens no TCP or TLS connection and reads neither
 // environment variables nor the contexts of other tools. A request is bounded by Options.Timeout, and a
@@ -25,6 +26,14 @@
 // dropping lines. Only the wait for the answer's headers is bounded by Options.Timeout; a following stream
 // then ends with the context passed to Logs or with Close. To follow only new lines, set Follow with Since
 // set to time.Now. Log text is untrusted; a caller masks control characters before it shows it.
+//
+// Start, Stop and Restart return nil once the Engine accepted the action; starting or stopping a container
+// that is already in that state is not an error. The grace period of Stop and Restart is rounded up to whole
+// seconds, zero selects the Engine's default, and a request may run for Options.Timeout plus the grace.
+// WaitHealthy polls Inspect until each container runs and, if it has a health check, is healthy, or until
+// WaitOptions.Deadline. It reports one WaitResult per reference, in order; a container that failed is a
+// result with a WaitReason, not an error. An exited or missing container is final at once, a failing health
+// check is watched until the deadline.
 //
 // Environment variables of a container are returned by name only; the values are dropped while the answer
 // is decoded.
