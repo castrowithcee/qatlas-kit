@@ -20,3 +20,10 @@ func TestServiceUnsupported(t *testing.T) {
 		t.Fatalf("Dial() = %v", err)
 	}
 }
+
+func TestServiceCrossVersionUnsupported(t *testing.T) {
+	e := ServiceEndpoint{Dir: "/run/example", SocketBase: "control", ServiceUser: "example", Group: "example"}
+	if _, err := e.ListenWith(ListenOptions{CrossVersion: &CrossVersion{Secret: testSecret(1)}}); !errors.Is(err, ErrUnsupported) {
+		t.Fatalf("ListenWith() = %v", err)
+	}
+}

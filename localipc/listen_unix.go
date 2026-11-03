@@ -34,12 +34,16 @@ type socketSpec struct {
 }
 
 func listen(e Endpoint, opts ListenOptions) (net.Listener, error) {
+	verify, err := opts.peerCheck()
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", e.label(), err)
+	}
 	path, err := e.Path()
 	if err != nil {
 		return nil, err
 	}
-	spec := socketSpec{path: path, mode: socketMode, gid: -1, prepareDir: privateDir,
-		verify: func(c net.Conn) (int, error) { return checkPeer(c, true) }, refused: opts.Refused}
+	spec := socketSpec{path: path, mode: socketMode, gid: -1, prepareDir: privateDir, verify: verify,
+		refused: opts.Refused}
 	if opts.Successor {
 		spec.target, spec.path = path, path+nextSuffix
 		if len(spec.path) > maxSocketPath {

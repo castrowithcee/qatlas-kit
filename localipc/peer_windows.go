@@ -50,11 +50,13 @@ func PeerUID(net.Conn) (uint32, error) {
 	return 0, fmt.Errorf("a peer user ID is unavailable on Windows: %w", errors.ErrUnsupported)
 }
 
-// Windows always checks the program; see hardenedProgramCheck.
-func checkPeer(conn net.Conn, _ bool) (int, error) {
+func checkPeer(conn net.Conn, program bool) (int, error) {
 	pid, err := peerProcessID(conn)
 	if err != nil {
 		return 0, err
+	}
+	if !program {
+		return int(pid), checkPeerUser(pid)
 	}
 	return int(pid), checkProcess(pid)
 }
@@ -104,6 +106,15 @@ func checkProcess(pid uint32) error {
 		return fmt.Errorf("%w: it runs another program", ErrRefused)
 	}
 	return nil
+}
+
+func checkPeerUser(pid uint32) error {
+	process, err := openPeer(pid)
+	if err != nil {
+		return err
+	}
+	defer windows.CloseHandle(process)
+	return checkUser(process)
 }
 
 func ownProgramReplaced() (bool, error) {

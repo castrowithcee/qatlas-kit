@@ -27,8 +27,8 @@ func (e ServiceEndpoint) Path() (string, error) { return servicePath(e) }
 // or supplementary group is Group, and refuses every other peer.
 func (e ServiceEndpoint) Listen() (net.Listener, error) { return listenService(e, ListenOptions{}) }
 
-// ListenWith is Listen with options. A service channel has no successor; a
-// service is restarted by its service manager instead.
+// ListenWith is Listen with options. A service channel has no successor and
+// no CrossVersion check; a service is restarted by its service manager instead.
 func (e ServiceEndpoint) ListenWith(opts ListenOptions) (net.Listener, error) {
 	return listenService(e, opts)
 }

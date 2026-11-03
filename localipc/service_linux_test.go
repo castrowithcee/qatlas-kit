@@ -191,3 +191,18 @@ func TestStatusGroups(t *testing.T) {
 		t.Fatalf("own groups = %v, %v", groups, err)
 	}
 }
+
+func TestServiceRejectsCrossVersion(t *testing.T) {
+	e := testServiceEndpoint(t)
+	_, err := e.ListenWith(ListenOptions{CrossVersion: &CrossVersion{Secret: testSecret(1)}})
+	if !errors.Is(err, errors.ErrUnsupported) || !strings.Contains(err.Error(), "cross-version") {
+		t.Fatalf("service cross-version = %v", err)
+	}
+	path, err := e.Path()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Lstat(path); !os.IsNotExist(err) {
+		t.Fatalf("refused service listener left a socket: %v", err)
+	}
+}

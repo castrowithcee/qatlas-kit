@@ -8,6 +8,16 @@
 // since it started refuses every peer (ErrProgramReplaced); ProgramReplaced
 // tells it so.
 //
+// CrossVersion lets processes of one application reach each other across an
+// update, such as a background process of the new program and long-running
+// processes of the old one. Both ends must select it. It replaces the program
+// check, including the refusal of a replaced own program, by the user check
+// plus a mutual challenge the package runs over a secret both ends share. The
+// application creates the secret and hands it to its background process over
+// the inherited pipe of package background (Start, Child.ReadHandover), never
+// through arguments, the environment, or an unencrypted file. ServiceEndpoint
+// does not support it.
+//
 // Harden is optional. Linux Harden hides the executable from same-user
 // processes, so a plain Dial to a hardened listener fails closed. A client
 // reaches it only with CheckHardened, which replaces the program check by the
@@ -39,5 +49,6 @@
 // started is not detected, so the check cannot prove which file a peer loaded;
 // such a swap needs the user's write access and lies outside this boundary, as
 // does deliberate impersonation by a process with the user's rights. A
-// Challenge is only as strong as the secret it proves.
+// Challenge and CrossVersion are only as strong as the secret they prove and
+// do not protect against a process that can read it.
 package localipc

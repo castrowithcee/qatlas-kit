@@ -21,6 +21,9 @@ import (
 
 const serviceSocketMode = 0o660
 
+var errCrossVersionService = fmt.Errorf("a service channel does not support a cross-version check: %w",
+	errors.ErrUnsupported)
+
 // groupsReader returns the supplementary groups of process pid, failing if it
 // no longer runs with the effective uid and gid the kernel reported.
 type groupsReader func(pid int32, uid, gid uint32) ([]uint32, error)
@@ -40,6 +43,9 @@ func servicePath(e ServiceEndpoint) (string, error) {
 func listenService(e ServiceEndpoint, opts ListenOptions) (net.Listener, error) {
 	if opts.Successor {
 		return nil, fmt.Errorf("%s: %w", e.label(), errHandoverUnsupported)
+	}
+	if opts.CrossVersion != nil {
+		return nil, fmt.Errorf("%s: %w", e.label(), errCrossVersionService)
 	}
 	path, err := e.Path()
 	if err != nil {
