@@ -124,6 +124,25 @@ func TestFilterModalOpensWithTheCurrentPeriod(t *testing.T) {
 	}
 }
 
+func TestFilterModalTabWraps(t *testing.T) {
+	l, _ := modalLog(t, LogViewSpec{Filter: LogFilter{Kind: LogFilterLast, Count: 5, Unit: LogUnitHours}}, i18n.English)
+	l.Update(typed('T'))
+	if got := l.fm.form.Focused(); got != logFieldKind {
+		t.Fatalf("focus starts on %q", got)
+	}
+	send(l, keyTab(), keyTab(), keyTab())
+	if got := l.fm.form.Focused(); got != logFieldKind {
+		t.Errorf("tab past the unit gave %q; it wraps to the kind", got)
+	}
+	l.Update(tea.KeyPressMsg{Code: tea.KeyTab, Mod: tea.ModShift})
+	if got := l.fm.form.Focused(); got != logFieldUnit {
+		t.Errorf("shift+tab on the kind gave %q; it wraps to the unit", got)
+	}
+	if !l.FilterOpen() {
+		t.Error("the modal closed")
+	}
+}
+
 func TestFilterModalKindsByKeyAndByClick(t *testing.T) {
 	const w, h = 80, 24
 	start := LogFilter{Kind: LogFilterLast, Count: 5, Unit: LogUnitHours}
