@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"errors"
+	"fmt"
 	"strconv"
 	"strings"
 
@@ -18,7 +20,9 @@ type TabID string
 type Area struct {
 	ID    AreaID
 	Title TextID
-	Tabs  []Tab
+	// Icon is one glyph that passes CheckIcon and stands before the title on the tab line; empty shows none.
+	Icon string
+	Tabs []Tab
 }
 
 // Tab is one sub-tab of an area.
@@ -63,7 +67,10 @@ type Message struct {
 type FrameSpec struct {
 	Width, Height int
 	Product       string
-	Status        []StatusMark
+	// Icon is the logo before the product name: one glyph that passes CheckIcon; empty shows none. The frame
+	// draws no glyph that fails CheckIcon, and CheckFrame reports one.
+	Icon   string
+	Status []StatusMark
 	// Back is the back button of the header, where the way back leads a level up; nil shows none.
 	Back *Hint
 	// HeaderKeys stand dimmed at the right end of the header, such as the help and command keys.
@@ -221,6 +228,9 @@ const headerGap = "  "
 // last.
 func (f *frameRun) header(spec FrameSpec, width int) (string, []Target) {
 	product := Escape(spec.Product)
+	if icon := f.icon(spec.Icon); icon != "" {
+		product = icon + " " + product
+	}
 	var blocks []headerBlock
 	back, hasBack := f.headerBlock(spec, spec.Back)
 	var keys headerBlock
@@ -337,6 +347,27 @@ func (f *frameRun) headerLeft(product string, marks []StatusMark) string {
 	return strings.Join(parts, headerGap)
 }
 
+// icon is glyph where it may stand: the terminal draws UTF-8 and glyph passes CheckIcon. The check runs again
+// here, so text that never went through CheckFrame cannot reach the terminal unescaped.
+func (f *frameRun) icon(glyph string) string {
+	if glyph == "" || f.styles.charset != CharsetUnicode || CheckIcon(glyph) != nil {
+		return ""
+	}
+	return glyph
+}
+
+// CheckFrame reports why spec cannot be drawn as it is asked: an icon of the frame or of an area that fails
+// CheckIcon. Applications run it in their tests or at start, with CheckAreas.
+func CheckFrame(spec FrameSpec) error {
+	var errs []error
+	if spec.Icon != "" {
+		if err := CheckIcon(spec.Icon); err != nil {
+			errs = append(errs, fmt.Errorf("frame: %w", err))
+		}
+	}
+	return errors.Join(append(errs, checkAreaIcons(spec.Areas)...)...)
+}
+
 // focusMark leads a bar: "> " while it has the focus, blanks otherwise, so nothing moves.
 func (f *frameRun) focusMark(focused bool) string {
 	if focused {
@@ -354,15 +385,26 @@ func (f *frameRun) tabLine(spec FrameSpec, width int) (string, []Target) {
 	plain := f.styles.profile.Colorless()
 	active := -1
 	names := make([]string, len(spec.Areas))
+	iconNames := make([]string, len(spec.Areas))
+	anyIcon := false
 	for i, a := range spec.Areas {
-		names[i] = strconv.Itoa(i+1) + " " + Escape(lookup(f.text, a.Title))
+		title := Escape(lookup(f.text, a.Title))
+		names[i] = strconv.Itoa(i+1) + " " + title
+		iconNames[i] = names[i]
+		if icon := f.icon(a.Icon); icon != "" {
+			iconNames[i] = strconv.Itoa(i+1) + " " + icon + " " + title
+			anyIcon = true
+		}
 		if a.ID == spec.ActiveArea {
 			active = i
 		}
 	}
-	variant := func(level int) []string {
+	variant := func(level int, icons bool) []string {
 		words := make([]string, len(names))
 		for i, name := range names {
+			if icons {
+				name = iconNames[i]
+			}
 			switch {
 			case i == active && plain:
 				words[i] = "[" + name + "]"
@@ -376,9 +418,14 @@ func (f *frameRun) tabLine(spec FrameSpec, width int) (string, []Target) {
 		}
 		return words
 	}
-	words := variant(0)
-	for level := 1; level <= 2 && 2+lipgloss.Width(strings.Join(words, " ")) > width; level++ {
-		words = variant(level)
+	// The icons go before any other cut; the digit-only level never holds one.
+	fits := func(words []string) bool { return 2+lipgloss.Width(strings.Join(words, " ")) <= width }
+	words := variant(0, anyIcon)
+	if anyIcon && !fits(words) {
+		words = variant(0, false)
+	}
+	for level := 1; level <= 2 && !fits(words); level++ {
+		words = variant(level, false)
 	}
 	var b strings.Builder
 	b.WriteString(mark)
