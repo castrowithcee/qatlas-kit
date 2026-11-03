@@ -226,6 +226,9 @@ Components derived from `qatlas-cli` and `qatlas-sysmin` retain their original A
 | `qatlas-sysmin/internal/notify/notify.go`, `http.go`, `smtp.go`, `event.go`, `credential.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Delivery over webhook, Slack, Telegram and SMTP with retries, redaction before cutting, cleaned texts, https-only addresses and encrypted SMTP login (`notify/notify.go`, `notify/http.go`, `notify/smtp.go`) |
 | `qatlas-sysmin/internal/notify/notify_test.go`, `fake_test.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Delivery tests and local SMTP test server (`notify/http_test.go`, `notify/smtp_test.go`) |
 | `qatlas-sysmin/internal/webhook/webhook.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Constant-time check of an HMAC-SHA256 webhook signature (`notify/verify.go`) |
+| `qatlas-sysmin/internal/adopt/stacks.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Compose project labels, grouping by project and working directory and splitting of the config file list (`docker/group.go`) |
+| `qatlas-sysmin/internal/hostchange/stackcheck.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Container use of a path through mount sources and the working directory, with a separator boundary (`docker/container.go`) |
+| `qatlas-sysmin/internal/execute/check.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Container name without the leading slash and health "none" as no health check (`docker/container.go`) |
 
 ## Built-in TUI themes
 
