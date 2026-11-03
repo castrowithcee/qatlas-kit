@@ -1,0 +1,18 @@
+Garden  ok                                                                                          
+  1 Plants  2 Beds                                                                                  
+  basil  resting                                                                                    
+  basil  resting                                                                                    
+  basil  resting                                                                                    
+  basil  resting  #= Service reset ==============================================#                  
+  basil  resting  | The demo service was reset.                                  |                  
+  basil  resting  |                                                              |                  
+  basil  resting  | $ example-tool stop demo                                     |                  
+  basil  resting  | $ example-tool reset demo --config                           |                  
+  basil  resting  |   /srv/example/demo/very-long-directory-name/settings.toml   |                  
+  basil  resting  |                                                              |                  
+  basil  resting  | > Close <                                                    |                  
+  basil  resting  | n/enter Close                                                |                  
+  basil  resting  #==============================================================#                  
+  basil  resting                                                                                    
+  basil  resting                                                                                    
+  basil  resting                                                                                    

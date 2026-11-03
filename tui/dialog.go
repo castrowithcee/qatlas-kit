@@ -30,6 +30,18 @@ type DialogKeys struct {
 	Enter ActionID
 }
 
+// DialogLine is one detail line of a dialog: plain text with a style, optionally behind a prefix such as a
+// prompt sign. A wrapped line continues under the text, not under the prefix. The dialog takes no styled
+// text, so it can escape every character before it draws.
+type DialogLine struct {
+	// Prefix stands in front of the first row, in the style of the line.
+	Prefix string
+	Text   string
+	// Style is StyleText, StyleHint, StyleWarn or StyleFail; the zero value is StyleText. StyleFail is only
+	// for a Notice, since red in a question belongs to the confirming button of a destructive one.
+	Style TextStyle
+}
+
 // DialogSpec is what a dialog asks. Question, Consequence and Details are plain text the application has
 // translated, since they name its data; the dialog escapes them.
 type DialogSpec struct {
@@ -40,8 +52,14 @@ type DialogSpec struct {
 	Question string
 	// Consequence is one sentence on what follows from the answer. A question without an input has one.
 	Consequence string
-	// Details are further lines between the consequence and the answers.
-	Details []string
+	// Details are further lines between the consequence and the answers, such as the commands a question
+	// would run.
+	Details []DialogLine
+	// Irreversible draws the consequence in the warn colour instead of dimmed: the answer cannot be undone.
+	Irreversible bool
+	// Notice makes the dialog a calm message: no warning glyph, the consequence optional, and at least one
+	// detail line, since a dialog that interrupts has something to read. It cannot carry an input or a danger.
+	Notice  bool
 	Answers []Answer
 	// Default is the answer the key Enter gives too; its button shows focused. Empty for a question that
 	// enter does not answer.
@@ -76,10 +94,12 @@ type Dialog struct {
 }
 
 // NewDialog checks spec and returns the open dialog. It rejects a dialog without question, a question without
-// consequence, a dialog without answers, an answer or key that names no action of keys or a label-less answer,
-// an answer listed twice, a default or danger that is no answer, a default without the enter action or with an
-// enter key that is another answer, a danger that is the default, so enter never destroys, an answer of an
-// input dialog that has no key outside the typed text, and a masked input that starts with a value.
+// consequence unless it is a notice, a notice without detail line, with an input or with a danger, a detail line
+// in a style other than text, hint, warn or fail, a detail line in fail outside a notice, a dialog without
+// answers, an answer or key that names no action of keys or a label-less answer, an answer listed twice, a
+// default or danger that is no answer, a default without the enter action or with an enter key that is another
+// answer, a danger that is the default, so enter never destroys, an answer of an input dialog that has no key
+// outside the typed text, and a masked input that starts with a value.
 func NewDialog(spec DialogSpec, keys *Keymap, text Translator) (*Dialog, error) {
 	if keys == nil || text == nil {
 		return nil, errors.New("the dialog needs a key table and a translator")
@@ -89,8 +109,29 @@ func NewDialog(spec DialogSpec, keys *Keymap, text Translator) (*Dialog, error) 
 	if strings.TrimSpace(spec.Question) == "" {
 		fail("no question")
 	}
-	if spec.Input == nil && strings.TrimSpace(spec.Consequence) == "" {
+	if spec.Input == nil && !spec.Notice && strings.TrimSpace(spec.Consequence) == "" {
 		fail("a question says what follows from its answer")
+	}
+	if spec.Notice {
+		switch {
+		case len(spec.Details) == 0:
+			fail("a notice needs a detail line, else it belongs in the message line")
+		case spec.Danger != "":
+			fail("a notice destroys nothing and has no danger")
+		case spec.Input != nil:
+			fail("a notice has no input")
+		}
+	}
+	for i, l := range spec.Details {
+		switch l.Style {
+		case StyleText, StyleHint, StyleWarn:
+		case StyleFail:
+			if !spec.Notice {
+				fail("detail %d is red, which a question keeps for the button of a destructive answer", i)
+			}
+		default:
+			fail("detail %d has a style other than text, hint, warn or fail", i)
+		}
 	}
 	if len(spec.Answers) == 0 {
 		fail("no answer")
@@ -287,18 +328,38 @@ func (d *Dialog) body(width int, styles Styles) ([]string, []Target) {
 			lines = append(lines, prefix+styles.Render(style, l))
 		}
 	}
-	if d.spec.Input == nil {
+	consequence := StyleHint
+	if d.spec.Irreversible {
+		consequence = StyleWarn
+	}
+	switch {
+	case d.spec.Notice:
+		wrapped(StyleTitle, d.spec.Question, "")
+		lines = append(lines, "")
+		if strings.TrimSpace(d.spec.Consequence) != "" {
+			wrapped(consequence, d.spec.Consequence, "")
+		}
+	case d.spec.Input == nil:
 		wrapped(StyleTitle, d.spec.Question, styles.Render(StyleWarn, styles.Glyph(GlyphWarning))+" ")
 		lines = append(lines, "")
-		wrapped(StyleHint, d.spec.Consequence, "")
-	} else {
+		wrapped(consequence, d.spec.Consequence, "")
+	default:
 		wrapped(StyleText, d.spec.Question, "")
 		if d.spec.Consequence != "" {
-			wrapped(StyleHint, d.spec.Consequence, "")
+			wrapped(consequence, d.spec.Consequence, "")
 		}
 	}
 	for _, detail := range d.spec.Details {
-		wrapped(StyleText, detail, "")
+		// Escape and measure the prefix before wrapping, so the continuation stands under the text as drawn.
+		lead := Escape(d.redact(detail.Prefix))
+		indent := strings.Repeat(" ", lipgloss.Width(lead))
+		for i, l := range wrapWords(Escape(d.redact(detail.Text)), max(width-lipgloss.Width(lead), 1)) {
+			row := indent
+			if i == 0 {
+				row = styles.Render(detail.Style, lead)
+			}
+			lines = append(lines, row+styles.Render(detail.Style, l))
+		}
 	}
 	if d.spec.Input != nil {
 		mask := ""
@@ -314,6 +375,39 @@ func (d *Dialog) body(width int, styles Styles) ([]string, []Target) {
 		lines = append(lines, strings.Split(styles.Message(d.msg.Kind, d.redact(d.msg.Text), width), "\n")...)
 	}
 	return lines, targets
+}
+
+// wrapWords breaks text into lines of at most width cells at spaces only, unlike Wrap, which also breaks at
+// hyphens and would alter a command. A word wider than width is split by cell width, so nothing is cut away.
+func wrapWords(text string, width int) []string {
+	width = max(width, 1)
+	var out []string
+	for _, line := range strings.Split(text, "\n") {
+		if lipgloss.Width(line) <= width {
+			out = append(out, line)
+			continue
+		}
+		cur := ""
+		for _, word := range strings.Fields(line) {
+			if cur != "" && lipgloss.Width(cur)+1+lipgloss.Width(word) <= width {
+				cur += " " + word
+				continue
+			}
+			if cur != "" {
+				out = append(out, cur)
+				cur = ""
+			}
+			if lipgloss.Width(word) <= width {
+				cur = word
+				continue
+			}
+			parts := strings.Split(ansi.Hardwrap(word, width, true), "\n")
+			out = append(out, parts[:len(parts)-1]...)
+			cur = parts[len(parts)-1]
+		}
+		out = append(out, cur)
+	}
+	return out
 }
 
 // buttons draws one button per answer label in rows of width cells, the default focused and the danger in the fail

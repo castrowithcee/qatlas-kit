@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
@@ -14,12 +15,12 @@ import (
 func dialogCatalogs() i18n.Catalogs[TextID] {
 	return i18n.Catalogs[TextID]{
 		i18n.English: {
-			"d.delete": "Delete plant", "d.leave": "Unsaved changes", "d.unlock": "Unlock the shed",
+			"d.delete": "Delete plant", "d.leave": "Unsaved changes", "d.unlock": "Unlock the shed", "d.reset": "Reset service", "d.done": "Service reset", "a.reset": "Reset", "a.close": "Close",
 			"a.delete": "Delete", "a.keep": "Keep", "a.save": "Save", "a.discard": "Discard", "a.edit": "Keep editing",
 			"a.yes": "Water", "a.no": "Not now", "a.unlock": "Unlock", "a.cancel": "Cancel",
 		},
 		i18n.German: {
-			"d.delete": "Pflanze löschen", "d.leave": "Ungespeicherte Änderungen", "d.unlock": "Schuppen öffnen",
+			"d.delete": "Pflanze löschen", "d.leave": "Ungespeicherte Änderungen", "d.unlock": "Schuppen öffnen", "d.reset": "Dienst zurücksetzen", "d.done": "Dienst zurückgesetzt", "a.reset": "Zurücksetzen", "a.close": "Schließen",
 			"a.delete": "Löschen", "a.keep": "Behalten", "a.save": "Speichern", "a.discard": "Verwerfen",
 			"a.edit": "Weiter bearbeiten", "a.yes": "Gießen", "a.no": "Nicht jetzt", "a.unlock": "Öffnen", "a.cancel": "Abbrechen",
 		},
@@ -42,8 +43,29 @@ func leaveSpec() DialogSpec {
 
 func confirmSpec() DialogSpec {
 	return DialogSpec{Title: "d.delete", Question: "Water every plant now?", Consequence: "The pump runs for a minute.",
-		Details: []string{"5 plants", "2 of them are resting"},
+		Details: []DialogLine{{Text: "5 plants"}, {Text: "2 of them are resting"}},
 		Answers: []Answer{{Action: "yes", Label: "a.yes"}, {Action: "no", Label: "a.no"}}, Default: "yes", Keys: DialogKeys{Enter: "enter"}}
+}
+
+// previewSpec asks with the commands it would run behind a prompt sign.
+func previewSpec() DialogSpec {
+	return DialogSpec{Title: "d.reset", Question: "Reset the demo service?", Consequence: "Its state is erased and cannot be restored.",
+		Irreversible: true,
+		Details: []DialogLine{
+			{Prefix: "$ ", Text: "example-tool stop demo", Style: StyleHint},
+			{Prefix: "$ ", Text: "example-tool reset demo --config /srv/example/demo/very-long-directory-name/settings.toml --verbose", Style: StyleHint},
+		},
+		Answers: []Answer{{Action: "yes", Label: "a.reset"}, {Action: "no", Label: "a.cancel"}}, Danger: "yes"}
+}
+
+// noticeSpec is a calm message that carries the commands which ran.
+func noticeSpec() DialogSpec {
+	return DialogSpec{Title: "d.done", Question: "The demo service was reset.", Notice: true,
+		Details: []DialogLine{
+			{Prefix: "$ ", Text: "example-tool stop demo", Style: StyleHint},
+			{Prefix: "$ ", Text: "example-tool reset demo --config /srv/example/demo/very-long-directory-name/settings.toml", Style: StyleHint},
+		},
+		Answers: []Answer{{Action: "no", Label: "a.close"}}, Default: "no", Keys: DialogKeys{Enter: "enter"}}
 }
 
 func unlockSpec() DialogSpec {
@@ -96,6 +118,16 @@ func TestNewDialogRejectsWhatCannotWork(t *testing.T) {
 			s.Answers = append(s.Answers, Answer{Action: "yes", Label: "a.yes"})
 			return s
 		}, "no key that acts while text is typed"},
+		{"detail style", func() DialogSpec { s := confirmSpec(); s.Details[0].Style = StyleOK; return s }, "style other than"},
+		{"fail detail in question", func() DialogSpec { s := confirmSpec(); s.Details[0].Style = StyleFail; return s }, "is red"},
+		{"fail detail in input dialog", func() DialogSpec {
+			s := unlockSpec()
+			s.Details = []DialogLine{{Text: "x", Style: StyleFail}}
+			return s
+		}, "is red"},
+		{"notice without detail", func() DialogSpec { s := noticeSpec(); s.Details = nil; return s }, "needs a detail line"},
+		{"notice with danger", func() DialogSpec { s := noticeSpec(); s.Danger = "yes"; return s }, "no danger"},
+		{"notice with input", func() DialogSpec { s := noticeSpec(); s.Input = &DialogInput{}; return s }, "no input"},
 		{"masked with value", func() DialogSpec { s := unlockSpec(); s.Input.Value = "kept-secret"; return s }, "masked input starts empty"},
 	}
 	keys := sampleKeymap(t, CharsetUnicode)
@@ -397,10 +429,102 @@ func TestDialogReadsWithoutColourAndInGerman(t *testing.T) {
 func TestDialogEscapesControlCharacters(t *testing.T) {
 	spec := deleteSpec()
 	spec.Question = "Delete \x1b[2Jbasil?"
-	spec.Details = []string{"note\x07"}
+	spec.Details = []DialogLine{{Prefix: "\x1b[2J$ ", Text: "note\x07"}}
 	d := newSampleDialog(t, spec, i18n.English)
 	view, _, _ := d.Overlay(looks(t)["noneascii"], sampleScreen(90, 30), 90, 30, Rect{Y: 2, Width: 90, Height: 27})
 	if strings.Contains(view, "\x1b[2J") || strings.Contains(view, "\x07") || !strings.Contains(view, `\x1b[2Jbasil`) {
 		t.Errorf("control characters reach the terminal:\n%q", view)
+	}
+}
+
+func TestDialogDetailsWrapUnderTheText(t *testing.T) {
+	spec := previewSpec()
+	spec.Details = []DialogLine{{Prefix: "$ ", Text: "run " + strings.Repeat("x", 80) + " end", Style: StyleHint}}
+	d := newSampleDialog(t, spec, i18n.English)
+	lines, _ := d.body(40, looks(t)["noneascii"])
+	var got []string
+	for _, l := range lines {
+		got = append(got, ansi.Strip(l))
+	}
+	joined := strings.Join(got, "\n")
+	if !strings.Contains(joined, "$ run") || strings.Count(joined, "x") != 80 || !strings.Contains(joined, "end") {
+		t.Fatalf("text lost or not wrapped:\n%s", joined)
+	}
+	for _, l := range got {
+		if lipgloss.Width(l) > 40 {
+			t.Errorf("row of %d cells: %q", lipgloss.Width(l), l)
+		}
+	}
+	if !strings.HasPrefix(got[len(got)-1], "  ") {
+		t.Errorf("continuation not indented under the text: %q", got[len(got)-1])
+	}
+}
+
+func TestDialogMasksSecretInDetails(t *testing.T) {
+	spec := unlockSpec()
+	spec.Details = []DialogLine{{Prefix: "canary-shed-51c2> ", Text: "uses canary-shed-51c2"}}
+	d := newSampleDialog(t, spec, i18n.English)
+	for _, r := range "canary-shed-51c2" {
+		d.Update(press(string(r)))
+	}
+	view, _, _ := d.Overlay(looks(t)["noneascii"], sampleScreen(90, 30), 90, 30, Rect{Y: 2, Width: 90, Height: 27})
+	if strings.Contains(view, "canary-shed") {
+		t.Errorf("secret reaches the detail lines:\n%s", view)
+	}
+}
+
+func TestGoldenDialogDetails(t *testing.T) {
+	for _, tt := range []struct {
+		name, look string
+		spec       func() DialogSpec
+		w          int
+	}{
+		{"dialog.preview.narrow.golden", "noneascii", previewSpec, 46},
+		{"dialog.preview.wide.golden", "noneascii", previewSpec, 100},
+		{"dialog.preview.wide.dark.golden", "dark", previewSpec, 100},
+		{"dialog.notice.narrow.golden", "noneascii", noticeSpec, 46},
+		{"dialog.notice.wide.golden", "noneascii", noticeSpec, 100},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			d := newSampleDialog(t, tt.spec(), i18n.English)
+			view, _, ok := d.Overlay(looks(t)[tt.look], sampleScreen(tt.w, 18), tt.w, 18, Rect{Y: 2, Width: tt.w, Height: 16})
+			if !ok {
+				t.Fatal("dialog does not fit")
+			}
+			checkGolden(t, tt.name, view+"\n")
+		})
+	}
+}
+
+func TestWrapWordsBreaksOnlyAtSpaces(t *testing.T) {
+	// Tokens that fit a row stay whole, hyphens included.
+	got := wrapWords("start --verbose /a/very-long-path --flag", 20)
+	want := []string{"start --verbose", "/a/very-long-path", "--flag"}
+	if !slices.Equal(got, want) {
+		t.Errorf("got %q, want %q", got, want)
+	}
+	// A word wider than the row is split by cell width and appears completely.
+	long := strings.Repeat("宽x", 30)
+	rows := wrapWords("go "+long, 10)
+	if len(rows) < 3 || rows[0] != "go" || strings.Join(rows[1:], "") != long {
+		t.Errorf("long word: %q", rows)
+	}
+	for _, l := range rows {
+		if lipgloss.Width(l) > 10 {
+			t.Errorf("row of %d cells: %q", lipgloss.Width(l), l)
+		}
+	}
+	hyphens := wrapWords("a "+strings.Repeat("x-", 15), 10)
+	if strings.Join(hyphens[1:], "") != strings.Repeat("x-", 15) {
+		t.Errorf("hyphenated long word: %q", hyphens)
+	}
+}
+
+func TestNoticeAcceptsFailDetail(t *testing.T) {
+	spec := noticeSpec()
+	spec.Details[0].Style = StyleFail
+	keys := sampleKeymap(t, CharsetUnicode)
+	if _, err := NewDialog(spec, keys, newTranslator(t, i18n.English, dialogCatalogs(), keys)); err != nil {
+		t.Fatal(err)
 	}
 }
