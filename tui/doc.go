@@ -201,11 +201,36 @@
 // is shortened with the ellipsis glyph. LogViewActions gives the actions only this part needs; scrolling,
 // search, enter and back are the actions the table already holds.
 //
-// The status line holds a button for following, search, wrap and the time column, and for the previous and
-// next match while a search has matches, with the position at its right. Each button names the key in force
+// A LogFilter is the period a LogView shows: all, the last count of minutes, hours, days or months, or a range
+// from one minute to another; LogViewSpec.Filter starts it, LogViewSpec.Units limits the units on offer and
+// LogViewSpec.Now is the clock. Bounds turns it into a begin and an end for a given now, a zero time being no
+// limit, and Validate names what is wrong with one. The view loads nothing: a line outside the period at its
+// arrival is not kept, a line without time is, and a change of the period drops the held lines outside it, so
+// search, matches and position count only what is shown. The application takes the user's choice with
+// TakeFilterChange, calls Clear and supplies the lines of the new period with Append; SetFilter sets a period
+// without reporting it. Clear empties the buffer and the matches and keeps the period, the search and the
+// switches. Following resumes with a change to all or to a count and ends with a range whose end has passed on
+// the clock of the view.
+//
+// The filter action, by key or by its button, opens a modal over the view, a Form built from
+// LogViewKeys.FilterForm: a choice for all, last or range; for last a count from 1 to LogFilterMaxCount and a
+// unit choice limited to the units on offer; for a range two dates with the time of day and their calendar.
+// Only the fields of the chosen kind stand in it, filled in from the period, and what was typed for another
+// kind returns with it. While it is open the view takes every key, click and notch of the wheel, and
+// ModalOverlay draws it over the screen, whose targets then take no click; ModalView and Hints serve a terminal
+// too small for that, as for a Dialog. Back discards; the save key and enter apply, enter from every
+// field but a date, where it opens the calendar as in every form. A choice steps with left and right, and its
+// list opens by a click on the field; a list or the calendar takes every key, enter chooses, and back closes
+// only that. Two buttons show the save and back keys in force and act as they do.
+// A period that is not valid, no count or one below 1, an empty date or an end before the start, stays open
+// with its problem under the field. An applied period that differs from the current one is reported once.
+//
+// The status line holds a button for following, search, the period, wrap and the time column, and for the
+// previous and next match while a search has matches, with the position at its right. The period button, which
+// LogViewKeys.Filter enables, names the period in short form. Each button names the key in force
 // and a switch says on or off in words; a click does what its key does and no more. Where the width runs
-// short the labels go first, one by one by rank, and the keys stay; then buttons go by rank, following and search last; the
-// position gives way last, to a shorter form. While the search text is typed the row holds that field and
+// short the labels go first, one by one by rank, and the keys stay; then buttons go by rank, following and
+// search last and the period before them; the position gives way last, to a shorter form. While the search text is typed the row holds that field and
 // the position only.
 //
 // Colours come from themes. Screen code names roles, never colour values: a Palette assigns one colour per
