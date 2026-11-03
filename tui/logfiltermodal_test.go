@@ -130,16 +130,73 @@ func TestFilterModalTabWraps(t *testing.T) {
 	if got := l.fm.form.Focused(); got != logFieldKind {
 		t.Fatalf("focus starts on %q", got)
 	}
-	send(l, keyTab(), keyTab(), keyTab())
-	if got := l.fm.form.Focused(); got != logFieldKind {
-		t.Errorf("tab past the unit gave %q; it wraps to the kind", got)
+	send(l, keyTab(), keyTab())
+	if got := l.fm.form.Focused(); got != logFieldUnit {
+		t.Errorf("tab twice gave %q", got)
+	}
+	send(l, keyTab())
+	if a, ok := l.fm.form.FocusedButton(); !ok || a != l.spec.Keys.FilterForm.Save {
+		t.Errorf("tab past the unit reaches %q, %v; it is apply", a, ok)
+	}
+	send(l, keyTab())
+	if a, ok := l.fm.form.FocusedButton(); !ok || a != l.spec.Keys.FilterForm.Back {
+		t.Errorf("tab on apply reaches %q, %v; it is discard", a, ok)
+	}
+	send(l, keyTab())
+	if got := l.fm.form.Focused(); got != logFieldKind || l.fm.form.onButton() {
+		t.Errorf("tab past discard gave %q; it wraps to the kind", got)
 	}
 	l.Update(tea.KeyPressMsg{Code: tea.KeyTab, Mod: tea.ModShift})
-	if got := l.fm.form.Focused(); got != logFieldUnit {
-		t.Errorf("shift+tab on the kind gave %q; it wraps to the unit", got)
+	if a, ok := l.fm.form.FocusedButton(); !ok || a != l.spec.Keys.FilterForm.Back {
+		t.Errorf("shift+tab on the kind reaches %q, %v; it is discard", a, ok)
 	}
 	if !l.FilterOpen() {
 		t.Error("the modal closed")
+	}
+}
+
+func TestFilterModalEnterOnAButton(t *testing.T) {
+	last := LogFilter{Kind: LogFilterLast, Count: 5, Unit: LogUnitHours}
+	// Enter on apply applies; on discard it discards.
+	l, _ := modalLog(t, LogViewSpec{Filter: last}, i18n.English)
+	l.Update(typed('T'))
+	l.fm.form.Focus(logFieldCount)
+	clearText(l, 1)
+	typeModal(l, "7")
+	send(l, keyTab(), keyTab(), keyEnter())
+	if l.FilterOpen() || l.filter.Count != 7 {
+		t.Errorf("enter on apply: open %v, filter %+v", l.FilterOpen(), l.filter)
+	}
+	l, _ = modalLog(t, LogViewSpec{Filter: last}, i18n.English)
+	l.Update(typed('T'))
+	l.fm.form.Focus(logFieldCount)
+	clearText(l, 1)
+	typeModal(l, "9")
+	send(l, keyTab(), keyTab(), keyTab(), keyEnter())
+	if l.FilterOpen() || l.filter.Count != 5 {
+		t.Errorf("enter on discard: open %v, filter %+v", l.FilterOpen(), l.filter)
+	}
+	// An invalid period stays open with its problem, and the focus goes to the field.
+	l, _ = modalLog(t, LogViewSpec{Filter: last}, i18n.English)
+	l.Update(typed('T'))
+	l.fm.form.Focus(logFieldCount)
+	clearText(l, 1)
+	send(l, keyTab(), keyTab(), keyEnter())
+	if !l.FilterOpen() || l.filter.Count != 5 {
+		t.Errorf("enter on apply with no count: open %v, filter %+v", l.FilterOpen(), l.filter)
+	}
+	if got := l.fm.form.Focused(); got != logFieldCount || l.fm.form.onButton() {
+		t.Errorf("the problem leaves the focus on %q", got)
+	}
+	// Typing on a button changes no field.
+	l, _ = modalLog(t, LogViewSpec{Filter: last}, i18n.English)
+	l.Update(typed('T'))
+	l.fm.form.Focus(logFieldUnit)
+	send(l, keyTab())
+	typeModal(l, "x")
+	send(l, keyRight(), keyDown())
+	if !l.fm.form.onButton() || l.fm.form.Values()[logFieldCount].Text != "5" || l.fm.form.Values()[logFieldUnit].Choice != "hours" {
+		t.Errorf("a button took typing: %+v", l.fm.form.Values())
 	}
 }
 
@@ -156,7 +213,7 @@ func TestFilterModalKindsByKeyAndByClick(t *testing.T) {
 			l.Update(typed('T'))
 			clickItem(t, l, w, h, item(mFieldRef(logFieldKind)))
 			clickItem(t, l, w, h, item(mOptionRef(logFieldKind, logKindAll)))
-			clickItem(t, l, w, h, item(logApplyRef))
+			clickItem(t, l, w, h, item(formButtonRef+"0"))
 		}},
 		{"last", LogFilter{Kind: LogFilterLast, Count: 45, Unit: LogUnitDays}, func(l *LogView) {
 			l.Update(typed('T'))
@@ -171,7 +228,7 @@ func TestFilterModalKindsByKeyAndByClick(t *testing.T) {
 			typeModal(l, "45")
 			clickItem(t, l, w, h, item(mFieldRef(logFieldUnit)))
 			clickItem(t, l, w, h, item(mOptionRef(logFieldUnit, "days")))
-			clickItem(t, l, w, h, item(logApplyRef))
+			clickItem(t, l, w, h, item(formButtonRef+"0"))
 		}},
 		{"range", LogFilter{Kind: LogFilterRange, From: lt(2026, time.November, 3, 14, 0, 0), Until: lt(2026, time.November, 3, 14, 45, 0)}, func(l *LogView) {
 			l.Update(typed('T'))
@@ -188,7 +245,7 @@ func TestFilterModalKindsByKeyAndByClick(t *testing.T) {
 			typeModal(l, "2026-11-03 14:00")
 			clickItem(t, l, w, h, item(mFieldRef(logFieldUntil)))
 			typeModal(l, "2026-11-03 14:45")
-			clickItem(t, l, w, h, item(logApplyRef))
+			clickItem(t, l, w, h, item(formButtonRef+"0"))
 		}},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
@@ -245,7 +302,7 @@ func TestFilterModalRefusesWhatIsInvalid(t *testing.T) {
 			l.Update(typed('T'))
 			tt.keys(l)
 			if byClick {
-				clickItem(t, l, 80, 24, item(logApplyRef))
+				clickItem(t, l, 80, 24, item(formButtonRef+"0"))
 			} else {
 				l.Update(keySave())
 			}
@@ -286,7 +343,7 @@ func TestFilterModalEscDiscards(t *testing.T) {
 		send(l, keyRight(), keyTab())
 		typeModal(l, "7")
 		if byClick {
-			clickItem(t, l, 80, 24, item(logCancelRef))
+			clickItem(t, l, 80, 24, item(formButtonRef+"1"))
 		} else {
 			l.Update(keyEsc())
 		}
@@ -445,7 +502,7 @@ func TestFilterModalControlsAreTargets(t *testing.T) {
 			l.Update(keyRight())
 		}
 		out, targets := modalDraw(t, l, 80, 24)
-		want := []string{mFieldRef(logFieldKind), logApplyRef, logCancelRef}
+		want := []string{mFieldRef(logFieldKind), formButtonRef + "0", formButtonRef + "1"}
 		switch kind {
 		case "last":
 			want = append(want, mFieldRef(logFieldCount), mFieldRef(logFieldUnit))
@@ -463,7 +520,7 @@ func TestFilterModalControlsAreTargets(t *testing.T) {
 		}
 		rows := strings.Split(out, "\n")
 		for _, tg := range targets {
-			if tg.Item == logApplyRef || tg.Item == logCancelRef {
+			if tg.Item == formButtonRef+"0" || tg.Item == formButtonRef+"1" {
 				text := string([]rune(rows[tg.Rect.Y])[tg.Rect.X : tg.Rect.X+tg.Rect.Width])
 				if !strings.HasPrefix(text, "[ ") || !strings.HasSuffix(text, " ]") {
 					t.Errorf("%s: target %q is no whole button", kind, text)
@@ -714,6 +771,8 @@ func modalGolden(t *testing.T, kind string) *LogView {
 	case "range":
 		send(l, keyRight(), keyRight(), keyTab())
 		typeModal(l, "2026-11-03 14:00")
+	case "button":
+		send(l, keyRight(), keyTab(), keyTab(), keyTab())
 	}
 	return l
 }
@@ -727,6 +786,8 @@ func TestGoldenFilterModal(t *testing.T) {
 		{"logview.modal.last.wide.golden", "last", 100, 24},
 		{"logview.modal.range.narrow.golden", "range", 46, 24},
 		{"logview.modal.range.wide.golden", "range", 100, 24},
+		{"logview.modal.button.narrow.golden", "button", 46, 20},
+		{"logview.modal.button.wide.golden", "button", 100, 24},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			out, _ := modalDraw(t, modalGolden(t, tt.kind), tt.w, tt.h)

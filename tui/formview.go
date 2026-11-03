@@ -73,6 +73,47 @@ func (f *Form) View(styles Styles, width, height int) (string, []Target) {
 	if height == 0 {
 		return "", nil
 	}
+	if rows, targets := f.buttonRows(width, styles); len(rows) > 0 {
+		// The buttons keep the bottom rows. A field with the focus gives way to them only if it cannot be drawn
+		// above them; a button with the focus never does, and the fields get what is left.
+		need := len(rows) + 1
+		var view string
+		var ts []Target
+		ok := false
+		if height > need {
+			view, ts, ok = f.fieldsView(styles, width, height-need)
+		}
+		if ok {
+			lines := strings.Split(view, "\n")
+			lines = append(lines, Pad("", width))
+			for _, row := range rows {
+				lines = append(lines, Pad(Clip(row, width), width))
+			}
+			// The free area of the form is the first target and reaches down to the buttons.
+			ts[0].Rect.Height = height
+			return strings.Join(lines, "\n"), append(ts, OffsetTargets(targets, 0, height-len(rows))...)
+		}
+		if f.btn >= 0 {
+			if height < len(rows) {
+				return f.sizeHint(width, height, styles), nil
+			}
+			lines := make([]string, height)
+			for i := range lines {
+				lines[i] = Pad("", width)
+			}
+			for i, row := range rows {
+				lines[height-len(rows)+i] = Pad(Clip(row, width), width)
+			}
+			free := Target{Rect: Rect{Width: width, Height: height}, Zone: ZoneForm}
+			return strings.Join(lines, "\n"), append([]Target{free}, OffsetTargets(targets, 0, height-len(rows))...)
+		}
+	}
+	view, targets, _ := f.fieldsView(styles, width, height)
+	return view, targets
+}
+
+// fieldsView is View of the fields alone; ok is false where it asks for a larger terminal.
+func (f *Form) fieldsView(styles Styles, width, height int) (view string, targets []Target, ok bool) {
 	try := func(lay formLayout, strict bool) (string, []Target, layoutResult) {
 		d, res := f.draw(lay, width, height, strict, styles)
 		if res != layoutDrawn {
@@ -83,27 +124,27 @@ func (f *Form) View(styles Styles, width, height int) (string, []Target) {
 	}
 	if len(f.sections) >= 2 && width >= formListMinWidth {
 		if view, targets, res := try(formLayout{list: true, boxed: true}, true); res == layoutDrawn {
-			return view, targets
+			return view, targets, true
 		} else if res == layoutNarrow {
 			if view, targets, res := try(formLayout{list: true}, true); res == layoutDrawn {
-				return view, targets
+				return view, targets, true
 			}
 		}
 	}
 	view, targets, res := try(formLayout{boxed: true, headings: true}, true)
 	if res == layoutDrawn {
-		return view, targets
+		return view, targets, true
 	}
 	// The frames and headings give way to the width alone; where the height is short, the form asks for more.
 	if res == layoutNarrow {
 		if view, targets, res = try(formLayout{headings: true}, true); res == layoutDrawn {
-			return view, targets
+			return view, targets, true
 		}
 		if view, targets, res = try(formLayout{}, false); res == layoutDrawn {
-			return view, targets
+			return view, targets, true
 		}
 	}
-	return f.sizeHint(width, height, styles), nil
+	return f.sizeHint(width, height, styles), nil, false
 }
 
 // finish cuts the lines to the screen, draws the open list of values below the focused field and adds the
@@ -502,7 +543,7 @@ func (f *Form) blocks(width int, boxed, headings bool, only SectionID, styles St
 // under the focused field and the problems of the field. A label longer than the column wraps inside it.
 func (f *Form) block(i, width, labelCol int, boxed bool, styles Styles) formBlock {
 	field := &f.fields[i]
-	focused := i == f.focus
+	focused := f.fieldFocused(i)
 	headW := 2 + labelCol + 1
 	valueW := width - headW
 	labels := Wrap(f.label(i), max(labelCol, 1))
@@ -587,7 +628,7 @@ func (f *Form) block(i, width, labelCol int, boxed bool, styles Styles) formBloc
 // from the top left of the value.
 func (f *Form) valueLines(i, width int, styles Styles) ([]string, []Target) {
 	field := &f.fields[i]
-	focused := i == f.focus
+	focused := f.fieldFocused(i)
 	hint := func(id TextID) []string {
 		return []string{styles.Render(StyleHint, styles.Truncate(Escape(f.text.Lookup(id)), width))}
 	}
@@ -669,7 +710,7 @@ func (f *Form) ticks(i, width int, styles Styles) ([]string, []Target) {
 	line, x := "", 0
 	for j, c := range field.Choices {
 		lead := " "
-		if i == f.focus && j == field.cursor {
+		if f.fieldFocused(i) && j == field.cursor {
 			lead = styles.Render(StyleActive, ">")
 		}
 		part := lead + styles.TickBox(field.ticked[j]) + " " + Escape(f.text.Lookup(c.Label))
@@ -694,4 +735,40 @@ func boolInt(b bool) int {
 		return 1
 	}
 	return 0
+}
+
+// buttonRows draws the buttons in rows of at most width cells, each behind the key now in force, the main one
+// bold, and returns a target per button, counted from the top left of the rows.
+func (f *Form) buttonRows(width int, styles Styles) ([]string, []Target) {
+	var rows []string
+	var targets []Target
+	line, x := "", 0
+	for j, b := range f.buttons {
+		kind := ButtonNormal
+		if b.Primary {
+			kind = ButtonPrimary
+		}
+		label := f.text.Lookup(b.Label)
+		if key := f.table.Label(b.Action); key != "" {
+			label = key + " " + label
+		}
+		drawn := styles.Button(kind, label, f.btn == j)
+		w := lipgloss.Width(drawn)
+		if x > 0 && x+len(buttonGap)+w > width {
+			rows, line, x = append(rows, line), "", 0
+		}
+		if x > 0 {
+			line += buttonGap
+			x += len(buttonGap)
+		}
+		if r, ok := clipRect(Rect{X: x, Y: len(rows), Width: w, Height: 1}, width); ok {
+			targets = append(targets, Target{Rect: r, Zone: ZoneForm, Action: b.Action, Item: formButtonRef + strconv.Itoa(j)})
+		}
+		line += drawn
+		x += w
+	}
+	if line != "" {
+		rows = append(rows, line)
+	}
+	return rows, targets
 }
