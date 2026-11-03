@@ -35,6 +35,7 @@ const (
 	TextKeyDelete    TextID = "tui.key.delete"
 	TextKeyDiscard   TextID = "tui.key.discard"
 	TextKeyReload    TextID = "tui.key.reload"
+	TextKeyChoose    TextID = "tui.key.choose"
 
 	TextCancelled      TextID = "tui.cancelled"
 	TextCopyHandedOver TextID = "tui.copyhandedover"
@@ -57,6 +58,12 @@ const (
 	TextCommandPrompt  TextID = "tui.command.prompt"
 	TextCommandNoMatch TextID = "tui.command.nomatch"
 	TextCommandUnknown TextID = "tui.command.unknown"
+
+	TextFormEmpty         TextID = "tui.form.empty"
+	TextFormMaskedEntered TextID = "tui.form.maskedentered"
+	TextFormMaskedKept    TextID = "tui.form.maskedkept"
+	TextFormKeyPress      TextID = "tui.form.keypress"
+	TextFormSectionClosed TextID = "tui.form.sectionclosed"
 
 	TextLeaveTitle       TextID = "tui.leave.title"
 	TextLeaveConsequence TextID = "tui.leave.consequence"
@@ -118,6 +125,7 @@ func ModuleCatalog() i18n.Catalogs[TextID] {
 			TextKeyDelete:    "delete",
 			TextKeyDiscard:   "discard",
 			TextKeyReload:    "reload",
+			TextKeyChoose:    "choose",
 
 			TextCancelled:      "Cancelled",
 			TextCopyHandedOver: "Handed to the terminal for the clipboard; the terminal does not confirm it",
@@ -140,6 +148,12 @@ func ModuleCatalog() i18n.Catalogs[TextID] {
 			TextCommandPrompt:  "search or run a command…",
 			TextCommandNoMatch: "no command matches",
 			TextCommandUnknown: "unknown command %q; clear the line to list them all",
+
+			TextFormEmpty:         "empty",
+			TextFormMaskedEntered: "(entered, hidden)",
+			TextFormMaskedKept:    "(stored, unchanged)",
+			TextFormKeyPress:      "press the new key",
+			TextFormSectionClosed: "(closed)",
 
 			TextLeaveTitle:       "Unsaved changes",
 			TextLeaveConsequence: "Leaving drops them.",
@@ -196,6 +210,7 @@ func ModuleCatalog() i18n.Catalogs[TextID] {
 			TextKeyDelete:    "Löschen",
 			TextKeyDiscard:   "Verwerfen",
 			TextKeyReload:    "Neu laden",
+			TextKeyChoose:    "Auswählen",
 
 			TextCancelled:      "Abgebrochen",
 			TextCopyHandedOver: "An das Terminal für die Zwischenablage übergeben; das Terminal bestätigt es nicht",
@@ -218,6 +233,12 @@ func ModuleCatalog() i18n.Catalogs[TextID] {
 			TextCommandPrompt:  "Befehl suchen oder ausführen…",
 			TextCommandNoMatch: "Kein Befehl passt",
 			TextCommandUnknown: "Unbekannter Befehl %q; Zeile leeren, um alle zu listen",
+
+			TextFormEmpty:         "leer",
+			TextFormMaskedEntered: "(eingegeben, verborgen)",
+			TextFormMaskedKept:    "(gespeichert, unverändert)",
+			TextFormKeyPress:      "neue Taste drücken",
+			TextFormSectionClosed: "(zu)",
 
 			TextLeaveTitle:       "Ungespeicherte Änderungen",
 			TextLeaveConsequence: "Beim Verlassen gehen sie verloren.",

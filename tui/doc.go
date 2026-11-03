@@ -97,6 +97,29 @@
 // only what the application hands to the list, never its data. A click on a field opens its values and one on
 // a value takes it; the search field of a list may stand at the right end of the bar.
 //
+// A FormModel shows the fields an application hands it, each with a stable ID, a kind, a label and a value,
+// and knows no schema: the application checks the values when the save key is pressed, from any field, and
+// hands the problems back with SetProblems. Enter never saves: it goes to the next field, opens the values of a
+// choice, starts taking a key, or yields the enter key on a list field, whose editor the application opens. A
+// choice holds known values only, a multiple choice ticks them, and the values a form returns are stable IDs.
+// A masked field never shows what is typed, not in its row, a target or a problem, and is never handed a stored
+// secret: Stored says one exists, which an empty field keeps. Each problem stands under its field until that
+// field changes, a problem without a field above the form, and a section with a problem carries a mark and
+// opens. An advanced section stays closed and dimmed while it holds nothing. On a wide terminal the sections
+// stand as a numbered list beside the fields of the focused one; where the form does not fit, the fields lose
+// their frames, then the headings go, then the fields around the focus stand alone, and last the form asks for
+// a larger terminal, so the focus is always in view. A click on a field focuses it and types nothing; on a
+// choice or list field it is enter, on a tick box the toggle key, on a section a jump to its first field.
+//
+// A DialogModel asks a question over the screen: the warning glyph and the question in bold, one sentence on
+// what follows, the details, one button per answer and the key line of the answers, from the same answers, so
+// no dialog names one twice. Only the answers act; every other key goes back to the application, so a stray key
+// neither saves nor destroys. The answer to enter is the default and shows focused, and the destroying answer
+// of a destructive question is drawn in the fail colour and can never be the default. A dialog with an input
+// reads typed text, shows what runs and the last error inside itself and never shows a masked input. View
+// dims the screen behind it and returns the targets of the dialog alone; where it does not fit, Page fills the
+// workspace and Hints go into the footer, whose targets answer it.
+//
 // Colours come from themes. Screen code names roles, never colour values: a Palette assigns one colour per
 // role, Styles build text styles and widgets on it. A ThemeSet holds the terminal theme, the application's
 // own themes and the built-in schemes; each theme is data, either hand-picked palettes per colour profile

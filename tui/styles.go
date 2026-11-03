@@ -136,6 +136,7 @@ const (
 	GlyphKeySeparator              // between groups of key hints
 	GlyphTabSeparator              // between groups of tabs
 	GlyphInfo                      // more explanation on request
+	GlyphMask                      // one typed character of a masked field
 	glyphCount
 )
 
@@ -152,6 +153,7 @@ var glyphs = [glyphCount][2]string{
 	GlyphKeySeparator: {" · ", " - "},
 	GlyphTabSeparator: {"|", "|"},
 	GlyphInfo:         {" (i)", " (i)"},
+	GlyphMask:         {"•", "*"},
 }
 
 // Glyph is the form of g in the character set of the styles.
