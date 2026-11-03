@@ -128,7 +128,14 @@
 // the problems back with SetProblems. Enter never saves: it goes to the next field, opens the values of a
 // choice, starts taking a key, or yields the enter key on a list field, whose editor the application opens. A
 // choice holds known values only, a multiple choice ticks them, and the values a form returns are stable IDs.
-// Tab and shift+tab cycle through the fields, from the last to the first and back.
+// FormSpec.Buttons add buttons below the fields, each an action of the key table and a label drawn behind the
+// key in force. Tab and shift+tab cycle through the fields and then the buttons, from the last button to the
+// first field and back; the focused button reads "> label <" without colour. Enter on a button, its click and
+// its key give its action and nothing more, as Update and Click report it. While a button has the focus,
+// typing, paste, left, right, up, down and the wheel change nothing; a click on a field takes the focus.
+// A button with the focus is always in view: the fields get the height that is left, or none, and only where
+// not even the buttons fit does the form ask for a larger terminal. With a field focused, the form is drawn
+// without the buttons where they do not fit beside it.
 // A masked field never shows what is typed, not in its row, a target or a problem, and is never handed a
 // stored secret: Stored says one exists, which an empty field keeps. Each problem stands under its field
 // until that field changes, a problem without a field above the form, and a section with a problem carries a
@@ -218,11 +225,12 @@
 // unit choice limited to the units on offer; for a range two dates with the time of day and their calendar.
 // Only the fields of the chosen kind stand in it, filled in from the period, and what was typed for another
 // kind returns with it. While it is open the view takes every key, click and notch of the wheel, and
-// ModalOverlay draws it over the screen, whose targets then take no click; ModalView and Hints serve a terminal
-// too small for that, as for a Dialog. Back discards; the save key and enter apply, enter from every
-// field but a date, where it opens the calendar as in every form. A choice steps with left and right, and its
-// list opens by a click on the field; a list or the calendar takes every key, enter chooses, and back closes
-// only that. Two buttons show the save and back keys in force and act as they do.
+// ModalOverlay draws it over the screen, whose targets then take no click; ModalView, with the buttons of the
+// form where they fit, and Hints serve a terminal too small for that, as for a Dialog. Back discards; the save
+// key and enter apply, enter from every field but a date, where it opens the calendar as in every form. A choice
+// steps with left and right, and its list opens by a click on the field; a list or the calendar takes every
+// key, enter chooses, and back closes only that. The form's buttons apply and discard show the save and back keys
+// in force and act as they do, enter on one of them included.
 // A period that is not valid, no count or one below 1, an empty date or an end before the start, stays open
 // with its problem under the field. An applied period that differs from the current one is reported once.
 //

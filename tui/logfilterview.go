@@ -7,7 +7,6 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
-	"charm.land/lipgloss/v2"
 )
 
 // The fields and choices of the form that picks the period.
@@ -21,10 +20,6 @@ const (
 	logKindAll   ChoiceID = "all"
 	logKindLast  ChoiceID = "last"
 	logKindRange ChoiceID = "range"
-
-	// The targets of the two buttons of the modal.
-	logApplyRef  = "\x00LA"
-	logCancelRef = "\x00LC"
 )
 
 // logFilterModal is the open choice of the period: a form with the fields of the chosen kind, and what was
@@ -88,7 +83,9 @@ func (l *LogView) filterForm(m *logFilterModal) (*Form, error) {
 			FormField{ID: logFieldFrom, Kind: FieldDate, Label: TextLogFieldFrom, Value: FormValue{Time: m.from}, Date: date},
 			FormField{ID: logFieldUntil, Kind: FieldDate, Label: TextLogFieldUntil, Value: FormValue{Time: m.until}, Date: date})
 	}
-	return NewForm(FormSpec{Fields: fields, Keys: l.spec.Keys.FilterForm}, l.keys, l.text)
+	fk := l.spec.Keys.FilterForm
+	buttons := []FormButton{{Action: fk.Save, Label: TextFilterApply, Primary: true}, {Action: fk.Back, Label: TextKeyDiscard}}
+	return NewForm(FormSpec{Fields: fields, Keys: fk, Buttons: buttons}, l.keys, l.text)
 }
 
 // openFilter opens the choice of the period with the current period filled in.
@@ -145,7 +142,9 @@ func (l *LogView) syncKind() {
 }
 
 // dateFocused reports whether a date field has the focus.
-func (m *logFilterModal) dateFocused() bool { return m.form.fields[m.form.focus].Kind == FieldDate }
+func (m *logFilterModal) dateFocused() bool {
+	return !m.form.onButton() && m.form.fields[m.form.focus].Kind == FieldDate
+}
 
 // inner reports whether the form has a list or a calendar open, which then takes every key.
 func (m *logFilterModal) inner() bool { return m.form.open || m.form.cal || m.form.capture }
@@ -165,11 +164,15 @@ func (l *LogView) updateFilter(msg tea.KeyPressMsg) bool {
 }
 
 // filterAct is a key of the open modal. Back discards, and the save key and enter apply, enter from every
-// field but a date, where it opens the calendar as in every form. A choice list opens by a click on the field
+// field but a date, where it opens the calendar as in every form. Enter on a button does what the key of that
+// button does. A choice list opens by a click on the field
 // and its value changes with left and right. While a list or the calendar is open every key goes to it, enter
 // chooses, and back closes only that.
 func (l *LogView) filterAct(id ActionID) bool {
 	m, fk := l.fm, l.spec.Keys.FilterForm
+	if button, ok := m.form.FocusedButton(); ok && id == fk.Enter {
+		id = button
+	}
 	switch {
 	case m.inner():
 		m.form.Act(id)
@@ -193,10 +196,10 @@ func (l *LogView) clickFilter(r MouseResult) bool {
 		return true
 	}
 	switch {
-	case r.Item == logApplyRef && !m.inner():
-		l.applyModal()
-	case r.Item == logCancelRef && !m.inner():
-		l.fm = nil
+	case strings.HasPrefix(r.Item, formButtonRef) && r.Action != "":
+		if !m.inner() {
+			return l.filterAct(r.Action)
+		}
 	case r.Item == "" && r.Action != "":
 		return l.filterAct(r.Action)
 	default:
@@ -275,48 +278,38 @@ func (l *LogView) filterHints() []Hint {
 		return hints
 	}
 	out := []Hint{{Action: fk.Save, Label: TextFilterApply, Kind: HintAnswer}, {Action: fk.Back, Label: TextKeyDiscard, Kind: HintAnswer}}
-	if !m.dateFocused() {
+	// Enter applies from every field but a date; on a button the form's own hint says what it does.
+	onField := !m.form.onButton()
+	if !m.dateFocused() && onField {
 		out = append(out, Hint{Action: fk.Enter, Label: TextFilterApply, Kind: HintAnswer})
 	}
 	for _, h := range hints {
-		if h.Action != fk.Save && (h.Action != fk.Enter || m.dateFocused()) {
+		if h.Action != fk.Save && (h.Action != fk.Enter || m.dateFocused() || !onField) {
 			out = append(out, h)
 		}
 	}
 	return out
 }
 
-// buttons draws the apply and the discard button, each with its key in force, and their targets.
-func (l *LogView) filterButtons(width int, styles Styles) (string, []Target) {
-	fk := l.spec.Keys.FilterForm
-	apply := styles.Button(ButtonPrimary, Escape(l.keys.Label(fk.Save)+" "+l.text.Lookup(TextFilterApply)), false)
-	cancel := styles.Button(ButtonNormal, Escape(l.keys.Label(fk.Back)+" "+l.text.Lookup(TextKeyDiscard)), false)
-	aw, cw := lipgloss.Width(apply), lipgloss.Width(cancel)
-	var targets []Target
-	if r, ok := clipRect(Rect{Width: aw, Height: 1}, width); ok {
-		targets = append(targets, Target{Rect: r, Zone: ZoneForm, Action: fk.Save, Item: logApplyRef})
-	}
-	if r, ok := clipRect(Rect{X: aw + len(buttonGap), Width: cw, Height: 1}, width); ok {
-		targets = append(targets, Target{Rect: r, Zone: ZoneForm, Action: fk.Back, Item: logCancelRef})
-	}
-	return apply + buttonGap + cancel, targets
-}
-
 // formRows is the height the form needs at width with no list or calendar open.
 func (m *logFilterModal) formRows(styles Styles, width int) int {
 	c := *m.form
-	c.open, c.cal = false, false
+	// The buttons keep the bottom rows of the form, so they are measured apart from the fields, and with the
+	// focus on a field, which may add the line of its hint.
+	c.open, c.cal, c.btn = false, false, -1
+	buttons, _ := c.buttonRows(width, styles)
+	c.buttons = nil
 	view, _ := c.View(styles, width, 60)
 	rows := strings.Split(view, "\n")
 	for len(rows) > 1 && strings.TrimSpace(rows[len(rows)-1]) == "" {
 		rows = rows[:len(rows)-1]
 	}
-	return len(rows)
+	return len(rows) + len(buttons) + 1
 }
 
 // ModalOverlay draws the open choice of the period with styles over screen, the drawn screen of width by
 // height cells, in the way of Dialog.Overlay: the screen dimmed, the form with the fields of the chosen kind
-// in its frame, the apply and discard buttons and the key line, centred in room. The targets are the modal's
+// in its frame, the apply and discard buttons of the form and the key line, centred in room. The targets are the modal's
 // alone, so the view behind it takes no click. ok is false where room is too small, and while the choice is
 // closed; the application then draws ModalView in the workspace and Hints in the footer.
 func (l *LogView) ModalOverlay(styles Styles, screen string, width, height int, room Rect) (view string, targets []Target, ok bool) {
@@ -338,16 +331,13 @@ func (l *LogView) ModalOverlay(styles Styles, screen string, width, height int, 
 		extra = len(m.form.fields[m.form.focus].Choices) + 2
 	}
 	formH := rows + extra
-	// The form, a gap, the buttons, a gap and the key line, in the frame.
-	if formH+4+2 > room.Height {
+	// The form with its buttons, a gap and the key line, in the frame.
+	if formH+2+2 > room.Height {
 		return "", nil, false
 	}
 	body, ts := m.form.View(styles, inner, formH)
 	lines := strings.Split(body, "\n")
 	lines = append(lines, "")
-	buttons, bt := l.filterButtons(inner, styles)
-	ts = append(ts, OffsetTargets(bt, 0, len(lines))...)
-	lines = append(lines, buttons, "")
 	keyLine, kt := styles.footer(l.keys.Hints(l.filterHints(), m.form.Input(), l.text), "", inner)
 	ts = append(ts, OffsetTargets(kt, 0, len(lines))...)
 	lines = append(lines, keyLine)
@@ -361,8 +351,8 @@ func (l *LogView) ModalOverlay(styles Styles, screen string, width, height int, 
 }
 
 // ModalView draws the open choice of the period with styles as the content of a workspace of width by height
-// cells, for a terminal too small to draw it over the screen: the form alone, with the buttons and keys in
-// the footer through Hints. Empty while the choice is closed.
+// cells, for a terminal too small to draw it over the screen: the form with its buttons where they fit, and the keys
+// in the footer through Hints. Empty while the choice is closed.
 func (l *LogView) ModalView(styles Styles, width, height int) (string, []Target) {
 	if l.fm == nil {
 		return "", nil

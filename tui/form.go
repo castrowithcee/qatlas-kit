@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 	"unicode"
@@ -134,12 +135,22 @@ type FormKeys struct {
 	Up, Down, Next, Prev, PageUp, PageDown, Left, Right, First, Last, Enter, Toggle, Save, Back ActionID
 }
 
+// FormButton is a button below the fields of a form. Action is the action of the key table it stands for: its
+// key, its click and enter on the focused button all give it, as Update and Click report it. Label is its
+// text, drawn behind the key now in force. Primary makes it the main button.
+type FormButton struct {
+	Action  ActionID
+	Label   TextID
+	Primary bool
+}
+
 // FormSpec is the content of a form. The application supplies every text and checks the values when it
-// saves; the form knows no schema.
+// saves; the form knows no schema. Buttons stand below the fields, and tab reaches them after the last field.
 type FormSpec struct {
 	Fields   []FormField
 	Sections []FormSection
 	Keys     FormKeys
+	Buttons  []FormButton
 }
 
 // The target items of a form start with a control character, which no ID holds.
@@ -148,6 +159,7 @@ const (
 	formTickRef    = "\x00T"
 	formOptionRef  = "\x00O"
 	formSectionRef = "\x00S"
+	formButtonRef  = "\x00B"
 	// formCalendarRef is the symbol of a date field that opens its calendar.
 	formCalendarRef = "\x00C"
 )
@@ -175,8 +187,12 @@ type Form struct {
 	text     Translator
 	fields   []formField
 	sections []FormSection
+	buttons  []FormButton
 
+	// focus is the field with the focus, or the one the focus left for a button; btn is the focused button,
+	// -1 while a field has the focus.
 	focus    int
+	btn      int
 	pinned   map[SectionID]bool
 	problems map[FieldID][]FormProblem
 	other    []FormProblem
@@ -195,7 +211,9 @@ type Form struct {
 // that is none of them, choices on another kind, a section that holds no field or that a field names without
 // it being declared, a date field with a text, a choice, DateField members on another kind, bounds in the
 // wrong order or a value outside them, a form that mixes fields with and without section, and a key that
-// names no action of the key table or that two form keys share. The fields stand in the order of their sections.
+// names no action of the key table or that two form keys share, and a button without label, with an action that
+// is no action of the key table or that another button has, or with a key that moves in the form (every form
+// key but save and back). The fields stand in the order of their sections.
 func NewForm(spec FormSpec, keys *Keymap, text Translator) (*Form, error) {
 	if keys == nil || text == nil {
 		return nil, errors.New("the form needs a key table and a translator")
@@ -230,6 +248,23 @@ func NewForm(spec FormSpec, keys *Keymap, text Translator) (*Form, error) {
 		order[s.ID] = i
 		if s.Title == "" {
 			errs = append(errs, fmt.Errorf("section %q has no title", s.ID))
+		}
+	}
+	moving := map[ActionID]bool{k.Up: true, k.Down: true, k.Next: true, k.Prev: true, k.PageUp: true, k.PageDown: true,
+		k.Left: true, k.Right: true, k.First: true, k.Last: true, k.Enter: true, k.Toggle: true}
+	pressed := map[ActionID]bool{}
+	for i, b := range spec.Buttons {
+		switch {
+		case !keys.known(b.Action):
+			errs = append(errs, fmt.Errorf("button %d: %q is no action of the key table", i, b.Action))
+		case moving[b.Action]:
+			errs = append(errs, fmt.Errorf("button %d: %q is a key that moves in the form", i, b.Action))
+		case pressed[b.Action]:
+			errs = append(errs, fmt.Errorf("button %d: action %q is on another button", i, b.Action))
+		}
+		pressed[b.Action] = true
+		if b.Label == "" {
+			errs = append(errs, fmt.Errorf("button %d has no label", i))
 		}
 	}
 	if len(spec.Fields) == 0 {
@@ -271,7 +306,7 @@ func NewForm(spec FormSpec, keys *Keymap, text Translator) (*Form, error) {
 		return nil, err
 	}
 	f := &Form{keys: k, table: keys, text: text, sections: slices.Clone(spec.Sections),
-		pinned: map[SectionID]bool{}, problems: map[FieldID][]FormProblem{}, focus: -1}
+		buttons: slices.Clone(spec.Buttons), btn: -1, pinned: map[SectionID]bool{}, problems: map[FieldID][]FormProblem{}, focus: -1}
 	fields := slices.Clone(spec.Fields)
 	slices.SortStableFunc(fields, func(a, b FormField) int { return order[a.Section] - order[b.Section] })
 	for _, field := range fields {
@@ -477,23 +512,55 @@ func (f *Form) step(by int) bool {
 	return false
 }
 
-// wrap moves the focus like step but continues at the other end, so tab and shift+tab cycle through the fields;
-// a single field that takes input keeps the focus.
+// wrap moves the focus like step but through the fields that take input and then the buttons, and continues at
+// the other end, so tab and shift+tab cycle through all of them; a lone stop keeps the focus.
 func (f *Form) wrap(by int) {
-	n := len(f.fields)
-	for i := 1; i < n; i++ {
-		if j := ((f.focus+by*i)%n + n) % n; f.takes(j) {
-			f.setFocus(j)
-			return
+	// A stop is a field index, or -1-j for button j.
+	var stops []int
+	at := -1
+	for i := range f.fields {
+		if f.takes(i) {
+			if i == f.focus && f.btn < 0 {
+				at = len(stops)
+			}
+			stops = append(stops, i)
 		}
+	}
+	for j := range f.buttons {
+		if j == f.btn {
+			at = len(stops)
+		}
+		stops = append(stops, -1-j)
+	}
+	if len(stops) < 2 || at < 0 {
+		return
+	}
+	if next := stops[((at+by)%len(stops)+len(stops))%len(stops)]; next >= 0 {
+		f.setFocus(next)
+	} else {
+		f.open, f.capture, f.cal, f.btn = false, false, false, -1-next
 	}
 }
 
 func (f *Form) setFocus(i int) {
-	if i != f.focus {
+	if i != f.focus || f.btn >= 0 {
 		f.open, f.capture, f.cal = false, false, false
 	}
-	f.focus = i
+	f.focus, f.btn = i, -1
+}
+
+// onButton reports whether a button has the focus.
+func (f *Form) onButton() bool { return f.btn >= 0 }
+
+// fieldFocused reports whether field i has the focus, which no field has while a button does.
+func (f *Form) fieldFocused(i int) bool { return i == f.focus && f.btn < 0 }
+
+// FocusedButton is the action of the button with the focus; false while a field has it.
+func (f *Form) FocusedButton() (ActionID, bool) {
+	if f.btn < 0 {
+		return "", false
+	}
+	return f.buttons[f.btn].Action, true
 }
 
 // Focused is the ID of the field with the focus.
@@ -518,7 +585,7 @@ func (f *Form) Input() InputFocus {
 	switch {
 	case f.capture:
 		return InputKeyCapture
-	case !f.open && !f.cal && f.fields[f.focus].Kind.typed():
+	case !f.open && !f.cal && f.btn < 0 && f.fields[f.focus].Kind.typed():
 		return InputText
 	}
 	return InputNavigation
@@ -599,7 +666,8 @@ func (f *Form) changed(i int) {
 // field, and Keys.Enter where enter was pressed on a list field, whose editor the application opens. handled is
 // false for a key the form leaves to the application: back, which leads to the leave question where Changed
 // says so, up above the first field, which leads to the zone above, and every key it does not read. Tab and
-// shift+tab cycle through the fields and are always handled.
+// shift+tab cycle through the fields and the buttons and are always handled. The key of a button gives its
+// action; while a button has the focus, typing changes no field and up and down stay on it.
 func (f *Form) Update(msg tea.KeyPressMsg) (act ActionID, handled bool) {
 	if f.capture {
 		f.capture = false
@@ -622,6 +690,11 @@ func (f *Form) Update(msg tea.KeyPressMsg) (act ActionID, handled bool) {
 			return f.Act(id)
 		}
 	}
+	for _, b := range f.buttons {
+		if f.table.Is(msg, b.Action, focus) {
+			return f.Act(b.Action)
+		}
+	}
 	if focus == InputText && f.fields[f.focus].line.edit(msg) {
 		f.changed(f.focus)
 		return "", true
@@ -633,14 +706,15 @@ func (f *Form) Update(msg tea.KeyPressMsg) (act ActionID, handled bool) {
 // characters are dropped.
 func (f *Form) Paste(text string) bool {
 	field := &f.fields[f.focus]
-	if f.open || f.capture || !field.Kind.typed() || !field.line.insert(text) {
+	if f.btn >= 0 || f.open || f.capture || !field.Kind.typed() || !field.line.insert(text) {
 		return false
 	}
 	f.changed(f.focus)
 	return true
 }
 
-// Act runs one of the form keys as its key does, for a click or a command that stands for the key.
+// Act runs one of the form keys or the action of a button as its key does, for a click or a command that
+// stands for the key. Enter on a focused button runs the action of that button and nothing more.
 func (f *Form) Act(id ActionID) (act ActionID, handled bool) {
 	k := f.keys
 	if id == "" {
@@ -649,6 +723,17 @@ func (f *Form) Act(id ActionID) (act ActionID, handled bool) {
 	field := &f.fields[f.focus]
 	if f.cal {
 		return f.calendarAct(id)
+	}
+	if f.btn >= 0 {
+		switch id {
+		case k.Enter:
+			id = f.buttons[f.btn].Action
+		case k.Up, k.Down, k.PageUp, k.PageDown:
+			return "", true
+		case k.Left, k.Right, k.First, k.Last, k.Toggle:
+			// These act on the value of a field, which a button has not got.
+			return "", false
+		}
 	}
 	if f.open {
 		switch id {
@@ -740,6 +825,11 @@ func (f *Form) Act(id ActionID) (act ActionID, handled bool) {
 		}
 		return "", f.jumpSection(by)
 	default:
+		for _, b := range f.buttons {
+			if b.Action == id {
+				return id, true
+			}
+		}
 		return "", false
 	}
 	return "", true
@@ -790,7 +880,8 @@ func (f *Form) enterSection(id SectionID) bool {
 // list field it is enter. A key field takes a key from the second click on, as enter does. A click on a tick
 // box ticks its value, one on a value of the open list takes it, and one on a section goes to its first field.
 // The calendar symbol of a date field gives the field the focus and opens its calendar, as enter does; a click
-// on a day or a button of the open calendar does what its key does, and one anywhere else does nothing.
+// on a day or a button of the open calendar does what its key does, and one anywhere else does nothing. A
+// click on a button of the form gives its action, as its key does, and leaves the focus where it is.
 func (f *Form) Click(r MouseResult) (act ActionID, handled bool) {
 	if !r.Handled || f.capture {
 		return "", false
@@ -804,7 +895,7 @@ func (f *Form) Click(r MouseResult) (act ActionID, handled bool) {
 		if i < 0 || !f.takes(i) {
 			return "", false
 		}
-		again := i == f.focus
+		again := f.fieldFocused(i)
 		wasOpen := f.open
 		f.setFocus(i)
 		switch kind := f.fields[i].Kind; {
@@ -846,6 +937,12 @@ func (f *Form) Click(r MouseResult) (act ActionID, handled bool) {
 		f.setFocus(i)
 		f.openCalendar()
 		return "", true
+	case strings.HasPrefix(r.Item, formButtonRef):
+		j, err := strconv.Atoi(strings.TrimPrefix(r.Item, formButtonRef))
+		if err != nil || j < 0 || j >= len(f.buttons) {
+			return "", false
+		}
+		return f.Act(f.buttons[j].Action)
 	case strings.HasPrefix(r.Item, formSectionRef):
 		id := SectionID(strings.TrimPrefix(r.Item, formSectionRef))
 		if _, ok := f.section(id); ok {
@@ -871,6 +968,9 @@ func (f *Form) Wheel(steps int) {
 				f.calendarAct(f.keys.Up)
 			}
 		}
+		return
+	}
+	if f.btn >= 0 {
 		return
 	}
 	by := 1
@@ -902,6 +1002,19 @@ func (f *Form) Hints() []Hint {
 			{Action: k.Up, Label: TextKeyUp, Kind: HintNavigation}, {Action: k.Down, Label: TextKeyDown, Kind: HintNavigation}}
 	}
 	var hints []Hint
+	if f.btn >= 0 {
+		hints = append(hints, Hint{Action: k.Enter, Label: f.buttons[f.btn].Label})
+	} else {
+		hints = append(hints, f.fieldHints()...)
+	}
+	hints = append(hints, Hint{Action: k.Save, Label: TextKeySave, Kind: HintAlways})
+	return append(hints, nav...)
+}
+
+// fieldHints is what enter or toggle does in the focused field.
+func (f *Form) fieldHints() []Hint {
+	k := f.keys
+	var hints []Hint
 	switch f.fields[f.focus].Kind {
 	case FieldChoice:
 		hints = append(hints, Hint{Action: k.Enter, Label: TextKeyChoose})
@@ -912,6 +1025,5 @@ func (f *Form) Hints() []Hint {
 	case FieldDate:
 		hints = append(hints, Hint{Action: k.Enter, Label: TextKeyCalendar})
 	}
-	hints = append(hints, Hint{Action: k.Save, Label: TextKeySave, Kind: HintAlways})
-	return append(hints, nav...)
+	return hints
 }
