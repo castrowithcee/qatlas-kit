@@ -223,6 +223,9 @@ Components derived from `qatlas-cli` and `qatlas-sysmin` retain their original A
 | `qatlas-cli/internal/vaultproc/server_test.go`, `protocol_test.go`, `handover_unix_test.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Vault process tests (`vaultproc/*_test.go`) |
 | `qatlas-sysmin/internal/daemon/server.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Registered operations, fixed error codes and recovery from a failing handler (`vaultproc/server.go`) |
 | `qatlas-sysmin/internal/cli/run.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Hardening before the vault is opened (`vaultproc/run.go`) |
+| `qatlas-sysmin/internal/notify/notify.go`, `http.go`, `smtp.go`, `event.go`, `credential.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Delivery over webhook, Slack, Telegram and SMTP with retries, redaction before cutting, cleaned texts, https-only addresses and encrypted SMTP login (`notify/notify.go`, `notify/http.go`, `notify/smtp.go`) |
+| `qatlas-sysmin/internal/notify/notify_test.go`, `fake_test.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Delivery tests and local SMTP test server (`notify/http_test.go`, `notify/smtp_test.go`) |
+| `qatlas-sysmin/internal/webhook/webhook.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Constant-time check of an HMAC-SHA256 webhook signature (`notify/verify.go`) |
 
 ## Built-in TUI themes
 

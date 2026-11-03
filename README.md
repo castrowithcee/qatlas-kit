@@ -25,6 +25,7 @@ One line per package, in alphabetical order. The package documentation holds the
 - [`jsonschema`](jsonschema): checks JSON values against a strict subset of JSON Schema and names the first violation.
 - [`localipc`](localipc): provides a local channel between processes with checked peer identity.
 - [`manpage`](manpage): adds help topics to a manpage generated from a command tree.
+- [`notify`](notify): delivers notifications over a signed webhook, Slack, Telegram and SMTP with retries, spacing and redaction, and verifies webhook signatures.
 - [`output`](output): renders ordered results in the CLI output formats and defines the shared error codes.
 - [`projectpath`](projectpath): expands, resolves and compares paths and finds Git working tree roots.
 - [`ptytest`](ptytest): runs a program at a pseudo-terminal or pseudo console in tests, types input and waits for its output.
