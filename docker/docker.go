@@ -73,6 +73,11 @@ type Client struct {
 	// stream has no overall timeout, for log streams that stay open; the transport bounds the wait for headers.
 	stream    *http.Client
 	transport *http.Transport
+	// actions has no limit on the wait for headers: a stop answers only after the container's grace period.
+	actions         *http.Client
+	actionTransport *http.Transport
+	timeout         time.Duration
+	minWaitInterval time.Duration
 
 	// gate is a semaphore of one, so a caller waiting for another caller's ping can still be cancelled.
 	gate       chan struct{}
@@ -97,19 +102,28 @@ func New(opts Options) (*Client, error) {
 	}
 	socket := opts.Socket
 	dialer := &net.Dialer{Timeout: timeout}
-	transport := &http.Transport{
-		// No Proxy: the connection goes to the socket and never to an address from the environment.
-		DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
-			return dialer.DialContext(ctx, "unix", socket)
-		},
-		DisableCompression:    true,
-		ResponseHeaderTimeout: timeout,
+	newTransport := func(headerTimeout time.Duration) *http.Transport {
+		return &http.Transport{
+			// No Proxy: the connection goes to the socket and never to an address from the environment.
+			DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+				return dialer.DialContext(ctx, "unix", socket)
+			},
+			DisableCompression:    true,
+			ResponseHeaderTimeout: headerTimeout,
+		}
 	}
-	return &Client{http: httpx.NoRedirectClient(timeout, transport), stream: httpx.NoRedirectClient(0, transport), transport: transport, gate: make(chan struct{}, 1)}, nil
+	transport := newTransport(timeout)
+	actionTransport := newTransport(0)
+	return &Client{http: httpx.NoRedirectClient(timeout, transport), stream: httpx.NoRedirectClient(0, transport), transport: transport,
+		actions: httpx.NoRedirectClient(0, actionTransport), actionTransport: actionTransport,
+		timeout: timeout, minWaitInterval: MinWaitInterval, gate: make(chan struct{}, 1)}, nil
 }
 
 // Close releases idle connections. The Client stays usable.
-func (c *Client) Close() { c.transport.CloseIdleConnections() }
+func (c *Client) Close() {
+	c.transport.CloseIdleConnections()
+	c.actionTransport.CloseIdleConnections()
+}
 
 // checkRef validates a container ID or name and returns its escaped path segment.
 func checkRef(ref string) (string, error) {
@@ -172,11 +186,15 @@ func (c *Client) apiVersion(ctx context.Context) (string, error) {
 }
 
 func (c *Client) send(ctx context.Context, target string) (*http.Response, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target, nil)
+	return c.request(ctx, c.http, http.MethodGet, target)
+}
+
+func (c *Client) request(ctx context.Context, hc *http.Client, method, target string) (*http.Response, error) {
+	req, err := http.NewRequestWithContext(ctx, method, target, nil)
 	if err != nil {
 		return nil, &Error{Code: output.CodeInvalidRequest, Message: "the request could not be built"}
 	}
-	resp, err := c.http.Do(req)
+	resp, err := hc.Do(req)
 	if err != nil {
 		return nil, transportError(ctx, err)
 	}
