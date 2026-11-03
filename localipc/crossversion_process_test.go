@@ -208,8 +208,13 @@ func TestCrossVersionHelperProcess(t *testing.T) {
 				os.Exit(2)
 			}
 			if err == nil {
-				_, _ = c.Write([]byte("hello\n"))
-				_ = c.Close()
+				// Stay connected until the client closes: macOS cannot report the
+				// peer of a closed connection.
+				go func(c net.Conn) {
+					_, _ = c.Write([]byte("hello\n"))
+					_, _ = io.Copy(io.Discard, c)
+					_ = c.Close()
+				}(c)
 			}
 		}
 	case "dial":
