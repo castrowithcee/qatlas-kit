@@ -121,11 +121,13 @@
 // stored secret: Stored says one exists, which an empty field keeps. Each problem stands under its field
 // until that field changes, a problem without a field above the form, and a section with a problem carries a
 // mark and opens. An advanced section stays closed and dimmed while it holds nothing. On a wide terminal the
-// sections stand as a numbered list beside the fields of the focused one; where the form does not fit, the
-// fields lose their frames, then the headings go, then the fields around the focus stand alone, and last the
-// form asks for a larger terminal, so the focus is always in view. A click on a field focuses it and types
-// nothing; on a choice or list field it is enter, on a tick box the toggle key, on a section a jump to its
-// first field.
+// sections stand as a numbered list beside the fields of the focused one. The fields lose their frames only
+// where the width does not hold them, and then only the focused field stands on a surface, so two fields never
+// run together. Where the height is short, the form scrolls with the focus, which is always in view: whole
+// fields stand around it, with "…" above and below where fields are left out. Each section has its own label
+// column, and a label longer than the column wraps inside it. Only where even the focused field does not fit
+// does the form ask for a larger terminal. A click on a field focuses it and types nothing; on a choice or
+// list field it is enter, on a tick box the toggle key, on a section a jump to its first field.
 //
 // A Dialog asks a question over the screen: the warning glyph and the question in bold, one sentence on what
 // follows, the details, one button per answer and the key line of the answers, from the same answers, so no

@@ -455,9 +455,9 @@ func TestStoredSecretShowsKeptAndEmptyKeepsIt(t *testing.T) {
 	}
 }
 
-// The layouts give way in their order: the sections as a list, framed fields under headings, one-line fields,
-// fields without headings, the fields around the focus, and the size hint. The focus is always in view and
-// every line keeps the width.
+// The form keeps its frames while the width holds them and scrolls where the height is short: whole framed
+// fields around the focus, and the size hint where even the focused one does not fit. The focus is
+// always in view and every line keeps the width.
 func TestFormLayoutsGiveWayAndKeepTheFocus(t *testing.T) {
 	cases := []struct {
 		w, h      int
@@ -465,10 +465,11 @@ func TestFormLayoutsGiveWayAndKeepTheFocus(t *testing.T) {
 	}{
 		{120, 30, []string{"1 General", "> 2 Care", "How the plant is kept.", "╭"}, []string{"Extra (closed)\n"}},
 		{80, 30, []string{"General", "Care", "Extra (closed)", "╭"}, []string{"1 General"}},
-		{80, 10, []string{"Care", "> feeder token"}, []string{"╭"}},
-		{80, 6, []string{"> feeder token"}, []string{"General", "╭"}},
-		{80, 3, []string{"> feeder token", "…"}, []string{"General"}},
-		{80, 1, []string{"> feeder token"}, nil},
+		{80, 10, []string{"> feeder token", "╭", "…"}, []string{"General"}},
+		{80, 6, []string{"> feeder token", "╭", "…"}, []string{"General"}},
+		{80, 4, []string{"Resize terminal"}, []string{"> ", "╭"}},
+		{80, 1, []string{"Resize terminal"}, []string{"> ", "╭"}},
+		{18, 3, []string{"Resize terminal"}, []string{"> "}},
 		{18, 10, []string{"Resize terminal"}, []string{"> "}},
 	}
 	for _, c := range cases {
@@ -501,6 +502,296 @@ func TestFormLayoutsGiveWayAndKeepTheFocus(t *testing.T) {
 	}
 }
 
+// tallFormSpec is fifteen text fields in three sections; field NN has the ID fNN.
+func tallFormSpec(label func(i int) string) (FormSpec, i18n.Catalogs[TextID]) {
+	en := map[TextID]string{"sec.a": "Section A", "sec.b": "Section B", "sec.c": "Section C"}
+	spec := FormSpec{Sections: []FormSection{{ID: "a", Title: "sec.a"}, {ID: "b", Title: "sec.b"}, {ID: "c", Title: "sec.c"}}, Keys: sampleFormKeys}
+	for i := range 15 {
+		id := TextID(fmt.Sprintf("l.%02d", i))
+		en[id] = label(i)
+		spec.Fields = append(spec.Fields, FormField{ID: FieldID(fmt.Sprintf("f%02d", i)), Section: SectionID(string(rune('a' + i/5))),
+			Kind: FieldText, Label: id, Value: FormValue{Text: fmt.Sprintf("value %02d", i)}})
+	}
+	return spec, i18n.Catalogs[TextID]{i18n.English: en}
+}
+
+func newTallForm(t *testing.T, label func(i int) string) *Form {
+	t.Helper()
+	keys := sampleKeymap(t, CharsetUnicode)
+	spec, cat := tallFormSpec(label)
+	f, err := NewForm(spec, keys, newTranslator(t, i18n.English, cat, keys))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return f
+}
+
+func trimmed(lines []string) []string {
+	out := make([]string, len(lines))
+	for i, l := range lines {
+		out[i] = strings.TrimSpace(l)
+	}
+	return out
+}
+
+func fieldLabel(i int) string { return fmt.Sprintf("Field %02d", i) }
+
+// visibleFields are the indexes of the tall form's fields whose label stands in the lines.
+func visibleFields(lines []string) []int {
+	var out []int
+	for i := range 15 {
+		for _, l := range lines {
+			if strings.Contains(l, fieldLabel(i)+" ") {
+				out = append(out, i)
+				break
+			}
+		}
+	}
+	return out
+}
+
+func TestTallFormKeepsItsFramesAndScrollsWithTheFocus(t *testing.T) {
+	st := looks(t)["noneascii"]
+	for _, size := range []struct{ w, h int }{{80, 12}, {60, 7}, {99, 9}} {
+		for focus := range 15 {
+			f := newTallForm(t, fieldLabel)
+			f.Focus(FieldID(fmt.Sprintf("f%02d", focus)))
+			view, targets := f.View(st, size.w, size.h)
+			name := fmt.Sprintf("%dx%d focus %d", size.w, size.h, focus)
+			lines := strings.Split(view, "\n")
+			if len(lines) != size.h {
+				t.Fatalf("%s: %d lines", name, len(lines))
+			}
+			if !strings.Contains(view, "+--") && !strings.Contains(view, "#==") {
+				t.Errorf("%s: the frames are gone:\n%s", name, view)
+			}
+			seen := visibleFields(lines)
+			if len(seen) == 0 || !slices.Contains(seen, focus) || !strings.Contains(view, "> "+fieldLabel(focus)) {
+				t.Fatalf("%s: the focus is out of view (%v):\n%s", name, seen, view)
+			}
+			first, below := strings.TrimSpace(lines[0]), slices.Contains(trimmed(lines[1:]), "~")
+			if hasMore := first == "~"; hasMore != (seen[0] > 0) {
+				t.Errorf("%s: mark above %v with fields %v:\n%s", name, hasMore, seen, view)
+			}
+			if hasMore := below; hasMore != (seen[len(seen)-1] < 14) {
+				t.Errorf("%s: mark below %v with fields %v:\n%s", name, hasMore, seen, view)
+			}
+			m := NewMouseMap(targets, true)
+			for _, tg := range targets[1:] {
+				if tg.Rect.Y < 0 || tg.Rect.Y+tg.Rect.Height > size.h {
+					t.Errorf("%s: target %q outside the view", name, tg.Item)
+					continue
+				}
+				if !strings.HasPrefix(tg.Item, formFieldRef) {
+					continue
+				}
+				got := m.Handle(click(tg.Rect.X+1, tg.Rect.Y))
+				id := strings.TrimPrefix(tg.Item, formFieldRef)
+				var n int
+				fmt.Sscanf(id, "f%d", &n)
+				if got.Item != tg.Item || !strings.Contains(lines[tg.Rect.Y], fieldLabel(n)) && !strings.Contains(lines[tg.Rect.Y+1], fieldLabel(n)) {
+					t.Errorf("%s: the target of %s does not hit its field (%q)", name, id, got.Item)
+				}
+			}
+		}
+	}
+}
+
+// The panel of the list view scrolls with the focus and keeps its frames and the list of sections.
+func TestListViewScrollsInsideItsPanel(t *testing.T) {
+	st := looks(t)["noneascii"]
+	for focus := range 15 {
+		f := newTallForm(t, fieldLabel)
+		f.Focus(FieldID(fmt.Sprintf("f%02d", focus)))
+		view, targets := f.View(st, 120, 12)
+		lines := strings.Split(view, "\n")
+		if len(lines) != 12 || !strings.Contains(view, "> 1 Section A") && !strings.Contains(view, "> 2 Section B") && !strings.Contains(view, "> 3 Section C") ||
+			!strings.Contains(view, "> "+fieldLabel(focus)) || !strings.Contains(view, "#==") {
+			t.Fatalf("focus %d:\n%s", focus, view)
+		}
+		inPanel := 0
+		for _, l := range lines {
+			if strings.Contains(l, "~") {
+				inPanel++
+			}
+		}
+		seen := visibleFields(lines)
+		if want := boolInt(seen[0]%5 > 0) + boolInt(seen[len(seen)-1]%5 < 4); inPanel != want {
+			t.Errorf("focus %d: %d marks for fields %v:\n%s", focus, inPanel, seen, view)
+		}
+		for _, tg := range targets {
+			if tg.Rect.Y+tg.Rect.Height > 12 {
+				t.Errorf("focus %d: target %q below the view", focus, tg.Item)
+			}
+		}
+	}
+}
+
+// The height never takes the frames: a wide terminal too low for a framed field asks for more room, and a
+// narrow one still shows flat fields.
+func TestLowHeightKeepsFramesOrAsksForRoom(t *testing.T) {
+	st := looks(t)["noneascii"]
+	f := newTallForm(t, fieldLabel)
+	f.Focus("f07")
+	wide, targets := f.View(st, 80, 4)
+	if !strings.Contains(wide, "Resize") || strings.Contains(wide, "> Field") || len(targets) > 0 {
+		t.Errorf("a wide, low terminal:\n%s", wide)
+	}
+	narrow, _ := f.View(st, 20, 3)
+	if strings.Contains(narrow, "Resize") || !strings.Contains(narrow, "> Field 07") || strings.Contains(narrow, "+--") {
+		t.Errorf("a narrow, low terminal:\n%s", narrow)
+	}
+}
+
+// Where the width does not hold the frames, the fields stand flat and only the focused one has a surface.
+func TestNarrowFormNeverRunsFieldsTogether(t *testing.T) {
+	st := looks(t)["dark"]
+	surface := strings.TrimSuffix(strings.TrimPrefix(openingOf(lipgloss.NewStyle().Background(lipgloss.Color(string(st.palette.Surface)))), "\x1b["), "m")
+	if surface == "" {
+		t.Fatal("the look has no surface colour")
+	}
+	f := newTallForm(t, fieldLabel)
+	f.Focus("f07")
+	view, _ := f.View(st, 20, 40)
+	plain := ansi.Strip(view)
+	if strings.Contains(plain, "╭") || !strings.Contains(plain, "> Field 07") || !strings.Contains(plain, "Field 14") {
+		t.Fatalf("the narrow form:\n%s", plain)
+	}
+	on := 0
+	for _, l := range strings.Split(view, "\n") {
+		if strings.Contains(l, surface) {
+			on++
+			if !strings.Contains(ansi.Strip(l), "> Field 07") {
+				t.Errorf("a field other than the focused one stands on the surface: %q", ansi.Strip(l))
+			}
+		}
+	}
+	if on != 1 {
+		t.Errorf("%d lines stand on the surface", on)
+	}
+}
+
+func TestEachSectionHasItsOwnLabelColumn(t *testing.T) {
+	f := newTallForm(t, func(i int) string {
+		if i >= 5 && i < 10 {
+			return fmt.Sprintf("a much longer label %02d", i)
+		}
+		return fmt.Sprintf("Fld %02d", i)
+	})
+	view, _ := f.View(looks(t)["noneascii"], 80, 60)
+	column := func(label string) int {
+		for _, l := range strings.Split(view, "\n") {
+			if strings.Contains(l, label) {
+				return strings.Index(l, "|")
+			}
+		}
+		t.Fatalf("no line with %q:\n%s", label, view)
+		return -1
+	}
+	short, long, again := column("Fld 00"), column("a much longer label 05"), column("Fld 12")
+	if short >= long || short != again {
+		t.Errorf("columns %d, %d, %d:\n%s", short, long, again, view)
+	}
+}
+
+func TestLongLabelWrapsInItsColumn(t *testing.T) {
+	long := "a rather long label of words"
+	f := newTallForm(t, func(i int) string {
+		if i == 1 {
+			return long
+		}
+		return fmt.Sprintf("Fld %02d", i)
+	})
+	f.Focus("f01")
+	for _, boxed := range []bool{true, false} {
+		width := 40
+		if !boxed {
+			width = 24
+		}
+		view, targets := f.View(looks(t)["noneascii"], width, 40)
+		lines := strings.Split(view, "\n")
+		first := slices.IndexFunc(lines, func(l string) bool { return strings.HasPrefix(l, "> a ") || strings.HasPrefix(l, "> a rather") })
+		if first < 0 {
+			t.Fatalf("no wrapped label:\n%s", view)
+		}
+		valueAt := func(label string) int {
+			for _, l := range lines {
+				if strings.Contains(l, label) {
+					return strings.Index(l, "value")
+				}
+			}
+			return -1
+		}
+		if boxed {
+			valueAt = func(label string) int {
+				for _, l := range lines {
+					if strings.Contains(l, label) {
+						return strings.Index(l, "|")
+					}
+				}
+				return -1
+			}
+		}
+		if got, want := valueAt("> a"), valueAt("Fld 00"); got != want {
+			t.Errorf("boxed=%v: the value of the long label starts at %d, the others at %d:\n%s", boxed, got, want, view)
+		}
+		text := strings.Join(strings.Fields(strings.Join(lines[first:first+4], " ")), " ")
+		for _, word := range strings.Fields(long) {
+			if !strings.Contains(text, word) {
+				t.Errorf("boxed=%v: the label lost %q:\n%s", boxed, word, view)
+			}
+		}
+		field := slices.IndexFunc(targets, func(tg Target) bool { return tg.Item == formFieldRef+"f01" })
+		last := slices.IndexFunc(lines, func(l string) bool { return strings.Contains(l, "words") })
+		if r := targets[field].Rect; last < r.Y+1 || last >= r.Y+r.Height {
+			t.Errorf("boxed=%v: the target %+v does not cover the last label line %d", boxed, r, last)
+		}
+	}
+}
+
+// Every width and height keeps the lines at the width and the height, and the focus in view or the size hint.
+func TestFormSweepKeepsTheFocusInView(t *testing.T) {
+	st := looks(t)["mono"]
+	forms := []func(t *testing.T) *Form{
+		func(t *testing.T) *Form { return newTallForm(t, fieldLabel) },
+		func(t *testing.T) *Form { return newSampleForm(t, i18n.English, nil) },
+	}
+	for fi, mk := range forms {
+		f := mk(t)
+		for focus := range len(f.fields) {
+			if len(f.fields) > 10 && focus%3 != 0 && focus != 14 {
+				continue
+			}
+			for _, w := range []int{20, 21, 27, 34, 48, 62, 76, 90, 99, 100, 118, 160} {
+				for h := 3; h <= 40; h++ {
+					f.setFocus(focus)
+					view, targets := f.View(st, w, h)
+					lines := strings.Split(view, "\n")
+					if len(lines) != h {
+						t.Fatalf("form %d %dx%d focus %d: %d lines", fi, w, h, focus, len(lines))
+					}
+					for _, l := range lines {
+						if lipgloss.Width(l) != w {
+							t.Fatalf("form %d %dx%d focus %d: line of %d cells", fi, w, h, focus, lipgloss.Width(l))
+						}
+					}
+					if !strings.Contains(view, "> "+f.label(focus)) && !strings.Contains(view, "Resize") {
+						t.Fatalf("form %d %dx%d focus %d is out of view:\n%s", fi, w, h, focus, view)
+					}
+					if fi == 0 && w >= 40 && !strings.Contains(view, "Resize") && !strings.ContainsAny(view, "│|┃║") {
+						t.Fatalf("form %d %dx%d focus %d lost its frames to the height:\n%s", fi, w, h, focus, view)
+					}
+					for _, tg := range targets {
+						if tg.Rect.Y+tg.Rect.Height > h {
+							t.Fatalf("form %d %dx%d focus %d: target %q below the view", fi, w, h, focus, tg.Item)
+						}
+					}
+				}
+			}
+		}
+	}
+}
+
 func TestFormReadsWithoutColour(t *testing.T) {
 	for _, look := range []string{"noneascii", "mono"} {
 		st := looks(t)[look]
@@ -516,7 +807,7 @@ func TestFormReadsWithoutColour(t *testing.T) {
 }
 
 func TestGermanFormFits(t *testing.T) {
-	for _, size := range []struct{ w, h int }{{120, 30}, {80, 24}, {50, 12}} {
+	for _, size := range []struct{ w, h int }{{120, 30}, {80, 24}, {50, 30}} {
 		f := newSampleForm(t, i18n.German, nil)
 		view, _ := f.View(looks(t)["dark"], size.w, size.h)
 		plain := ansi.Strip(view)
