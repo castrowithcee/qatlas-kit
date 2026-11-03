@@ -434,3 +434,10 @@ func TestWidgetsEscapeControlCharacters(t *testing.T) {
 		t.Errorf("a line break in a message gives %d breaks", got)
 	}
 }
+
+// Escape masks private-use characters, so a Nerd Font glyph is drawn only as an icon that passed CheckIcon.
+func TestEscapeMasksPrivateUseCharacters(t *testing.T) {
+	if got := Escape("a\uf489b\U000f0219"); got != `a\uf489b\U000f0219` {
+		t.Errorf("Escape: %q", got)
+	}
+}
