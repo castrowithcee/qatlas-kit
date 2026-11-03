@@ -72,6 +72,12 @@ const (
 	TextInfoTitle      TextID = "tui.info.title"
 	TextHelpKeysScreen TextID = "tui.help.keysscreen"
 	TextHelpKeysAll    TextID = "tui.help.keysall"
+	TextHelpTopic      TextID = "tui.help.topic"
+	TextHelpScroll     TextID = "tui.help.scroll"
+	TextHelpPage       TextID = "tui.help.page"
+	TextHelpClose      TextID = "tui.help.close"
+	TextInfoLink       TextID = "tui.info.link"
+	TextInfoOpenLink   TextID = "tui.info.openlink"
 
 	TextSettingsTitle    TextID = "tui.settings.title"
 	TextSettingsGeneral  TextID = "tui.settings.general"
@@ -162,6 +168,12 @@ func ModuleCatalog() i18n.Catalogs[TextID] {
 			TextInfoTitle:      "Info",
 			TextHelpKeysScreen: "This screen",
 			TextHelpKeysAll:    "Everywhere",
+			TextHelpTopic:      "topic",
+			TextHelpScroll:     "scroll",
+			TextHelpPage:       "page",
+			TextHelpClose:      "close",
+			TextInfoLink:       "Documentation:",
+			TextInfoOpenLink:   "open link",
 
 			TextSettingsTitle:    "Settings",
 			TextSettingsGeneral:  "General",
@@ -247,6 +259,12 @@ func ModuleCatalog() i18n.Catalogs[TextID] {
 			TextInfoTitle:      "Info",
 			TextHelpKeysScreen: "Dieser Bildschirm",
 			TextHelpKeysAll:    "Überall",
+			TextHelpTopic:      "Thema",
+			TextHelpScroll:     "Scrollen",
+			TextHelpPage:       "Seite",
+			TextHelpClose:      "Schließen",
+			TextInfoLink:       "Dokumentation:",
+			TextInfoOpenLink:   "Link öffnen",
 
 			TextSettingsTitle:    "Einstellungen",
 			TextSettingsGeneral:  "Allgemein",

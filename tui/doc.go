@@ -120,6 +120,22 @@
 // dims the screen behind it and returns the targets of the dialog alone; where it does not fit, Page fills the
 // workspace and Hints go into the footer, whose targets answer it.
 //
+// Help explains in three stages: the one-line hint under the focused field, the explanation of the focused
+// element, and the help with its topics. A HelpModel shows the application's helptopics.Topic values, the
+// same topics its command line and manpage show, wrapped as the command line wraps them, with a short
+// unindented line that ends in a colon as a heading. The first topic ends with the keys of the screen the help
+// was opened from and the keys that act everywhere, in the binding in force. Left and right, and the topic
+// keys of the help level, change the topic with wrap-around; the scroll keys and the wheel stop at the ends;
+// back and the help key close it. An ExplanationModel shows a title, the long text, a helptopics.Term and the
+// address of the documentation, which is shown in full and, where the terminal takes escapes, also linked; it
+// accepts only an absolute http or https address of printable ASCII, so the address cannot end the link
+// sequence. Back and the info key close it, and the copy key hands Text to the application, which holds
+// nothing that is not shown and no control character. Both stand over the screen like a dialog, or fill the
+// workspace with Page where room is too small; an explanation also stands in a Pane beside a form or a list.
+// Every topic tab, key, line of the key list and address is a target that does what its key does, and a click
+// anywhere else on an explanation over the screen closes it. Only their own keys act; every other key goes
+// back to the application.
+//
 // Colours come from themes. Screen code names roles, never colour values: a Palette assigns one colour per
 // role, Styles build text styles and widgets on it. A ThemeSet holds the terminal theme, the application's
 // own themes and the built-in schemes; each theme is data, either hand-picked palettes per colour profile

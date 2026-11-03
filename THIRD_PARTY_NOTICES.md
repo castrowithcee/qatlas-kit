@@ -192,6 +192,10 @@ Components derived from `qatlas-cli` and `qatlas-sysmin` retain their original A
 | `qatlas-sysmin/internal/tui/theme.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Palette roles and text styles, compared with the CLI (`tui/palette.go`, `tui/styles.go`) |
 | `qatlas-sysmin/internal/tui/colorprofile.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Colour profile detection, compared with the CLI (`tui/color.go`) |
 | `qatlas-sysmin/internal/tui/widgets.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Widgets, compared with the CLI (`tui/widgets.go`) |
+| `qatlas-cli/internal/tui/help.go`, `qatlas-cli/internal/tui/info.go`, `qatlas-cli/internal/tui/doclink.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Help with topic tabs, headings and the key list in force, over the screen or in the workspace, and the explanation with its term and documentation address shown in full and linked, over the screen or in a pane (`tui/help.go`, `tui/explanation.go`) |
+| `qatlas-cli/internal/helptopics/terms.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Terms with stable IDs (`helptopics/terms.go`) |
+| `qatlas-cli/internal/tui/help_test.go`, `qatlas-cli/internal/tui/info_test.go`, `qatlas-cli/internal/helptopics/helptopics_test.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Help, explanation and term tests (`tui/help_test.go`, `tui/explanation_test.go`, `helptopics/helptopics_test.go`) |
+| `qatlas-sysmin/internal/tui/popup.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Keys of this screen and of every screen in the help, and a topic strip that keeps the shown topic, compared with the CLI (`tui/help.go`) |
 | `qatlas-sysmin/internal/auditlog/auditlog.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Damaged-line markers and the chain end behind a damaged line (`auditlog/auditlog.go`) |
 | `qatlas-sysmin/internal/auditlog/verify.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Problem kinds and lines, documented damage and signature state (`auditlog/verify.go`) |
 | `qatlas-sysmin/internal/auditlog/read.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Filtered, paged reading (`auditlog/read.go`) |

@@ -19,7 +19,7 @@ One line per package, in alphabetical order. The package documentation holds the
 - [`configfile`](configfile): writes configuration documents atomically, with locking, transactions and backups.
 - [`filelock`](filelock): provides an exclusive whole-file lock across processes.
 - [`fileretry`](fileretry): repeats a file operation that fails only because another process holds the file.
-- [`helptopics`](helptopics): shares plain-text help topics between CLI, TUI and manpage.
+- [`helptopics`](helptopics): shares plain-text help topics and terms between CLI, TUI and manpage.
 - [`httpx`](httpx): provides a client without redirects, bound cursors, status classes and bounded reading of answers.
 - [`i18n`](i18n): holds the language choice of an application and the lookup of its texts.
 - [`jsonschema`](jsonschema): checks JSON values against a strict subset of JSON Schema and names the first violation.
@@ -35,7 +35,7 @@ One line per package, in alphabetical order. The package documentation holds the
 - [`release/releasebuild`](release/releasebuild): builds reproducible release archives, installers and checksums.txt, and documents the reusable release workflow.
 - [`release/releasetest`](release/releasetest): builds signed test releases and serves them from a local release server in tests.
 - [`selfupdate`](selfupdate): selects, verifies and installs signed releases of the running program.
-- [`tui`](tui): provides the text catalogs, themes, styles, basic widgets, key table, frame with tabs, focus zones and footer, mouse targets, command line, lists, filter bar, forms and dialogs of a terminal user interface.
+- [`tui`](tui): provides the text catalogs, themes, styles, basic widgets, key table, frame with tabs, focus zones and footer, mouse targets, command line, lists, filter bar, forms, dialogs, help and explanations of a terminal user interface.
 - [`uiprefs`](uiprefs): loads and saves the device-local preferences of a terminal user interface.
 - [`vault`](vault): stores secrets in an age-encrypted directory unlocked by a passphrase.
 - [`vaultproc`](vaultproc): keeps an unlocked vault in a hardened background process and hands it to the program an update installs.
