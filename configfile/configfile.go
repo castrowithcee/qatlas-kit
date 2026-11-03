@@ -49,7 +49,7 @@ func HasCurrentSchema(path string, current int, version func([]byte) (int, error
 	err := fileretry.Do(func() (err error) {
 		data, err = os.ReadFile(path)
 		return err
-	}, fileretry.Transient, nil)
+	}, fileretry.Options{Transient: fileretry.Transient})
 	if err != nil {
 		return false
 	}
@@ -101,7 +101,9 @@ func replace(path string, data []byte) error {
 // rename on a transient failure; nil uses the default classification.
 func replaceResolved(target string, data []byte, beforeRename func() error, retry func(func() error) error) error {
 	if retry == nil {
-		retry = func(op func() error) error { return fileretry.Do(op, fileretry.Transient, nil) }
+		retry = func(op func() error) error {
+			return fileretry.Do(op, fileretry.Options{Transient: fileretry.Transient})
+		}
 	}
 	dir := filepath.Dir(target)
 	if err := mkdirPrivate(dir); err != nil {

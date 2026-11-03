@@ -348,8 +348,8 @@ func TestObserverReportsLockWaitsAndRetries(t *testing.T) {
 	if _, err := store.BackupCopy(dir); err == nil {
 		t.Fatal("copied a directory")
 	}
-	if retries != len(fileretry.Delays) {
-		t.Fatalf("retries = %d; want %d", retries, len(fileretry.Delays))
+	if retries != len(fileretry.DefaultDelays()) {
+		t.Fatalf("retries = %d; want %d", retries, len(fileretry.DefaultDelays()))
 	}
 }
 
