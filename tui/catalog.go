@@ -125,6 +125,7 @@ const (
 	TextLogPausedNew     TextID = "tui.log.pausednew"
 	TextLogMatch         TextID = "tui.log.match"
 	TextLogMatches       TextID = "tui.log.matches"
+	TextLogOneMatch      TextID = "tui.log.onematch"
 	TextLogNoMatches     TextID = "tui.log.nomatches"
 	TextLogCut           TextID = "tui.log.cut"
 	TextLogEmpty         TextID = "tui.log.empty"
@@ -303,6 +304,7 @@ func ModuleCatalog() i18n.Catalogs[TextID] {
 			TextLogPausedNew:     "paused, %d new",
 			TextLogMatch:         "match %d/%d",
 			TextLogMatches:       "%d matches",
+			TextLogOneMatch:      "1 match",
 			TextLogNoMatches:     "no matches",
 			TextLogCut:           "[cut]",
 			TextLogEmpty:         "No lines yet.",
@@ -476,6 +478,7 @@ func ModuleCatalog() i18n.Catalogs[TextID] {
 			TextLogPausedNew:     "angehalten, %d neu",
 			TextLogMatch:         "Treffer %d/%d",
 			TextLogMatches:       "%d Treffer",
+			TextLogOneMatch:      "1 Treffer",
 			TextLogNoMatches:     "keine Treffer",
 			TextLogCut:           "[gekürzt]",
 			TextLogEmpty:         "Noch keine Zeilen.",
