@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -507,4 +508,251 @@ func toolsWithout(t *testing.T, skip string) string {
 		}
 	}
 	return bin
+}
+
+// installForRemoval installs v1.0.0 and adds what an administrator leaves behind: a drop-in, a local unit,
+// configuration, state, a foreign manpage and an extra page and document of the program.
+func installForRemoval(t *testing.T) *sysEnv {
+	t.Helper()
+	e := newSysEnv(t, installer.Service{Groups: serviceGroups, AddInstallingUser: true})
+	e.publish("v1.0.0", "program one", nil, false)
+	e.mustRun()
+	writeFile(t, e.at("etc/systemd/system/"+testProgram+".service.d/override.conf"), "[Service]\nEnvironment=SAMPLE=1\n", 0o644)
+	writeFile(t, e.at("etc/systemd/system/"+testProgram+".service"), "[Unit]\nDescription=local copy\n", 0o644)
+	writeFile(t, e.at("etc/"+testProgram+"/config.toml"), "sample = true\n", 0o600)
+	writeFile(t, e.at("var/lib/"+testProgram+"/data.db"), "records\n", 0o600)
+	writeFile(t, e.at("usr/local/share/man/man1/"+testProgram+"-extra.1"), ".TH EXTRA 1\n", 0o644)
+	writeFile(t, e.at("usr/local/share/man/man1/other.1"), ".TH OTHER 1\n", 0o644)
+	writeFile(t, e.at("usr/local/share/doc/"+testProgram+"/NOTICE"), "notice\n", 0o644)
+	return e
+}
+
+// loggingSystemctl replaces the systemctl stub by one that records whether program and unit still exist.
+func (e *sysEnv) loggingSystemctl(exit int) {
+	e.t.Helper()
+	body := `echo "systemctl $* program=$(exists ` + e.at("usr/local/bin/"+testProgram) + `) unit=$(exists ` +
+		e.at("usr/local/lib/systemd/system/"+testProgram+".service") + `)" >>"$STUB_LOG"
+exit ` + strconv.Itoa(exit)
+	writeFile(e.t, filepath.Join(e.stubs, "systemctl"),
+		"#!/bin/sh\nexists() { if [ -e \"$1\" ]; then echo yes; else echo no; fi; }\n"+body+"\n", 0o755)
+}
+
+func TestSystemUninstall(t *testing.T) {
+	e := installForRemoval(t)
+	e.loggingSystemctl(0)
+	kept := map[string]map[string]string{}
+	for _, d := range []string{"etc", "var"} {
+		kept[d] = snapshot(t, e.at(d))
+	}
+	foreign := snapshot(t, e.at("usr/local/share/man/man1/other.1"))
+	accounts := snapshot(t, e.state)
+	before := len(e.calls())
+
+	out, err := e.run(true, "--uninstall")
+	if err != nil {
+		t.Fatalf("uninstall failed: %v\n%s", err, out)
+	}
+	want := []string{
+		"systemctl disable --now " + testProgram + " program=yes unit=yes",
+		"systemctl daemon-reload program=no unit=no",
+	}
+	if got := e.calls()[before:]; !slices.Equal(got, want) {
+		t.Errorf("uninstall calls:\n%s\nwant:\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
+	}
+	for _, gone := range []string{
+		"usr/local/bin/" + testProgram, "usr/local/lib/systemd/system/" + testProgram + ".service",
+		"usr/local/share/man/man1/" + testProgram + ".1", "usr/local/share/man/man1/" + testProgram + "-extra.1",
+		"usr/local/share/doc/" + testProgram,
+	} {
+		if _, err := os.Lstat(e.at(gone)); !os.IsNotExist(err) {
+			t.Errorf("%s still exists: %v", gone, err)
+		}
+	}
+	if got := snapshot(t, e.at("usr/local/share/man/man1/other.1")); !maps.Equal(got, foreign) {
+		t.Errorf("foreign manpage changed: %v", got)
+	}
+	for d, snap := range kept {
+		if got := snapshot(t, e.at(d)); !maps.Equal(got, snap) {
+			t.Errorf("/%s changed:\n%v\nwant:\n%v", d, got, snap)
+		}
+	}
+	if got := snapshot(t, e.state); !maps.Equal(got, accounts) {
+		t.Errorf("account database changed:\n%v", got)
+	}
+	for _, want := range []string{
+		"rm -r /etc/" + testProgram + "\n", "rm -r /var/lib/" + testProgram + "\n",
+		"rm -r /etc/systemd/system/" + testProgram + ".service.d\n", "rm -r /etc/systemd/system/" + testProgram + ".service\n",
+		"userdel " + testProgram + "\n", "groupdel " + testProgram + "\n",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output lacks %q:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, e.root) || strings.Contains(out, "warning") {
+		t.Errorf("output names the test root or warns:\n%s", out)
+	}
+	checkNoStaging(t, e.root)
+}
+
+func TestSystemUninstallWithoutLeftovers(t *testing.T) {
+	e := newSysEnv(t, installer.Service{})
+	e.publish("v1.0.0", "program", nil, false)
+	e.mustRun()
+	removeAll(t, e.at("etc/"+testProgram))
+	removeAll(t, filepath.Join(e.state, "user."+testProgram))
+	removeAll(t, filepath.Join(e.state, "group."+testProgram))
+	out, err := e.run(false, "--uninstall")
+	if err != nil {
+		t.Fatalf("uninstall failed: %v\n%s", err, out)
+	}
+	if strings.Contains(out, "rm -r") || strings.Contains(out, "userdel") || strings.Contains(out, "groupdel") {
+		t.Errorf("output names leftovers that do not exist:\n%s", out)
+	}
+}
+
+func TestSystemUninstallAbortsWithoutChange(t *testing.T) {
+	type abort struct {
+		args    []string
+		setup   func(e *sysEnv)
+		fresh   bool // no installation at all
+		message string
+	}
+	cases := map[string]abort{
+		"not root":      {setup: func(e *sysEnv) { e.uid = "1000" }, message: "must run as root"},
+		"no systemd":    {setup: func(e *sysEnv) { removeAll(e.t, e.at("run")) }, message: "systemd is not running"},
+		"not installed": {fresh: true, message: "is not installed"},
+		"unit is a directory": {setup: func(e *sysEnv) {
+			unit := e.at("usr/local/lib/systemd/system/" + testProgram + ".service")
+			removeAll(e.t, unit)
+			if err := os.Mkdir(unit, 0o755); err != nil {
+				e.t.Fatal(err)
+			}
+		}, message: "is not a regular file"},
+		"unit is a symlink": {setup: func(e *sysEnv) {
+			unit := e.at("usr/local/lib/systemd/system/" + testProgram + ".service")
+			removeAll(e.t, unit)
+			if err := os.Symlink(e.at("etc/"+testProgram+"/config.toml"), unit); err != nil {
+				e.t.Fatal(err)
+			}
+		}, message: "is not a regular file"},
+		"unit directory is a symlink": {setup: func(e *sysEnv) {
+			dir := e.at("usr/local/lib/systemd/system")
+			if err := os.Rename(dir, dir+".real"); err != nil {
+				e.t.Fatal(err)
+			}
+			if err := os.Symlink(dir+".real", dir); err != nil {
+				e.t.Fatal(err)
+			}
+		}, message: "is a symbolic link"},
+		"extra argument":           {args: []string{"--uninstall", "v1.0.0"}, message: "usage: install.sh --uninstall"},
+		"version before option":    {args: []string{"v1.0.0", "--uninstall"}, message: "usage: install.sh"},
+		"two options":              {args: []string{"--uninstall", "--uninstall"}, message: "usage: install.sh --uninstall"},
+		"unknown option":           {args: []string{"--remove"}, message: "usage: install.sh"},
+		"unknown option with more": {args: []string{"--remove", "x"}, message: "usage: install.sh"},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			e := installForRemoval(t)
+			if tc.fresh {
+				removeAll(t, e.at("usr/local/lib/systemd/system/"+testProgram+".service"))
+			}
+			if tc.setup != nil {
+				tc.setup(e)
+			}
+			args := tc.args
+			if args == nil {
+				args = []string{"--uninstall"}
+			}
+			root, log, state := snapshot(t, e.root), readFile(t, e.log), snapshot(t, e.state)
+
+			out, err := e.run(false, args...)
+			if err == nil {
+				t.Fatalf("uninstall succeeded:\n%s", out)
+			}
+			if !strings.Contains(out, testProgram+"-install: ") || !strings.Contains(out, tc.message) {
+				t.Errorf("output lacks %q:\n%s", tc.message, out)
+			}
+			if got := snapshot(t, e.root); !maps.Equal(got, root) {
+				t.Errorf("test root changed:\n%v\nwant:\n%v", got, root)
+			}
+			if got := readFile(t, e.log); got != log {
+				t.Errorf("stub log changed:\n%s", got)
+			}
+			if got := snapshot(t, e.state); !maps.Equal(got, state) {
+				t.Errorf("account database changed:\n%v", got)
+			}
+		})
+	}
+}
+
+func TestSystemUninstallStopsOnFailedDisable(t *testing.T) {
+	e := installForRemoval(t)
+	e.loggingSystemctl(1)
+	root, state := snapshot(t, e.root), snapshot(t, e.state)
+	before := len(e.calls())
+	out, err := e.run(false, "--uninstall")
+	if err == nil || !strings.Contains(out, "could not disable and stop "+testProgram) {
+		t.Fatalf("uninstall: %v\n%s", err, out)
+	}
+	if got := e.calls()[before:]; !slices.Equal(got, []string{"systemctl disable --now " + testProgram + " program=yes unit=yes"}) {
+		t.Errorf("calls: %v", got)
+	}
+	if got := snapshot(t, e.root); !maps.Equal(got, root) {
+		t.Errorf("test root changed:\n%v\nwant:\n%v", got, root)
+	}
+	if got := snapshot(t, e.state); !maps.Equal(got, state) {
+		t.Errorf("account database changed:\n%v", got)
+	}
+}
+
+func TestSystemUninstallKeepsSymlinks(t *testing.T) {
+	tests := map[string]struct {
+		link    string // path below the root that becomes a symlink
+		dir     bool   // the symlink leads to a directory holding a file of the same name as the original
+		warning string
+	}{
+		"program":      {link: "usr/local/bin/" + testProgram, warning: "/usr/local/bin/" + testProgram + " is a symbolic link"},
+		"manpage":      {link: "usr/local/share/man/man1/" + testProgram + ".1", warning: "/usr/local/share/man/man1/" + testProgram + ".1 is a symbolic link"},
+		"document":     {link: "usr/local/share/doc/" + testProgram + "/LICENSE", warning: "/usr/local/share/doc/" + testProgram + "/LICENSE is a symbolic link"},
+		"document dir": {link: "usr/local/share/doc/" + testProgram, dir: true, warning: "/usr/local/share/doc/" + testProgram + " is a symbolic link"},
+		"manpage dir":  {link: "usr/local/share/man/man1", dir: true, warning: "/usr/local/share/man/man1 is a symbolic link"},
+		"program dir":  {link: "usr/local/bin", dir: true, warning: "/usr/local/bin is a symbolic link"},
+		"dangling":     {link: "usr/local/share/man/man1/" + testProgram + "-extra.1", warning: "-extra.1 is a symbolic link"},
+	}
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			e := installForRemoval(t)
+			link := e.at(tc.link)
+			target := filepath.Join(t.TempDir(), "outside")
+			if tc.dir {
+				// Move the real directory away and point the original path at it.
+				if err := os.Rename(link, target); err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				removeAll(t, link)
+				if name != "dangling" {
+					writeFile(t, target, "outside file\n", 0o644)
+				}
+			}
+			if err := os.Symlink(target, link); err != nil {
+				t.Fatal(err)
+			}
+			outside := snapshot(t, filepath.Dir(target))
+
+			out, err := e.run(false, "--uninstall")
+			if err != nil {
+				t.Fatalf("uninstall failed: %v\n%s", err, out)
+			}
+			if !strings.Contains(out, "warning: ") || !strings.Contains(out, tc.warning) {
+				t.Errorf("output lacks %q:\n%s", tc.warning, out)
+			}
+			if got := snapshot(t, filepath.Dir(target)); !maps.Equal(got, outside) {
+				t.Errorf("target changed:\n%v\nwant:\n%v", got, outside)
+			}
+			if info, err := os.Lstat(link); err != nil || info.Mode()&fs.ModeSymlink == 0 {
+				t.Errorf("symlink %s was removed or replaced: %v, %v", tc.link, info, err)
+			}
+		})
+	}
 }

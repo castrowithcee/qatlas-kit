@@ -3,12 +3,18 @@
 #
 #   curl -fsSL {{.ReleasesURL}}/latest/download/install.sh | sudo sh
 #   curl -fsSL {{.ReleasesURL}}/latest/download/install.sh | sudo sh -s -- v1.2.3
+#   curl -fsSL {{.ReleasesURL}}/latest/download/install.sh | sudo sh -s -- --uninstall
 #
 # Installs the newest stable release, or the tag given as argument or in {{.Env}}_VERSION, as the systemd
 # service {{.Program}}, which runs as the system user {{.Program}}; running it again updates the
 # installation and restarts the service. Nothing is changed unless every check of the host passes,
 # checksums.txt carries a valid signature of a release key embedded below and lists the SHA-256 of the
 # archive exactly once.
+#
+# With --uninstall it stops and disables the service and removes the program, the unit, the manpages and
+# the documents installed here. It downloads and verifies nothing. Configuration, state, drop-ins, the
+# user and the group stay; the script lists each one that exists with the command that removes it and
+# runs none of them.
 #
 # Environment (all optional):
 #   {{.Env}}_VERSION           release tag to install instead of the newest stable release
@@ -93,6 +99,84 @@ check_host() {
 			operator=$SUDO_USER
 			;;
 		esac
+	fi
+}
+
+# check_uninstall_host verifies everything the removal needs; it changes nothing.
+check_uninstall_host() {
+	case $root in
+	'' | /*) ;;
+	*) fail '{{.Env}}_INSTALL_ROOT must be an absolute path' ;;
+	esac
+	[ "$(uname -s)" = Linux ] || fail "unsupported operating system $(uname -s); $display runs as a systemd service on Linux only"
+	for tool in id getent systemctl rm rmdir; do
+		command -v "$tool" >/dev/null 2>&1 || fail "$tool is required; nothing was removed"
+	done
+	[ "$(id -u)" = 0 ] || fail 'this script must run as root, for example with sudo'
+	[ -d "$root/run/systemd/system" ] || fail 'systemd is not running on this host'
+	# A symlinked unit directory would let the removal reach outside the installed layout.
+	[ ! -L "$root${unit_path%/*}" ] || fail "${unit_path%/*} is a symbolic link; nothing was removed"
+	if [ -f "$root$unit_path" ] && [ ! -L "$root$unit_path" ]; then
+		return
+	fi
+	if [ -e "$root$unit_path" ] || [ -L "$root$unit_path" ]; then
+		fail "$unit_path is not a regular file; nothing was removed"
+	fi
+	fail "$display is not installed: $unit_path does not exist; nothing was removed"
+}
+
+# remove_file deletes the regular file at the host path $1; a symbolic link or anything else is kept.
+remove_file() {
+	if [ -L "$root$1" ]; then
+		warn "$1 is a symbolic link; it was not removed and its target was not touched"
+	elif [ -f "$root$1" ]; then
+		rm -f "$root$1" || fail "could not remove $1"
+	elif [ -e "$root$1" ]; then
+		warn "$1 is not a regular file; it was not removed"
+	fi
+}
+
+# untouched_dir succeeds for a directory that is not a symbolic link, which could lead anywhere.
+untouched_dir() {
+	[ ! -L "$root$1" ] && return 0
+	warn "$1 is a symbolic link; nothing in it was touched"
+	return 1
+}
+
+# uninstall_service stops the service first, so nothing is deleted while it runs and a failure leaves the
+# installation as it was.
+uninstall_service() {
+	systemctl disable --now "$program" || fail "could not disable and stop $program; nothing was removed"
+	if untouched_dir "${program_path%/*}"; then remove_file "$program_path"; fi
+	if untouched_dir "${unit_path%/*}"; then remove_file "$unit_path"; fi
+	if untouched_dir "$man_path"; then
+		# An unmatched pattern stays literal and names nothing that exists.
+		for page in "$root$man_path/$program".1 "$root$man_path/$program"-*.1; do
+			remove_file "${page#"$root"}"
+		done
+	fi
+	if untouched_dir "$doc_path" && [ -d "$root$doc_path" ]; then
+		for doc in "$root$doc_path"/*; do
+			remove_file "${doc#"$root"}"
+		done
+		rmdir "$root$doc_path" 2>/dev/null || warn "$doc_path is not empty; it was left in place"
+	fi
+	systemctl daemon-reload || fail 'systemctl daemon-reload failed'
+}
+
+report_uninstall() {
+	printf '\nRemoved %s: the service %s.service, its program, unit, manpages and documents.\n' "$display" "$program"
+	leftovers=
+	for path in "$config_path" "$state_path" "$override_path.d" "$override_path"; do
+		if [ -e "$root$path" ] || [ -L "$root$path" ]; then
+			leftovers="$leftovers  rm -r $path\n"
+		fi
+	done
+	if id "$program" >/dev/null 2>&1; then leftovers="$leftovers  userdel $program\n"; fi
+	if getent group "$program" >/dev/null 2>&1; then leftovers="$leftovers  groupdel $program\n"; fi
+	if [ -n "$leftovers" ]; then
+		printf '\nKept, remove it yourself if you no longer need it:\n'
+		printf '%b' "$leftovers"
 	fi
 }
 
@@ -238,7 +322,12 @@ cleanup() {
 }
 
 main() {
-	[ $# -le 1 ] || fail 'usage: install.sh [<version>]'
+	uninstall=
+	case ${1:-} in
+	--uninstall) [ $# -eq 1 ] || fail 'usage: install.sh --uninstall'; uninstall=1 ;;
+	-*) fail 'usage: install.sh [<version>] | install.sh --uninstall' ;;
+	esac
+	[ $# -le 1 ] || fail 'usage: install.sh [<version>] | install.sh --uninstall'
 	base=${ {{- .Env}}_INSTALL_BASE_URL:-$repo_url}
 	base=${base%/}
 	root=${ {{- .Env}}_INSTALL_ROOT:-}
@@ -248,6 +337,13 @@ main() {
 	staged=
 	trap cleanup EXIT
 	trap 'exit 1' HUP INT TERM
+
+	if [ -n "$uninstall" ]; then
+		check_uninstall_host
+		uninstall_service
+		report_uninstall
+		return
+	fi
 
 	check_host
 	fetch_release
