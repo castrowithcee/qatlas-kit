@@ -46,6 +46,33 @@
 // then the normal hints by priority; a hint that always stays, such as help, is never dropped, and the
 // answers of an open question are shortened instead.
 //
+// The mouse is a second way to the same actions and never stronger than a key. Render and the other drawing
+// parts return the targets they drew; a MouseMap holds the targets of one drawn frame, so a target no longer
+// on screen cannot act. Handle acts on a press of the left button and on the wheel only. A click reports the
+// action, area or tab of the target it hit, which the application runs exactly as it runs the key or the tab
+// click, with every question and check of that way; the free area of a zone reports the zone to focus, and an
+// element inside a zone wins over it. A wheel notch reports the zone under the pointer, so a side pane scrolls
+// without taking the focus; WheelStep stops it at the ends, and WheelTextLines is its step in a text area. The
+// application disables the map where the mouse is switched off, while a key is captured and while the
+// terminal is too small; under a dialog it passes the targets of the dialog alone, so the background takes no
+// click, and it passes the footer targets only where the footer holds the answers of a question.
+//
+// Mouse reports never become text. An InputFilter, installed with tea.WithFilter and attached to the program,
+// drops the pieces of a report that a terminal behind SSH or tmux delivered in more than one read, so a text
+// or passphrase field never receives them, and merges a wheel notch the terminal reports twice. Characters
+// typed by hand, pasted or arriving outside the short window of a report pass unchanged; keys it held back
+// arrive later as one InputBatch.
+//
+// A CommandLine runs commands by name: lower-case words without arguments, with aliases that keep older names
+// valid. Typing filters, an exact name first, then names that begin with the text, then a word that does,
+// then the text inside a word; the empty line lists the commands that are not hidden. A command names the
+// action, and where it opens one, the area and tab that its key or tab click already triggers, so Update and
+// Click yield what the dispatcher of the application runs for that key. It acts only where Available says its
+// key acts; anywhere else the line stays open with the typed text and the reason. The line reads keys where
+// text is typed, so a letter is always text, and moves with the actions of CommandKeys. View draws a panel
+// with the key in force beside each command, at most twelve rows that scroll with the choice and one target
+// per row; the application places it over the workspace, or on it where the terminal is too small.
+//
 // Colours come from themes. Screen code names roles, never colour values: a Palette assigns one colour per
 // role, Styles build text styles and widgets on it. A ThemeSet holds the terminal theme, the application's
 // own themes and the built-in schemes; each theme is data, either hand-picked palettes per colour profile
