@@ -13,9 +13,9 @@ import (
 	"github.com/castrowithcee/qatlas-kit/helptopics"
 )
 
-// Explanation is the long explanation of the focused element. Title, Body and LinkText are plain text the
+// ExplanationItem is the long explanation of the focused element. Title, Body and LinkText are plain text the
 // application has translated, since they name its data; the explanation escapes them.
-type Explanation struct {
+type ExplanationItem struct {
 	// Title names what is explained, such as a field, an entry or an area; empty takes TextInfoTitle.
 	Title string
 	// Body is the long explanation, one line per paragraph.
@@ -44,7 +44,7 @@ type ExplanationKeys struct {
 
 // ExplanationSpec is what an explanation shows and the keys it reads.
 type ExplanationSpec struct {
-	Item Explanation
+	Item ExplanationItem
 	Keys ExplanationKeys
 }
 
@@ -57,9 +57,9 @@ const (
 // explanationRef is the target item of the area of an explanation over the screen; a click there closes it.
 const explanationRef = "\x00e"
 
-// ExplanationModel is an open explanation: over the screen, in the workspace, or in a pane beside a form or a
+// Explanation is an open explanation: over the screen, in the workspace, or in a pane beside a form or a
 // list. It holds the explanation and its scroll position.
-type ExplanationModel struct {
+type Explanation struct {
 	spec   ExplanationSpec
 	keys   *Keymap
 	text   Translator
@@ -69,7 +69,7 @@ type ExplanationModel struct {
 // NewExplanation checks spec and returns the explanation from its top. It rejects a missing key of Back,
 // Info, Copy, Up or Down, a key that names no action of keys or that two keys share, and an explanation that
 // SetItem rejects.
-func NewExplanation(spec ExplanationSpec, keys *Keymap, text Translator) (*ExplanationModel, error) {
+func NewExplanation(spec ExplanationSpec, keys *Keymap, text Translator) (*Explanation, error) {
 	if keys == nil || text == nil {
 		return nil, errors.New("the explanation needs a key table and a translator")
 	}
@@ -82,13 +82,13 @@ func NewExplanation(spec ExplanationSpec, keys *Keymap, text Translator) (*Expla
 	if err := errors.Join(errs...); err != nil {
 		return nil, err
 	}
-	return &ExplanationModel{spec: spec, keys: keys, text: text}, nil
+	return &Explanation{spec: spec, keys: keys, text: text}, nil
 }
 
 // checkExplanation reports an explanation with nothing to explain, a term that breaks the contract of a
 // term, and an address that is not an absolute http or https address of printable ASCII characters, which
 // could otherwise end the hyperlink sequence and write to the terminal.
-func checkExplanation(e Explanation) error {
+func checkExplanation(e ExplanationItem) error {
 	var errs []error
 	if strings.TrimSpace(e.Body) == "" && e.Term == (helptopics.Term{}) && e.URL == "" {
 		errs = append(errs, errors.New("explanation: nothing to explain; it needs a body, a term or an address"))
@@ -126,7 +126,7 @@ func checkLink(address string) error {
 
 // SetItem shows another explanation, such as the one of the element that took the focus; a different one
 // starts at its top. It keeps the shown one and reports why for an explanation NewExplanation would reject.
-func (e *ExplanationModel) SetItem(item Explanation) error {
+func (e *Explanation) SetItem(item ExplanationItem) error {
 	if err := checkExplanation(item); err != nil {
 		return err
 	}
@@ -137,12 +137,12 @@ func (e *ExplanationModel) SetItem(item Explanation) error {
 }
 
 // Item is the explanation shown.
-func (e *ExplanationModel) Item() Explanation { return e.spec.Item }
+func (e *Explanation) Item() ExplanationItem { return e.spec.Item }
 
 // Update handles a key. act is the action the application runs: Back or Info, which close the explanation,
 // Copy, for which it puts Text on the clipboard, and Link, for which it opens the address. The scroll keys are
 // handled inside; handled is false for every other key, which the application handles or drops.
-func (e *ExplanationModel) Update(msg tea.KeyPressMsg) (act ActionID, handled bool) {
+func (e *Explanation) Update(msg tea.KeyPressMsg) (act ActionID, handled bool) {
 	for _, id := range e.navKeys() {
 		if e.keys.Is(msg, id, InputNavigation) {
 			return e.Act(id)
@@ -151,7 +151,7 @@ func (e *ExplanationModel) Update(msg tea.KeyPressMsg) (act ActionID, handled bo
 	return "", false
 }
 
-func (e *ExplanationModel) navKeys() []ActionID {
+func (e *Explanation) navKeys() []ActionID {
 	k := e.spec.Keys
 	ids := []ActionID{k.Back, k.Info, k.Copy, k.Up, k.Down}
 	if k.Link != "" && e.spec.Item.URL != "" {
@@ -161,7 +161,7 @@ func (e *ExplanationModel) navKeys() []ActionID {
 }
 
 // Act runs one of the explanation keys as its key does, for a click or a command that stands for the key.
-func (e *ExplanationModel) Act(id ActionID) (act ActionID, handled bool) {
+func (e *Explanation) Act(id ActionID) (act ActionID, handled bool) {
 	k := e.spec.Keys
 	switch {
 	case id == "":
@@ -181,7 +181,7 @@ func (e *ExplanationModel) Act(id ActionID) (act ActionID, handled bool) {
 // Click handles a click on a target the explanation drew, as the MouseMap of its targets reports it: a key of
 // the key line or the address acts as its key, and a click anywhere else on the explanation over the screen
 // closes it as Back does.
-func (e *ExplanationModel) Click(r MouseResult) (act ActionID, handled bool) {
+func (e *Explanation) Click(r MouseResult) (act ActionID, handled bool) {
 	switch {
 	case !r.Handled:
 		return "", false
@@ -192,12 +192,12 @@ func (e *ExplanationModel) Click(r MouseResult) (act ActionID, handled bool) {
 }
 
 // Wheel scrolls the text by the notches of the wheel, WheelTextLines a notch, and stops at its ends.
-func (e *ExplanationModel) Wheel(steps int) { e.scroll.by(steps * WheelTextLines) }
+func (e *Explanation) Wheel(steps int) { e.scroll.by(steps * WheelTextLines) }
 
 // Hints are the explanation keys as hints of a key line: scrolling only where the last drawing did not show
 // the whole text. The explanation drawn over the screen shows them itself; in the workspace, the application
 // puts them into the footer.
-func (e *ExplanationModel) Hints() []Hint {
+func (e *Explanation) Hints() []Hint {
 	k := e.spec.Keys
 	var hints []Hint
 	if e.scroll.last > 0 {
@@ -212,7 +212,7 @@ func (e *ExplanationModel) Hints() []Hint {
 
 // Text is the explanation as plain text for the clipboard: what it shows and nothing else, without control
 // characters.
-func (e *ExplanationModel) Text() string {
+func (e *Explanation) Text() string {
 	item := e.spec.Item
 	var parts []string
 	for _, p := range []string{item.Title, strings.TrimSpace(item.Body), e.termText(), item.URL} {
@@ -227,7 +227,7 @@ func (e *ExplanationModel) Text() string {
 	return strings.Join(lines, "\n")
 }
 
-func (e *ExplanationModel) termText() string {
+func (e *Explanation) termText() string {
 	if e.spec.Item.Term == (helptopics.Term{}) {
 		return ""
 	}
@@ -237,7 +237,7 @@ func (e *ExplanationModel) termText() string {
 // rows is the text in width cells: the body, the term with its title in bold, and the address under its
 // label, every piece of it linked to the whole address and a target of the link key; a blank line stands
 // between them.
-func (e *ExplanationModel) rows(width int, styles Styles, body TextStyle) []textRow {
+func (e *Explanation) rows(width int, styles Styles, body TextStyle) []textRow {
 	item := e.spec.Item
 	var rows []textRow
 	gap := func() {
@@ -293,7 +293,7 @@ func (e *ExplanationModel) rows(width int, styles Styles, body TextStyle) []text
 }
 
 // window is rows cut to room lines from the scroll position, with the position line where they do not fit.
-func (e *ExplanationModel) window(rows []textRow, room, width int, styles Styles) []textRow {
+func (e *Explanation) window(rows []textRow, room, width int, styles Styles) []textRow {
 	start, end, position := e.scroll.window(len(rows), room, e.text)
 	out := slices.Clone(rows[start:end])
 	if position != "" {
@@ -302,12 +302,12 @@ func (e *ExplanationModel) window(rows []textRow, room, width int, styles Styles
 	return out
 }
 
-// View draws the explanation over screen, the drawn screen of width by height cells: the screen dimmed and
-// the explanation in its frame, titled with the title, centred in room, the part of the screen it may cover,
-// as high as its text needs and room allows, with the position where it scrolls and the key line. The targets
-// are the explanation's alone; a click on it outside its keys and address closes it. ok is false where room
-// is too small; the application then draws Page in the workspace and Hints in the footer.
-func (e *ExplanationModel) View(screen string, width, height int, room Rect, styles Styles) (view string, targets []Target, ok bool) {
+// Overlay draws the explanation with styles over screen, the drawn screen of width by height cells: the
+// screen dimmed and the explanation in its frame, titled with the title, centred in room, the part of the
+// screen it may cover, as high as its text needs and room allows, with the position where it scrolls and the
+// key line. The targets are the explanation's alone; a click on it outside its keys and address closes it. ok
+// is false where room is too small; the application then draws View in the workspace and Hints in the footer.
+func (e *Explanation) Overlay(styles Styles, screen string, width, height int, room Rect) (view string, targets []Target, ok bool) {
 	inner := min(dialogMaxInner, room.Width-8)
 	textRoom := room.Height - 2 - 2 - 2
 	if inner < explanationMinInner || textRoom < explanationMinText {
@@ -326,9 +326,9 @@ func (e *ExplanationModel) View(screen string, width, height int, room Rect, sty
 	return overlay(screen, box, width, height, top, left, styles), all, true
 }
 
-// Page draws the explanation as the content of a workspace of width by height cells, for a terminal too small
-// to draw it over the screen: the title, then the text; the keys stand in the footer.
-func (e *ExplanationModel) Page(width, height int, styles Styles) (string, []Target) {
+// View draws the explanation with styles as the content of a workspace of width by height cells, for a
+// terminal too small to draw it over the screen: the title, then the text; the keys stand in the footer.
+func (e *Explanation) View(styles Styles, width, height int) (string, []Target) {
 	width, height = max(width, 0), max(height, 0)
 	if width == 0 || height == 0 {
 		return finishPage(nil, nil, width, height)
@@ -341,10 +341,11 @@ func (e *ExplanationModel) Page(width, height int, styles Styles) (string, []Tar
 	return finishPage(lines, targets, width, height)
 }
 
-// Pane draws the explanation dimmed in a frame of width by height cells, for the pane beside a form or a list
-// on a wide terminal. Text that does not fit scrolls with the wheel over the pane; its target names the detail
-// zone, so the wheel reaches it under the pointer without the pane taking the focus by a key.
-func (e *ExplanationModel) Pane(width, height int, styles Styles) (string, []Target) {
+// Pane draws the explanation with styles, dimmed, in a frame of width by height cells, for the pane beside a
+// form or a list on a wide terminal. Text that does not fit scrolls with the wheel over the pane; its target
+// names the detail zone, so the wheel reaches it under the pointer without the pane taking the focus by a
+// key.
+func (e *Explanation) Pane(styles Styles, width, height int) (string, []Target) {
 	width, height = max(width, 0), max(height, 0)
 	x0, y0, inner, room := 2, 1, width-4, height-2
 	if width < 4 || height < 2 {
@@ -365,7 +366,7 @@ func (e *ExplanationModel) Pane(width, height int, styles Styles) (string, []Tar
 	return strings.Join(styles.Panel(e.title(), "", lines, width, height, false), "\n"), all
 }
 
-func (e *ExplanationModel) title() string {
+func (e *Explanation) title() string {
 	if e.spec.Item.Title == "" {
 		return e.text.Lookup(TextInfoTitle)
 	}

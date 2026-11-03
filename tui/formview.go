@@ -36,15 +36,16 @@ type formBlock struct {
 	row, x int
 }
 
-// View draws the form in width by height cells. Where the sections stand as a list at the left, the fields
-// of the focused section stand beside it in a panel under the title and lead of the section; otherwise each
-// section is a heading above its fields. Each field is its label in one column and its value in a frame, the
-// focused one behind the marker ">" with the frame and label in the accent colour. Where that does not fit,
-// the fields lose their frames, then the headings go, then the fields around the focus stand alone with "…"
-// for the rest; where even the focused field does not fit, the form asks for a larger terminal. The focus is
-// always in view. Problems stand under their fields, those without a field above the form. It returns a
-// target for the free area of the form, one per field, tick box, section and value of the open list.
-func (f *FormModel) View(width, height int, styles Styles) (string, []Target) {
+// View draws the form with styles in width by height cells. Where the sections stand as a list at the left,
+// the fields of the focused section stand beside it in a panel under the title and lead of the section;
+// otherwise each section is a heading above its fields. Each field is its label in one column and its value
+// in a frame, the focused one behind the marker ">" with the frame and label in the accent colour. Where that
+// does not fit, the fields lose their frames, then the headings go, then the fields around the focus stand
+// alone with "…" for the rest; where even the focused field does not fit, the form asks for a larger
+// terminal. The focus is always in view. Problems stand under their fields, those without a field above the
+// form. It returns a target for the free area of the form, one per field, tick box, section and value of the
+// open list.
+func (f *Form) View(styles Styles, width, height int) (string, []Target) {
 	width, height = max(width, 0), max(height, 0)
 	if height == 0 {
 		return "", nil
@@ -68,7 +69,7 @@ func (f *FormModel) View(width, height int, styles Styles) (string, []Target) {
 
 // finish cuts the lines to the screen, draws the open list of values below the focused field and adds the
 // free area of the form beneath every other target.
-func (f *FormModel) finish(lines []string, targets []Target, row, x, width, height int, styles Styles) (string, []Target) {
+func (f *Form) finish(lines []string, targets []Target, row, x, width, height int, styles Styles) (string, []Target) {
 	out := make([]string, height)
 	for i := range out {
 		if i < len(lines) {
@@ -106,7 +107,7 @@ func (f *FormModel) finish(lines []string, targets []Target, row, x, width, heig
 
 // valueList draws the open list of values of the focused field in at most width cells and returns a target
 // per value, counted from its top left.
-func (f *FormModel) valueList(styles Styles, width int) ([]string, []Target) {
+func (f *Form) valueList(styles Styles, width int) ([]string, []Target) {
 	field := f.fields[f.focus]
 	labels := make([]string, len(field.Choices))
 	inner := 0
@@ -120,13 +121,13 @@ func (f *FormModel) valueList(styles Styles, width int) ([]string, []Target) {
 	for j, label := range labels {
 		lines[j] = styles.Row(label, inner, j == f.pick)
 		targets = append(targets, Target{Rect: Rect{X: 2, Y: 1 + j, Width: inner, Height: 1}, Zone: ZoneForm,
-			Action: f.keys.Enter, Item: formOptionRef + field.ID + "\x00" + string(field.Choices[j].ID)})
+			Action: f.keys.Enter, Item: formOptionRef + string(field.ID) + "\x00" + string(field.Choices[j].ID)})
 	}
 	return styles.Panel("", "", lines, inner+4, len(lines)+2, true), targets
 }
 
 // draw lays the form out in lay; ok is false where the fields do not fit the width that way.
-func (f *FormModel) draw(lay formLayout, width int, styles Styles) (lines []string, targets []Target, row, x int, ok bool) {
+func (f *Form) draw(lay formLayout, width int, styles Styles) (lines []string, targets []Target, row, x int, ok bool) {
 	lines = f.otherProblems(width, styles)
 	top := len(lines)
 	if !lay.list {
@@ -184,7 +185,7 @@ func (f *FormModel) draw(lay formLayout, width int, styles Styles) (lines []stri
 }
 
 // window draws the one-line fields around the focus that fit height, with "…" where fields are left out.
-func (f *FormModel) window(width, height int, styles Styles) (lines []string, targets []Target, row, x int, ok bool) {
+func (f *Form) window(width, height int, styles Styles) (lines []string, targets []Target, row, x int, ok bool) {
 	blocks, ok := f.blocks(width, false, false, "", styles)
 	if !ok {
 		return nil, nil, 0, 0, false
@@ -251,7 +252,7 @@ func (f *FormModel) window(width, height int, styles Styles) (lines []string, ta
 }
 
 // sizeHint asks for a terminal large enough for the focused field.
-func (f *FormModel) sizeHint(width, height int, styles Styles) string {
+func (f *Form) sizeHint(width, height int, styles Styles) string {
 	needH := 1
 	if blocks, ok := f.blocks(max(width, 2+minLabelColumn+1+minFlatValue), false, false, "", styles); ok {
 		for _, b := range blocks {
@@ -278,7 +279,7 @@ func (f *FormModel) sizeHint(width, height int, styles Styles) string {
 }
 
 // otherProblems are the lines of the problems that stand under no field.
-func (f *FormModel) otherProblems(width int, styles Styles) []string {
+func (f *Form) otherProblems(width int, styles Styles) []string {
 	var lines []string
 	for _, p := range f.other {
 		lines = append(lines, f.problemLines(p, width, "", styles)...)
@@ -286,7 +287,7 @@ func (f *FormModel) otherProblems(width int, styles Styles) []string {
 	return lines
 }
 
-func (f *FormModel) problemLines(p FormProblem, width int, indent string, styles Styles) []string {
+func (f *Form) problemLines(p FormProblem, width int, indent string, styles Styles) []string {
 	text := p.Cause
 	if p.NextStep != "" {
 		text += " - " + p.NextStep
@@ -299,7 +300,7 @@ func (f *FormModel) problemLines(p FormProblem, width int, indent string, styles
 }
 
 // redact replaces what was typed into a masked field wherever a problem repeats it.
-func (f *FormModel) redact(text string) string {
+func (f *Form) redact(text string) string {
 	for i := range f.fields {
 		if field := &f.fields[i]; field.Kind == FieldMasked {
 			text = redactSecret(text, field.line.String())
@@ -308,9 +309,9 @@ func (f *FormModel) redact(text string) string {
 	return text
 }
 
-func (f *FormModel) label(i int) string { return Escape(f.text.Lookup(f.fields[i].Label)) }
+func (f *Form) label(i int) string { return Escape(f.text.Lookup(f.fields[i].Label)) }
 
-func (f *FormModel) labelWidth() int {
+func (f *Form) labelWidth() int {
 	w := 0
 	for i := range f.fields {
 		w = max(w, lipgloss.Width(f.label(i)))
@@ -319,7 +320,7 @@ func (f *FormModel) labelWidth() int {
 }
 
 // sectionTitle is the title of a section with the marks of a closed section and of one with a problem.
-func (f *FormModel) sectionTitle(s FormSection, styles Styles) (string, bool) {
+func (f *Form) sectionTitle(s FormSection, styles Styles) (string, bool) {
 	closed := f.closed(s.ID)
 	text := Escape(f.text.Lookup(s.Title))
 	if closed {
@@ -336,7 +337,7 @@ func (f *FormModel) sectionTitle(s FormSection, styles Styles) (string, bool) {
 
 // sectionList draws the numbered sections in a panel, the one of the focus behind ">" as a filled bar and a
 // closed one dimmed, and returns it with a target per section and its width.
-func (f *FormModel) sectionList(styles Styles) ([]string, []Target, int) {
+func (f *Form) sectionList(styles Styles) ([]string, []Target, int) {
 	current := f.fields[f.focus].Section
 	texts := make([]string, len(f.sections))
 	dim := make([]bool, len(f.sections))
@@ -358,7 +359,7 @@ func (f *FormModel) sectionList(styles Styles) ([]string, []Target, int) {
 		}
 		lines[i] = line
 		targets = append(targets, Target{Rect: Rect{X: 2, Y: 1 + i, Width: inner, Height: 1}, Zone: ZoneForm,
-			Item: formSectionRef + s.ID})
+			Item: formSectionRef + string(s.ID)})
 	}
 	return styles.Panel("", "", lines, inner+4, len(lines)+2, false), targets, inner + 4
 }
@@ -366,7 +367,7 @@ func (f *FormModel) sectionList(styles Styles) ([]string, []Target, int) {
 // blocks lays out the fields in width cells, framed or on one line, with the headings of the sections where
 // headings is set, and only the fields of the section only where it is set. ok is false where the values do
 // not fit beside the labels.
-func (f *FormModel) blocks(width int, boxed, headings bool, only string, styles Styles) ([]formBlock, bool) {
+func (f *Form) blocks(width int, boxed, headings bool, only SectionID, styles Styles) ([]formBlock, bool) {
 	labelCol := min(f.labelWidth(), max(minLabelColumn, width/3))
 	headW := 2 + labelCol + 1
 	valueW := width - headW
@@ -374,7 +375,7 @@ func (f *FormModel) blocks(width int, boxed, headings bool, only string, styles 
 		return nil, false
 	}
 	var out []formBlock
-	last := ""
+	var last SectionID
 	for i := range f.fields {
 		field := &f.fields[i]
 		if only != "" && field.Section != only {
@@ -385,7 +386,7 @@ func (f *FormModel) blocks(width int, boxed, headings bool, only string, styles 
 			s, _ := f.section(field.Section)
 			title, _ := f.sectionTitle(s, styles)
 			out = append(out, formBlock{field: -1, lines: []string{styles.Render(StyleTitle, title)},
-				targets: []Target{{Rect: Rect{Width: width, Height: 1}, Zone: ZoneForm, Item: formSectionRef + s.ID}}})
+				targets: []Target{{Rect: Rect{Width: width, Height: 1}, Zone: ZoneForm, Item: formSectionRef + string(s.ID)}}})
 		}
 		if f.closed(field.Section) {
 			continue
@@ -397,7 +398,7 @@ func (f *FormModel) blocks(width int, boxed, headings bool, only string, styles 
 
 // block draws field i: the marker and label in their column, the value framed or on its surface, the hint
 // under the focused field and the problems of the field.
-func (f *FormModel) block(i, width, headW, labelCol int, boxed bool, styles Styles) formBlock {
+func (f *Form) block(i, width, headW, labelCol int, boxed bool, styles Styles) formBlock {
 	field := &f.fields[i]
 	focused := i == f.focus
 	valueW := width - headW
@@ -450,7 +451,7 @@ func (f *FormModel) block(i, width, headW, labelCol int, boxed bool, styles Styl
 		action = f.keys.Enter
 	}
 	if field.Kind != FieldReadOnly {
-		row := Target{Rect: Rect{Width: width, Height: len(b.lines)}, Zone: ZoneForm, Action: action, Item: formFieldRef + field.ID}
+		row := Target{Rect: Rect{Width: width, Height: len(b.lines)}, Zone: ZoneForm, Action: action, Item: formFieldRef + string(field.ID)}
 		b.targets = append([]Target{row}, b.targets...)
 	}
 	indent := blank
@@ -470,7 +471,7 @@ func (f *FormModel) block(i, width, headW, labelCol int, boxed bool, styles Styl
 
 // valueLines draws the value of field i in width cells and returns the targets of its tick boxes, counted
 // from the top left of the value.
-func (f *FormModel) valueLines(i, width int, styles Styles) ([]string, []Target) {
+func (f *Form) valueLines(i, width int, styles Styles) ([]string, []Target) {
 	field := &f.fields[i]
 	focused := i == f.focus
 	hint := func(id TextID) []string {
@@ -525,7 +526,7 @@ func (f *FormModel) valueLines(i, width int, styles Styles) ([]string, []Target)
 
 // ticks draws the values of a multiple choice as tick boxes, the one under the cursor of the focused field
 // behind ">", and breaks the line between values only. Each value is a target of the toggle key.
-func (f *FormModel) ticks(i, width int, styles Styles) ([]string, []Target) {
+func (f *Form) ticks(i, width int, styles Styles) ([]string, []Target) {
 	field := &f.fields[i]
 	var lines []string
 	var targets []Target
@@ -545,7 +546,7 @@ func (f *FormModel) ticks(i, width int, styles Styles) ([]string, []Target) {
 			x++
 		}
 		targets = append(targets, Target{Rect: Rect{X: x, Y: len(lines), Width: min(w, width-x), Height: 1}, Zone: ZoneForm,
-			Action: f.keys.Toggle, Item: formTickRef + field.ID + "\x00" + string(c.ID)})
+			Action: f.keys.Toggle, Item: formTickRef + string(field.ID) + "\x00" + string(c.ID)})
 		line += part
 		x += w
 	}

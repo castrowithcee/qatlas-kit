@@ -104,10 +104,10 @@ type listMark struct {
 	ok      bool
 }
 
-// ListModel is a list of entries with selection, filter, groups and scroll position. The filter decides only
+// List is a list of entries with selection, filter, groups and scroll position. The filter decides only
 // which entries show: it never removes one and never changes their order. The selection follows the ID of an
 // entry when the entries, the filter or the grouping change.
-type ListModel struct {
+type List struct {
 	spec   ListSpec
 	keys   *Keymap
 	text   Translator
@@ -123,13 +123,14 @@ type ListModel struct {
 	page      int
 	query     []rune
 	searching bool
+	focused   bool
 }
 
 // NewList checks spec and returns an empty list. It rejects a list without columns, a column without title,
 // a first column that is free text or optional, more than one free text column, a list without the text of
 // its empty state, and a key that names no action of keys or that two list keys share; only a list that
 // filters as typed may go without the search key.
-func NewList(spec ListSpec, keys *Keymap, text Translator) (*ListModel, error) {
+func NewList(spec ListSpec, keys *Keymap, text Translator) (*List, error) {
 	if keys == nil || text == nil {
 		return nil, errors.New("the list needs a key table and a translator")
 	}
@@ -181,7 +182,7 @@ func NewList(spec ListSpec, keys *Keymap, text Translator) (*ListModel, error) {
 		return nil, err
 	}
 	spec.Columns = slices.Clone(spec.Columns)
-	l := &ListModel{spec: spec, keys: keys, text: text, folded: map[string]bool{}, page: 1}
+	l := &List{spec: spec, keys: keys, text: text, folded: map[string]bool{}, page: 1}
 	for _, c := range spec.Columns {
 		l.titles = append(l.titles, strings.ToUpper(Escape(text.Lookup(c.Title))))
 	}
@@ -191,7 +192,7 @@ func NewList(spec ListSpec, keys *Keymap, text Translator) (*ListModel, error) {
 // SetItems replaces the entries and keeps the filter, the fold state and, where it still shows, the selected
 // entry. It rejects an entry without ID or with a control character in it, an ID listed twice and an entry
 // whose cells do not match the columns, and then changes nothing.
-func (l *ListModel) SetItems(items []ListItem) error {
+func (l *List) SetItems(items []ListItem) error {
 	var errs []error
 	seen := map[ItemID]bool{}
 	for i, it := range items {
@@ -226,35 +227,39 @@ func (l *ListModel) SetItems(items []ListItem) error {
 
 // Reset forgets the filter, the selection and the scroll position and marks the first entry; the fold state
 // stays.
-func (l *ListModel) Reset() {
+func (l *List) Reset() {
 	l.query, l.searching, l.offset = nil, false, 0
 	l.rebuild(listMark{})
 	l.cursor = l.firstEntry()
 }
 
+// SetFocused says whether the rows have the focus, which decides what a click on the marked row does. The
+// application sets it when the focus enters or leaves the rows.
+func (l *List) SetFocused(on bool) { l.focused = on }
+
 // SetGrouped shows the entries under their groups or as one flat list.
-func (l *ListModel) SetGrouped(on bool) {
+func (l *List) SetGrouped(on bool) {
 	prev := l.mark()
 	l.grouped = on
 	l.rebuild(prev)
 }
 
 // SetFilter sets the filter text without typing it.
-func (l *ListModel) SetFilter(query string) {
+func (l *List) SetFilter(query string) {
 	prev := l.mark()
 	l.query = []rune(query)
 	l.rebuild(prev)
 }
 
 // Query is the filter text.
-func (l *ListModel) Query() string { return string(l.query) }
+func (l *List) Query() string { return string(l.query) }
 
 // Searching reports whether a filter is being typed after the search key.
-func (l *ListModel) Searching() bool { return l.searching }
+func (l *List) Searching() bool { return l.searching }
 
 // Input is the input focus the list reads keys in: text while a filter is typed or the list filters as
 // typed, navigation otherwise.
-func (l *ListModel) Input() InputFocus {
+func (l *List) Input() InputFocus {
 	if l.searching || l.spec.Search == SearchAsTyped {
 		return InputText
 	}
@@ -262,13 +267,13 @@ func (l *ListModel) Input() InputFocus {
 }
 
 // Selected is the marked entry; a group row or an empty list mark none.
-func (l *ListModel) Selected() (ItemID, bool) {
+func (l *List) Selected() (ItemID, bool) {
 	m := l.mark()
 	return m.id, m.ok && !m.isGroup
 }
 
 // Select marks the entry id, unfolding its group where it is folded, and reports whether it shows.
-func (l *ListModel) Select(id ItemID) bool {
+func (l *List) Select(id ItemID) bool {
 	for _, it := range l.items {
 		if it.ID == id && l.grouped && l.folded[it.Group] && len(l.query) == 0 {
 			delete(l.folded, it.Group)
@@ -280,7 +285,7 @@ func (l *ListModel) Select(id ItemID) bool {
 
 // Position says where the selection stands among the entries, group rows not counted: "pos/total", or with
 // a filter "pos/shown (N total)"; empty for an empty list without filter.
-func (l *ListModel) Position() string {
+func (l *List) Position() string {
 	shown, pos := 0, 0
 	for i, r := range l.rows {
 		if r.item < 0 {
@@ -305,7 +310,7 @@ func (l *ListModel) Position() string {
 // Update handles a key. open is the entry whose enter key was pressed, which the application opens as it
 // opens any entry; handled is false for a key the list leaves to the application, such as up from the first
 // row of a list that stops, which may lead to the zone above, and back without a filter.
-func (l *ListModel) Update(msg tea.KeyPressMsg) (open ItemID, handled bool) {
+func (l *List) Update(msg tea.KeyPressMsg) (open ItemID, handled bool) {
 	focus := l.Input()
 	k := l.spec.Keys
 	for _, id := range []ActionID{k.Back, k.Enter, k.Search, k.Up, k.Down, k.PageUp, k.PageDown, k.First, k.Last, k.Left, k.Right} {
@@ -338,7 +343,7 @@ func (l *ListModel) Update(msg tea.KeyPressMsg) (open ItemID, handled bool) {
 }
 
 // Act runs one of the list keys as its key does, for a click or a command that stands for the key.
-func (l *ListModel) Act(id ActionID) (open ItemID, handled bool) {
+func (l *List) Act(id ActionID) (open ItemID, handled bool) {
 	k := l.spec.Keys
 	n := len(l.rows)
 	if id == "" {
@@ -418,12 +423,12 @@ func (l *ListModel) Act(id ActionID) (open ItemID, handled bool) {
 	return "", true
 }
 
-// Click handles a click on a target the list drew, as the MouseMap of its targets reports it. focused says
-// whether the rows had the focus before the click. A click marks a row; only a click on the marked row while
-// the rows have the focus opens it, as enter does, so a click meant to scroll or to take the focus opens
-// nothing. A click on a group row folds or unfolds it, and one on the search line starts the search. A filter
-// being typed is kept and stops.
-func (l *ListModel) Click(r MouseResult, focused bool) (open ItemID, handled bool) {
+// Click handles a click on a target the list drew, as the MouseMap of its targets reports it. A click marks a
+// row; only a click on the marked row while the rows have the focus, as SetFocused said before the click,
+// opens it, as enter does, so a click meant to scroll or to take the focus opens nothing. A click on a group
+// row folds or unfolds it, and one on the search line starts the search. A filter being typed is kept and
+// stops.
+func (l *List) Click(r MouseResult) (open ItemID, handled bool) {
 	if !r.Handled {
 		return "", false
 	}
@@ -446,21 +451,21 @@ func (l *ListModel) Click(r MouseResult, focused bool) (open ItemID, handled boo
 		l.searching = false
 	case target.isGroup && l.folds():
 		l.setFolded(target.group, !l.folded[target.group])
-	case !target.isGroup && focused && marked == target:
+	case !target.isGroup && l.focused && marked == target:
 		return target.id, true
 	}
 	return "", true
 }
 
 // Wheel moves the selection by the notches of the wheel and stops at the ends.
-func (l *ListModel) Wheel(steps int) { l.cursor = WheelStep(l.cursor, len(l.rows), steps) }
+func (l *List) Wheel(steps int) { l.cursor = WheelStep(l.cursor, len(l.rows), steps) }
 
-// View draws the list in width by height cells: the search line where the list has one, the dimmed column
-// titles, and the rows that fit, the selection always among them; an empty list shows its sentence, a filter
-// without match names the text and the key that clears it. The scroll position stays while the selection is
-// on the page. It returns a target for the free area of the rows, one per drawn row and one for the search
-// line, counted from the top left of the list.
-func (l *ListModel) View(width, height int, styles Styles) (string, []Target) {
+// View draws the list with styles in width by height cells: the search line where the list has one, the
+// dimmed column titles, and the rows that fit, the selection always among them; an empty list shows its
+// sentence, a filter without match names the text and the key that clears it. The scroll position stays while
+// the selection is on the page. It returns a target for the free area of the rows, one per drawn row and one
+// for the search line, counted from the top left of the list.
+func (l *List) View(styles Styles, width, height int) (string, []Target) {
 	width, height = max(width, 0), max(height, 0)
 	if height == 0 {
 		return "", nil
@@ -519,13 +524,13 @@ func (l *ListModel) View(width, height int, styles Styles) (string, []Target) {
 	return strings.Join(out, "\n"), kept
 }
 
-func (l *ListModel) searchLine() bool {
+func (l *List) searchLine() bool {
 	return !l.spec.SearchInBar && (l.spec.Search == SearchAsTyped || l.searching || len(l.query) > 0)
 }
 
 // searchField draws the filter in width cells: after the search key while it is typed or kept, with a
 // cursor while it is typed, and the dimmed placeholder while it is empty.
-func (l *ListModel) searchField(width int, styles Styles) string {
+func (l *List) searchField(width int, styles Styles) string {
 	typing := l.searching || l.spec.Search == SearchAsTyped
 	lead := ""
 	if l.spec.Search == SearchByKey {
@@ -550,7 +555,7 @@ func (l *ListModel) searchField(width int, styles Styles) string {
 }
 
 // note is a dimmed sentence wrapped into width cells.
-func (l *ListModel) note(text string, width int, styles Styles) []string {
+func (l *List) note(text string, width int, styles Styles) []string {
 	lines := Wrap(Escape(text), max(width-2, 1))
 	for i, line := range lines {
 		lines[i] = "  " + styles.Render(StyleHint, line)
@@ -560,7 +565,7 @@ func (l *ListModel) note(text string, width int, styles Styles) []string {
 
 // groupRow is how a group row reads: the fold glyph, the category mark, the title in the accent colour and,
 // dimmed, the number of its entries.
-func (l *ListModel) groupRow(group string, styles Styles) string {
+func (l *List) groupRow(group string, styles Styles) string {
 	glyph := GlyphExpanded
 	if l.folded[group] && len(l.query) == 0 {
 		glyph = GlyphCollapsed
@@ -583,9 +588,9 @@ func (l *ListModel) groupRow(group string, styles Styles) string {
 		styles.Render(StyleActive, Escape(title)) + styles.Render(StyleHint, fmt.Sprintf(" (%d)", count))
 }
 
-func (l *ListModel) folds() bool { return l.grouped && len(l.query) == 0 }
+func (l *List) folds() bool { return l.grouped && len(l.query) == 0 }
 
-func (l *ListModel) setFolded(group string, folded bool) {
+func (l *List) setFolded(group string, folded bool) {
 	if folded {
 		l.folded[group] = true
 	} else {
@@ -594,9 +599,9 @@ func (l *ListModel) setFolded(group string, folded bool) {
 	l.rebuild(listMark{group: group, isGroup: true, ok: true})
 }
 
-func (l *ListModel) jump(by int) { l.cursor = min(max(l.cursor+by, 0), max(len(l.rows)-1, 0)) }
+func (l *List) jump(by int) { l.cursor = min(max(l.cursor+by, 0), max(len(l.rows)-1, 0)) }
 
-func (l *ListModel) mark() listMark {
+func (l *List) mark() listMark {
 	if l.cursor < 0 || l.cursor >= len(l.rows) {
 		return listMark{}
 	}
@@ -608,7 +613,7 @@ func (l *ListModel) mark() listMark {
 }
 
 // reselect marks the row of m and reports whether it shows.
-func (l *ListModel) reselect(m listMark) bool {
+func (l *List) reselect(m listMark) bool {
 	if !m.ok {
 		return false
 	}
@@ -621,7 +626,7 @@ func (l *ListModel) reselect(m listMark) bool {
 	return false
 }
 
-func (l *ListModel) firstEntry() int {
+func (l *List) firstEntry() int {
 	for i, r := range l.rows {
 		if r.item >= 0 {
 			return i
@@ -633,7 +638,7 @@ func (l *ListModel) firstEntry() int {
 // rebuild recomputes the shown rows and marks prev where it still shows. Without a filter a grouped list
 // shows every group row and the entries of the open groups; with one, every entry that matches under its
 // group, folded or not, and the group rows of those entries. The fold state itself stays.
-func (l *ListModel) rebuild(prev listMark) {
+func (l *List) rebuild(prev listMark) {
 	query := strings.ToLower(strings.TrimSpace(string(l.query)))
 	matches := func(it ListItem) bool {
 		if query == "" {
@@ -688,7 +693,7 @@ func (l *ListModel) rebuild(prev listMark) {
 
 // window is the range of rows that fits into room rows. The scroll position stays while it shows the
 // selection; a selection outside it comes in at the nearest edge, and left-over room is filled from above.
-func (l *ListModel) window(room int) (start, end int) {
+func (l *List) window(room int) (start, end int) {
 	n := len(l.rows)
 	if n == 0 || room <= 0 {
 		return 0, 0
@@ -712,7 +717,7 @@ type tableLayout struct {
 }
 
 // cell is what column i shows of an entry, escaped.
-func (l *ListModel) cell(it ListItem, i int, short bool) string {
+func (l *List) cell(it ListItem, i int, short bool) string {
 	v := it.Cells[i]
 	if s, ok := l.spec.Columns[i].Short[v]; ok && short {
 		v = s
@@ -725,7 +730,7 @@ func (l *ListModel) cell(it ListItem, i int, short bool) string {
 // first, down to flexFloor; then a column with short labels shows them; then the optional columns are left
 // out from the right; and only then are the remaining values cut, the widest first, never below the width
 // of their title. The first column is never cut. The free text gets whatever room is left.
-func (l *ListModel) layout(width int) tableLayout {
+func (l *List) layout(width int) tableLayout {
 	cols := l.spec.Columns
 	n := len(cols)
 	lay := tableLayout{widths: make([]int, n), short: make([]bool, n)}
@@ -790,7 +795,7 @@ func tableWidth(widths []int) int {
 }
 
 // header is the line of column titles, aligned with the rows.
-func (l *ListModel) header(lay tableLayout, styles Styles) string {
+func (l *List) header(lay tableLayout, styles Styles) string {
 	var parts []string
 	for i, c := range l.spec.Columns {
 		if w := lay.widths[i]; w > 0 {
@@ -801,7 +806,7 @@ func (l *ListModel) header(lay tableLayout, styles Styles) string {
 }
 
 // line draws the cells of an entry into the columns, each cut to its width and marked where it is cut.
-func (l *ListModel) line(it ListItem, lay tableLayout, styles Styles) string {
+func (l *List) line(it ListItem, lay tableLayout, styles Styles) string {
 	var parts []string
 	for i, c := range l.spec.Columns {
 		w := lay.widths[i]

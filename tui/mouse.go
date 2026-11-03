@@ -14,7 +14,7 @@ type MouseResult struct {
 	Action     ActionID
 	Zone       FocusZone
 	Area       AreaID
-	Tab        string
+	Tab        TabID
 	Item       string
 	WheelSteps int
 	Handled    bool

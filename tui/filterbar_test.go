@@ -9,20 +9,20 @@ import (
 	"github.com/castrowithcee/qatlas-kit/i18n"
 )
 
-var sampleFilterKeys = FilterKeys{Left: "left", Right: "right", Next: "next", Prev: "prev", Up: "up", Down: "down",
+var sampleFilterKeys = FilterBarKeys{Left: "left", Right: "right", Next: "next", Prev: "prev", Up: "up", Down: "down",
 	Enter: "enter", Back: "back"}
 
 func sampleFields() []FilterField {
 	return []FilterField{
-		{ID: "group", Label: "bar.group", Options: []FilterOption{{ID: "kind", Label: "bar.group.kind"}, {ID: "none", Label: "bar.group.none"}}},
-		{ID: "state", Label: "bar.state", Selected: "all", Options: []FilterOption{
+		{ID: "group", Label: "bar.group", Options: []Choice{{ID: "kind", Label: "bar.group.kind"}, {ID: "none", Label: "bar.group.none"}}},
+		{ID: "state", Label: "bar.state", Selected: "all", Options: []Choice{
 			{ID: "all", Label: "bar.state.all"}, {ID: "on", Label: "bar.state.on"}, {ID: "off", Label: "bar.state.off"}}},
 	}
 }
 
-func sampleBar(t *testing.T, keys *Keymap, lang i18n.Lang) *FilterBar {
+func sampleBar(t *testing.T, keys *Keymap, lang i18n.Lang, list *List) *FilterBar {
 	t.Helper()
-	b, err := NewFilterBar(sampleFields(), sampleFilterKeys, keys, newTranslator(t, lang, listCatalogs(), keys))
+	b, err := NewFilterBar(FilterBarSpec{Fields: sampleFields(), Keys: sampleFilterKeys, List: list}, keys, newTranslator(t, lang, listCatalogs(), keys))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -39,28 +39,28 @@ func keysTo2(b *FilterBar, names ...string) (changed FilterField, handled bool) 
 func TestNewFilterBarRejectsBrokenFields(t *testing.T) {
 	keys := sampleKeymap(t, CharsetUnicode)
 	text := newTranslator(t, i18n.English, listCatalogs(), keys)
-	cases := map[string]func(f []FilterField, k *FilterKeys) []FilterField{
-		"no field":         func([]FilterField, *FilterKeys) []FilterField { return nil },
-		"no ID":            func(f []FilterField, _ *FilterKeys) []FilterField { f[0].ID = ""; return f },
-		"control in ID":    func(f []FilterField, _ *FilterKeys) []FilterField { f[0].ID = "g\x00o"; return f },
-		"field twice":      func(f []FilterField, _ *FilterKeys) []FilterField { f[1].ID = "group"; return f },
-		"no label":         func(f []FilterField, _ *FilterKeys) []FilterField { f[1].Label = ""; return f },
-		"one value":        func(f []FilterField, _ *FilterKeys) []FilterField { f[0].Options = f[0].Options[:1]; return f },
-		"value twice":      func(f []FilterField, _ *FilterKeys) []FilterField { f[1].Options[2].ID = "all"; return f },
-		"value without ID": func(f []FilterField, _ *FilterKeys) []FilterField { f[1].Options[2].ID = ""; return f },
-		"value label":      func(f []FilterField, _ *FilterKeys) []FilterField { f[1].Options[0].Label = ""; return f },
-		"unknown selected": func(f []FilterField, _ *FilterKeys) []FilterField { f[1].Selected = "gone"; return f },
-		"unknown key":      func(f []FilterField, k *FilterKeys) []FilterField { k.Back = "gone"; return f },
-		"key twice":        func(f []FilterField, k *FilterKeys) []FilterField { k.Back = k.Enter; return f },
+	cases := map[string]func(f []FilterField, k *FilterBarKeys) []FilterField{
+		"no field":         func([]FilterField, *FilterBarKeys) []FilterField { return nil },
+		"no ID":            func(f []FilterField, _ *FilterBarKeys) []FilterField { f[0].ID = ""; return f },
+		"control in ID":    func(f []FilterField, _ *FilterBarKeys) []FilterField { f[0].ID = "g\x00o"; return f },
+		"field twice":      func(f []FilterField, _ *FilterBarKeys) []FilterField { f[1].ID = "group"; return f },
+		"no label":         func(f []FilterField, _ *FilterBarKeys) []FilterField { f[1].Label = ""; return f },
+		"one value":        func(f []FilterField, _ *FilterBarKeys) []FilterField { f[0].Options = f[0].Options[:1]; return f },
+		"value twice":      func(f []FilterField, _ *FilterBarKeys) []FilterField { f[1].Options[2].ID = "all"; return f },
+		"value without ID": func(f []FilterField, _ *FilterBarKeys) []FilterField { f[1].Options[2].ID = ""; return f },
+		"value label":      func(f []FilterField, _ *FilterBarKeys) []FilterField { f[1].Options[0].Label = ""; return f },
+		"unknown selected": func(f []FilterField, _ *FilterBarKeys) []FilterField { f[1].Selected = "gone"; return f },
+		"unknown key":      func(f []FilterField, k *FilterBarKeys) []FilterField { k.Back = "gone"; return f },
+		"key twice":        func(f []FilterField, k *FilterBarKeys) []FilterField { k.Back = k.Enter; return f },
 	}
 	for name, edit := range cases {
 		nav := sampleFilterKeys
 		fields := edit(sampleFields(), &nav)
-		if _, err := NewFilterBar(fields, nav, keys, text); err == nil {
+		if _, err := NewFilterBar(FilterBarSpec{Fields: fields, Keys: nav}, keys, text); err == nil {
 			t.Errorf("%s: accepted", name)
 		}
 	}
-	if _, err := NewFilterBar(sampleFields(), sampleFilterKeys, nil, text); err == nil {
+	if _, err := NewFilterBar(FilterBarSpec{Fields: sampleFields(), Keys: sampleFilterKeys}, nil, text); err == nil {
 		t.Error("a bar without key table was accepted")
 	}
 }
@@ -70,7 +70,7 @@ func TestNewFilterBarRejectsBrokenFields(t *testing.T) {
 // closes without change on back.
 func TestFilterBarKeys(t *testing.T) {
 	keys := sampleKeymap(t, CharsetUnicode)
-	b := sampleBar(t, keys, i18n.English)
+	b := sampleBar(t, keys, i18n.English, nil)
 	if _, handled := keysTo2(b, "right"); handled {
 		t.Fatal("a bar without focus took a key")
 	}
@@ -127,8 +127,8 @@ func TestFilterBarKeys(t *testing.T) {
 func TestFilterBarClicks(t *testing.T) {
 	st := looks(t)["noneascii"]
 	keys := sampleKeymap(t, st.Charset())
-	b := sampleBar(t, keys, i18n.English)
-	_, targets := b.View(80, st, nil)
+	b := sampleBar(t, keys, i18n.English, nil)
+	_, targets := b.View(st, 80)
 	m := NewMouseMap(targets, true)
 	var state Target
 	for _, tg := range targets {
@@ -161,10 +161,10 @@ func TestFilterBarClicks(t *testing.T) {
 func TestFilterBarNarrows(t *testing.T) {
 	st := looks(t)["noneascii"]
 	keys := sampleKeymap(t, st.Charset())
-	b := sampleBar(t, keys, i18n.English)
 	l, _ := newSampleList(t, st, i18n.English, func(s *ListSpec) { s.SearchInBar = true })
+	b := sampleBar(t, keys, i18n.English, l)
 	plain := func(width int) string {
-		line, _ := b.View(width, st, l)
+		line, _ := b.View(st, width)
 		if w := ansi.StringWidth(line); w != width {
 			t.Errorf("width %d: the line is %d cells", width, w)
 		}
@@ -190,8 +190,8 @@ func TestFilterBarNarrows(t *testing.T) {
 	if got := plain(24); got != "/ mi_" {
 		t.Errorf("a typed search alone: %q", got)
 	}
-	de := sampleBar(t, keys, i18n.German)
-	if got, _ := de.View(80, st, nil); !strings.Contains(ansi.Strip(got), "Zustand: Alle") {
+	de := sampleBar(t, keys, i18n.German, nil)
+	if got, _ := de.View(st, 80); !strings.Contains(ansi.Strip(got), "Zustand: Alle") {
 		t.Errorf("German bar: %q", got)
 	}
 }
