@@ -47,6 +47,7 @@ const (
 	TextListFiltered   TextID = "tui.list.filtered"
 	TextListNoMatch    TextID = "tui.list.nomatch"
 	TextListNoGroup    TextID = "tui.list.nogroup"
+	TextListAll        TextID = "tui.list.all"
 	TextSearchKey      TextID = "tui.search.key"
 	TextSearchPrompt   TextID = "tui.search.prompt"
 	TextFilterAll      TextID = "tui.filter.all"
@@ -143,6 +144,7 @@ func ModuleCatalog() i18n.Catalogs[TextID] {
 			TextListFiltered:   "%d/%d (%d total)",
 			TextListNoMatch:    "No entry matches %q; %s clears the filter.",
 			TextListNoGroup:    "no group",
+			TextListAll:        "all",
 			TextSearchKey:      "%s search…",
 			TextSearchPrompt:   "Type to search",
 			TextFilterAll:      "all",
@@ -234,6 +236,7 @@ func ModuleCatalog() i18n.Catalogs[TextID] {
 			TextListFiltered:   "%d/%d (%d gesamt)",
 			TextListNoMatch:    "Kein Eintrag passt zu %q; %s leert den Filter.",
 			TextListNoGroup:    "ohne Gruppe",
+			TextListAll:        "alle",
 			TextSearchKey:      "%s suchen…",
 			TextSearchPrompt:   "Zum Suchen tippen",
 			TextFilterAll:      "alle",

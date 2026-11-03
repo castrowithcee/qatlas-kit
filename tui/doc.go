@@ -43,8 +43,8 @@
 // Render returns the click targets of the drawn keys and tabs for that frame only. The header stays one
 // line: the status marks take their short words and go before the header keys, and the header keys go
 // before the back button. A tab line that runs short closes its gaps and then shrinks the inactive tabs to
-// their digit; the active tab stays whole. CheckAreas holds areas to what the tab line can draw. The focus zones have a fixed order that CycleZone walks with
-// wrap-around, as StepArea and StepTab do for the tabs.
+// their digit; the active tab stays whole. CheckAreas holds areas to what the tab line can draw. The focus
+// zones have a fixed order that CycleZone walks with wrap-around, as StepArea and StepTab do for the tabs.
 //
 // Header and footer show hints. Keymap.Hints resolves each hint to the keys of its action that act in the
 // input focus of the screen, so a line never names a key that does nothing, and folds hints whose labels
@@ -97,20 +97,31 @@
 // they stay while a filter is typed. An empty list shows the application's sentence with the next step, and a
 // filter without match names the key that clears it. Cells, group keys and the typed filter are escaped.
 //
+// A List with Ticks picks any number of entries: a tick box before the first column, "[ ]", "[x]" and for a
+// group with some of its entries ticked "[-]", so the three states differ without colour, and Ticked and
+// SetTicked read and set the IDs. The toggle key ticks the marked entry; on a group row it steps the group
+// through the partial selection it had, all and none and back to the partial selection, or between all and
+// none where there was none. A single toggle in the group, SetTicked and SetItems forget the partial
+// selection. The row of all, with AllRow, above all groups does the same for every entry. While a filter is
+// set, the boxes and the toggle count and act on the entries it shows only. Current gives the marked entry
+// with its cells for a panel beside the list. The free text column that is also optional leaves the table on
+// a narrow terminal, and the first column stays whole.
+//
 // A click on a row marks it, and only a click on the marked row while the rows have the focus, as SetFocused
-// says, opens it, as enter does; a click on a group row folds it, and one on the search line starts the
-// search. Each such target carries the action of its key and an Item the list reads back in Click; a target
-// with a zone alone is the free area of the zone. A FilterBar holds choice fields such as the grouping, a
-// state or the sort order: left and right change the value, enter opens the list of values, which back closes
-// without change, and tab and shift+tab step through the fields and leave the bar at its ends to the
-// application. Its values change only what the application hands to the list, never its data. A click on a
-// field opens its values and one on a value takes it; the search field of a list may stand at the right end
-// of the bar. On a narrow terminal the values are cut first; where the fields still do not fit, a single
-// button with the number of fields off their first value takes their place, always, with the search field
-// beside it or, with little room, only the search key. The button is one stop of the focus. Enter or a click
-// opens a modal with all fields one under the other: up and down choose a field, left and right change its
-// value, enter takes all changes at once and back drops them all. The modal takes every key; it is drawn over
-// the screen where it fits and otherwise in the workspace, with its keys in the footer.
+// says, opens it, as enter does; a click on a group row folds it and never changes the ticks, a click on a
+// tick box does what the toggle key does, and one on the search line starts the search. Each such target
+// carries the action of its key and an Item the list reads back in Click; a target with a zone alone is the
+// free area of the zone. A FilterBar holds choice fields such as the grouping, a state or the sort order:
+// left and right change the value, enter opens the list of values, which back closes without change, and tab
+// and shift+tab step through the fields and leave the bar at its ends to the application. Its values change
+// only what the application hands to the list, never its data. A click on a field opens its values and one on
+// a value takes it; the search field of a list may stand at the right end of the bar. On a narrow terminal
+// the values are cut first; where the fields still do not fit, a single button with the number of fields off
+// their first value takes their place, always, with the search field beside it or, with little room, only the
+// search key. The button is one stop of the focus. Enter or a click opens a modal with all fields one under
+// the other: up and down choose a field, left and right change its value, enter takes all changes at once and
+// back drops them all. The modal takes every key; it is drawn over the screen where it fits and otherwise in
+// the workspace, with its keys in the footer.
 //
 // A Form shows the fields an application hands it, each with a stable ID, a kind, a label and a value, and
 // knows no schema: the application checks the values when the save key is pressed, from any field, and hands
