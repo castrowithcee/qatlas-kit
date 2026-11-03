@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/castrowithcee/qatlas-kit/i18n"
@@ -193,5 +194,58 @@ func TestFilterBarNarrows(t *testing.T) {
 	de := sampleBar(t, keys, i18n.German, nil)
 	if got, _ := de.View(st, 80); !strings.Contains(ansi.Strip(got), "Zustand: Alle") {
 		t.Errorf("German bar: %q", got)
+	}
+}
+
+func TestFilterBarWidthSweep(t *testing.T) {
+	st := looks(t)["noneascii"]
+	keys := sampleKeymap(t, st.Charset())
+	tr := newTranslator(t, i18n.English, listCatalogs(), keys)
+	long := []FilterField{
+		{ID: "group", Label: "bar.group", Options: []Choice{{ID: "kind", Label: "bar.group.kind"}, {ID: "none", Label: "bar.group.none"}}},
+		{ID: "state", Label: "bar.state", Options: []Choice{{ID: "all", Label: "bar.state.all"}, {ID: "on", Label: "bar.state.on"}}},
+		{ID: "g2", Label: "bar.group", Options: []Choice{{ID: "kind", Label: "bar.state.all"}, {ID: "none", Label: "bar.group.none"}}},
+		{ID: "s2", Label: "bar.state", Options: []Choice{{ID: "all", Label: "bar.group.kind"}, {ID: "on", Label: "bar.state.on"}}},
+	}
+	for nf := 1; nf <= 4; nf++ {
+		for _, mode := range []string{"nolist", "idle", "typing"} {
+			for focus := -1; focus < nf; focus++ {
+				for width := 10; width <= 160; width++ {
+					var list *List
+					if mode != "nolist" {
+						list, _ = newSampleList(t, st, i18n.English, func(s *ListSpec) { s.SearchInBar = true })
+					}
+					b, err := NewFilterBar(FilterBarSpec{Fields: long[:nf], Keys: sampleFilterKeys, List: list}, keys, tr)
+					if err != nil {
+						t.Fatal(err)
+					}
+					if mode == "typing" {
+						keysTo(list, "/")
+						typeList(list, "mi")
+					}
+					if focus >= 0 {
+						b.focus = focus
+					}
+					func() {
+						defer func() {
+							if r := recover(); r != nil {
+								t.Errorf("fields %d %s focus %d width %d: panic %v", nf, mode, focus, width, r)
+							}
+						}()
+						line, targets := b.View(st, width)
+						for _, l := range strings.Split(line, "\n") {
+							if w := lipgloss.Width(l); w > width {
+								t.Errorf("fields %d %s focus %d width %d: line is %d cells", nf, mode, focus, width, w)
+							}
+						}
+						for _, tg := range targets {
+							if tg.Rect.X < 0 || tg.Rect.Width < 0 || tg.Rect.X+tg.Rect.Width > width {
+								t.Errorf("fields %d %s focus %d width %d: target %+v outside", nf, mode, focus, width, tg.Rect)
+							}
+						}
+					}()
+				}
+			}
+		}
 	}
 }
