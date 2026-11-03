@@ -62,6 +62,10 @@ func listen(e Endpoint, opts ListenOptions) (net.Listener, error) {
 	if opts.Successor {
 		return nil, fmt.Errorf("%s: %w", e.label(), errHandoverUnsupported)
 	}
+	verify, err := opts.peerCheck()
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", e.label(), err)
+	}
 	path, err := e.Path()
 	if err != nil {
 		return nil, err
@@ -82,7 +86,8 @@ func listen(e Endpoint, opts ListenOptions) (net.Listener, error) {
 		_ = windows.CloseHandle(first)
 		return nil, fmt.Errorf("cannot create the local pipe %s: %w", path, err)
 	}
-	return &pipeListener{path: path, sa: sa, next: first, closing: closing, refused: opts.Refused}, nil
+	l := &pipeListener{path: path, sa: sa, next: first, closing: closing, verify: verify, refused: opts.Refused}
+	return l, nil
 }
 
 func handOver(net.Listener) error { return errHandoverUnsupported }
@@ -92,6 +97,7 @@ func awaitHandover(context.Context, net.Listener) error { return errHandoverUnsu
 type pipeListener struct {
 	path    string
 	sa      *windows.SecurityAttributes
+	verify  func(net.Conn) (int, error)
 	refused func(net.Conn, error)
 
 	acceptMu   sync.Mutex
@@ -139,7 +145,7 @@ func (l *pipeListener) Accept() (net.Conn, error) {
 		return nil, fmt.Errorf("cannot accept a client of the local pipe: %w", err)
 	}
 	conn := newPipeConn(h, l.path, true)
-	if pid, err := checkPeer(conn, true); err != nil {
+	if pid, err := l.verify(conn); err != nil {
 		return nil, refuse(conn, pid, err, l.refused)
 	}
 	return conn, nil

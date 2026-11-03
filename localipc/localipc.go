@@ -27,7 +27,8 @@ var ErrRunning = errors.New("local channel is already running")
 var ErrRefused = errors.New("local channel refused")
 
 // ErrProgramReplaced means the program file this process started from was
-// removed or replaced since. Such a process refuses every peer.
+// removed or replaced since. Such a process refuses every peer unless it
+// selected CrossVersion.
 var ErrProgramReplaced = errors.New("this program was removed or replaced since it started")
 
 // ErrNoChallenge means CheckHardened was chosen without a Challenge.
@@ -85,8 +86,12 @@ type Challenge func(ctx context.Context, conn net.Conn) error
 // DialOptions tune DialWith. The zero value is the strict default.
 type DialOptions struct {
 	Server ServerCheck
-	// Challenge is required with CheckHardened and optional otherwise.
+	// Challenge is required with CheckHardened and optional otherwise. It
+	// runs after the CrossVersion challenge.
 	Challenge Challenge
+	// CrossVersion, if set, accepts a listener started from another program
+	// file; see CrossVersion.
+	CrossVersion *CrossVersion
 }
 
 // ListenOptions tune ListenWith. The zero value is the strict default.
@@ -100,6 +105,10 @@ type ListenOptions struct {
 	// send one short refusal and must treat anything read as untrusted. It
 	// runs under a short deadline and blocks Accept while it runs.
 	Refused func(conn net.Conn, err error)
+	// CrossVersion, if set, accepts clients started from another program
+	// file; see CrossVersion. Accept runs its exchange under a short deadline
+	// and blocks while it runs.
+	CrossVersion *CrossVersion
 }
 
 // refusalWait bounds the Refused callback's writes and reads.
@@ -128,12 +137,26 @@ func (e Endpoint) DialWith(ctx context.Context, opts DialOptions) (net.Conn, err
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", e.label(), err)
 	}
+	secret, err := opts.CrossVersion.secret()
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", e.label(), err)
+	}
+	defer clear(secret)
+	check := func(c net.Conn) (int, error) { return checkPeer(c, program) }
+	if secret != nil {
+		check = func(c net.Conn) (int, error) {
+			pid, err := checkPeer(c, false)
+			if err == nil {
+				err = proveAsDialer(ctx, c, secret)
+			}
+			return pid, err
+		}
+	}
 	conn, err := dial(ctx, e)
 	if err != nil {
 		return nil, err
 	}
-	return establish(ctx, conn, e.label(), func(c net.Conn) (int, error) { return checkPeer(c, program) },
-		opts.Challenge)
+	return establish(ctx, conn, e.label(), check, opts.Challenge)
 }
 
 // HandOver moves the channel of l, a listener from Listen, to the successor
@@ -180,21 +203,26 @@ func establish(ctx context.Context, conn net.Conn, label string, check func(net.
 	return conn, nil
 }
 
-// runChallenge ties the connection's deadline to ctx so a silent peer cannot
-// hold the challenge longer than the caller allows.
 func runChallenge(ctx context.Context, conn net.Conn, challenge Challenge) error {
+	return bounded(ctx, conn, "the challenge failed", func() error { return challenge(ctx, conn) })
+}
+
+// bounded ties the connection's deadline to ctx so a silent peer cannot hold
+// an exchange longer than the caller allows. failed names the exchange in a
+// refusal.
+func bounded(ctx context.Context, conn net.Conn, failed string, exchange func() error) error {
 	if deadline, ok := ctx.Deadline(); ok {
 		if err := conn.SetDeadline(deadline); err != nil {
 			return fmt.Errorf("%w: cannot bound the challenge: %v", ErrRefused, err)
 		}
 	}
 	stop := context.AfterFunc(ctx, func() { _ = conn.SetDeadline(time.Unix(1, 0)) })
-	err := challenge(ctx, conn)
+	err := exchange()
 	if !stop() && err == nil {
 		err = ctx.Err()
 	}
 	if err != nil {
-		return fmt.Errorf("%w: the challenge failed: %w", ErrRefused, err)
+		return fmt.Errorf("%w: %s: %w", ErrRefused, failed, err)
 	}
 	if err := conn.SetDeadline(time.Time{}); err != nil {
 		return fmt.Errorf("%w: cannot reset the deadline: %v", ErrRefused, err)
