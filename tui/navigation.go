@@ -77,9 +77,23 @@ func wrap(i, n int) int { return ((i % n) + n) % n }
 // maxAreas is the number of areas a digit can name on the tab line.
 const maxAreas = 9
 
+// checkAreaIcons reports the icons of areas that fail CheckIcon.
+func checkAreaIcons(areas []Area) []error {
+	var errs []error
+	for i, a := range areas {
+		if a.Icon == "" {
+			continue
+		}
+		if err := CheckIcon(a.Icon); err != nil {
+			errs = append(errs, fmt.Errorf("area %d: %w", i+1, err))
+		}
+	}
+	return errs
+}
+
 // CheckAreas reports every area that the tab line cannot draw as one digit and a name: none at all, more
-// than nine, an empty or repeated area ID, an empty title, and a sub-tab with an empty or repeated ID or an
-// empty title. Applications run it in their tests or at start.
+// than nine, an empty or repeated area ID, an empty title, an icon that fails CheckIcon, and a sub-tab with an
+// empty or repeated ID or an empty title. Applications run it in their tests or at start.
 func CheckAreas(areas []Area) error {
 	var errs []error
 	if len(areas) == 0 {
@@ -88,6 +102,7 @@ func CheckAreas(areas []Area) error {
 	if len(areas) > maxAreas {
 		errs = append(errs, fmt.Errorf("%d areas; a digit names at most %d", len(areas), maxAreas))
 	}
+	errs = append(errs, checkAreaIcons(areas)...)
 	seen := map[AreaID]bool{}
 	for i, a := range areas {
 		switch {

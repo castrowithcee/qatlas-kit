@@ -24,6 +24,7 @@ func formCatalogs() i18n.Catalogs[TextID] {
 			"f.key": "shortcut", "f.origin": "origin", "f.soil": "soil",
 			"h.name": "A short name of the plant.", "h.origin": "set by the nursery",
 			"c.herb": "herb", "c.tree": "tree", "c.fern": "fern", "c.mon": "Monday", "c.wed": "Wednesday", "c.fri": "Friday",
+			"b.save": "save", "b.cancel": "cancel", "b.reload": "reload",
 		},
 		i18n.German: {
 			"sec.general": "Allgemein", "sec.care": "Pflege", "sec.extra": "Erweitert", "lead.care": "Wie die Pflanze gehalten wird.",
@@ -31,6 +32,7 @@ func formCatalogs() i18n.Catalogs[TextID] {
 			"f.key": "Kürzel", "f.origin": "Herkunft", "f.soil": "Erde",
 			"h.name": "Ein kurzer Name der Pflanze.", "h.origin": "von der Gärtnerei gesetzt",
 			"c.herb": "Kraut", "c.tree": "Baum", "c.fern": "Farn", "c.mon": "Montag", "c.wed": "Mittwoch", "c.fri": "Freitag",
+			"b.save": "Speichern", "b.cancel": "Abbrechen", "b.reload": "Neu laden",
 		},
 	}
 }

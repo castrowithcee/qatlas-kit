@@ -6,7 +6,7 @@ import (
 )
 
 func TestCheckIcon(t *testing.T) {
-	for _, glyph := range []string{"\U0001F3E0", "\U0001F517", "✅", "✓", "■"} {
+	for _, glyph := range []string{"\U0001F3E0", "\U0001F517", "✅", "✓", "■", "\ue0b0", "\uf489", "\U000f0219"} {
 		if err := CheckIcon(glyph); err != nil {
 			t.Errorf("%q: %v", glyph, err)
 		}
