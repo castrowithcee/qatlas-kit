@@ -18,6 +18,7 @@ import (
 
 	"github.com/castrowithcee/qatlas-kit/release"
 	"github.com/castrowithcee/qatlas-kit/release/installer"
+	"github.com/castrowithcee/qatlas-kit/sysservice"
 )
 
 // Options holds what Build needs besides the Config.
@@ -104,6 +105,7 @@ type plan struct {
 	pkg        string
 	targets    []target
 	installers map[string][]byte
+	unit       []byte // content of the checked service unit, nil without Service
 	log        io.Writer
 }
 
@@ -157,6 +159,26 @@ func prepare(c Config, o Options) (*plan, error) {
 			return nil, fmt.Errorf("source %s is not a regular file", f.Source)
 		}
 	}
+	if c.Service != nil {
+		if err := c.service(o.Program); err != nil {
+			return nil, err
+		}
+		file := filepath.Join(p.Dir, filepath.FromSlash(c.Service.Unit))
+		info, err := os.Lstat(file)
+		if err != nil {
+			return nil, err
+		}
+		if !info.Mode().IsRegular() {
+			return nil, fmt.Errorf("service unit %s is not a regular file", c.Service.Unit)
+		}
+		if p.unit, err = os.ReadFile(file); err != nil {
+			return nil, err
+		}
+		rules := sysservice.UnitRules{Program: o.Program, Groups: c.Service.Groups, WritableConfig: c.Service.WritableConfig}
+		if err := sysservice.ValidateUnit(p.unit, rules); err != nil {
+			return nil, fmt.Errorf("service unit %s: %w", c.Service.Unit, err)
+		}
+	}
 	if o.AllowedSigners == "" {
 		return nil, errors.New("allowed signers file is required")
 	}
@@ -171,6 +193,9 @@ func prepare(c Config, o Options) (*plan, error) {
 	params := installer.Params{
 		Program: o.Program, DisplayName: c.Installer.DisplayName, ReleasesURL: o.ReleasesURL,
 		Namespace: o.Namespace, TrustedKeys: keys, Targets: c.Targets, NextStep: c.Installer.NextStep,
+	}
+	if s := c.Service; s != nil {
+		params.Service = &installer.Service{Groups: slices.Clone(s.Groups), AddInstallingUser: s.AddInstallingUser, WritableConfig: s.WritableConfig}
 	}
 	p.installers = map[string][]byte{}
 	if slices.ContainsFunc(p.targets, func(t target) bool { return t.goos != "windows" }) {
@@ -261,6 +286,9 @@ func (p *plan) archive(ctx context.Context, work string, t target, manpages map[
 		for name, page := range manpages {
 			entries = append(entries, entry{name: "share/man/man1/" + name, body: page})
 		}
+	}
+	if p.unit != nil {
+		entries = append(entries, entry{name: sysservice.UnitEntry(p.Program), body: p.unit})
 	}
 	for _, f := range p.Files {
 		data, err := os.ReadFile(filepath.Join(p.Dir, filepath.FromSlash(f.Source)))

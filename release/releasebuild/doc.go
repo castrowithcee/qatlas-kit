@@ -22,6 +22,14 @@
 // v1.2.3-rc.1, the signature namespace must be <program>-release, and the allowed signers file must list
 // only Ed25519 keys for that namespace, without options; the installers embed these keys.
 //
+// # System service
+//
+// With Config.Service the build produces the system variant: every archive also holds the unit at
+// sysservice.UnitEntry and install.sh installs the program as a system service. Only linux/amd64 and
+// linux/arm64 targets are allowed, so there is no install.ps1. The unit file is read and checked with
+// sysservice.ValidateUnit once, before anything is built, and Files must not use its archive path or any
+// directory on it.
+//
 // The command github.com/castrowithcee/qatlas-kit/cmd/releasebuild runs Build for the module in the
 // current directory.
 //

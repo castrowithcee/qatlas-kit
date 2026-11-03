@@ -11,6 +11,7 @@ import (
 	"strings"
 	"text/template"
 
+	"github.com/castrowithcee/qatlas-kit/sysservice"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -31,6 +32,16 @@ type Params struct {
 	Targets []string
 	// NextStep is an optional line of printable ASCII shown after a successful installation.
 	NextStep string
+	// Service, if set, selects the system service variant of install.sh. It allows only linux/amd64 and
+	// linux/arm64 targets, and PowerShell refuses it.
+	Service *Service
+}
+
+// Service selects the system service variant of install.sh.
+type Service struct {
+	Groups            []string // supplementary groups of the service user
+	AddInstallingUser bool     // a fresh install adds SUDO_USER to the group <program>
+	WritableConfig    bool     // /etc/<program> is owned by the service user
 }
 
 var (
@@ -38,8 +49,11 @@ var (
 	shellSource string
 	//go:embed install.ps1.tmpl
 	powerShellSource string
+	//go:embed install_system.sh.tmpl
+	systemSource string
 
 	shellTemplate      = template.Must(template.New("install.sh").Option("missingkey=error").Funcs(quoting).Parse(shellSource))
+	systemTemplate     = template.Must(template.New("install.sh").Option("missingkey=error").Funcs(quoting).Parse(systemSource))
 	powerShellTemplate = template.Must(template.New("install.ps1").Option("missingkey=error").Funcs(quoting).Parse(powerShellSource))
 
 	quoting = template.FuncMap{
@@ -56,9 +70,16 @@ var (
 type values struct {
 	Program, DisplayName, ReleasesURL, Namespace, Signers, NextStep, Env string
 	Unix, Windows                                                        []string
+
+	// System service variant only.
+	Groups                            []string
+	AddInstallingUser, WritableConfig bool
+	Paths                             sysservice.Paths
+	UnitEntry                         string
 }
 
-// Shell renders install.sh. Params must name at least one linux or darwin target.
+// Shell renders install.sh. Params must name at least one linux or darwin target. With Params.Service it
+// renders the system service variant.
 func Shell(p Params) ([]byte, error) {
 	v, err := p.values()
 	if err != nil {
@@ -67,11 +88,17 @@ func Shell(p Params) ([]byte, error) {
 	if len(v.Unix) == 0 {
 		return nil, errors.New("install.sh needs a linux or darwin target")
 	}
+	if p.Service != nil {
+		return render(systemTemplate, v)
+	}
 	return render(shellTemplate, v)
 }
 
-// PowerShell renders install.ps1. Params must name at least one windows target.
+// PowerShell renders install.ps1. Params must name at least one windows target and no Service.
 func PowerShell(p Params) ([]byte, error) {
+	if p.Service != nil {
+		return nil, errors.New("install.ps1 cannot install a system service")
+	}
 	v, err := p.values()
 	if err != nil {
 		return nil, err
@@ -144,5 +171,26 @@ func (p Params) values() (values, error) {
 	if len(v.Unix)+len(v.Windows) != len(slices.Compact(slices.Sorted(slices.Values(p.Targets)))) {
 		return values{}, errors.New("targets must be unique")
 	}
+	if p.Service != nil {
+		if err := v.service(p.Program, p.Service, p.Targets); err != nil {
+			return values{}, err
+		}
+	}
 	return v, nil
+}
+
+func (v *values) service(program string, s *Service, targets []string) error {
+	if err := sysservice.ValidateGroups(program, s.Groups); err != nil {
+		return err
+	}
+	for _, target := range targets {
+		if target != "linux/amd64" && target != "linux/arm64" {
+			return fmt.Errorf("a system service supports only linux/amd64 and linux/arm64 targets, not %q", target)
+		}
+	}
+	v.Groups = slices.Clone(s.Groups)
+	v.AddInstallingUser, v.WritableConfig = s.AddInstallingUser, s.WritableConfig
+	v.Paths = sysservice.InstallPaths(program)
+	v.UnitEntry = sysservice.UnitEntry(program)
+	return nil
 }
