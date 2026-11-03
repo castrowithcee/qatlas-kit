@@ -165,6 +165,21 @@
 // else on an explanation over the screen closes it. Only their own keys act; every other key goes back to the
 // application.
 //
+// A LogView shows lines that arrive over time. The application supplies them with Append, one text or
+// several, each with an optional time and source; where they come from, saving them and any structure in them
+// stay with the application. The lines live in a ring buffer of LogViewSpec.Lines, LogViewDefaultLines when
+// zero and at most LogViewMaxLines; when it is full the oldest lines go, and the position and the matches
+// follow what remains. Every line, source and search text is escaped before it is stored, so no control
+// sequence reaches the terminal, and a line longer than LogViewMaxLineRunes is cut and carries a visible
+// mark; neither can be switched off. A line break in a text starts a new line. The view follows the newest
+// line until a key or the wheel scrolls up; the follow key and the end key resume, and the status line names
+// the state with the number of lines that arrived meanwhile. The search key starts a case-insensitive search
+// of the escaped text, enter keeps it and back cancels or clears it; every match is highlighted and the lines
+// that hold one carry a mark, so nothing depends on colour, and the next and previous match key jump with
+// wrap-around and stop the following. Wrapping and the time column are switches; without wrapping a long line
+// is shortened with the ellipsis glyph. LogViewActions gives the actions only this part needs; scrolling,
+// search, enter and back are the actions the table already holds.
+//
 // Colours come from themes. Screen code names roles, never colour values: a Palette assigns one colour per
 // role, Styles build text styles and widgets on it. A ThemeSet holds the terminal theme, the application's
 // own themes and the built-in schemes; each theme is data, either hand-picked palettes per colour profile

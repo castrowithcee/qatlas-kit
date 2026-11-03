@@ -1,0 +1,16 @@
+  09:26:53 api    listening on port 8080                                                                                
+  09:26:54 db     connection pool ready (4 of 4)                                                                        
+  09:26:56 api    GET /plants 200 12ms                                                                                  
+  09:26:57 api    GET /plants/7 404 3ms                                                                                 
+> 09:26:59 worker job 31 failed: timeout after 30s while waiting for the upstream service to answer                     
+  09:27:00 db     slow query: select * from beds where soil = 'clay' order by name                                      
+  09:27:02 api    POST /plants 201 41ms                                                                                 
+  09:27:03 worker job 32 started                                                                                        
+  09:27:05 worker job 32 finished                                                                                       
+  09:27:06 api    GET /beds 200 9ms                                                                                     
+  09:27:08 api    GET /beds/2 500 17ms error: bed not found                                                             
+  09:27:09 db     checkpoint complete                                                                                   
+  09:27:11 api    GET /plants 200 11ms                                                                                  
+* 09:27:12 worker job 33 failed: Timeout after 30s                                                                      
+                                                                                                                        
+* paused - / fail match 1/2 - lines 1-14 of 14                                                                          
