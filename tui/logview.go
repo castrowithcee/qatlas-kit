@@ -993,6 +993,8 @@ func (l *LogView) matchInfo() string {
 	case n > 0 && l.hasCur:
 		i, _ := slices.BinarySearch(l.hits, l.cur)
 		return l.text.Lookup(TextLogMatch, i+1, n)
+	case n == 1:
+		return l.text.Lookup(TextLogOneMatch)
 	case n > 0:
 		return l.text.Lookup(TextLogMatches, n)
 	}

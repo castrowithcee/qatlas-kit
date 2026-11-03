@@ -263,6 +263,41 @@ func TestLogViewSearch(t *testing.T) {
 	}
 }
 
+func TestLogViewMatchCount(t *testing.T) {
+	cases := []struct {
+		lang                     i18n.Lang
+		none, one, many, current string
+	}{
+		{i18n.English, "no matches", "1 match", "2 matches", "match 1/1"},
+		{i18n.German, "keine Treffer", "1 Treffer", "2 Treffer", "Treffer 1/1"},
+	}
+	for _, c := range cases {
+		t.Run(string(c.lang), func(t *testing.T) {
+			search := func(query string) *LogView {
+				l := newLog(t, LogViewSpec{}, c.lang)
+				for _, text := range []string{"alpha one", "beta two", "beta three"} {
+					l.Append(LogLine{Text: text})
+				}
+				l.Update(typed('/'))
+				typeText(l, query)
+				return l
+			}
+			// While typing, the search has hits but no current match.
+			for query, want := range map[string]string{"zeta": c.none, "alpha": c.one, "beta": c.many} {
+				got := viewLines(t, search(query), 120, 6)[5]
+				if !strings.Contains(got, want) || strings.Contains(got, "1 matches") {
+					t.Errorf("%q: status %q, want %q", query, got, want)
+				}
+			}
+			l := search("alpha")
+			l.Act("enter")
+			if got := viewLines(t, l, 120, 6)[5]; !strings.Contains(got, c.current) {
+				t.Errorf("current match: status %q, want %q", got, c.current)
+			}
+		})
+	}
+}
+
 func TestLogViewSearchIgnoresCaseAndFollowsTheBuffer(t *testing.T) {
 	l := newLog(t, LogViewSpec{Lines: 10}, i18n.English)
 	l.Append(LogLine{Text: "Straße mark"}, LogLine{Text: "other"}, LogLine{Text: "ÄRGER mark"})
@@ -287,7 +322,7 @@ func TestLogViewSearchIgnoresCaseAndFollowsTheBuffer(t *testing.T) {
 	if len(l.hits) != 1 || l.hasCur {
 		t.Fatalf("hits %v, current %v after the first line left", l.hits, l.hasCur)
 	}
-	if rows = viewLines(t, l, 120, 6); !strings.Contains(rows[5], "1 matches") {
+	if rows = viewLines(t, l, 120, 6); !strings.Contains(rows[5], "1 match") || strings.Contains(rows[5], "1 matches") {
 		t.Errorf("status after drop: %q", rows[5])
 	}
 	l.Append(LogLine{Text: "new MARK"})
