@@ -11,9 +11,9 @@ import (
 const (
 	// formListMinWidth is the width from which the sections stand as a list at the left of the fields.
 	formListMinWidth = 100
-	// minLabelColumn is the narrowest the label column is cut to; a longer label pushes its own value.
+	// minLabelColumn is the narrowest the label column is cut to; a longer label wraps inside it.
 	minLabelColumn = 12
-	// minBoxInner is the narrowest value a framed field shows; below it fields lose their frames.
+	// minBoxInner is the narrowest value a framed field shows; below it the fields lose their frames.
 	minBoxInner = 8
 	// minFlatValue is the narrowest value a one-line field shows; below it the form asks for a larger terminal.
 	minFlatValue = 6
@@ -22,10 +22,21 @@ const (
 // problemMark leads the line of a problem, so the line reads as an error without colour.
 const problemMark = "[!]"
 
-// formLayout is one way to draw a form; View tries them from the richest to the plainest.
+// formLayout is one way to draw a form: the sections as a list beside the fields, framed fields, and the
+// headings of the sections between the fields.
 type formLayout struct {
 	list, boxed, headings bool
 }
+
+// layoutResult says why a layout was not drawn: the width does not hold it, or the focused field does not fit
+// the height even when the form scrolls.
+type layoutResult int
+
+const (
+	layoutDrawn layoutResult = iota
+	layoutNarrow
+	layoutShort
+)
 
 // formBlock is what one field draws: its rows, the hint under the focused one and its problems.
 type formBlock struct {
@@ -36,33 +47,58 @@ type formBlock struct {
 	row, x int
 }
 
+// formDrawing is a layout drawn into lines, with the position of the focused value.
+type formDrawing struct {
+	lines   []string
+	targets []Target
+	row, x  int
+}
+
 // View draws the form with styles in width by height cells. Where the sections stand as a list at the left,
 // the fields of the focused section stand beside it in a panel under the title and lead of the section;
-// otherwise each section is a heading above its fields. Each field is its label in one column and its value
-// in a frame, the focused one behind the marker ">" with the frame and label in the accent colour. Where that
-// does not fit, the fields lose their frames, then the headings go, then the fields around the focus stand
-// alone with "…" for the rest; where even the focused field does not fit, the form asks for a larger
-// terminal. The focus is always in view. Problems stand under their fields, those without a field above the
-// form. It returns a target for the free area of the form, one per field, tick box, section and value of the
-// open list.
+// otherwise each section is a heading above its fields. Each field is its label in a column per section and
+// its value in a frame, the focused one behind the marker ">" with the frame and label in the accent colour.
+// A label longer than its column wraps inside it. The frames go only where the width does not hold them; then
+// a value stands on its own surface only in the focused field, so two fields never run together. Where the
+// height is short, the form scrolls: whole fields around the focus stand in the same layout, with "…" above
+// and below where fields are left out, and the focus is always in view. Where even the focused field does not
+// fit, the form asks for a larger terminal; it never drops the frames for the height. Problems stand under
+// their fields, those without a field above the form. It returns a target for the free area of the form, one
+// per visible field, tick box, section and value of the open list.
 func (f *Form) View(styles Styles, width, height int) (string, []Target) {
 	width, height = max(width, 0), max(height, 0)
 	if height == 0 {
 		return "", nil
 	}
-	var layouts []formLayout
-	if len(f.sections) >= 2 && width >= formListMinWidth && height >= len(f.sections)+8 {
-		layouts = append(layouts, formLayout{list: true, boxed: true}, formLayout{list: true})
+	try := func(lay formLayout, strict bool) (string, []Target, layoutResult) {
+		d, res := f.draw(lay, width, height, strict, styles)
+		if res != layoutDrawn {
+			return "", nil, res
+		}
+		view, targets := f.finish(d.lines, d.targets, d.row, d.x, width, height, styles)
+		return view, targets, res
 	}
-	layouts = append(layouts, formLayout{boxed: true, headings: true}, formLayout{headings: true}, formLayout{})
-	for _, lay := range layouts {
-		lines, targets, row, x, ok := f.draw(lay, width, styles)
-		if ok && len(lines) <= height {
-			return f.finish(lines, targets, row, x, width, height, styles)
+	if len(f.sections) >= 2 && width >= formListMinWidth {
+		if view, targets, res := try(formLayout{list: true, boxed: true}, true); res == layoutDrawn {
+			return view, targets
+		} else if res == layoutNarrow {
+			if view, targets, res := try(formLayout{list: true}, true); res == layoutDrawn {
+				return view, targets
+			}
 		}
 	}
-	if lines, targets, row, x, ok := f.window(width, height, styles); ok {
-		return f.finish(lines, targets, row, x, width, height, styles)
+	view, targets, res := try(formLayout{boxed: true, headings: true}, true)
+	if res == layoutDrawn {
+		return view, targets
+	}
+	// The frames and headings give way to the width alone; where the height is short, the form asks for more.
+	if res == layoutNarrow {
+		if view, targets, res = try(formLayout{headings: true}, true); res == layoutDrawn {
+			return view, targets
+		}
+		if view, targets, res = try(formLayout{}, false); res == layoutDrawn {
+			return view, targets
+		}
 	}
 	return f.sizeHint(width, height, styles), nil
 }
@@ -126,23 +162,36 @@ func (f *Form) valueList(styles Styles, width int) ([]string, []Target) {
 	return styles.Panel("", "", lines, inner+4, len(lines)+2, true), targets
 }
 
-// draw lays the form out in lay; ok is false where the fields do not fit the width that way.
-func (f *Form) draw(lay formLayout, width int, styles Styles) (lines []string, targets []Target, row, x int, ok bool) {
-	lines = f.otherProblems(width, styles)
-	top := len(lines)
+// draw lays the form out in lay and cuts it to height. With strict, the focused field must fit with the marks
+// of the fields left out; otherwise the marks give way before the field does.
+func (f *Form) draw(lay formLayout, width, height int, strict bool, styles Styles) (formDrawing, layoutResult) {
+	problems := f.otherProblems(width, styles)
+	for {
+		d, res := f.drawBelow(lay, problems, width, height-len(problems), strict, styles)
+		if res != layoutShort || len(problems) == 0 {
+			return d, res
+		}
+		// The problems without a field give way when the focused field does not fit beside them.
+		problems = nil
+	}
+}
+
+// drawBelow is draw under the lines of the problems without a field, in the height that is left.
+func (f *Form) drawBelow(lay formLayout, problems []string, width, height int, strict bool, styles Styles) (formDrawing, layoutResult) {
+	top := len(problems)
 	if !lay.list {
 		blocks, ok := f.blocks(width, lay.boxed, lay.headings, "", styles)
 		if !ok {
-			return nil, nil, 0, 0, false
+			return formDrawing{}, layoutNarrow
 		}
-		for _, b := range blocks {
-			if b.field == f.focus {
-				row, x = len(lines)+b.row, b.x
-			}
-			targets = append(targets, OffsetTargets(b.targets, 0, len(lines))...)
-			lines = append(lines, b.lines...)
+		body, ok := f.fit(blocks, height, strict, styles)
+		if !ok {
+			return formDrawing{}, layoutShort
 		}
-		return lines, targets, row, x, true
+		body.targets = OffsetTargets(body.targets, 0, top)
+		body.row += top
+		body.lines = append(append([]string(nil), problems...), body.lines...)
+		return body, layoutDrawn
 	}
 	list, listTargets, listWidth := f.sectionList(styles)
 	inner := width - listWidth - 1 - 4
@@ -157,17 +206,18 @@ func (f *Form) draw(lay formLayout, width int, styles Styles) (lines []string, t
 	}
 	blocks, ok := f.blocks(inner, lay.boxed, false, current, styles)
 	if !ok {
-		return nil, nil, 0, 0, false
+		return formDrawing{}, layoutNarrow
 	}
-	content := head
+	if len(list) > height {
+		return formDrawing{}, layoutShort
+	}
+	body, ok := f.fit(blocks, height-2-len(head), strict, styles)
+	if !ok {
+		return formDrawing{}, layoutShort
+	}
+	content := append(head, body.lines...)
 	x0 := listWidth + 1 + 2
-	for _, b := range blocks {
-		if b.field == f.focus {
-			row, x = top+1+len(content)+b.row, x0+b.x
-		}
-		targets = append(targets, OffsetTargets(b.targets, x0, top+1+len(content))...)
-		content = append(content, b.lines...)
-	}
+	d := formDrawing{lines: problems, row: top + 1 + len(head) + body.row, x: x0 + body.x}
 	panel := styles.Panel("", "", content, inner+4, len(content)+2, true)
 	for i := range max(len(panel), len(list)) {
 		left := strings.Repeat(" ", listWidth)
@@ -178,17 +228,17 @@ func (f *Form) draw(lay formLayout, width int, styles Styles) (lines []string, t
 		if i < len(panel) {
 			right = panel[i]
 		}
-		lines = append(lines, left+" "+right)
+		d.lines = append(d.lines, left+" "+right)
 	}
-	targets = append(OffsetTargets(listTargets, 0, top), targets...)
-	return lines, targets, row, x, true
+	d.targets = append(OffsetTargets(listTargets, 0, top), OffsetTargets(body.targets, x0, top+1+len(head))...)
+	return d, layoutDrawn
 }
 
-// window draws the one-line fields around the focus that fit height, with "…" where fields are left out.
-func (f *Form) window(width, height int, styles Styles) (lines []string, targets []Target, row, x int, ok bool) {
-	blocks, ok := f.blocks(width, false, false, "", styles)
-	if !ok {
-		return nil, nil, 0, 0, false
+// fit cuts blocks to height lines: all of them where they fit, otherwise whole fields around the focus with a
+// line "…" above and below where fields are left out. It is not ok where the focused field does not fit.
+func (f *Form) fit(blocks []formBlock, height int, strict bool, styles Styles) (formDrawing, bool) {
+	if height < 0 {
+		return formDrawing{}, false
 	}
 	at := 0
 	for i, b := range blocks {
@@ -196,7 +246,6 @@ func (f *Form) window(width, height int, styles Styles) (lines []string, targets
 			at = i
 		}
 	}
-	lines = f.otherProblems(width, styles)
 	body := func(s, e int) int {
 		n := 0
 		for _, b := range blocks[s:e] {
@@ -204,16 +253,9 @@ func (f *Form) window(width, height int, styles Styles) (lines []string, targets
 		}
 		return n
 	}
-	start, end := at, at+1
-	if len(lines)+body(start, end) > height {
-		lines = nil
-	}
-	if body(start, end) > height {
-		return nil, nil, 0, 0, false
-	}
 	// Each side that leaves fields out takes one line for its mark.
 	size := func(s, e int) int {
-		n := len(lines) + body(s, e)
+		n := body(s, e)
 		if s > 0 {
 			n++
 		}
@@ -222,33 +264,41 @@ func (f *Form) window(width, height int, styles Styles) (lines []string, targets
 		}
 		return n
 	}
-	for grew := true; grew; {
-		grew = false
-		if end < len(blocks) && size(start, end+1) <= height {
-			end, grew = end+1, true
+	start, end := 0, len(blocks)
+	if body(0, len(blocks)) > height {
+		start, end = at, at+1
+		if body(start, end) > height || strict && size(start, end) > height {
+			return formDrawing{}, false
 		}
-		if start > 0 && size(start-1, end) <= height {
-			start, grew = start-1, true
+		for grew := true; grew; {
+			grew = false
+			if end < len(blocks) && size(start, end+1) <= height {
+				end, grew = end+1, true
+			}
+			if start > 0 && size(start-1, end) <= height {
+				start, grew = start-1, true
+			}
 		}
 	}
 	more := styles.Render(StyleHint, "  "+styles.Glyph(GlyphEllipsis))
-	shown := len(lines) + body(start, end)
+	shown := body(start, end)
 	top := start > 0 && shown+1 <= height
 	bottom := end < len(blocks) && shown+1+boolInt(top) <= height
+	var d formDrawing
 	if top {
-		lines = append(lines, more)
+		d.lines = append(d.lines, more)
 	}
 	for _, b := range blocks[start:end] {
 		if b.field == f.focus {
-			row, x = len(lines)+b.row, b.x
+			d.row, d.x = len(d.lines)+b.row, b.x
 		}
-		targets = append(targets, OffsetTargets(b.targets, 0, len(lines))...)
-		lines = append(lines, b.lines...)
+		d.targets = append(d.targets, OffsetTargets(b.targets, 0, len(d.lines))...)
+		d.lines = append(d.lines, b.lines...)
 	}
 	if bottom {
-		lines = append(lines, more)
+		d.lines = append(d.lines, more)
 	}
-	return lines, targets, row, x, true
+	return d, true
 }
 
 // sizeHint asks for a terminal large enough for the focused field.
@@ -261,7 +311,7 @@ func (f *Form) sizeHint(width, height int, styles Styles) string {
 			}
 		}
 	}
-	needW := 2 + min(f.labelWidth(), minLabelColumn) + 1 + minFlatValue
+	needW := 2 + min(f.labelWidth(f.fields[f.focus].Section), minLabelColumn) + 1 + minFlatValue
 	lines := []string{
 		styles.Render(StyleTitle, Escape(f.text.Lookup(TextResizeTitle))),
 		Escape(f.text.Lookup(TextResizeNeed, needW, needH)),
@@ -311,10 +361,13 @@ func (f *Form) redact(text string) string {
 
 func (f *Form) label(i int) string { return Escape(f.text.Lookup(f.fields[i].Label)) }
 
-func (f *Form) labelWidth() int {
+// labelWidth is the width of the longest label of the fields of a section.
+func (f *Form) labelWidth(section SectionID) int {
 	w := 0
 	for i := range f.fields {
-		w = max(w, lipgloss.Width(f.label(i)))
+		if f.fields[i].Section == section {
+			w = max(w, lipgloss.Width(f.label(i)))
+		}
 	}
 	return w
 }
@@ -365,83 +418,115 @@ func (f *Form) sectionList(styles Styles) ([]string, []Target, int) {
 }
 
 // blocks lays out the fields in width cells, framed or on one line, with the headings of the sections where
-// headings is set, and only the fields of the section only where it is set. ok is false where the values do
-// not fit beside the labels.
+// headings is set, and only the fields of the section only where it is set. Each section has its own label
+// column. ok is false where the values do not fit beside the labels. A heading stands in the block of the
+// first field of its section, so it scrolls with it.
 func (f *Form) blocks(width int, boxed, headings bool, only SectionID, styles Styles) ([]formBlock, bool) {
-	labelCol := min(f.labelWidth(), max(minLabelColumn, width/3))
-	headW := 2 + labelCol + 1
-	valueW := width - headW
-	if boxed && valueW-4 < minBoxInner || valueW < minFlatValue {
-		return nil, false
+	cols := map[SectionID]int{}
+	for i := range f.fields {
+		section := f.fields[i].Section
+		if _, ok := cols[section]; !ok {
+			cols[section] = min(f.labelWidth(section), max(minLabelColumn, width/3))
+		}
+		valueW := width - (2 + cols[section] + 1)
+		if (only == "" || section == only) && !f.closed(section) &&
+			(boxed && valueW-4 < minBoxInner || valueW < minFlatValue) {
+			return nil, false
+		}
 	}
 	var out []formBlock
 	var last SectionID
+	var head *formBlock
+	flush := func() {
+		if head != nil {
+			out = append(out, *head)
+			head = nil
+		}
+	}
 	for i := range f.fields {
 		field := &f.fields[i]
 		if only != "" && field.Section != only {
 			continue
 		}
 		if headings && field.Section != "" && field.Section != last {
+			flush()
 			last = field.Section
 			s, _ := f.section(field.Section)
 			title, _ := f.sectionTitle(s, styles)
-			out = append(out, formBlock{field: -1, lines: []string{styles.Render(StyleTitle, title)},
-				targets: []Target{{Rect: Rect{Width: width, Height: 1}, Zone: ZoneForm, Item: formSectionRef + string(s.ID)}}})
+			head = &formBlock{field: -1, lines: []string{styles.Render(StyleTitle, title)},
+				targets: []Target{{Rect: Rect{Width: width, Height: 1}, Zone: ZoneForm, Item: formSectionRef + string(s.ID)}}}
 		}
 		if f.closed(field.Section) {
 			continue
 		}
-		out = append(out, f.block(i, width, headW, labelCol, boxed, styles))
+		b := f.block(i, width, cols[field.Section], boxed, styles)
+		if head != nil {
+			n := len(head.lines)
+			b = formBlock{field: i, lines: append(head.lines, b.lines...), row: n + b.row, x: b.x,
+				targets: append(head.targets, OffsetTargets(b.targets, 0, n)...)}
+			head = nil
+		}
+		out = append(out, b)
 	}
+	flush()
 	return out, true
 }
 
 // block draws field i: the marker and label in their column, the value framed or on its surface, the hint
-// under the focused field and the problems of the field.
-func (f *Form) block(i, width, headW, labelCol int, boxed bool, styles Styles) formBlock {
+// under the focused field and the problems of the field. A label longer than the column wraps inside it.
+func (f *Form) block(i, width, labelCol int, boxed bool, styles Styles) formBlock {
 	field := &f.fields[i]
 	focused := i == f.focus
+	headW := 2 + labelCol + 1
 	valueW := width - headW
-	label := f.label(i)
-	marker := "  "
-	if focused {
-		marker = "> "
+	labels := Wrap(f.label(i), max(labelCol, 1))
+	heads := make([]string, len(labels))
+	for j, l := range labels {
+		marker := "  "
+		if focused && j == 0 {
+			marker = "> "
+		}
+		heads[j] = marker + Pad(l, labelCol) + " "
+		if focused {
+			heads[j] = styles.Render(StyleActive, heads[j])
+		}
 	}
-	head := marker + label + strings.Repeat(" ", max(labelCol-lipgloss.Width(label), 0)) + " "
-	if focused {
-		head = styles.Render(StyleActive, head)
-	}
-	if lipgloss.Width(head) > headW {
-		// A label longer than its column pushes its own value.
-		valueW = max(width-lipgloss.Width(head), 1)
-	}
-	headW = width - valueW
 	blank := strings.Repeat(" ", headW)
 	b := formBlock{field: i}
-	var values []string
-	var ticks []Target
+	// head is the label part of line j of the value, counted from the first line of the value.
+	head := func(j int) string {
+		if j < len(heads) {
+			return heads[j]
+		}
+		return blank
+	}
 	if boxed {
-		values, ticks = f.valueLines(i, valueW-4, styles)
+		values, ticks := f.valueLines(i, valueW-4, styles)
+		for len(values) < len(heads) {
+			values = append(values, "")
+		}
 		box := styles.Panel("", "", values, valueW, len(values)+2, focused)
 		for j, line := range box {
-			if j == 1 {
-				b.lines = append(b.lines, head+line)
-			} else {
+			if j == 0 || j == len(box)-1 {
 				b.lines = append(b.lines, blank+line)
+			} else {
+				b.lines = append(b.lines, head(j-1)+line)
 			}
 		}
 		b.targets = append(b.targets, OffsetTargets(ticks, headW+2, 1)...)
 		b.row, b.x = len(box)-1, headW
 	} else {
-		values, ticks = f.valueLines(i, valueW, styles)
-		surface := fieldStyle(styles, focused)
+		values, ticks := f.valueLines(i, valueW, styles)
+		for len(values) < len(heads) {
+			values = append(values, "")
+		}
+		// Only the focused field stands on a surface, so two fields never run together.
+		surface := lipgloss.NewStyle()
+		if focused {
+			surface = fieldStyle(styles, true)
+		}
 		for j, v := range values {
-			line := surface.Render(keepOpen(Pad(Clip(v, valueW), valueW), openingOf(surface)))
-			if j == 0 {
-				b.lines = append(b.lines, head+line)
-			} else {
-				b.lines = append(b.lines, blank+line)
-			}
+			b.lines = append(b.lines, head(j)+surface.Render(keepOpen(Pad(Clip(v, valueW), valueW), openingOf(surface))))
 		}
 		b.targets = append(b.targets, OffsetTargets(ticks, headW, 0)...)
 		b.row, b.x = 0, headW
