@@ -50,6 +50,9 @@ const (
 	TextSearchKey      TextID = "tui.search.key"
 	TextSearchPrompt   TextID = "tui.search.prompt"
 	TextFilterAll      TextID = "tui.filter.all"
+	TextFilterButton   TextID = "tui.filter.button"
+	TextFilterTitle    TextID = "tui.filter.title"
+	TextFilterApply    TextID = "tui.filter.apply"
 
 	TextCommandTitle   TextID = "tui.command.title"
 	TextCommandPrompt  TextID = "tui.command.prompt"
@@ -143,6 +146,9 @@ func ModuleCatalog() i18n.Catalogs[TextID] {
 			TextSearchKey:      "%s search…",
 			TextSearchPrompt:   "Type to search",
 			TextFilterAll:      "all",
+			TextFilterButton:   "Filter (%d)",
+			TextFilterTitle:    "Filter",
+			TextFilterApply:    "apply",
 
 			TextCommandTitle:   "Commands",
 			TextCommandPrompt:  "search or run a command…",
@@ -231,6 +237,9 @@ func ModuleCatalog() i18n.Catalogs[TextID] {
 			TextSearchKey:      "%s suchen…",
 			TextSearchPrompt:   "Zum Suchen tippen",
 			TextFilterAll:      "alle",
+			TextFilterButton:   "Filter (%d)",
+			TextFilterTitle:    "Filter",
+			TextFilterApply:    "übernehmen",
 
 			TextCommandTitle:   "Befehle",
 			TextCommandPrompt:  "Befehl suchen oder ausführen…",
