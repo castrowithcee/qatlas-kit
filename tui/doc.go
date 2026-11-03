@@ -180,6 +180,13 @@
 // is shortened with the ellipsis glyph. LogViewActions gives the actions only this part needs; scrolling,
 // search, enter and back are the actions the table already holds.
 //
+// The status line holds a button for following, search, wrap and the time column, and for the previous and
+// next match while a search has matches, with the position at its right. Each button names the key in force
+// and a switch says on or off in words; a click does what its key does and no more. Where the width runs
+// short the labels go first, one by one by rank, and the keys stay; then buttons go by rank, following and search last; the
+// position gives way last, to a shorter form. While the search text is typed the row holds that field and
+// the position only.
+//
 // Colours come from themes. Screen code names roles, never colour values: a Palette assigns one colour per
 // role, Styles build text styles and widgets on it. A ThemeSet holds the terminal theme, the application's
 // own themes and the built-in schemes; each theme is data, either hand-picked palettes per colour profile

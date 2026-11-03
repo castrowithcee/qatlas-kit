@@ -116,7 +116,7 @@ func TestLogViewFollowsNewLines(t *testing.T) {
 	l := newLog(t, LogViewSpec{}, i18n.English)
 	l.Append(numbered(50)...)
 	rows := viewLines(t, l, 40, 6)
-	if !strings.Contains(rows[4], "line 050") || !strings.Contains(rows[5], "following") {
+	if !strings.Contains(rows[4], "line 050") || !strings.Contains(rows[5], "[ L on ]") {
 		t.Fatalf("a following view shows the newest line:\n%s", strings.Join(rows, "\n"))
 	}
 	l.Append(LogLine{Text: "line 051"})
@@ -127,16 +127,16 @@ func TestLogViewFollowsNewLines(t *testing.T) {
 	if !l.Update(tea.KeyPressMsg{Code: tea.KeyPgUp}) || l.Following() {
 		t.Fatal("page up keeps following")
 	}
-	before := viewLines(t, l, 40, 6)[0]
+	before := viewLines(t, l, 120, 6)[0]
 	l.Append(LogLine{Text: "line 052"}, LogLine{Text: "line 053"})
-	rows = viewLines(t, l, 40, 6)
-	if rows[0] != before || !strings.Contains(rows[5], "paused, 2 new") {
+	rows = viewLines(t, l, 120, 6)
+	if rows[0] != before || !strings.Contains(rows[5], "L paused, 2 new") {
 		t.Errorf("a paused view moved or misses the count:\n%s", strings.Join(rows, "\n"))
 	}
 	// The end key resumes.
 	l.Update(tea.KeyPressMsg{Code: tea.KeyEnd})
 	rows = viewLines(t, l, 40, 6)
-	if !l.Following() || !strings.Contains(rows[4], "line 053") || !strings.Contains(rows[5], "following") {
+	if !l.Following() || !strings.Contains(rows[4], "line 053") || !strings.Contains(rows[5], "[ L on ]") {
 		t.Errorf("end does not resume:\n%s", strings.Join(rows, "\n"))
 	}
 	// The follow action pauses and resumes.
@@ -287,7 +287,7 @@ func TestLogViewSearchIgnoresCaseAndFollowsTheBuffer(t *testing.T) {
 	if len(l.hits) != 1 || l.hasCur {
 		t.Fatalf("hits %v, current %v after the first line left", l.hits, l.hasCur)
 	}
-	if rows = viewLines(t, l, 40, 6); !strings.Contains(rows[5], "1 matches") {
+	if rows = viewLines(t, l, 120, 6); !strings.Contains(rows[5], "1 matches") {
 		t.Errorf("status after drop: %q", rows[5])
 	}
 	l.Append(LogLine{Text: "new MARK"})
@@ -480,6 +480,232 @@ func TestLogViewTargets(t *testing.T) {
 	}
 }
 
+// buttonLog is a log view with a kept search that has matches, so every button is drawn.
+func buttonLog(t *testing.T) *LogView {
+	t.Helper()
+	l := newLog(t, LogViewSpec{}, i18n.English)
+	for i := range 30 {
+		text := fmt.Sprintf("line %03d", i+1)
+		if i%7 == 0 {
+			text += " hit"
+		}
+		l.Append(LogLine{Text: text, Time: time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)})
+	}
+	l.Update(typed('/'))
+	typeText(l, "hit")
+	l.Act("enter")
+	l.Act(ActionLogFollow) // paused, so Follow has something to switch back
+	return l
+}
+
+type logState struct {
+	following, wrap, stamps, searching, hasCur bool
+	cur, top                                   uint64
+}
+
+func stateOf(l *LogView) logState {
+	return logState{l.following, l.wrap, l.stamps, l.searching, l.hasCur, l.cur, l.top}
+}
+
+// statusTargets draws the log view and returns its status row and the targets that sit on it.
+func statusTargets(t *testing.T, l *LogView, w, h int) (string, []Target) {
+	t.Helper()
+	out, targets := l.View(plainLog(t), w, h)
+	rows := strings.Split(out, "\n")
+	var on []Target
+	for _, tg := range targets {
+		if tg.Rect.Y == h-1 && tg.Action != "" {
+			on = append(on, tg)
+		}
+	}
+	return rows[h-1], on
+}
+
+func TestLogViewButtonClickIsItsKey(t *testing.T) {
+	keys := map[ActionID]tea.KeyPressMsg{
+		ActionLogFollow: typed('L'), ActionLogWrap: typed('w'), ActionLogTimestamps: typed('t'),
+		"search": typed('/'), ActionLogPrevMatch: typed('['), ActionLogNextMatch: typed(']'),
+	}
+	_, targets := statusTargets(t, buttonLog(t), 160, 8)
+	seen := map[ActionID]bool{}
+	for _, tg := range targets {
+		seen[tg.Action] = true
+	}
+	for action := range keys {
+		if !seen[action] {
+			t.Errorf("no button for %s", action)
+		}
+	}
+	for action, key := range keys {
+		// Two views drawn the same way; in the second round with wrap switched first.
+		for round := range 2 {
+			byKey, byClick := buttonLog(t), buttonLog(t)
+			if round == 1 {
+				byKey.Act(ActionLogWrap)
+				byClick.Act(ActionLogWrap)
+			}
+			byKey.View(plainLog(t), 160, 8)
+			_, targets := byClick.View(plainLog(t), 160, 8)
+			m := NewMouseMap(targets, true)
+			var hit *Target
+			for i := range targets {
+				if targets[i].Action == action && targets[i].Rect.Y == 7 {
+					hit = &targets[i]
+				}
+			}
+			if hit == nil {
+				t.Fatalf("%s round %d: no target", action, round)
+			}
+			if !byKey.Update(key) {
+				t.Fatalf("%s: key not handled", action)
+			}
+			if !byClick.Click(m.Handle(tea.MouseClickMsg{X: hit.Rect.X + 1, Y: 7, Button: tea.MouseLeft})) {
+				t.Fatalf("%s: click not handled", action)
+			}
+			if a, b := stateOf(byKey), stateOf(byClick); a != b {
+				t.Errorf("%s round %d: key gives %+v, click gives %+v", action, round, a, b)
+			}
+		}
+	}
+}
+
+func TestLogViewEveryVisibleControlIsATarget(t *testing.T) {
+	for _, w := range []int{20, 30, 45, 60, 80, 100, 120, 160} {
+		l := buttonLog(t)
+		row, targets := statusTargets(t, l, w, 8)
+		cells := []rune(row)
+		for _, tg := range targets {
+			text := string(cells[tg.Rect.X : tg.Rect.X+tg.Rect.Width])
+			if !strings.HasPrefix(text, "[ ") || !strings.HasSuffix(text, " ]") {
+				t.Errorf("width %d: target %q is no whole button", w, text)
+			}
+			for i := tg.Rect.X; i < tg.Rect.X+tg.Rect.Width; i++ {
+				cells[i] = ' '
+			}
+		}
+		rest := strings.TrimSpace(string(cells))
+		if !strings.Contains(rest, "30") || strings.ContainsAny(rest, "[]") && strings.Count(rest, " ") > 3 {
+			t.Errorf("width %d: text outside the targets or no position: %q in %q", w, rest, row)
+		}
+	}
+}
+
+func TestLogViewButtonsNameTheKeyAndTheState(t *testing.T) {
+	actions := LogViewActions()
+	for i := range actions {
+		actions[i].Level, actions[i].Rebind = LevelGlobal, RebindReplace
+		actions[i].DefaultKeys = []string{[]string{"f3", "f4", "f6", "f7", "f9"}[i]}
+	}
+	keys, err := NewKeymap(append(sampleActions(), actions...), CharsetUnicode)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := keys.Bind(map[ActionID]string{ActionLogWrap: "f14", ActionLogFollow: "f13"}); err != nil {
+		t.Fatal(err)
+	}
+	l, err := NewLogView(LogViewSpec{Keys: logKeys()}, keys, newTranslator(t, i18n.English, nil, keys))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := range 30 {
+		text := fmt.Sprintf("line %03d", i+1)
+		if i%7 == 0 {
+			text += " hit"
+		}
+		l.Append(LogLine{Text: text})
+	}
+	l.Act("search")
+	typeText(l, "hit")
+	l.Act("enter")
+	row, _ := statusTargets(t, l, 160, 8)
+	for _, want := range []string{"[ F13 paused ]", "[ F14 wrap lines off ]", "[ F9 timestamps off ]", "[ F6 previous match ]", "[ F4 next match ]"} {
+		if !strings.Contains(row, want) {
+			t.Errorf("%q missing in %q", want, row)
+		}
+	}
+	l.Act(ActionLogWrap)
+	l.Act(ActionLogFollow)
+	row, _ = statusTargets(t, l, 160, 8)
+	for _, want := range []string{"[ F13 following ]", "[ F14 wrap lines on ]"} {
+		if !strings.Contains(row, want) {
+			t.Errorf("%q missing in %q", want, row)
+		}
+	}
+	// Without labels the keys stay and the state is still in words.
+	row, _ = statusTargets(t, l, 110, 8)
+	if !strings.Contains(row, "[ F14 on ]") || !strings.Contains(row, "[ F9 off ]") {
+		t.Errorf("short form: %q", row)
+	}
+	// Match jumps need a search with matches.
+	plain := newLog(t, LogViewSpec{}, i18n.English)
+	plain.Append(numbered(5)...)
+	if row, _ = statusTargets(t, plain, 160, 4); strings.Contains(row, "match") {
+		t.Errorf("match buttons without a search: %q", row)
+	}
+}
+
+func TestLogViewStatusDegradesByRank(t *testing.T) {
+	l := buttonLog(t)
+	// Labels go in this order, then the buttons go in this order, the first one first.
+	order := []struct {
+		action ActionID
+		labels []string
+	}{
+		{ActionLogTimestamps, []string{"timestamps"}}, {ActionLogWrap, []string{"wrap lines"}},
+		{ActionLogPrevMatch, []string{"previous match"}}, {ActionLogNextMatch, []string{"next match"}},
+		{ActionLogFollow, []string{"following", "paused"}},
+	}
+	prev := 1 << 30
+	var prevKept map[ActionID]bool
+	for w := 160; w >= 20; w-- {
+		row, targets := statusTargets(t, l, w, 8)
+		if got := lipgloss.Width(row); got != w {
+			t.Fatalf("width %d: row is %d cells", w, got)
+		}
+		if !strings.Contains(row, "of 30") && !strings.Contains(row, "/30") {
+			t.Fatalf("width %d: position missing: %q", w, row)
+		}
+		cells := []rune(row)
+		kept := map[ActionID]bool{}
+		labelled := map[ActionID]bool{}
+		for _, tg := range targets {
+			kept[tg.Action] = true
+			text := string(cells[tg.Rect.X : tg.Rect.X+tg.Rect.Width])
+			for _, o := range order {
+				if o.action != tg.Action {
+					continue
+				}
+				for _, word := range o.labels {
+					labelled[tg.Action] = labelled[tg.Action] || strings.Contains(text, word)
+				}
+			}
+		}
+		for i := range order {
+			for j := i + 1; j < len(order); j++ {
+				hi, lo := order[i].action, order[j].action // hi goes before lo
+				if kept[hi] && labelled[hi] && kept[lo] && !labelled[lo] {
+					t.Errorf("width %d: %s keeps its label where %s lost it: %q", w, hi, lo, row)
+				}
+				if kept[lo] && !kept[hi] && labelled[lo] {
+					t.Errorf("width %d: %s is gone before %s lost its label: %q", w, hi, lo, row)
+				}
+			}
+		}
+		if len(targets) > prev {
+			t.Errorf("width %d: %d buttons after %d", w, len(targets), prev)
+		}
+		for a := range kept {
+			if prevKept != nil && !prevKept[a] {
+				t.Errorf("width %d: %s is back", w, a)
+			}
+		}
+		prev, prevKept = len(targets), kept
+		if w >= 45 && !(kept[ActionLogFollow] && kept["search"]) {
+			t.Errorf("width %d: follow and search must stay", w)
+		}
+	}
+}
+
 func TestLogViewHints(t *testing.T) {
 	l := newLog(t, LogViewSpec{}, i18n.English)
 	keys := logKeymap(t)
@@ -594,6 +820,7 @@ func TestGoldenLogView(t *testing.T) {
 		{"logview.narrow.golden", "noneascii", 40, 22, true},
 		{"logview.narrow.nowrap.golden", "noneascii", 40, 16, false},
 		{"logview.wide.golden", "noneascii", 120, 16, false},
+		{"logview.full.golden", "noneascii", 170, 16, false},
 		{"logview.wide.dark.golden", "dark", 120, 16, true},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
