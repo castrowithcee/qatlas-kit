@@ -35,7 +35,19 @@
 // restart, the service. A fresh install, one without the installed unit, adds SUDO_USER to the group
 // <program> if AddInstallingUser is set; an update changes no membership of a person. The script never
 // touches /etc/systemd/system: it warns when a unit there hides the installed one and leaves drop-ins
-// alone. It reads <PREFIX>_VERSION and <PREFIX>_INSTALL_BASE_URL but no installation prefix.
+// alone.
+//
+// With --uninstall instead of a version, the script downloads and verifies nothing. Before any change it
+// checks root, Linux, a running systemd, the commands it needs and a regular unit file; without one it
+// fails as not installed. It then runs systemctl disable --now, so a failure leaves everything in place,
+// removes the program, the unit, the manpages <program>.1 and <program>-*.1 and the regular files of
+// /usr/local/share/doc/<program>, removes that directory only if it is then empty and runs systemctl
+// daemon-reload. It never deletes a symbolic link, follows none and touches nothing inside a symlinked
+// directory. /etc/<program>, /var/lib/<program>, drop-ins and a unit in /etc/systemd/system, the user and
+// the group stay: the script prints the rm -r, userdel and groupdel command for each that exists and runs
+// none of them.
+//
+// The script reads <PREFIX>_VERSION and <PREFIX>_INSTALL_BASE_URL but no installation prefix.
 // <PREFIX>_INSTALL_ROOT exists for tests only: it is prepended to every host path the script reads or
 // writes, but not to commands, the trusted keys or the home directory recorded for the service user.
 package installer
