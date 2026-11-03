@@ -69,7 +69,9 @@ func (e *Error) Unwrap() error { return e.cause }
 
 // Client talks to one Engine over its Unix socket. It is safe for concurrent use.
 type Client struct {
-	http      *http.Client
+	http *http.Client
+	// stream has no overall timeout, for log streams that stay open; the transport bounds the wait for headers.
+	stream    *http.Client
 	transport *http.Transport
 
 	// gate is a semaphore of one, so a caller waiting for another caller's ping can still be cancelled.
@@ -100,9 +102,10 @@ func New(opts Options) (*Client, error) {
 		DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
 			return dialer.DialContext(ctx, "unix", socket)
 		},
-		DisableCompression: true,
+		DisableCompression:    true,
+		ResponseHeaderTimeout: timeout,
 	}
-	return &Client{http: httpx.NoRedirectClient(timeout, transport), transport: transport, gate: make(chan struct{}, 1)}, nil
+	return &Client{http: httpx.NoRedirectClient(timeout, transport), stream: httpx.NoRedirectClient(0, transport), transport: transport, gate: make(chan struct{}, 1)}, nil
 }
 
 // Close releases idle connections. The Client stays usable.
