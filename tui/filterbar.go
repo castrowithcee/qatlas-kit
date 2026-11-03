@@ -293,8 +293,19 @@ func (b *FilterBar) label(i int) (label, value string) {
 
 // fieldText is a field of at most width cells, " label: value ▾ ", the value cut where it does not fit.
 func fieldText(styles Styles, label, value string, width int) string {
-	head, tail := " "+label+": ", " "+styles.Glyph(GlyphExpanded)+" "
+	head, tail := fieldFrame(styles, label)
 	return head + styles.Truncate(value, max(width-lipgloss.Width(head)-lipgloss.Width(tail), 1)) + tail
+}
+
+func fieldFrame(styles Styles, label string) (head, tail string) {
+	return " " + label + ": ", " " + styles.Glyph(GlyphExpanded) + " "
+}
+
+// fieldLeast is the narrowest a field is drawn: its frame and one cell of value. Planning and drawing share it,
+// as a field cut to less would be drawn wider than planned.
+func fieldLeast(styles Styles, label string) int {
+	head, tail := fieldFrame(styles, label)
+	return lipgloss.Width(head) + lipgloss.Width(tail) + 1
 }
 
 // fieldStyle is the surface of a field, bold and in the accent colour while it has the focus. Without colour
@@ -346,7 +357,7 @@ func (b *FilterBar) View(styles Styles, width int) (string, []Target) {
 	idle := !search || (!list.searching && len(list.query) == 0)
 	const gap = 2
 	natural := func(i int) int { return lipgloss.Width(fieldText(styles, labels[i], values[i], 1<<20)) }
-	least := func(i int) int { return lipgloss.Width(fieldText(styles, labels[i], "", 1)) }
+	least := func(i int) int { return fieldLeast(styles, labels[i]) }
 	fit := func(budget int) ([]int, int, bool) {
 		widths, total := make([]int, n), gap*(n-1)
 		for i := range widths {
