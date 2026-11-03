@@ -529,8 +529,8 @@ func (l *LogView) Act(id ActionID) (handled bool) {
 	return true
 }
 
-// Click handles a click on a target the view drew, as the MouseMap of its targets reports it: the state
-// in the status line switches following and the search part starts the search.
+// Click handles a click on a target the view drew, as the MouseMap of its targets reports it: a button of the
+// status line does what its key does.
 func (l *LogView) Click(r MouseResult) (handled bool) {
 	return r.Handled && l.Act(r.Action)
 }
@@ -557,8 +557,8 @@ func (l *LogView) Hints() []Hint {
 }
 
 // View draws the log view with styles in width by height cells: the lines that fit, from the first shown
-// line on, and in the last row the state, the search and the position. It returns a target for the whole area,
-// one for the state and one for the search in the status line, counted from the top left of the view.
+// line on, and in the last row the buttons and the position. It returns a target for the whole area and one
+// per button in the status line, counted from the top left of the view.
 func (l *LogView) View(styles Styles, width, height int) (string, []Target) {
 	width, height = max(width, 0), max(height, 0)
 	if width == 0 || height == 0 {
@@ -711,73 +711,240 @@ func hitMask(hay, needle []rune) []bool {
 	return mask
 }
 
-// status is the last row: the state, the search and the position, from the left; what does not fit goes
-// from the right.
-func (l *LogView) status(styles Styles, width, at, shown int) (string, []Target) {
-	type piece struct {
-		text   string
-		plain  int
-		action ActionID
+// logButton is one button of the status line. rank orders what goes first when the width runs short: the
+// highest rank goes first. A room for a further button is a further entry of logButtons.
+type logButton struct {
+	action ActionID
+	rank   int
+	kind   ButtonKind
+	// full and short are the button texts: with its label and without it. Both name the key and, for a
+	// switch, its state in words.
+	full, short string
+}
+
+// logButtons are the buttons the view offers now, in the order they stand. A switch shows its state as
+// the word on or off, so the state reads without colour; a switch that is on is drawn as a primary button.
+func (l *LogView) logButtons(styles Styles) []logButton {
+	k := l.spec.Keys
+	key := func(a ActionID) string { return l.keys.Label(a) }
+	join := func(parts ...string) string {
+		var out []string
+		for _, p := range parts {
+			if p != "" {
+				out = append(out, p)
+			}
+		}
+		return strings.Join(out, " ")
 	}
-	var pieces []piece
-	add := func(text string, action ActionID) { pieces = append(pieces, piece{text, lipgloss.Width(text), action}) }
-	kind, word := StatusOK, l.text.Lookup(TextLogFollowing)
+	state := func(on bool) string {
+		if on {
+			return l.text.Lookup(TextLogOn)
+		}
+		return l.text.Lookup(TextLogOff)
+	}
+	kind := func(on bool) ButtonKind {
+		if on {
+			return ButtonPrimary
+		}
+		return ButtonNormal
+	}
+	word := l.text.Lookup(TextLogFollowing)
 	if !l.following {
-		kind, word = StatusWarn, l.text.Lookup(TextLogPaused)
+		word = l.text.Lookup(TextLogPaused)
 		if l.unseen > 0 {
 			word = l.text.Lookup(TextLogPausedNew, l.unseen)
 		}
 	}
-	add(styles.Status(kind, word), l.spec.Keys.Follow)
-	if l.searching || l.needle != "" {
-		field := Escape(l.keys.Label(l.spec.Keys.Search)) + " "
-		if l.searching {
-			qw := min(max(lipgloss.Width(Escape(l.query.String()))+1, 8), logSearchFieldMax)
-			field += strings.TrimRight(l.query.view(qw, styles, true, ""), " ")
-			if styles.profile.Colorless() && styles.profile != ProfileMono {
+	followShort := join(key(k.Follow), state(l.following))
+	if !l.following && l.unseen > 0 {
+		followShort += ", " + l.text.Lookup(TextLogNew, l.unseen)
+	}
+	btns := []logButton{{action: k.Follow, rank: 0, kind: kind(l.following),
+		full: join(key(k.Follow), word), short: followShort}}
+	search := logButton{action: k.Search, rank: 1, kind: ButtonNormal,
+		full: join(key(k.Search), l.text.Lookup(TextKeySearch)), short: key(k.Search)}
+	if l.needle != "" {
+		info := l.matchInfo()
+		q := logQueryTail(l.query.String(), styles.Glyph(GlyphEllipsis))
+		search.full = join(key(k.Search), q, info)
+		search.short = join(key(k.Search), q, info)
+	}
+	btns = append(btns, search)
+	if l.needle != "" && len(l.hits) > 0 {
+		btns = append(btns,
+			logButton{action: k.PrevMatch, rank: 3, full: join(key(k.PrevMatch), l.text.Lookup(TextLogPrevMatch)), short: key(k.PrevMatch)},
+			logButton{action: k.NextMatch, rank: 2, full: join(key(k.NextMatch), l.text.Lookup(TextLogNextMatch)), short: key(k.NextMatch)})
+	}
+	return append(btns,
+		logButton{action: k.Wrap, rank: 4, kind: kind(l.wrap),
+			full: join(key(k.Wrap), l.text.Lookup(TextLogWrap), state(l.wrap)), short: join(key(k.Wrap), state(l.wrap))},
+		logButton{action: k.Timestamps, rank: 5, kind: kind(l.stamps),
+			full: join(key(k.Timestamps), l.text.Lookup(TextLogTimestamps), state(l.stamps)), short: join(key(k.Timestamps), state(l.stamps))})
+}
+
+// matchInfo says how many matches the search has, or which one is current.
+func (l *LogView) matchInfo() string {
+	switch n := len(l.hits); {
+	case n > 0 && l.hasCur:
+		i, _ := slices.BinarySearch(l.hits, l.cur)
+		return l.text.Lookup(TextLogMatch, i+1, n)
+	case n > 0:
+		return l.text.Lookup(TextLogMatches, n)
+	}
+	return l.text.Lookup(TextLogNoMatches)
+}
+
+// logQueryTail is the search text of a button: the end of it when it is long.
+func logQueryTail(q, mark string) string {
+	r := []rune(q)
+	if len(r) > logSearchFieldMax {
+		return mark + string(r[len(r)-logSearchFieldMax+1:])
+	}
+	return q
+}
+
+// status is the last row: buttons from the left and the position at the right. Where the width runs short,
+// first the labels go and the keys stay, then buttons go by rank, the follow and search buttons last, and the
+// position gives way last: to a shorter form, and only below that is it cut. While the search text is typed
+// the row holds that field and the position.
+func (l *LogView) status(styles Styles, width, at, shown int) (string, []Target) {
+	const gap = len(buttonGap)
+	var long, short string
+	if n := len(l.buf); n > 0 && shown > 0 {
+		long = l.text.Lookup(TextScrollPosition, at+1, at+shown, n)
+		short = l.text.Lookup(TextLogPositionShort, at+1, at+shown, n)
+	}
+	type drawn struct {
+		text   string
+		action ActionID
+	}
+	var items []drawn
+	var pos string
+	fits := func(items []drawn, pos string) bool {
+		w := 0
+		for i, it := range items {
+			w += lipgloss.Width(it.text)
+			if i > 0 {
+				w += gap
+			}
+		}
+		if pos != "" {
+			w += lipgloss.Width(pos)
+			if len(items) > 0 {
+				w += gap
+			}
+		}
+		return w <= width
+	}
+	// A button draws without its label when its rank is shortFrom or higher.
+	draw := func(b logButton, shortFrom int) drawn {
+		text := b.full
+		if b.rank >= shortFrom {
+			text = b.short
+		}
+		return drawn{styles.Button(b.kind, text, false), b.action}
+	}
+	if l.searching {
+		k := l.spec.Keys
+		keyText := Escape(l.keys.Label(k.Search)) + " "
+		for _, p := range []string{long, short, ""} {
+			room := width - lipgloss.Width(keyText) - 1
+			if p != "" {
+				room -= lipgloss.Width(p) + gap
+			}
+			if room < 3 && p != "" {
+				continue
+			}
+			info := l.matchInfo()
+			if room-lipgloss.Width(info)-1 >= 3 {
+				room -= lipgloss.Width(info) + 1
+			} else {
+				info = ""
+			}
+			qw := min(max(lipgloss.Width(Escape(l.query.String()))+1, 8), logSearchFieldMax, max(room, 1))
+			field := keyText + strings.TrimRight(l.query.view(qw, styles, true, ""), " ")
+			if styles.profile.Colorless() && styles.profile != ProfileMono && room > qw {
 				field += " "
 			}
-		} else {
-			field += styles.TruncateLeft(Escape(l.query.String()), logSearchFieldMax)
-		}
-		word := l.text.Lookup(TextLogNoMatches)
-		switch n := len(l.hits); {
-		case n > 0 && l.hasCur:
-			i, _ := slices.BinarySearch(l.hits, l.cur)
-			word = l.text.Lookup(TextLogMatch, i+1, n)
-		case n > 0:
-			word = l.text.Lookup(TextLogMatches, n)
-		}
-		add(field+" "+styles.Render(StyleHint, Escape(word)), l.spec.Keys.Search)
-	}
-	if n := len(l.buf); n > 0 && shown > 0 {
-		add(styles.Render(StyleHint, Escape(l.text.Lookup(TextScrollPosition, at+1, at+shown, n))), "")
-	}
-	sep := styles.Render(StyleHint, styles.Glyph(GlyphKeySeparator))
-	sepW := lipgloss.Width(sep)
-	for len(pieces) > 1 {
-		total := -sepW
-		for _, p := range pieces {
-			total += p.plain + sepW
-		}
-		if total <= width {
+			if info != "" {
+				field += " " + styles.Render(StyleHint, Escape(info))
+			}
+			items, pos = []drawn{{field, k.Search}}, p
 			break
 		}
-		pieces = pieces[:len(pieces)-1]
+	} else {
+		btns := l.logButtons(styles)
+		keep := func(cut int) []logButton {
+			var out []logButton
+			for _, b := range btns {
+				if b.rank < cut {
+					out = append(out, b)
+				}
+			}
+			return out
+		}
+		type step struct {
+			cut, shortFrom int
+			pos            string
+		}
+		var ranks []int
+		for _, b := range btns {
+			ranks = append(ranks, b.rank)
+		}
+		slices.SortFunc(ranks, func(a, b int) int { return b - a })
+		// First the labels go one by one, the highest rank first; then, with every label gone, the buttons go
+		// by rank. Follow and search outlast the long position: it takes its short form first.
+		steps := []step{{ranks[0] + 1, ranks[0] + 1, long}}
+		for _, r := range ranks {
+			steps = append(steps, step{ranks[0] + 1, r, long})
+		}
+		for i, r := range ranks {
+			steps = append(steps, step{r + 1, 0, long})
+			if i >= len(ranks)-2 {
+				steps = append(steps, step{r + 1, 0, short})
+			}
+		}
+		steps = append(steps, step{0, 0, short}, step{0, 0, ""})
+		for _, st := range steps {
+			var cand []drawn
+			for _, b := range keep(st.cut) {
+				cand = append(cand, draw(b, st.shortFrom))
+			}
+			if fits(cand, st.pos) {
+				items, pos = cand, st.pos
+				break
+			}
+		}
+		if items == nil && pos == "" {
+			// Not even the follow button fits: its key and state, cut to the width.
+			f := btns[0]
+			text := styles.Truncate(Escape(f.short), width)
+			if width >= 5 {
+				text = styles.Button(ButtonNormal, styles.Truncate(f.short, width-4), false)
+			}
+			items = []drawn{{text, f.action}}
+		}
 	}
 	var line strings.Builder
 	var targets []Target
 	x := 0
-	for i, p := range pieces {
+	for i, it := range items {
 		if i > 0 {
-			line.WriteString(sep)
-			x += sepW
+			line.WriteString(buttonGap)
+			x += gap
 		}
-		if p.action != "" && x < width {
-			targets = append(targets, Target{Rect: Rect{X: x, Width: min(p.plain, width-x), Height: 1}, Zone: ZoneRows, Action: p.action})
+		w := lipgloss.Width(it.text)
+		if x < width {
+			targets = append(targets, Target{Rect: Rect{X: x, Width: min(w, width-x), Height: 1}, Zone: ZoneRows, Action: it.action})
 		}
-		line.WriteString(p.text)
-		x += p.plain
+		line.WriteString(it.text)
+		x += w
+	}
+	if pos != "" {
+		pos = styles.Truncate(Escape(pos), width)
+		w := lipgloss.Width(pos)
+		line.WriteString(strings.Repeat(" ", max(width-x-w, 0)))
+		line.WriteString(styles.Render(StyleHint, pos))
 	}
 	return line.String(), targets
 }

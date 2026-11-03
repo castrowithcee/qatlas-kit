@@ -13,4 +13,4 @@
   09:27:11 api    GET /plants 200 11ms  
 * 09:27:12 worker job 33 failed: Timeou~
                                         
-* paused - / fail match 1/2             
+[ L off ]  [ / fail match 1/2 ]  1-14/14

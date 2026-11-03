@@ -115,19 +115,23 @@ const (
 	TextInfoLink       TextID = "tui.info.link"
 	TextInfoOpenLink   TextID = "tui.info.openlink"
 
-	TextLogFollow     TextID = "tui.log.follow"
-	TextLogNextMatch  TextID = "tui.log.nextmatch"
-	TextLogPrevMatch  TextID = "tui.log.prevmatch"
-	TextLogWrap       TextID = "tui.log.wrap"
-	TextLogTimestamps TextID = "tui.log.timestamps"
-	TextLogFollowing  TextID = "tui.log.following"
-	TextLogPaused     TextID = "tui.log.paused"
-	TextLogPausedNew  TextID = "tui.log.pausednew"
-	TextLogMatch      TextID = "tui.log.match"
-	TextLogMatches    TextID = "tui.log.matches"
-	TextLogNoMatches  TextID = "tui.log.nomatches"
-	TextLogCut        TextID = "tui.log.cut"
-	TextLogEmpty      TextID = "tui.log.empty"
+	TextLogFollow        TextID = "tui.log.follow"
+	TextLogNextMatch     TextID = "tui.log.nextmatch"
+	TextLogPrevMatch     TextID = "tui.log.prevmatch"
+	TextLogWrap          TextID = "tui.log.wrap"
+	TextLogTimestamps    TextID = "tui.log.timestamps"
+	TextLogFollowing     TextID = "tui.log.following"
+	TextLogPaused        TextID = "tui.log.paused"
+	TextLogPausedNew     TextID = "tui.log.pausednew"
+	TextLogMatch         TextID = "tui.log.match"
+	TextLogMatches       TextID = "tui.log.matches"
+	TextLogNoMatches     TextID = "tui.log.nomatches"
+	TextLogCut           TextID = "tui.log.cut"
+	TextLogEmpty         TextID = "tui.log.empty"
+	TextLogNew           TextID = "tui.log.new"
+	TextLogOn            TextID = "tui.log.on"
+	TextLogOff           TextID = "tui.log.off"
+	TextLogPositionShort TextID = "tui.log.positionshort"
 
 	TextSettingsTitle    TextID = "tui.settings.title"
 	TextSettingsGeneral  TextID = "tui.settings.general"
@@ -260,19 +264,23 @@ func ModuleCatalog() i18n.Catalogs[TextID] {
 			TextCalDayFri:    "Fr",
 			TextCalDaySat:    "Sa",
 
-			TextLogFollow:     "follow",
-			TextLogNextMatch:  "next match",
-			TextLogPrevMatch:  "previous match",
-			TextLogWrap:       "wrap lines",
-			TextLogTimestamps: "timestamps",
-			TextLogFollowing:  "following",
-			TextLogPaused:     "paused",
-			TextLogPausedNew:  "paused, %d new",
-			TextLogMatch:      "match %d/%d",
-			TextLogMatches:    "%d matches",
-			TextLogNoMatches:  "no matches",
-			TextLogCut:        "[cut]",
-			TextLogEmpty:      "No lines yet.",
+			TextLogFollow:        "follow",
+			TextLogNextMatch:     "next match",
+			TextLogPrevMatch:     "previous match",
+			TextLogWrap:          "wrap lines",
+			TextLogTimestamps:    "timestamps",
+			TextLogFollowing:     "following",
+			TextLogPaused:        "paused",
+			TextLogPausedNew:     "paused, %d new",
+			TextLogMatch:         "match %d/%d",
+			TextLogMatches:       "%d matches",
+			TextLogNoMatches:     "no matches",
+			TextLogCut:           "[cut]",
+			TextLogEmpty:         "No lines yet.",
+			TextLogNew:           "%d new",
+			TextLogOn:            "on",
+			TextLogOff:           "off",
+			TextLogPositionShort: "%d-%d/%d",
 
 			TextSettingsTitle:    "Settings",
 			TextSettingsGeneral:  "General",
@@ -400,19 +408,23 @@ func ModuleCatalog() i18n.Catalogs[TextID] {
 			TextCalDayFri:    "Fr",
 			TextCalDaySat:    "Sa",
 
-			TextLogFollow:     "mitlaufen",
-			TextLogNextMatch:  "nächster Treffer",
-			TextLogPrevMatch:  "voriger Treffer",
-			TextLogWrap:       "Zeilen umbrechen",
-			TextLogTimestamps: "Zeitstempel",
-			TextLogFollowing:  "mitlaufend",
-			TextLogPaused:     "angehalten",
-			TextLogPausedNew:  "angehalten, %d neu",
-			TextLogMatch:      "Treffer %d/%d",
-			TextLogMatches:    "%d Treffer",
-			TextLogNoMatches:  "keine Treffer",
-			TextLogCut:        "[gekürzt]",
-			TextLogEmpty:      "Noch keine Zeilen.",
+			TextLogFollow:        "mitlaufen",
+			TextLogNextMatch:     "nächster Treffer",
+			TextLogPrevMatch:     "voriger Treffer",
+			TextLogWrap:          "Zeilen umbrechen",
+			TextLogTimestamps:    "Zeitstempel",
+			TextLogFollowing:     "mitlaufend",
+			TextLogPaused:        "angehalten",
+			TextLogPausedNew:     "angehalten, %d neu",
+			TextLogMatch:         "Treffer %d/%d",
+			TextLogMatches:       "%d Treffer",
+			TextLogNoMatches:     "keine Treffer",
+			TextLogCut:           "[gekürzt]",
+			TextLogEmpty:         "Noch keine Zeilen.",
+			TextLogNew:           "%d neu",
+			TextLogOn:            "an",
+			TextLogOff:           "aus",
+			TextLogPositionShort: "%d-%d/%d",
 
 			TextSettingsTitle:    "Einstellungen",
 			TextSettingsGeneral:  "Allgemein",
