@@ -49,8 +49,8 @@
 // The mouse is a second way to the same actions and never stronger than a key. Render and the other drawing
 // parts return the targets they drew; a MouseMap holds the targets of one drawn frame, so a target no longer
 // on screen cannot act. Handle acts on a press of the left button and on the wheel only. A click reports the
-// action, area or tab of the target it hit, which the application runs exactly as it runs the key or the tab
-// click, with every question and check of that way; the free area of a zone reports the zone to focus, and an
+// action, area, tab or item of the target it hit, which the application runs exactly as it runs the key or the
+// tab click, with every question and check of that way; the free area of a zone reports the zone to focus, and an
 // element inside a zone wins over it. A wheel notch reports the zone under the pointer, so a side pane scrolls
 // without taking the focus; WheelStep stops it at the ends, and WheelTextLines is its step in a text area. The
 // application disables the map where the mouse is switched off, while a key is captured and while the
@@ -72,6 +72,30 @@
 // text is typed, so a letter is always text, and moves with the actions of CommandKeys. View draws a panel
 // with the key in force beside each command, at most twelve rows that scroll with the choice and one target
 // per row; the application places it over the workspace, or on it where the terminal is too small.
+//
+// A ListModel shows the entries an application hands it, each with a stable ItemID, its cells and a group
+// key, as a table under dimmed upper-case column titles. The selection follows the ID, never the position,
+// when the entries, the filter or the grouping change; it is always on screen, and the scroll position stays
+// while the selection is on the page. The filter reads the cells and the search text of an entry, ignores
+// case, and only decides what shows: it removes nothing and keeps the order. A list whose letters are actions
+// starts the filter with its search key; a pure choice list filters with every typed character. Enter keeps a
+// typed filter, the first back clears it, and the next one is left to the application. Groups are presentation
+// only: they stand in alphabetical order with the group without key last, left, right and enter fold them, a
+// filter opens the groups with hits without changing their fold state, and the position counts entries only,
+// "pos/total" or, with a filter, "pos/shown (N total)". When a row does not fit, the free text column gives way
+// first, then the short labels of a column, then the optional columns from the right, and then the widest
+// values, never below their title; the first column is never cut, and the widths come from every entry, so they
+// stay while a filter is typed. An empty list shows the application's sentence with the next step, and a filter
+// without match names the key that clears it. Cells, group keys and the typed filter are escaped.
+//
+// A click on a row marks it, and only a click on the marked row while the rows have the focus opens it, as
+// enter does; a click on a group row folds it, and one on the search line starts the search. Each such target
+// carries the action of its key and an Item the list reads back in Click; a target with a zone alone is the
+// free area of the zone. A FilterBar holds choice fields such as the grouping, a state or the sort order:
+// left and right change the value, enter opens the list of values, which back closes without change, and tab
+// and shift+tab step through the fields and leave the bar at its ends to the application. Its values change
+// only what the application hands to the list, never its data. A click on a field opens its values and one on
+// a value takes it; the search field of a list may stand at the right end of the bar.
 //
 // Colours come from themes. Screen code names roles, never colour values: a Palette assigns one colour per
 // role, Styles build text styles and widgets on it. A ThemeSet holds the terminal theme, the application's

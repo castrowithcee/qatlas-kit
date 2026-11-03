@@ -46,6 +46,10 @@ const (
 	TextScrollPosition TextID = "tui.scroll.position"
 	TextListEmpty      TextID = "tui.list.empty"
 	TextListPosition   TextID = "tui.list.position"
+	TextListFiltered   TextID = "tui.list.filtered"
+	TextListNoMatch    TextID = "tui.list.nomatch"
+	TextListNoGroup    TextID = "tui.list.nogroup"
+	TextSearchKey      TextID = "tui.search.key"
 	TextSearchPrompt   TextID = "tui.search.prompt"
 	TextFilterAll      TextID = "tui.filter.all"
 
@@ -125,6 +129,10 @@ func ModuleCatalog() i18n.Catalogs[TextID] {
 			TextScrollPosition: "lines %d-%d of %d",
 			TextListEmpty:      "Nothing to show yet.",
 			TextListPosition:   "%d-%d of %d",
+			TextListFiltered:   "%d/%d (%d total)",
+			TextListNoMatch:    "No entry matches %q; %s clears the filter.",
+			TextListNoGroup:    "no group",
+			TextSearchKey:      "%s search…",
 			TextSearchPrompt:   "Type to search",
 			TextFilterAll:      "all",
 
@@ -199,6 +207,10 @@ func ModuleCatalog() i18n.Catalogs[TextID] {
 			TextScrollPosition: "Zeilen %d-%d von %d",
 			TextListEmpty:      "Noch nichts anzuzeigen.",
 			TextListPosition:   "%d-%d von %d",
+			TextListFiltered:   "%d/%d (%d gesamt)",
+			TextListNoMatch:    "Kein Eintrag passt zu %q; %s leert den Filter.",
+			TextListNoGroup:    "ohne Gruppe",
+			TextSearchKey:      "%s suchen…",
 			TextSearchPrompt:   "Zum Suchen tippen",
 			TextFilterAll:      "alle",
 
