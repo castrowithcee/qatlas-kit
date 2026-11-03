@@ -164,12 +164,18 @@
 //
 // A Dialog asks a question over the screen: the warning glyph and the question in bold, one sentence on what
 // follows, the details, one button per answer and the key line of the answers, from the same answers, so no
-// dialog names one twice. Only the answers act; every other key goes back to the application, so a stray key
-// neither saves nor destroys. The answer to enter is the default and shows focused, and the destroying answer
-// of a destructive question is drawn in the fail colour and can never be the default. A dialog with an input
-// reads typed text, shows what runs and the last error inside itself and never shows a masked input. Overlay
-// dims the screen behind it and returns the targets of the dialog alone; where it does not fit, View fills
-// the workspace and Hints go into the footer, whose targets answer it.
+// dialog names one twice. A detail is a DialogLine of plain text in one of the text, hint, warn and fail styles,
+// optionally behind a prefix such as a prompt sign; fail is for a Notice only, since a question keeps red for
+// the button of a destructive answer; a wrapped line continues under the text, not the prefix. The dialog takes
+// no styled text, so it escapes and wraps before it styles, and the tool chooses prefix, style and wording.
+// Irreversible draws the sentence on what follows in the warn colour. A Notice is a calm message without the
+// warning glyph that needs at least one detail: a dialog interrupts only where there is something to read or to
+// decide, so a plain success without details belongs in the message line. Only the answers act; every other key
+// goes back to the application, so a stray key neither saves nor destroys. The answer to enter is the default
+// and shows focused, and the destroying answer of a destructive question is drawn in the fail colour and can
+// never be the default. A dialog with an input reads typed text, shows what runs and the last error inside
+// itself and never shows a masked input. Overlay dims the screen behind it and returns the targets of the dialog
+// alone; where it does not fit, View fills the workspace and Hints go into the footer, whose targets answer it.
 //
 // Help explains in three stages: the one-line hint under the focused field, the explanation of the focused
 // element, and the help with its topics. The Help shows the application's helptopics.Topic values, the same
