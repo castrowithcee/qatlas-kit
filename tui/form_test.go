@@ -102,7 +102,7 @@ func TestNewFormRejectsBrokenSpecs(t *testing.T) {
 		{"empty ID", field(0, func(f *FormField) { f.ID = "" }), "an ID is not empty"},
 		{"control ID", field(0, func(f *FormField) { f.ID = "a\x00b" }), "an ID is not empty"},
 		{"twice", field(1, func(f *FormField) { f.ID = "name" }), "listed twice"},
-		{"unknown kind", field(0, func(f *FormField) { f.Kind = "date" }), "unknown kind"},
+		{"unknown kind", field(0, func(f *FormField) { f.Kind = "slider" }), "unknown kind"},
 		{"no label", field(0, func(f *FormField) { f.Label = "" }), "no label"},
 		{"masked with value", field(4, func(f *FormField) { f.Value.Text = "kept-secret" }), "masked field is handed no value"},
 		{"stored text", field(0, func(f *FormField) { f.Stored = true }), "only a masked field is stored"},

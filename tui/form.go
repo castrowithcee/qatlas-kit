@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"time"
 	"unicode"
 
 	tea "charm.land/bubbletea/v2"
@@ -31,17 +32,20 @@ const (
 	FieldList FieldKind = "list"
 	// FieldReadOnly shows a value with its hint and never takes the focus.
 	FieldReadOnly FieldKind = "readonly"
+	// FieldDate is a date, or a date with the time of day where FormField.Date says so, typed as
+	// YYYY-MM-DD or YYYY-MM-DD HH:MM in the local time zone of the process. It may be empty.
+	FieldDate FieldKind = "date"
 )
 
 func (k FieldKind) known() bool {
 	switch k {
-	case FieldText, FieldChoice, FieldMultiple, FieldMasked, FieldKey, FieldList, FieldReadOnly:
+	case FieldText, FieldChoice, FieldMultiple, FieldMasked, FieldKey, FieldList, FieldReadOnly, FieldDate:
 		return true
 	}
 	return false
 }
 
-func (k FieldKind) typed() bool { return k == FieldText || k == FieldMasked }
+func (k FieldKind) typed() bool { return k == FieldText || k == FieldMasked || k == FieldDate }
 
 // FieldID is the stable, untranslated ID of a field of a form or a filter bar.
 type FieldID string
@@ -59,11 +63,13 @@ type Choice struct {
 }
 
 // FormValue is the value of a field: Text for text, masked, key, list and read-only fields, Choice for a
-// choice and Selected for a multiple choice, in the order of the choices. The other members stay empty.
+// choice, Selected for a multiple choice, in the order of the choices, and Time for a date, in the local time
+// zone of the process, the zero time for an empty date. The other members stay empty.
 type FormValue struct {
 	Text     string
 	Choice   ChoiceID
 	Selected []ChoiceID
+	Time     time.Time
 }
 
 func (v FormValue) clone() FormValue {
@@ -72,12 +78,24 @@ func (v FormValue) clone() FormValue {
 }
 
 func (v FormValue) equal(o FormValue) bool {
-	return v.Text == o.Text && v.Choice == o.Choice && slices.Equal(v.Selected, o.Selected)
+	return v.Text == o.Text && v.Choice == o.Choice && slices.Equal(v.Selected, o.Selected) && v.Time.Equal(o.Time)
 }
+
+// DateField is what a date field adds to its FormField. Time adds the time of day, in minutes. Min and Max are
+// the earliest and the latest value, both allowed; a zero one sets no bound, and a date without time compares
+// by its day. Now is the clock of the field, time.Now where nil; the form never reads a clock but through it.
+type DateField struct {
+	Time     bool
+	Min, Max time.Time
+	Now      func() time.Time
+}
+
+func (d DateField) set() bool { return d.Time || !d.Min.IsZero() || !d.Max.IsZero() || d.Now != nil }
 
 // FormField is one field of a form. Section names the section it stands in; Hint is the dimmed line under
 // the focused field, and the note in the row of a read-only field. Stored says that a masked field has a
-// value already, which an empty field keeps; the form is never handed that value.
+// value already, which an empty field keeps; the form is never handed that value. Date belongs to a date
+// field only.
 type FormField struct {
 	ID      FieldID
 	Section SectionID
@@ -87,6 +105,7 @@ type FormField struct {
 	Choices []Choice
 	Hint    TextID
 	Stored  bool
+	Date    DateField
 }
 
 // FormSection is a section of a form. Lead is the line under its title where the sections stand as a list.
@@ -129,6 +148,8 @@ const (
 	formTickRef    = "\x00T"
 	formOptionRef  = "\x00O"
 	formSectionRef = "\x00S"
+	// formCalendarRef is the symbol of a date field that opens its calendar.
+	formCalendarRef = "\x00C"
 )
 
 // formField is a field with what the form holds for it while it is edited.
@@ -139,6 +160,11 @@ type formField struct {
 	cursor  int
 	ticked  []bool
 	initial FormValue
+	// date is the last valid value of a date field, and issue what is wrong with the text typed since.
+	date  time.Time
+	issue dateIssue
+	// refused says that a save was refused over the text, so its problem shows in the focused field too.
+	refused bool
 }
 
 // Form is an open form: its fields, the focus, the values typed and chosen, an open list of values and
@@ -156,7 +182,10 @@ type Form struct {
 	other    []FormProblem
 	open     bool
 	pick     int
-	capture  bool
+	// cal says that the calendar of the focused date field is open, on the day calDay.
+	cal     bool
+	calDay  time.Time
+	capture bool
 }
 
 // NewForm checks spec and returns the form with the focus on its first field that takes input. It rejects a
@@ -164,8 +193,9 @@ type Form struct {
 // character or listed twice, an unknown kind, a label-less field, a value that does not fit its kind, a text
 // with a control character, a masked field handed a value, a choice field without choices or with a value
 // that is none of them, choices on another kind, a section that holds no field or that a field names without
-// it being declared, a form that mixes fields with and without section, and a key that names no action of
-// the key table or that two form keys share. The fields stand in the order of their sections.
+// it being declared, a date field with a text, a choice, DateField members on another kind, bounds in the
+// wrong order or a value outside them, a form that mixes fields with and without section, and a key that
+// names no action of the key table or that two form keys share. The fields stand in the order of their sections.
 func NewForm(spec FormSpec, keys *Keymap, text Translator) (*Form, error) {
 	if keys == nil || text == nil {
 		return nil, errors.New("the form needs a key table and a translator")
@@ -282,8 +312,23 @@ func fieldErrors(f FormField, v FormValue) []error {
 		fail("a masked field is handed no value; Stored says it has one")
 	case f.Kind != FieldMasked && f.Stored:
 		fail("only a masked field is stored")
+	case f.Kind != FieldDate && !v.Time.IsZero():
+		fail("only a date field holds a time")
+	case f.Kind != FieldDate && f.Date.set():
+		fail("only a date field has date settings")
+	case f.Kind == FieldDate && v.Text != "":
+		fail("a date field holds a time, no text")
 	case strings.IndexFunc(v.Text, unicode.IsControl) >= 0:
 		fail("a one-line value holds no control character")
+	}
+	if f.Kind == FieldDate {
+		d := f.Date
+		if !d.Min.IsZero() && !d.Max.IsZero() && d.norm(d.Min).After(d.norm(d.Max)) {
+			fail("the earliest value is after the latest")
+		}
+		if !v.Time.IsZero() && d.bound(d.norm(v.Time)) != dateOK {
+			fail("the value is outside the bounds of the field")
+		}
 	}
 	ids := map[ChoiceID]bool{}
 	for _, c := range f.Choices {
@@ -317,6 +362,13 @@ func fieldErrors(f FormField, v FormValue) []error {
 // set makes v the value of the field.
 func (f *formField) set(v FormValue) {
 	f.line = newTextLine(v.Text)
+	if f.Kind == FieldDate {
+		f.date, f.issue = time.Time{}, dateOK
+		if !v.Time.IsZero() {
+			f.date = f.Date.norm(v.Time)
+			f.line = newTextLine(f.Date.format(f.date))
+		}
+	}
 	f.choice = 0
 	for i, c := range f.Choices {
 		if c.ID == v.Choice {
@@ -341,6 +393,9 @@ func (f *formField) value() FormValue {
 			}
 		}
 		return FormValue{Selected: out}
+	}
+	if f.Kind == FieldDate {
+		return FormValue{Time: f.date}
 	}
 	return FormValue{Text: f.line.String()}
 }
@@ -385,7 +440,7 @@ func (f *Form) closed(id SectionID) bool {
 	}
 	for i := range f.fields {
 		field := &f.fields[i]
-		if field.Section == id && (i == f.focus || field.hasValue() || len(f.problems[field.ID]) > 0) {
+		if field.Section == id && (i == f.focus || field.hasValue() || len(f.problems[field.ID]) > 0 || field.issue != dateOK) {
 			return false
 		}
 	}
@@ -424,7 +479,7 @@ func (f *Form) step(by int) bool {
 
 func (f *Form) setFocus(i int) {
 	if i != f.focus {
-		f.open, f.capture = false, false
+		f.open, f.capture, f.cal = false, false, false
 	}
 	f.focus = i
 }
@@ -451,7 +506,7 @@ func (f *Form) Input() InputFocus {
 	switch {
 	case f.capture:
 		return InputKeyCapture
-	case !f.open && f.fields[f.focus].Kind.typed():
+	case !f.open && !f.cal && f.fields[f.focus].Kind.typed():
 		return InputText
 	}
 	return InputNavigation
@@ -464,7 +519,7 @@ func (f *Form) Capturing() bool { return f.capture }
 func (f *Form) Open() bool { return f.open }
 
 // Values are the values of every field by ID, each a copy. A masked field holds what was typed; empty keeps
-// a stored value.
+// a stored value. A date holds its last valid value while its text is not one, which the save key refuses.
 func (f *Form) Values() map[FieldID]FormValue {
 	out := make(map[FieldID]FormValue, len(f.fields))
 	for i := range f.fields {
@@ -488,11 +543,11 @@ func (f *Form) SetValue(id FieldID, v FormValue) error {
 	return nil
 }
 
-// Changed reports whether a value differs from the one the form opened with, or a masked field was typed in;
-// leaving a changed form asks first.
+// Changed reports whether a value differs from the one the form opened with, a masked field was typed in or a
+// date holds a text that is no value; leaving a changed form asks first.
 func (f *Form) Changed() bool {
 	for i := range f.fields {
-		if !f.fields[i].value().equal(f.fields[i].initial) {
+		if !f.fields[i].value().equal(f.fields[i].initial) || f.fields[i].issue != dateOK {
 			return true
 		}
 	}
@@ -521,7 +576,12 @@ func (f *Form) SetProblems(problems []FormProblem) {
 	}
 }
 
-func (f *Form) changed(i int) { delete(f.problems, f.fields[i].ID) }
+func (f *Form) changed(i int) {
+	delete(f.problems, f.fields[i].ID)
+	if f.fields[i].Kind == FieldDate {
+		f.fields[i].recheck()
+	}
+}
 
 // Update handles a key while the form has the focus. act is Keys.Save where the save key was pressed, from any
 // field, and Keys.Enter where enter was pressed on a list field, whose editor the application opens. handled is
@@ -575,6 +635,9 @@ func (f *Form) Act(id ActionID) (act ActionID, handled bool) {
 		return "", false
 	}
 	field := &f.fields[f.focus]
+	if f.cal {
+		return f.calendarAct(id)
+	}
 	if f.open {
 		switch id {
 		case k.Up:
@@ -590,6 +653,19 @@ func (f *Form) Act(id ActionID) (act ActionID, handled bool) {
 	}
 	switch id {
 	case k.Save:
+		// A date with a text that is no value is not saved as the value before it.
+		refused := false
+		for i := range f.fields {
+			if f.fields[i].issue != dateOK && f.takes(i) {
+				if !refused {
+					f.setFocus(i)
+				}
+				f.fields[i].refused, refused = true, true
+			}
+		}
+		if refused {
+			return "", true
+		}
 		return k.Save, true
 	case k.Back:
 		return "", false
@@ -601,6 +677,8 @@ func (f *Form) Act(id ActionID) (act ActionID, handled bool) {
 			f.capture = true
 		case FieldList:
 			return k.Enter, true
+		case FieldDate:
+			f.openCalendar()
 		default:
 			f.step(1)
 		}
@@ -627,7 +705,7 @@ func (f *Form) Act(id ActionID) (act ActionID, handled bool) {
 			f.changed(f.focus)
 		case FieldMultiple:
 			field.cursor = wrap(field.cursor+by, len(field.Choices))
-		case FieldText, FieldMasked:
+		case FieldText, FieldMasked, FieldDate:
 			field.line.move(field.line.cursor + by)
 		default:
 			return "", false
@@ -697,9 +775,14 @@ func (f *Form) enterSection(id SectionID) bool {
 // field gives it the focus and types nothing; on a choice field it also opens the list of values, and on a
 // list field it is enter. A key field takes a key from the second click on, as enter does. A click on a tick
 // box ticks its value, one on a value of the open list takes it, and one on a section goes to its first field.
+// The calendar symbol of a date field gives the field the focus and opens its calendar, as enter does; a click
+// on a day or a button of the open calendar does what its key does, and one anywhere else does nothing.
 func (f *Form) Click(r MouseResult) (act ActionID, handled bool) {
 	if !r.Handled || f.capture {
 		return "", false
+	}
+	if f.cal {
+		return f.calendarClick(r)
 	}
 	switch {
 	case strings.HasPrefix(r.Item, formFieldRef):
@@ -741,6 +824,14 @@ func (f *Form) Click(r MouseResult) (act ActionID, handled bool) {
 				return "", true
 			}
 		}
+	case strings.HasPrefix(r.Item, formCalendarRef):
+		i := f.index(FieldID(strings.TrimPrefix(r.Item, formCalendarRef)))
+		if i < 0 || !f.takes(i) || f.fields[i].Kind != FieldDate {
+			return "", false
+		}
+		f.setFocus(i)
+		f.openCalendar()
+		return "", true
 	case strings.HasPrefix(r.Item, formSectionRef):
 		id := SectionID(strings.TrimPrefix(r.Item, formSectionRef))
 		if _, ok := f.section(id); ok {
@@ -755,6 +846,17 @@ func (f *Form) Click(r MouseResult) (act ActionID, handled bool) {
 func (f *Form) Wheel(steps int) {
 	if f.open {
 		f.pick = WheelStep(f.pick, len(f.fields[f.focus].Choices), steps)
+		return
+	}
+	if f.cal {
+		// A notch moves the day by a week, as down and up do.
+		for range max(steps, -steps) {
+			if steps > 0 {
+				f.calendarAct(f.keys.Down)
+			} else {
+				f.calendarAct(f.keys.Up)
+			}
+		}
 		return
 	}
 	by := 1
@@ -775,6 +877,12 @@ func (f *Form) Hints() []Hint {
 	switch {
 	case f.capture:
 		return []Hint{{Action: k.Back, Label: TextKeyBack, Kind: HintAlways}}
+	case f.cal:
+		return []Hint{{Action: k.Enter, Label: TextKeyChoose}, {Action: k.Back, Label: TextKeyBack},
+			{Action: k.PageUp, Label: TextCalPrevMonth}, {Action: k.PageDown, Label: TextCalNextMonth},
+			{Action: k.First, Label: TextCalToday},
+			{Action: k.Up, Label: TextKeyUp, Kind: HintNavigation}, {Action: k.Down, Label: TextKeyDown, Kind: HintNavigation},
+			{Action: k.Left, Label: TextKeyLeft, Kind: HintNavigation}, {Action: k.Right, Label: TextKeyRight, Kind: HintNavigation}}
 	case f.open:
 		return []Hint{{Action: k.Enter, Label: TextKeyChoose}, {Action: k.Back, Label: TextKeyBack},
 			{Action: k.Up, Label: TextKeyUp, Kind: HintNavigation}, {Action: k.Down, Label: TextKeyDown, Kind: HintNavigation}}
@@ -787,6 +895,8 @@ func (f *Form) Hints() []Hint {
 		hints = append(hints, Hint{Action: k.Toggle, Label: TextKeyToggle})
 	case FieldKey, FieldList:
 		hints = append(hints, Hint{Action: k.Enter, Label: TextKeyEdit})
+	case FieldDate:
+		hints = append(hints, Hint{Action: k.Enter, Label: TextKeyCalendar})
 	}
 	hints = append(hints, Hint{Action: k.Save, Label: TextKeySave, Kind: HintAlways})
 	return append(hints, nav...)
