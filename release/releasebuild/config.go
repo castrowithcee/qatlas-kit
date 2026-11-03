@@ -13,6 +13,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/castrowithcee/qatlas-kit/sysservice"
 	"golang.org/x/crypto/ssh"
 )
 
@@ -34,6 +35,22 @@ type Config struct {
 	Files []File `json:"files"`
 	// Installer holds the texts of the installers.
 	Installer Installer `json:"installer"`
+	// Service, if set, builds the system service variant; see Service.
+	Service *Service `json:"service"`
+}
+
+// Service selects the system service variant: every archive carries the unit and install.sh installs the
+// program as a system service. It allows only linux/amd64 and linux/arm64 targets and therefore builds no
+// install.ps1. The unit must pass sysservice.ValidateUnit with the program, Groups and WritableConfig.
+type Service struct {
+	// Unit is the unit file, relative to the module directory.
+	Unit string `json:"unit"`
+	// Groups are the supplementary groups of the service user.
+	Groups []string `json:"groups"`
+	// AddInstallingUser lets a fresh installation add the installing user to the group of the program.
+	AddInstallingUser bool `json:"addInstallingUser"`
+	// WritableConfig makes the configuration directory writable for the service user.
+	WritableConfig bool `json:"writableConfig"`
 }
 
 // File copies Source, relative to the module directory, to Path inside each archive.
@@ -150,6 +167,29 @@ func (c Config) files() error {
 			if seen[dir] {
 				return fmt.Errorf("archive path %q is both a file and a directory", dir)
 			}
+		}
+	}
+	return nil
+}
+
+// service checks the parts of the Service that need no file access.
+func (c Config) service(program string) error {
+	s := c.Service
+	if s.Unit == "" {
+		return errors.New("service unit is required")
+	}
+	if !archivePath(s.Unit) {
+		return fmt.Errorf("service unit %q must be a clean path inside the module", s.Unit)
+	}
+	for _, t := range c.Targets {
+		if t != "linux/amd64" && t != "linux/arm64" {
+			return fmt.Errorf("service allows only linux/amd64 and linux/arm64 targets, not %q", t)
+		}
+	}
+	entry := sysservice.UnitEntry(program)
+	for _, f := range c.Files {
+		if f.Path == entry || strings.HasPrefix(entry, f.Path+"/") || strings.HasPrefix(f.Path, entry+"/") {
+			return fmt.Errorf("archive path %q conflicts with the service unit %q", f.Path, entry)
 		}
 	}
 	return nil

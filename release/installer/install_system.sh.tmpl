@@ -1,0 +1,262 @@
+#!/bin/sh
+# {{.DisplayName}} installer for Linux hosts with systemd. Run it as root:
+#
+#   curl -fsSL {{.ReleasesURL}}/latest/download/install.sh | sudo sh
+#   curl -fsSL {{.ReleasesURL}}/latest/download/install.sh | sudo sh -s -- v1.2.3
+#
+# Installs the newest stable release, or the tag given as argument or in {{.Env}}_VERSION, as the systemd
+# service {{.Program}}, which runs as the system user {{.Program}}; running it again updates the
+# installation and restarts the service. Nothing is changed unless every check of the host passes,
+# checksums.txt carries a valid signature of a release key embedded below and lists the SHA-256 of the
+# archive exactly once.
+#
+# Environment (all optional):
+#   {{.Env}}_VERSION           release tag to install instead of the newest stable release
+#   {{.Env}}_INSTALL_BASE_URL  releases URL to download from; it never changes which key is trusted
+#   {{.Env}}_INSTALL_ROOT      for tests only: prepended to every host path the script reads or writes
+set -eu
+umask 022
+
+program={{sh .Program}}
+display={{sh .DisplayName}}
+repo_url={{sh .ReleasesURL}}
+namespace={{sh .Namespace}}
+signers={{sh .Signers}}
+targets={{sh (join .Unix " ")}}
+groups={{sh (join .Groups " ")}}
+add_installing_user={{if .AddInstallingUser}}1{{end}}
+writable_config={{if .WritableConfig}}1{{end}}
+next_step={{sh .NextStep}}
+unit_entry={{sh .UnitEntry}}
+program_path={{sh .Paths.Program}}
+unit_path={{sh .Paths.Unit}}
+config_path={{sh .Paths.Config}}
+state_path={{sh .Paths.State}}
+man_path=/usr/local/share/man/man1
+doc_path=/usr/local/share/doc/$program
+override_path=/etc/systemd/system/$program.service
+
+fail() {
+	printf '%s-install: %s\n' "$program" "$*" >&2
+	exit 1
+}
+
+warn() {
+	printf '%s-install: warning: %s\n' "$program" "$*" >&2
+}
+
+# check_host verifies everything the installation needs; it changes nothing.
+check_host() {
+	case $root in
+	'' | /*) ;;
+	*) fail '{{.Env}}_INSTALL_ROOT must be an absolute path' ;;
+	esac
+	[ "$(uname -s)" = Linux ] || fail "unsupported operating system $(uname -s); $display installs as a systemd service on Linux only"
+	for tool in curl tar gzip awk grep cut tr cp mv rm mkdir mktemp chmod chown id getent groupadd useradd usermod systemctl ssh-keygen; do
+		command -v "$tool" >/dev/null 2>&1 || fail "$tool is required; nothing was installed"
+	done
+	if command -v sha256sum >/dev/null 2>&1; then
+		sha256() { sha256sum "$1" | cut -d ' ' -f 1; }
+	elif command -v shasum >/dev/null 2>&1; then
+		sha256() { shasum -a 256 "$1" | cut -d ' ' -f 1; }
+	else
+		fail 'sha256sum or shasum is required to verify the download'
+	fi
+	[ "$(id -u)" = 0 ] || fail 'this installer must run as root, for example with sudo'
+	[ -d "$root/run/systemd/system" ] || fail 'systemd is not running on this host'
+
+	case $(uname -m) in
+	x86_64 | amd64) arch=amd64 ;;
+	arm64 | aarch64) arch=arm64 ;;
+	*) arch=$(uname -m) ;;
+	esac
+	case " $targets " in
+	*" linux/$arch "*) ;;
+	*) fail "no release for linux/$arch; available: $targets" ;;
+	esac
+
+	for group in $groups; do
+		getent group "$group" >/dev/null 2>&1 || fail "the group $group does not exist; the service user needs it"
+	done
+	if { [ -e "$root$config_path" ] || [ -L "$root$config_path" ]; } && [ ! -d "$root$config_path" ]; then
+		fail "$config_path exists and is not a directory"
+	fi
+
+	if [ -e "$root$unit_path" ] || [ -L "$root$unit_path" ]; then fresh=; else fresh=1; fi
+	operator=
+	if [ -n "$add_installing_user" ] && [ -n "$fresh" ]; then
+		case ${SUDO_USER:-} in
+		'' | root) ;;
+		[!A-Za-z_]* | *[!A-Za-z0-9._-]*) fail "invalid user name '$SUDO_USER' in SUDO_USER" ;;
+		*)
+			id "$SUDO_USER" >/dev/null 2>&1 || fail "the user $SUDO_USER from SUDO_USER does not exist"
+			operator=$SUDO_USER
+			;;
+		esac
+	fi
+}
+
+# fetch_release downloads and verifies the release and extracts it into the private temporary directory.
+fetch_release() {
+	if [ -z "$version" ]; then
+		latest=$(curl -fsSIL -o /dev/null -w '%{url_effective}' "$base/latest") || fail 'could not determine the latest release'
+		version=${latest##*/}
+	fi
+	if ! printf '%s\n' "$version" | grep -Eq '^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$'; then
+		fail "invalid version '$version'; expected a tag such as v1.2.3 or v1.2.3-rc.1"
+	fi
+
+	archive="${program}_${version}_linux_${arch}.tar.gz"
+	tmp=$(mktemp -d "${TMPDIR:-/tmp}/$program-install.XXXXXX")
+
+	printf 'Downloading %s %s for linux/%s\n' "$display" "$version" "$arch"
+	for name in "$archive" checksums.txt checksums.txt.sig; do
+		curl -fsSL -o "$tmp/$name" "$base/download/$version/$name" || fail "download of $name failed"
+	done
+
+	printf '%s\n' "$signers" >"$tmp/allowed-signers"
+	ssh-keygen -Y verify -f "$tmp/allowed-signers" -I "$namespace" -n "$namespace" \
+		-s "$tmp/checksums.txt.sig" <"$tmp/checksums.txt" >/dev/null 2>&1 ||
+		fail 'signature of checksums.txt is invalid; nothing was installed'
+
+	want=$(awk -v n="$archive" 'NF == 2 { f = $2; sub(/^\*/, "", f) } NF == 2 && f == n { c++; h = tolower($1) } END { if (c == 1) print h }' "$tmp/checksums.txt")
+	printf '%s\n' "$want" | grep -Eq '^[0-9a-f]{64}$' ||
+		fail "checksums.txt does not list $archive exactly once with a SHA-256; nothing was installed"
+	got=$(sha256 "$tmp/$archive")
+	[ "$got" = "$want" ] || fail "SHA-256 mismatch for $archive; nothing was installed"
+
+	extract=$tmp/extract
+	mkdir "$extract"
+	tar -xzf "$tmp/$archive" -C "$extract" --no-same-owner || fail 'could not extract the archive; nothing was installed'
+	# A symlinked directory would let a regular file test below pass for a file outside the archive.
+	for dir in bin lib lib/systemd lib/systemd/system share share/man share/man/man1 share/doc "share/doc/$program"; do
+		[ ! -L "$extract/$dir" ] || fail "archive contains $dir as a symbolic link; nothing was installed"
+	done
+	for file in "bin/$program" "$unit_entry"; do
+		[ -f "$extract/$file" ] && [ ! -L "$extract/$file" ] || fail "archive does not contain $file; nothing was installed"
+	done
+}
+
+# ensure_accounts creates the service group and user, adds missing supplementary groups and, on a fresh
+# install, the installing user.
+ensure_accounts() {
+	if ! getent group "$program" >/dev/null 2>&1; then
+		groupadd --system "$program" || fail "could not create the group $program"
+	fi
+	if ! id "$program" >/dev/null 2>&1; then
+		useradd --system --gid "$program" --no-create-home --home-dir "$state_path" --shell "$(nologin_shell)" "$program" ||
+			fail "could not create the user $program"
+	fi
+	for group in $groups; do
+		if ! id -nG "$program" | tr ' ' '\n' | grep -qx "$group"; then
+			usermod -aG "$group" "$program" || fail "could not add the user $program to the group $group"
+		fi
+	done
+	if [ -n "$operator" ]; then
+		usermod -aG "$program" "$operator" || fail "could not add $operator to the group $program"
+	fi
+}
+
+# nologin_shell prints the first existing shell that refuses logins.
+nologin_shell() {
+	for shell in /usr/sbin/nologin /sbin/nologin; do
+		if [ -x "$root$shell" ]; then
+			printf '%s\n' "$shell"
+			return
+		fi
+	done
+	printf '/bin/false\n'
+}
+
+# ensure_config creates the configuration directory; an existing one is left as it is.
+ensure_config() {
+	[ ! -d "$root$config_path" ] || return 0
+	owner=root
+	[ -z "$writable_config" ] || owner=$program
+	mkdir -p "$root${config_path%/*}"
+	mkdir -m 0750 "$root$config_path"
+	chown "$owner:$program" "$root$config_path"
+}
+
+# install_files replaces the unit first and the program last, so a service that restarts on its own in
+# between never runs a new program under an old unit.
+install_files() {
+	mkdir -p "$root${unit_path%/*}" "$root$man_path" "$root$doc_path" "$root${program_path%/*}"
+	place "$extract/$unit_entry" "$root$unit_path" 0644
+	for page in "$extract"/share/man/man1/*.1; do
+		[ -f "$page" ] && [ ! -L "$page" ] || continue
+		place "$page" "$root$man_path/${page##*/}" 0644
+	done
+	for doc in "$extract/share/doc/$program"/*; do
+		[ -f "$doc" ] && [ ! -L "$doc" ] || continue
+		place "$doc" "$root$doc_path/${doc##*/}" 0644
+	done
+	place "$extract/bin/$program" "$root$program_path" 0755
+}
+
+# place installs src as dst, owned by root with mode, through a temporary file next to dst, so the final mv
+# is an atomic rename.
+place() {
+	staged=$(mktemp "${2%/*}/.$program-stage.XXXXXX")
+	cp "$1" "$staged"
+	chown root:root "$staged"
+	chmod "$3" "$staged"
+	mv -f "$staged" "$2"
+	staged=
+}
+
+start_service() {
+	if [ -e "$root$override_path" ] || [ -L "$root$override_path" ]; then
+		warn "$override_path overrides the installed unit $unit_path; remove it to use the installed unit"
+	fi
+	systemctl daemon-reload || fail 'systemctl daemon-reload failed'
+	if [ -n "$fresh" ]; then
+		systemctl enable --now "$program" || fail "could not enable and start $program"
+	else
+		systemctl enable "$program" || fail "could not enable $program"
+		systemctl restart "$program" || fail "could not restart $program"
+	fi
+}
+
+report() {
+	printf '\nInstalled %s %s as the service %s.service\n' "$display" "$version" "$program"
+	printf '  program: %s\n  unit:    %s\n  config:  %s\n  state:   %s\n  user:    %s\n' \
+		"$program_path" "$unit_path" "$config_path" "$state_path" "$program"
+	if [ -n "$operator" ]; then
+		printf '\nAdded %s to the group %s; it takes effect at the next login.\n' "$operator" "$program"
+	elif [ -n "$add_installing_user" ] && [ -n "$fresh" ]; then
+		printf '\nNo user was added to the group %s; add one with: usermod -aG %s <user>\n' "$program" "$program"
+	fi
+	if [ -n "$next_step" ]; then
+		printf '\n%s\n' "$next_step"
+	fi
+}
+
+cleanup() {
+	[ -z "$tmp" ] || rm -rf "$tmp"
+	[ -z "$staged" ] || rm -f "$staged"
+}
+
+main() {
+	[ $# -le 1 ] || fail 'usage: install.sh [<version>]'
+	base=${ {{- .Env}}_INSTALL_BASE_URL:-$repo_url}
+	base=${base%/}
+	root=${ {{- .Env}}_INSTALL_ROOT:-}
+	root=${root%/}
+	version=${1:-${ {{- .Env}}_VERSION:-}}
+	tmp=
+	staged=
+	trap cleanup EXIT
+	trap 'exit 1' HUP INT TERM
+
+	check_host
+	fetch_release
+	# Everything is verified; from here on the host changes.
+	ensure_accounts
+	ensure_config
+	install_files
+	start_service
+	report
+}
+
+main "$@"

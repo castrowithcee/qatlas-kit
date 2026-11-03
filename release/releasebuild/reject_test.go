@@ -198,11 +198,12 @@ func TestLoadConfig(t *testing.T) {
 		t.Fatalf("LoadConfig = %+v, %v", c, err)
 	}
 	for name, body := range map[string]string{
-		"unknown field":  `{"versionVariable": "main.version", "signingKey": "x"}`,
-		"trailing data":  `{"versionVariable": "main.version"} {}`,
-		"not an object":  `["main.version"]`,
-		"wrong type":     `{"targets": "linux/amd64"}`,
-		"nested unknown": `{"installer": {"displayName": "X", "trustedKey": "x"}}`,
+		"unknown field":         `{"versionVariable": "main.version", "signingKey": "x"}`,
+		"trailing data":         `{"versionVariable": "main.version"} {}`,
+		"not an object":         `["main.version"]`,
+		"wrong type":            `{"targets": "linux/amd64"}`,
+		"nested unknown":        `{"installer": {"displayName": "X", "trustedKey": "x"}}`,
+		"unknown service field": `{"service": {"unit": "x.service", "user": "root"}}`,
 	} {
 		t.Run(name, func(t *testing.T) {
 			if _, err := releasebuild.LoadConfig(write(body)); err == nil {

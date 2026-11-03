@@ -118,6 +118,95 @@ func TestRenderEmbedsParams(t *testing.T) {
 	}
 }
 
+func TestServiceValidation(t *testing.T) {
+	signer := releasetest.NewSigner(t)
+	valid := func() installer.Params {
+		p := testParams(t, signer, "linux/amd64", "linux/arm64")
+		p.Service = &installer.Service{Groups: []string{"sample-data"}}
+		return p
+	}
+	if _, err := installer.Shell(valid()); err != nil {
+		t.Fatalf("valid service rejected: %v", err)
+	}
+	if _, err := installer.PowerShell(valid()); err == nil {
+		t.Error("PowerShell accepted a service")
+	}
+	tests := map[string]func(*installer.Params){
+		"darwin target":        func(p *installer.Params) { p.Targets = append(p.Targets, "darwin/arm64") },
+		"windows target":       func(p *installer.Params) { p.Targets = append(p.Targets, "windows/amd64") },
+		"only darwin target":   func(p *installer.Params) { p.Targets = []string{"darwin/amd64"} },
+		"no target":            func(p *installer.Params) { p.Targets = nil },
+		"program too long":     func(p *installer.Params) { p.Program = "a" + strings.Repeat("b", 32) },
+		"group root":           func(p *installer.Params) { p.Service.Groups = []string{"root"} },
+		"group sudo":           func(p *installer.Params) { p.Service.Groups = []string{"sudo"} },
+		"group wheel":          func(p *installer.Params) { p.Service.Groups = []string{"wheel"} },
+		"group admin":          func(p *installer.Params) { p.Service.Groups = []string{"admin"} },
+		"group is the program": func(p *installer.Params) { p.Service.Groups = []string{testProgram} },
+		"duplicate group":      func(p *installer.Params) { p.Service.Groups = []string{"sample-data", "sample-data"} },
+		"group with quote":     func(p *installer.Params) { p.Service.Groups = []string{"data'x"} },
+		"group with space":     func(p *installer.Params) { p.Service.Groups = []string{"data x"} },
+		"group upper case":     func(p *installer.Params) { p.Service.Groups = []string{"Data"} },
+		"empty group":          func(p *installer.Params) { p.Service.Groups = []string{""} },
+	}
+	for name, mutate := range tests {
+		t.Run(name, func(t *testing.T) {
+			p := valid()
+			mutate(&p)
+			if out, err := installer.Shell(p); err == nil {
+				t.Errorf("Shell accepted invalid service params:\n%s", out)
+			}
+		})
+	}
+	p := valid()
+	p.Program = "a" + strings.Repeat("b", 31)
+	if _, err := installer.Shell(p); err != nil {
+		t.Errorf("32-character program name rejected: %v", err)
+	}
+}
+
+func TestServiceRendersSystemVariant(t *testing.T) {
+	signer := releasetest.NewSigner(t)
+	p := testParams(t, signer, "linux/amd64")
+	user, err := installer.Shell(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p.Service = &installer.Service{Groups: []string{"sample-data", "sample-dev"}, AddInstallingUser: true, WritableConfig: true}
+	out, err := installer.Shell(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	script := string(out)
+	for _, want := range []string{
+		"| sudo sh", testEnv + "_INSTALL_ROOT", testEnv + "_VERSION", testEnv + "_INSTALL_BASE_URL", p.ReleasesURL,
+		"groups='sample-data sample-dev'", "add_installing_user=1\n", "writable_config=1\n",
+		"unit_entry='lib/systemd/system/" + testProgram + ".service'",
+		"unit_path='/usr/local/lib/systemd/system/" + testProgram + ".service'",
+	} {
+		if !strings.Contains(script, want) {
+			t.Errorf("system install.sh lacks %q", want)
+		}
+	}
+	for _, unwanted := range []string{"{{", "<no value>", testEnv + "_INSTALL_PREFIX"} {
+		if strings.Contains(script, unwanted) {
+			t.Errorf("system install.sh contains %q", unwanted)
+		}
+	}
+	if script == string(user) {
+		t.Error("Service did not change install.sh")
+	}
+	p.Service = &installer.Service{}
+	out, err = installer.Shell(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"groups=''", "add_installing_user=\n", "writable_config=\n"} {
+		if !strings.Contains(string(out), want) {
+			t.Errorf("system install.sh without options lacks %q", want)
+		}
+	}
+}
+
 // release is a published test release of one archive.
 type release struct {
 	archive   []byte
@@ -126,8 +215,9 @@ type release struct {
 	namespace string
 }
 
-// publish adds tag to server with an archive holding program, a manpage and a license, signed by signer.
-func publish(t *testing.T, server *releasetest.Server, signer ssh.Signer, tag, archiveName, program string, mutate func(*release)) {
+// publish adds tag to server with an archive holding program, a manpage, a license and extra, signed by
+// signer.
+func publish(t *testing.T, server *releasetest.Server, signer ssh.Signer, tag, archiveName, program string, mutate func(*release), extra ...releasetest.File) {
 	t.Helper()
 	files := []releasetest.File{{Name: "bin/" + testProgram, Body: []byte(program)}}
 	if strings.HasSuffix(archiveName, ".zip") {
@@ -136,6 +226,7 @@ func publish(t *testing.T, server *releasetest.Server, signer ssh.Signer, tag, a
 		files = append(files, releasetest.File{Name: "share/man/man1/" + testProgram + ".1", Body: []byte(".TH SAMPLE 1 " + tag + "\n")})
 	}
 	files = append(files, releasetest.File{Name: "share/doc/" + testProgram + "/LICENSE", Body: []byte("license " + tag + "\n")})
+	files = append(files, extra...)
 	r := &release{archive: releasetest.Archive(t, archiveName, files...), signer: signer, namespace: testNamespace}
 	sum := sha256.Sum256(r.archive)
 	r.checksums = hex.EncodeToString(sum[:]) + "  " + archiveName + "\n" + strings.Repeat("1", 64) + "  install.sh\n"
