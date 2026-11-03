@@ -45,6 +45,8 @@ type formBlock struct {
 	targets []Target
 	// row is the line the value of the field starts on, and x the column, for the list of values.
 	row, x int
+	// top is the line the frame of the field starts on, which a calendar above it ends before.
+	top int
 }
 
 // formDrawing is a layout drawn into lines, with the position of the focused value.
@@ -52,6 +54,7 @@ type formDrawing struct {
 	lines   []string
 	targets []Target
 	row, x  int
+	top     int
 }
 
 // View draws the form with styles in width by height cells. Where the sections stand as a list at the left,
@@ -75,7 +78,7 @@ func (f *Form) View(styles Styles, width, height int) (string, []Target) {
 		if res != layoutDrawn {
 			return "", nil, res
 		}
-		view, targets := f.finish(d.lines, d.targets, d.row, d.x, width, height, styles)
+		view, targets := f.finish(d.lines, d.targets, d.row, d.top, d.x, width, height, styles)
 		return view, targets, res
 	}
 	if len(f.sections) >= 2 && width >= formListMinWidth {
@@ -105,7 +108,7 @@ func (f *Form) View(styles Styles, width, height int) (string, []Target) {
 
 // finish cuts the lines to the screen, draws the open list of values below the focused field and adds the
 // free area of the form beneath every other target.
-func (f *Form) finish(lines []string, targets []Target, row, x, width, height int, styles Styles) (string, []Target) {
+func (f *Form) finish(lines []string, targets []Target, row, above, x, width, height int, styles Styles) (string, []Target) {
 	out := make([]string, height)
 	for i := range out {
 		if i < len(lines) {
@@ -116,8 +119,30 @@ func (f *Form) finish(lines []string, targets []Target, row, x, width, height in
 	}
 	all := []Target{{Rect: Rect{Width: width, Height: height}, Zone: ZoneForm}}
 	for _, t := range targets {
-		if t.Rect.Y < height {
+		// Under the open calendar only the symbol of its own field still answers.
+		if t.Rect.Y < height && (!f.cal || t.Item == formCalendarRef+string(f.fields[f.focus].ID)) {
 			all = append(all, t)
+		}
+	}
+	if f.cal {
+		box, ts := f.calendar(styles)
+		boxW := lipgloss.Width(box[0])
+		x0 := max(min(x, width-boxW), 0)
+		// Below the field, else above it; it never covers the field itself.
+		top := row + 1
+		if top+len(box) > height && above-len(box) >= 0 {
+			top = above - len(box)
+		}
+		for i, line := range box {
+			if y := top + i; y < height {
+				line = Clip(line, width-x0)
+				out[y] = ansi.Cut(out[y], 0, x0) + line + ansi.Cut(out[y], x0+lipgloss.Width(line), width)
+			}
+		}
+		for _, t := range OffsetTargets(ts, x0, top) {
+			if t.Rect.Y < height && t.Rect.X+t.Rect.Width <= width {
+				all = append(all, t)
+			}
 		}
 	}
 	if f.open {
@@ -190,6 +215,7 @@ func (f *Form) drawBelow(lay formLayout, problems []string, width, height int, s
 		}
 		body.targets = OffsetTargets(body.targets, 0, top)
 		body.row += top
+		body.top += top
 		body.lines = append(append([]string(nil), problems...), body.lines...)
 		return body, layoutDrawn
 	}
@@ -217,7 +243,7 @@ func (f *Form) drawBelow(lay formLayout, problems []string, width, height int, s
 	}
 	content := append(head, body.lines...)
 	x0 := listWidth + 1 + 2
-	d := formDrawing{lines: problems, row: top + 1 + len(head) + body.row, x: x0 + body.x}
+	d := formDrawing{lines: problems, row: top + 1 + len(head) + body.row, top: top + 1 + len(head) + body.top, x: x0 + body.x}
 	panel := styles.Panel("", "", content, inner+4, len(content)+2, true)
 	for i := range max(len(panel), len(list)) {
 		left := strings.Repeat(" ", listWidth)
@@ -290,7 +316,7 @@ func (f *Form) fit(blocks []formBlock, height int, strict bool, styles Styles) (
 	}
 	for _, b := range blocks[start:end] {
 		if b.field == f.focus {
-			d.row, d.x = len(d.lines)+b.row, b.x
+			d.row, d.x, d.top = len(d.lines)+b.row, b.x, len(d.lines)+b.top
 		}
 		d.targets = append(d.targets, OffsetTargets(b.targets, 0, len(d.lines))...)
 		d.lines = append(d.lines, b.lines...)
@@ -380,7 +406,7 @@ func (f *Form) sectionTitle(s FormSection, styles Styles) (string, bool) {
 		text += " " + Escape(f.text.Lookup(TextFormSectionClosed))
 	}
 	for i := range f.fields {
-		if f.fields[i].Section == s.ID && len(f.problems[f.fields[i].ID]) > 0 {
+		if f.fields[i].Section == s.ID && (len(f.problems[f.fields[i].ID]) > 0 || f.dateShown(i)) {
 			text += " " + problemMark
 			break
 		}
@@ -462,7 +488,7 @@ func (f *Form) blocks(width int, boxed, headings bool, only SectionID, styles St
 		b := f.block(i, width, cols[field.Section], boxed, styles)
 		if head != nil {
 			n := len(head.lines)
-			b = formBlock{field: i, lines: append(head.lines, b.lines...), row: n + b.row, x: b.x,
+			b = formBlock{field: i, lines: append(head.lines, b.lines...), row: n + b.row, top: n + b.top, x: b.x,
 				targets: append(head.targets, OffsetTargets(b.targets, 0, n)...)}
 			head = nil
 		}
@@ -551,6 +577,9 @@ func (f *Form) block(i, width, labelCol int, boxed bool, styles Styles) formBloc
 	for _, p := range f.problems[field.ID] {
 		b.lines = append(b.lines, f.problemLines(p, width, indent, styles)...)
 	}
+	if p, ok := f.dateProblem(i); ok {
+		b.lines = append(b.lines, f.problemLines(p, width, indent, styles)...)
+	}
 	return b
 }
 
@@ -596,6 +625,28 @@ func (f *Form) valueLines(i, width int, styles Styles) ([]string, []Target) {
 			return hint(TextFormEmpty), nil
 		}
 		return []string{styles.Truncate(Escape(text), width)}, nil
+	case FieldDate:
+		symbol := styles.Glyph(GlyphCalendar)
+		sw := lipgloss.Width(symbol)
+		room, targets := width, []Target(nil)
+		if width-sw-1 >= minFlatValue {
+			// The symbol is the entry to the calendar and stays at the right end of the value.
+			room = width - sw - 1
+			targets = []Target{{Rect: Rect{X: room + 1, Width: sw, Height: 1}, Zone: ZoneForm, Action: f.keys.Enter, Item: formCalendarRef + string(field.ID)}}
+		}
+		var value string
+		switch {
+		case focused:
+			value = field.line.view(room, styles, true, "")
+		case text == "":
+			value = Pad(styles.Render(StyleHint, styles.Truncate(Escape(f.text.Lookup(TextFormEmpty)), room)), room)
+		default:
+			value = Pad(styles.Truncate(Escape(text), room), room)
+		}
+		if targets == nil {
+			return []string{value}, nil
+		}
+		return []string{value + " " + symbol}, targets
 	case FieldList:
 		if text == "" {
 			return hint(TextValueNone), nil

@@ -60,11 +60,46 @@ const (
 	TextCommandNoMatch TextID = "tui.command.nomatch"
 	TextCommandUnknown TextID = "tui.command.unknown"
 
+	TextKeyCalendar TextID = "tui.key.calendar"
+
+	TextCalTitle     TextID = "tui.calendar.title"
+	TextCalToday     TextID = "tui.calendar.today"
+	TextCalPrevMonth TextID = "tui.calendar.prevmonth"
+	TextCalNextMonth TextID = "tui.calendar.nextmonth"
+	TextCalWeekStart TextID = "tui.calendar.weekstart"
+	TextCalMonthJan  TextID = "tui.calendar.month.jan"
+	TextCalMonthFeb  TextID = "tui.calendar.month.feb"
+	TextCalMonthMar  TextID = "tui.calendar.month.mar"
+	TextCalMonthApr  TextID = "tui.calendar.month.apr"
+	TextCalMonthMay  TextID = "tui.calendar.month.may"
+	TextCalMonthJun  TextID = "tui.calendar.month.jun"
+	TextCalMonthJul  TextID = "tui.calendar.month.jul"
+	TextCalMonthAug  TextID = "tui.calendar.month.aug"
+	TextCalMonthSep  TextID = "tui.calendar.month.sep"
+	TextCalMonthOct  TextID = "tui.calendar.month.oct"
+	TextCalMonthNov  TextID = "tui.calendar.month.nov"
+	TextCalMonthDec  TextID = "tui.calendar.month.dec"
+	TextCalDaySun    TextID = "tui.calendar.day.sun"
+	TextCalDayMon    TextID = "tui.calendar.day.mon"
+	TextCalDayTue    TextID = "tui.calendar.day.tue"
+	TextCalDayWed    TextID = "tui.calendar.day.wed"
+	TextCalDayThu    TextID = "tui.calendar.day.thu"
+	TextCalDayFri    TextID = "tui.calendar.day.fri"
+	TextCalDaySat    TextID = "tui.calendar.day.sat"
+
 	TextFormEmpty         TextID = "tui.form.empty"
 	TextFormMaskedEntered TextID = "tui.form.maskedentered"
 	TextFormMaskedKept    TextID = "tui.form.maskedkept"
 	TextFormKeyPress      TextID = "tui.form.keypress"
 	TextFormSectionClosed TextID = "tui.form.sectionclosed"
+	TextFormDateFormat    TextID = "tui.form.dateformat"
+	TextFormDateNoSuch    TextID = "tui.form.datenosuch"
+	TextFormDateEarly     TextID = "tui.form.dateearly"
+	TextFormDateLate      TextID = "tui.form.datelate"
+	TextFormDateUseDate   TextID = "tui.form.dateusedate"
+	TextFormDateUseTime   TextID = "tui.form.dateusetime"
+	TextFormDateFrom      TextID = "tui.form.datefrom"
+	TextFormDateUntil     TextID = "tui.form.dateuntil"
 
 	TextLeaveTitle       TextID = "tui.leave.title"
 	TextLeaveConsequence TextID = "tui.leave.consequence"
@@ -176,6 +211,14 @@ func ModuleCatalog() i18n.Catalogs[TextID] {
 			TextFormMaskedKept:    "(stored, unchanged)",
 			TextFormKeyPress:      "press the new key",
 			TextFormSectionClosed: "(closed)",
+			TextFormDateFormat:    "not a date",
+			TextFormDateNoSuch:    "that date or time does not exist",
+			TextFormDateEarly:     "too early",
+			TextFormDateLate:      "too late",
+			TextFormDateUseDate:   "type it as YYYY-MM-DD",
+			TextFormDateUseTime:   "type it as YYYY-MM-DD HH:MM",
+			TextFormDateFrom:      "type %s or later",
+			TextFormDateUntil:     "type %s or earlier",
 
 			TextLeaveTitle:       "Unsaved changes",
 			TextLeaveConsequence: "Leaving drops them.",
@@ -190,6 +233,32 @@ func ModuleCatalog() i18n.Catalogs[TextID] {
 			TextHelpClose:      "close",
 			TextInfoLink:       "Documentation:",
 			TextInfoOpenLink:   "open link",
+
+			TextKeyCalendar:  "calendar",
+			TextCalTitle:     "%s %d",
+			TextCalToday:     "today",
+			TextCalPrevMonth: "previous month",
+			TextCalNextMonth: "next month",
+			TextCalWeekStart: "0",
+			TextCalMonthJan:  "January",
+			TextCalMonthFeb:  "February",
+			TextCalMonthMar:  "March",
+			TextCalMonthApr:  "April",
+			TextCalMonthMay:  "May",
+			TextCalMonthJun:  "June",
+			TextCalMonthJul:  "July",
+			TextCalMonthAug:  "August",
+			TextCalMonthSep:  "September",
+			TextCalMonthOct:  "October",
+			TextCalMonthNov:  "November",
+			TextCalMonthDec:  "December",
+			TextCalDaySun:    "Su",
+			TextCalDayMon:    "Mo",
+			TextCalDayTue:    "Tu",
+			TextCalDayWed:    "We",
+			TextCalDayThu:    "Th",
+			TextCalDayFri:    "Fr",
+			TextCalDaySat:    "Sa",
 
 			TextLogFollow:     "follow",
 			TextLogNextMatch:  "next match",
@@ -282,6 +351,14 @@ func ModuleCatalog() i18n.Catalogs[TextID] {
 			TextFormMaskedKept:    "(gespeichert, unverändert)",
 			TextFormKeyPress:      "neue Taste drücken",
 			TextFormSectionClosed: "(zu)",
+			TextFormDateFormat:    "kein Datum",
+			TextFormDateNoSuch:    "dieses Datum oder diese Uhrzeit gibt es nicht",
+			TextFormDateEarly:     "zu früh",
+			TextFormDateLate:      "zu spät",
+			TextFormDateUseDate:   "als JJJJ-MM-TT eingeben",
+			TextFormDateUseTime:   "als JJJJ-MM-TT HH:MM eingeben",
+			TextFormDateFrom:      "%s oder später eingeben",
+			TextFormDateUntil:     "%s oder früher eingeben",
 
 			TextLeaveTitle:       "Ungespeicherte Änderungen",
 			TextLeaveConsequence: "Beim Verlassen gehen sie verloren.",
@@ -296,6 +373,32 @@ func ModuleCatalog() i18n.Catalogs[TextID] {
 			TextHelpClose:      "Schließen",
 			TextInfoLink:       "Dokumentation:",
 			TextInfoOpenLink:   "Link öffnen",
+
+			TextKeyCalendar:  "Kalender",
+			TextCalTitle:     "%s %d",
+			TextCalToday:     "heute",
+			TextCalPrevMonth: "voriger Monat",
+			TextCalNextMonth: "nächster Monat",
+			TextCalWeekStart: "1",
+			TextCalMonthJan:  "Januar",
+			TextCalMonthFeb:  "Februar",
+			TextCalMonthMar:  "März",
+			TextCalMonthApr:  "April",
+			TextCalMonthMay:  "Mai",
+			TextCalMonthJun:  "Juni",
+			TextCalMonthJul:  "Juli",
+			TextCalMonthAug:  "August",
+			TextCalMonthSep:  "September",
+			TextCalMonthOct:  "Oktober",
+			TextCalMonthNov:  "November",
+			TextCalMonthDec:  "Dezember",
+			TextCalDaySun:    "So",
+			TextCalDayMon:    "Mo",
+			TextCalDayTue:    "Di",
+			TextCalDayWed:    "Mi",
+			TextCalDayThu:    "Do",
+			TextCalDayFri:    "Fr",
+			TextCalDaySat:    "Sa",
 
 			TextLogFollow:     "mitlaufen",
 			TextLogNextMatch:  "nächster Treffer",

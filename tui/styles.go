@@ -137,6 +137,7 @@ const (
 	GlyphTabSeparator              // between groups of tabs
 	GlyphInfo                      // more explanation on request
 	GlyphMask                      // one typed character of a masked field
+	GlyphCalendar                  // the symbol of a date field that opens its calendar
 	glyphCount
 )
 
@@ -154,6 +155,7 @@ var glyphs = [glyphCount][2]string{
 	GlyphTabSeparator: {"|", "|"},
 	GlyphInfo:         {" (i)", " (i)"},
 	GlyphMask:         {"•", "*"},
+	GlyphCalendar:     {"▦", "[#]"},
 }
 
 // Glyph is the form of g in the character set of the styles.
