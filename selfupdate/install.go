@@ -264,7 +264,8 @@ type fileOps struct {
 var osFileOps = fileOps{os.Rename, os.Remove, fileretry.Transient, nil}
 
 func (o fileOps) move(from, to string) error {
-	return fileretry.Do(func() error { return o.rename(from, to) }, o.transient, o.sleep)
+	return fileretry.Do(func() error { return o.rename(from, to) },
+		fileretry.Options{Transient: o.transient, Sleep: o.sleep})
 }
 
 func replaceWindows(ops fileOps, staged, target string) error {
