@@ -4,6 +4,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/charmbracelet/x/ansi"
 
@@ -461,6 +462,10 @@ func TestFrameEscapesControlCharacters(t *testing.T) {
 	spec := sampleSpec(200, 10)
 	spec.ActiveArea = "items"
 	spec.Product, spec.Position = hostile, hostile
+	spec.Icon, spec.Areas[1].Icon = hostile, hostile
+	if CheckFrame(spec) == nil {
+		t.Error("CheckFrame accepts a hostile icon")
+	}
 	spec.Status = []StatusMark{{Kind: StatusFail, Text: hostile}, {Text: hostile}}
 	spec.Message = &Message{Kind: MessageError, Text: hostile}
 	out, _ := f.Render(st, spec)
@@ -556,5 +561,171 @@ func TestCheckAreasRejectsWhatTheTabLineCannotDraw(t *testing.T) {
 		if err == nil || !strings.Contains(err.Error(), c.want) {
 			t.Errorf("%s: %v, want %q", name, err, c.want)
 		}
+	}
+}
+
+// Icons the tests draw: an emoji of two cells and private-use glyphs of a Nerd Font, which measure one.
+const (
+	iconHome  = "\U0001F3E0"
+	iconNerd  = ""
+	iconNerd2 = "\U000f0219"
+)
+
+func iconSpec(width int) FrameSpec {
+	spec := sampleSpec(width, 8)
+	spec.Icon = iconNerd
+	spec.Areas = sampleAreas()
+	spec.Areas[0].Icon = iconHome
+	spec.Areas[1].Icon = iconNerd2
+	spec.Areas[2].Icon = "✓"
+	spec.ActiveArea, spec.ActiveTab = "items", ""
+	return spec
+}
+
+func hostileIcons() []string { return []string{"\x1b", "❤️", "ab", "‮"} }
+
+func TestCheckFrameAndAreasRejectHostileIcons(t *testing.T) {
+	if err := CheckFrame(iconSpec(80)); err != nil {
+		t.Fatalf("icon spec: %v", err)
+	}
+	if err := CheckAreas(iconSpec(80).Areas); err != nil {
+		t.Fatalf("icon areas: %v", err)
+	}
+	for _, icon := range hostileIcons() {
+		spec := iconSpec(80)
+		spec.Icon = icon
+		if err := CheckFrame(spec); err == nil || !strings.Contains(err.Error(), "frame") {
+			t.Errorf("FrameSpec.Icon %q: %v", icon, err)
+		}
+		spec = iconSpec(80)
+		spec.Areas[1].Icon = icon
+		if err := CheckAreas(spec.Areas); err == nil || !strings.Contains(err.Error(), "area 2") {
+			t.Errorf("CheckAreas, Area.Icon %q: %v", icon, err)
+		}
+		if err := CheckFrame(spec); err == nil || !strings.Contains(err.Error(), "area 2") {
+			t.Errorf("CheckFrame, Area.Icon %q: %v", icon, err)
+		}
+		// A frame that was never checked still draws no raw glyph.
+		out, _ := NewFrame(sampleKeymap(t, CharsetUnicode), nil).Render(looks(t)["mono"], spec)
+		if strings.ContainsAny(out, "\x1b‮") && !strings.Contains(out, "\x1b[") {
+			t.Errorf("icon %q reaches the screen: %q", icon, out)
+		}
+	}
+}
+
+// The icon stands beside the name; an icon of the frame or an area never replaces it, and a private-use
+// character in text that is not an icon stays masked.
+func TestFrameDrawsIconsBesideNames(t *testing.T) {
+	f, _ := sampleFrame(t, looks(t)["mono"], i18n.English)
+	rows := plainRows(first(f.Render(iconSpec(100))))
+	if !strings.HasPrefix(rows[0], iconNerd+" example") {
+		t.Errorf("header: %q", rows[0])
+	}
+	for _, want := range []string{"1 " + iconHome + " Overview", "[2 " + iconNerd2 + " Items]", "3 ✓ Settings"} {
+		if !strings.Contains(rows[1], want) {
+			t.Errorf("tab line %q lacks %q", rows[1], want)
+		}
+	}
+	spec := iconSpec(100)
+	spec.Icon = ""
+	spec.Product = "x" + iconNerd
+	spec.Status = []StatusMark{{Text: iconNerd}}
+	out := ansi.Strip(first(f.Render(spec)))
+	row := strings.SplitN(out, "\n", 2)[0]
+	if strings.Contains(out, iconNerd) || strings.Count(row, "\\uf489") != 2 {
+		t.Errorf("private-use character in the product name or status is not masked: %q", row)
+	}
+}
+
+// Without UTF-8 no icon is drawn.
+func TestFrameWithoutUTF8DrawsNoIcon(t *testing.T) {
+	for _, look := range []string{"noneascii", "asciidark"} {
+		f, _ := sampleFrame(t, looks(t)[look], i18n.English)
+		out := ansi.Strip(first(f.Render(iconSpec(100))))
+		for _, icon := range []string{iconNerd, iconNerd2, iconHome, "✓"} {
+			if strings.Contains(out, icon) {
+				t.Errorf("%s: icon %q in %q", look, icon, out)
+			}
+		}
+	}
+}
+
+// The tab line gives up its icons before it gives up anything else, and the digit-only level holds none.
+func TestNarrowTabLineDropsIconsFirst(t *testing.T) {
+	f, _ := sampleFrame(t, looks(t)["mono"], i18n.English)
+	for _, c := range []struct {
+		width  int
+		want   []string
+		absent []string
+	}{
+		{80, []string{" 1 " + iconHome + " Overview ", "[2 " + iconNerd2 + " Items]", " 3 ✓ Settings "}, nil},
+		// Without icons the tab line still fits with its gaps.
+		{40, []string{" 1 Overview ", "[2 Items]", " 3 Settings "}, []string{iconHome, iconNerd2, "✓"}},
+		{34, []string{"1 Overview", "[2 Items]", "3 Settings"}, []string{iconHome, iconNerd2, "✓"}},
+		{20, []string{" 1 ", "[2 Items]", " 3"}, []string{iconHome, iconNerd2, "✓", "Overview"}},
+	} {
+		line := plainRows(first(f.Render(iconSpec(c.width))))[1]
+		for _, w := range c.want {
+			if !strings.Contains(line, w) {
+				t.Errorf("%d columns: %q lacks %q", c.width, line, w)
+			}
+		}
+		for _, a := range c.absent {
+			if strings.Contains(line, a) {
+				t.Errorf("%d columns: %q holds %q", c.width, line, a)
+			}
+		}
+	}
+}
+
+// A click target covers the icon of its tab.
+func TestTabTargetsIncludeTheIcon(t *testing.T) {
+	f, _ := sampleFrame(t, looks(t)["mono"], i18n.English)
+	spec := iconSpec(100)
+	out, targets := f.Render(spec)
+	cells := plainRows(out)[1]
+	want := map[AreaID]string{"overview": iconHome + " Overview", "items": iconNerd2 + " Items", "settings": "✓ Settings"}
+	n := 0
+	for _, tg := range targets {
+		if tg.Zone != ZoneTabs {
+			continue
+		}
+		n++
+		var covered strings.Builder
+		for x, w := 0, 0; x < tg.Rect.X+tg.Rect.Width; {
+			r, size := utf8.DecodeRuneInString(cells[w:])
+			if r == utf8.RuneError {
+				break
+			}
+			cw := ansi.StringWidth(string(r))
+			if x >= tg.Rect.X {
+				covered.WriteRune(r)
+			}
+			x += cw
+			w += size
+		}
+		if !strings.Contains(covered.String(), want[tg.Area]) {
+			t.Errorf("target %+v covers %q, want %q inside", tg, covered.String(), want[tg.Area])
+		}
+	}
+	if n != 3 {
+		t.Errorf("%d tab targets", n)
+	}
+}
+
+func TestGoldenFrameIcons(t *testing.T) {
+	for _, tt := range []struct {
+		name, look string
+		width      int
+	}{
+		{"frame.icons.wide.golden", "mono", 100},
+		{"frame.icons.narrow.golden", "mono", 40},
+		{"frame.icons.wide.dark.golden", "dark", 100},
+		{"frame.icons.noneascii.golden", "noneascii", 100},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			f, _ := sampleFrame(t, looks(t)[tt.look], i18n.English)
+			checkGolden(t, tt.name, first(f.Render(iconSpec(tt.width)))+"\n")
+		})
 	}
 }
