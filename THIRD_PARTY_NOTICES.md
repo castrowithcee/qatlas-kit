@@ -150,6 +150,11 @@ Components derived from `qatlas-cli` and `qatlas-sysmin` retain their original A
 | `qatlas-sysmin/internal/vault/snapshot.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Opening with the vault key alone (`vault/snapshot.go`) |
 | `qatlas-sysmin/internal/vault/vault.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Concurrency-safe vault value (`vault/vault.go`) |
 | `qatlas-sysmin/internal/vault/vault_test.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Vault rejection tests (`vault/vault_test.go`) |
+| `qatlas-cli/internal/vault/approval.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Labelled SHA-256 fingerprint over canonical JSON, approval record with state and time (`approval/fingerprint.go`, `approval/store.go`) |
+| `qatlas-cli/internal/approval/approval.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Open changes between approved and current state (`approval/store.go`, `approval/diff.go`) |
+| `qatlas-cli/internal/cli/admin.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Admin check with terminal and passphrase before an approval (`approval/admin.go`) |
+| `qatlas-sysmin/internal/approval/approval.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Approval bound to the fingerprint of the state that was shown, integrity check of approved states (`approval/store.go`) |
+| `qatlas-sysmin/internal/approval/diff.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Path diff of canonical documents (`approval/diff.go`) |
 | `qatlas-cli/internal/tui/theme.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Palette roles, hand-picked dark and light palettes, theme registry and text styles (`tui/palette.go`, `tui/theme.go`, `tui/styles.go`) |
 | `qatlas-cli/internal/tui/colorprofile.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Colour profile detection and NO_COLOR handling (`tui/color.go`) |
 | `qatlas-cli/internal/tui/termtheme.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Contrast, mixed terminal palette, plain palette and 256-colour stepping (`tui/color.go`, `tui/palette.go`, `tui/theme.go`) |

@@ -9,6 +9,7 @@ build on it, so a fix, especially a security fix, reaches each of them with a ve
 
 One line per package, in alphabetical order. The package documentation holds the contract.
 
+- [`approval`](approval): binds the use of a secret to a state a person approved, with fingerprints, a sealed approvals file and a readable diff.
 - [`archtest`](archtest): checks import boundaries, forbidden names, key literals and text catalogs of a module's source against exceptions that can only shrink.
 - [`auditlog`](auditlog): appends entries to daily files linked by a signed hash chain and verifies, reads and aggregates them.
 - [`background`](background): starts a detached background process and waits for its report.
