@@ -140,11 +140,11 @@ func TestLogViewFollowsNewLines(t *testing.T) {
 		t.Errorf("end does not resume:\n%s", strings.Join(rows, "\n"))
 	}
 	// The follow action pauses and resumes.
-	l.Update(typed('F'))
+	l.Update(typed('L'))
 	if l.Following() {
 		t.Error("the follow key does not pause")
 	}
-	l.Update(typed('F'))
+	l.Update(typed('L'))
 	if !l.Following() {
 		t.Error("the follow key does not resume")
 	}
@@ -491,7 +491,7 @@ func TestLogViewHints(t *testing.T) {
 		}
 		return strings.Join(parts, "|")
 	}
-	if got := plain(); !strings.Contains(got, "/ search") || !strings.Contains(got, "F follow") || strings.Contains(got, "next match") {
+	if got := plain(); !strings.Contains(got, "/ search") || !strings.Contains(got, "L follow") || strings.Contains(got, "next match") {
 		t.Errorf("hints = %q", got)
 	}
 	l.Append(LogLine{Text: "abc"})

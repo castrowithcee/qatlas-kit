@@ -118,6 +118,13 @@ func TestLogsQuery(t *testing.T) {
 		{LogOptions{}, url.Values{"stdout": {"1"}, "stderr": {"1"}, "timestamps": {"1"}, "tail": {"all"}}},
 		{LogOptions{Since: since, Tail: 25, Follow: true}, url.Values{"stdout": {"1"}, "stderr": {"1"}, "timestamps": {"1"},
 			"tail": {"25"}, "since": {"1700000000.000005000"}, "follow": {"1"}}},
+		{LogOptions{Since: since, Until: time.Unix(1700000060, 123456789)}, url.Values{"stdout": {"1"},
+			"stderr": {"1"}, "timestamps": {"1"}, "tail": {"all"}, "since": {"1700000000.000005000"},
+			"until": {"1700000060.123456789"}}},
+		{LogOptions{Until: time.Unix(1700000060, 0), Follow: true}, url.Values{"stdout": {"1"}, "stderr": {"1"},
+			"timestamps": {"1"}, "tail": {"all"}, "until": {"1700000060.000000000"}, "follow": {"1"}}},
+		{LogOptions{Since: since, Until: since}, url.Values{"stdout": {"1"}, "stderr": {"1"}, "timestamps": {"1"},
+			"tail": {"all"}, "since": {"1700000000.000005000"}, "until": {"1700000000.000005000"}}},
 	}
 	for _, tt := range tests {
 		var got atomic.Value
@@ -398,6 +405,8 @@ func TestLogsRefusals(t *testing.T) {
 		"negative rate":           {MaxLinesPerSecond: -1},
 		"negative tail":           {Tail: -1},
 		"since before epoch":      {Since: time.Unix(-5, 0)},
+		"until before epoch":      {Until: time.Unix(-5, 0)},
+		"until before since":      {Since: time.Unix(1700000000, 1), Until: time.Unix(1700000000, 0)},
 	}
 	for name, opts := range bad {
 		_, err := c.Logs(context.Background(), "web", opts)

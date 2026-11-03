@@ -25,7 +25,9 @@
 // invalid UTF-8 is replaced by U+FFFD. MaxLinesPerSecond is enforced by backpressure: Next waits instead of
 // dropping lines. Only the wait for the answer's headers is bounded by Options.Timeout; a following stream
 // then ends with the context passed to Logs or with Close. To follow only new lines, set Follow with Since
-// set to time.Now. Log text is untrusted; a caller masks control characters before it shows it.
+// set to time.Now. Since and Until select a time range; Until before Since is refused. With Follow and Until
+// the stream ends only when the Engine ends it, Logs adds no end of its own. Log text is untrusted; a
+// caller masks control characters before it shows it.
 //
 // Start, Stop and Restart return nil once the Engine accepted the action; starting or stopping a container
 // that is already in that state is not an error. The grace period of Stop and Restart is rounded up to whole

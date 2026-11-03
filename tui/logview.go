@@ -75,7 +75,7 @@ const (
 // actions, so the table keeps one meaning per key.
 func LogViewActions() []Action {
 	return []Action{
-		{ID: ActionLogFollow, Level: LevelLetter, DefaultKeys: []string{"F"}, Help: TextLogFollow},
+		{ID: ActionLogFollow, Level: LevelLetter, DefaultKeys: []string{"L"}, Help: TextLogFollow},
 		{ID: ActionLogNextMatch, Level: LevelLetter, DefaultKeys: []string{"]"}, Help: TextLogNextMatch},
 		{ID: ActionLogPrevMatch, Level: LevelLetter, DefaultKeys: []string{"["}, Help: TextLogPrevMatch},
 		{ID: ActionLogWrap, Level: LevelLetter, DefaultKeys: []string{"w"}, Help: TextLogWrap},
