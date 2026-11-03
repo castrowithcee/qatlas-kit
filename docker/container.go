@@ -113,6 +113,7 @@ type inspectAnswer struct {
 	Config struct {
 		Image  string            `json:"Image"`
 		Env    []envName         `json:"Env"`
+		Tty    bool              `json:"Tty"`
 		Labels map[string]string `json:"Labels"`
 	} `json:"Config"`
 	Mounts []struct {

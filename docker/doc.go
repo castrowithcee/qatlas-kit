@@ -1,6 +1,6 @@
 // Package docker reads containers from a Docker Engine over its Unix socket: the container list, the
 // details of one container, the Compose projects the containers belong to, the containers that use a path,
-// and one reading of a container's CPU and memory use.
+// one reading of a container's CPU and memory use, and a container's logs as a stream of lines.
 //
 // The application names the socket in Options. The package opens no TCP or TLS connection and reads neither
 // environment variables nor the contexts of other tools. A request is bounded by Options.Timeout, and a
@@ -16,6 +16,15 @@
 // invalid answer output.CodeRuntime, and a malformed container reference output.CodeInvalidRequest. The
 // message never carries an answer body, a header or a value of the container. On Windows New returns an
 // *Error that wraps errors.ErrUnsupported.
+//
+// Logs returns a LogStream of lines with the Engine's timestamp and their source (stdout or stderr). The
+// multiplexed framing is checked strictly: an unknown source, a non-zero reserved byte, an oversized frame,
+// a stream that ends inside a frame and a line without a valid timestamp are output.CodeRuntime errors, not
+// a silent end. A line is cut at LogOptions.MaxLineBytes at a character boundary and marked Truncated, and
+// invalid UTF-8 is replaced by U+FFFD. MaxLinesPerSecond is enforced by backpressure: Next waits instead of
+// dropping lines. Only the wait for the answer's headers is bounded by Options.Timeout; a following stream
+// then ends with the context passed to Logs or with Close. To follow only new lines, set Follow with Since
+// set to time.Now. Log text is untrusted; a caller masks control characters before it shows it.
 //
 // Environment variables of a container are returned by name only; the values are dropped while the answer
 // is decoded.
