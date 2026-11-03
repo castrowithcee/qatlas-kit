@@ -47,6 +47,9 @@ type LogOptions struct {
 	// Since limits the stream to lines at or after this time; zero means from the start. To follow only
 	// new lines, set Follow with Since to time.Now().
 	Since time.Time
+	// Until limits the stream to lines at or before this time; zero means without an end. With Follow the
+	// stream ends when the Engine ends it; Logs adds no end of its own.
+	Until time.Time
 	// Tail limits the stream to the last n lines; zero means all lines.
 	Tail int
 	// Follow keeps the stream open and delivers new lines until the context ends or the stream is closed.
@@ -113,7 +116,8 @@ func (c *Client) Logs(ctx context.Context, ref string, opts LogOptions) (*LogStr
 		return nil, err
 	}
 	if opts.MaxLineBytes < 0 || opts.MaxLineBytes > MaxLogLineBytes || opts.MaxLinesPerSecond < 0 ||
-		opts.Tail < 0 || !opts.Since.IsZero() && opts.Since.Unix() < 0 {
+		opts.Tail < 0 || !opts.Since.IsZero() && opts.Since.Unix() < 0 ||
+		!opts.Until.IsZero() && (opts.Until.Unix() < 0 || opts.Until.Before(opts.Since)) {
 		return nil, &Error{Code: output.CodeInvalidRequest, Message: "the log options are not valid"}
 	}
 	maxLine := opts.MaxLineBytes
@@ -138,7 +142,10 @@ func (c *Client) Logs(ctx context.Context, ref string, opts LogOptions) (*LogStr
 		query.Set("tail", strconv.Itoa(opts.Tail))
 	}
 	if !opts.Since.IsZero() {
-		query.Set("since", strconv.FormatInt(opts.Since.Unix(), 10)+"."+nanos(opts.Since.Nanosecond()))
+		query.Set("since", unixStamp(opts.Since))
+	}
+	if !opts.Until.IsZero() {
+		query.Set("until", unixStamp(opts.Until))
 	}
 	if opts.Follow {
 		query.Set("follow", "1")
@@ -167,9 +174,10 @@ func (c *Client) Logs(ctx context.Context, ref string, opts LogOptions) (*LogStr
 	}, nil
 }
 
-func nanos(n int) string {
-	s := strconv.Itoa(n)
-	return strings.Repeat("0", 9-len(s)) + s
+// unixStamp formats t as the Engine expects it: seconds with a nine-digit fraction.
+func unixStamp(t time.Time) string {
+	n := strconv.Itoa(t.Nanosecond())
+	return strconv.FormatInt(t.Unix(), 10) + "." + strings.Repeat("0", 9-len(n)) + n
 }
 
 // Next returns the next line, or io.EOF at the end of the log. After an error every call returns it again.
