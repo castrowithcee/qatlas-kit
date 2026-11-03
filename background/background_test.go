@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"net"
 	"os"
 	"os/exec"
 	"strconv"
@@ -85,9 +86,22 @@ func TestBackgroundHelper(t *testing.T) {
 		if err != nil {
 			continue
 		}
-		_, _ = conn.Write(data)
-		_ = conn.Close()
+		handOut(conn, data)
 	}
+}
+
+// handOut keeps the connection until the client has read data: macOS cannot
+// read peer credentials once this side has closed, and the client checks them
+// right after connecting.
+func handOut(conn net.Conn, data []byte) {
+	defer conn.Close()
+	_, _ = conn.Write(data)
+	half, ok := conn.(interface{ CloseWrite() error })
+	if !ok || half.CloseWrite() != nil {
+		return // Windows pipes have no half-close and check the peer by handle
+	}
+	_ = conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+	_, _ = io.Copy(io.Discard, conn)
 }
 
 // TestStarterHelper starts the background process and exits at once, as a short-lived command would.
