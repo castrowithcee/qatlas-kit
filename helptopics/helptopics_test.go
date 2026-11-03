@@ -45,3 +45,51 @@ func TestSharedTopicText(t *testing.T) {
 		}
 	}
 }
+
+func sampleTerms() []Term {
+	return []Term{
+		{ID: "term.bed", Title: "Bed", Text: "A bed is one patch of soil. Several plants can share a bed."},
+		{ID: "term.pump", Title: "Pump", Text: "The pump waters a bed. It runs for a minute? It stops by itself!"},
+	}
+}
+
+func TestLookupTerm(t *testing.T) {
+	terms := sampleTerms()
+	if got, ok := LookupTerm(terms, "term.pump"); !ok || got != terms[1] {
+		t.Fatalf("LookupTerm(term.pump) = %#v, %v", got, ok)
+	}
+	if _, ok := LookupTerm(terms, "term.nothing"); ok {
+		t.Fatal("an unknown ID was found")
+	}
+}
+
+func TestCheckTermsRejectsBrokenTerms(t *testing.T) {
+	if err := CheckTerms(sampleTerms()); err != nil {
+		t.Fatal(err)
+	}
+	if err := CheckTerms(nil); err != nil {
+		t.Fatalf("no terms: %v", err)
+	}
+	for _, tt := range []struct {
+		name string
+		edit func(*Term)
+		want string
+	}{
+		{"empty ID", func(term *Term) { term.ID = "" }, "an ID"},
+		{"blank in ID", func(term *Term) { term.ID = "term bed" }, "an ID"},
+		{"control in ID", func(term *Term) { term.ID = "term.\x1bbed" }, "an ID"},
+		{"repeated ID", func(term *Term) { term.ID = "term.pump" }, "listed twice"},
+		{"empty title", func(term *Term) { term.Title = " " }, "a title"},
+		{"title of two lines", func(term *Term) { term.Title = "Bed\nSoil" }, "a title"},
+		{"empty text", func(term *Term) { term.Text = "" }, "a text"},
+		{"control in text", func(term *Term) { term.Text = "A bed\x1b[2J is soil." }, "a text"},
+		{"line break in text", func(term *Term) { term.Text = "A bed.\nIt is soil." }, "a text"},
+		{"four sentences", func(term *Term) { term.Text = "One. Two. Three. Four." }, "4 sentences"},
+	} {
+		terms := sampleTerms()
+		tt.edit(&terms[0])
+		if err := CheckTerms(terms); err == nil || !strings.Contains(err.Error(), tt.want) {
+			t.Errorf("%s: %v, want %q", tt.name, err, tt.want)
+		}
+	}
+}

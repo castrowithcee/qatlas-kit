@@ -10,6 +10,9 @@ import (
 // AreaID is the stable, untranslated ID of an area of the tab line.
 type AreaID string
 
+// TabID is the stable, untranslated ID of a sub-tab of an area.
+type TabID string
+
 // Area is one tab of the tab line: a task the person came to do. An area with more than one tab shows
 // them as sub-tabs below the tab line; it opens on its first.
 type Area struct {
@@ -20,7 +23,7 @@ type Area struct {
 
 // Tab is one sub-tab of an area.
 type Tab struct {
-	ID    string
+	ID    TabID
 	Title TextID
 }
 
@@ -28,13 +31,16 @@ type Tab struct {
 type Rect struct{ X, Y, Width, Height int }
 
 // Target is a part of a drawn screen a click can reach: a key that triggers Action, or a tab that opens
-// Area and, on the sub-tab line, Tab.
+// Area and, on the sub-tab line, Tab. A target with nothing but a zone is the free area of that zone.
 type Target struct {
 	Rect   Rect
 	Zone   FocusZone
 	Action ActionID
 	Area   AreaID
-	Tab    string
+	Tab    TabID
+	// Item names the element a click hit inside a part that draws many, such as a row of a list or a field
+	// of a filter bar. It is opaque: the part that drew the target reads it back in its Click.
+	Item string
 }
 
 // StatusMark is a part of the header after the product name. Kind gives it the status glyph in its colour
@@ -64,7 +70,7 @@ type FrameSpec struct {
 	HeaderKeys []Hint
 	Areas      []Area
 	ActiveArea AreaID
-	ActiveTab  string
+	ActiveTab  TabID
 	Focus      FocusZone
 	// Input is the input focus of the screen; hints show only the keys that act in it.
 	Input     InputFocus
@@ -78,25 +84,43 @@ type FrameSpec struct {
 // Frame draws the frame every screen of one TUI stands in: header, tab line, sub-tabs, rule, workspace and
 // footer. It holds no state of its own; every Render draws from its FrameSpec alone.
 type Frame struct {
+	text Translator
+	keys *Keymap
+}
+
+// NewFrame returns a frame that takes its key labels from keys and its texts from text.
+func NewFrame(keys *Keymap, text Translator) *Frame {
+	return &Frame{text: text, keys: keys}
+}
+
+// frameRun is one drawing of a frame with the styles of that drawing.
+type frameRun struct {
 	styles Styles
 	text   Translator
 	keys   *Keymap
 }
 
-// NewFrame returns a frame that draws with styles, takes its texts from text and its key labels from keys.
-func NewFrame(styles Styles, text Translator, keys *Keymap) *Frame {
-	return &Frame{styles: styles, text: text, keys: keys}
-}
-
 // Workspace is the room the content of spec has: the full width between the rule and the footer, less the
 // rows of the message.
 func (f *Frame) Workspace(spec FrameSpec) Rect {
+	// The rows of the message do not depend on the styles.
+	return (&frameRun{text: f.text, keys: f.keys}).workspace(spec)
+}
+
+// Render draws spec with styles as exactly Height lines of exactly Width cells and returns the targets of the
+// drawn header keys, tabs and footer keys. The footer is always the last line; the workspace is cut or padded
+// to its rows, and a terminal lower than the frame loses the rows above the footer from the bottom up.
+func (f *Frame) Render(styles Styles, spec FrameSpec) (string, []Target) {
+	return (&frameRun{styles: styles, text: f.text, keys: f.keys}).render(spec)
+}
+
+func (f *frameRun) workspace(spec FrameSpec) Rect {
 	top, rows := f.rows(spec)
 	return Rect{X: 0, Y: top, Width: max(spec.Width, 0), Height: rows - len(f.messageLines(spec, rows))}
 }
 
 // rows are the number of rows above the workspace and the rows of the workspace.
-func (f *Frame) rows(spec FrameSpec) (top, workspace int) {
+func (f *frameRun) rows(spec FrameSpec) (top, workspace int) {
 	top = 2 // header and rule
 	if len(spec.Areas) > 0 {
 		top++
@@ -109,7 +133,7 @@ func (f *Frame) rows(spec FrameSpec) (top, workspace int) {
 
 // messageLines are the lines of the message within room rows; a message longer than the room keeps its
 // end, where the way out stands.
-func (f *Frame) messageLines(spec FrameSpec, room int) []string {
+func (f *frameRun) messageLines(spec FrameSpec, room int) []string {
 	if spec.Message == nil || spec.Message.Text == "" || room <= 0 {
 		return nil
 	}
@@ -117,10 +141,7 @@ func (f *Frame) messageLines(spec FrameSpec, room int) []string {
 	return lines[max(len(lines)-room, 0):]
 }
 
-// Render draws spec as exactly Height lines of exactly Width cells and returns the targets of the drawn
-// header keys, tabs and footer keys. The footer is always the last line; the workspace is cut or padded to
-// its rows, and a terminal lower than the frame loses the rows above the footer from the bottom up.
-func (f *Frame) Render(spec FrameSpec) (string, []Target) {
+func (f *frameRun) render(spec FrameSpec) (string, []Target) {
 	if spec.Height <= 0 {
 		return "", nil
 	}
@@ -171,7 +192,7 @@ func (f *Frame) Render(spec FrameSpec) (string, []Target) {
 	return strings.Join(lines, "\n"), targets
 }
 
-func (f *Frame) ruleChar() string {
+func (f *frameRun) ruleChar() string {
 	if f.styles.charset == CharsetUnicode {
 		return "─"
 	}
@@ -185,7 +206,7 @@ const headerGap = "  "
 // header keys dimmed at the right end. It stays one line: the marks take their short words, then the last
 // marks go, before the header keys go, and the header keys go before the back button; the name is cut
 // last.
-func (f *Frame) header(spec FrameSpec, width int) (string, []Target) {
+func (f *frameRun) header(spec FrameSpec, width int) (string, []Target) {
 	product := Escape(spec.Product)
 	var blocks []headerBlock
 	back, hasBack := f.headerBlock(spec, spec.Back)
@@ -254,7 +275,7 @@ func (b headerBlock) join(o headerBlock) headerBlock {
 }
 
 // headerBlock draws a hint as "[keys] label", dimmed; false where no key of it acts.
-func (f *Frame) headerBlock(spec FrameSpec, h *Hint) (headerBlock, bool) {
+func (f *frameRun) headerBlock(spec FrameSpec, h *Hint) (headerBlock, bool) {
 	if h == nil {
 		return headerBlock{}, false
 	}
@@ -276,7 +297,7 @@ func (f *Frame) headerBlock(spec FrameSpec, h *Hint) (headerBlock, bool) {
 
 // statusLevels are the marks the header tries, richest first: every mark in full, every mark short, and
 // then one mark fewer at a time.
-func (f *Frame) statusLevels(marks []StatusMark) [][]StatusMark {
+func (f *frameRun) statusLevels(marks []StatusMark) [][]StatusMark {
 	short := make([]StatusMark, len(marks))
 	for i, m := range marks {
 		short[i] = m
@@ -291,7 +312,7 @@ func (f *Frame) statusLevels(marks []StatusMark) [][]StatusMark {
 	return levels
 }
 
-func (f *Frame) headerLeft(product string, marks []StatusMark) string {
+func (f *frameRun) headerLeft(product string, marks []StatusMark) string {
 	parts := []string{f.styles.Render(StyleTitle, product)}
 	for _, m := range marks {
 		if m.Kind == "" {
@@ -304,7 +325,7 @@ func (f *Frame) headerLeft(product string, marks []StatusMark) string {
 }
 
 // focusMark leads a bar: "> " while it has the focus, blanks otherwise, so nothing moves.
-func (f *Frame) focusMark(focused bool) string {
+func (f *frameRun) focusMark(focused bool) string {
 	if focused {
 		return f.styles.Render(StyleActive, "> ")
 	}
@@ -314,7 +335,7 @@ func (f *Frame) focusMark(focused bool) string {
 // tabLine is the tab line: every area as "digit title", the active one as an accent fill, in brackets
 // without colour, and the others dimmed. Where the line does not fit, the gaps around the inactive tabs
 // close, then the inactive tabs shrink to their digit; the active tab stays whole.
-func (f *Frame) tabLine(spec FrameSpec, width int) (string, []Target) {
+func (f *frameRun) tabLine(spec FrameSpec, width int) (string, []Target) {
 	focused := spec.Focus == ZoneTabs
 	mark := f.focusMark(focused)
 	plain := f.styles.profile.Colorless()
@@ -370,7 +391,7 @@ func (f *Frame) tabLine(spec FrameSpec, width int) (string, []Target) {
 }
 
 // activeTab is the style of the active tab: the accent fill, bold without colour, where the brackets mark it.
-func (f *Frame) activeTab(plain bool) lipgloss.Style {
+func (f *frameRun) activeTab(plain bool) lipgloss.Style {
 	p := f.styles.palette
 	if plain || p.Accent == "" || f.styles.profile > ProfileTrueColor {
 		return f.styles.Style(StyleActiveRow)
@@ -394,10 +415,10 @@ func subTabs(spec FrameSpec) (Area, bool) {
 
 // subTabLine is the sub-tab line of area: its tabs as a tab strip, the active one as a selection fill and an
 // accent fill while the line has the focus. A line too narrow for every tab shows the active one alone.
-func (f *Frame) subTabLine(spec FrameSpec, area Area, width int) (string, []Target) {
+func (f *frameRun) subTabLine(spec FrameSpec, area Area, width int) (string, []Target) {
 	focused := spec.Focus == ZoneSubtabs
 	words := make([]string, len(area.Tabs))
-	ids := make([]string, len(area.Tabs))
+	ids := make([]TabID, len(area.Tabs))
 	active := -1
 	for i, t := range area.Tabs {
 		words[i] = lookup(f.text, t.Title)

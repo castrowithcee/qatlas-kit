@@ -7,14 +7,15 @@ import tea "charm.land/bubbletea/v2"
 const WheelTextLines = 3
 
 // MouseResult is what one mouse event asks for. A click names the target it hit: an action to run as its key
-// runs it, an area or tab to open as a tab click opens it, or a bare zone to focus as tab focuses it. A notch of
-// the wheel names the zone under the pointer, empty where none is, and WheelSteps is -1 up or 1 down. Handled
-// is false where the event does nothing.
+// runs it, an area or tab to open as a tab click opens it, an item for the Click of the part that drew it, or
+// a bare zone to focus as tab focuses it. A notch of the wheel names the zone under the pointer, empty where
+// none is, and WheelSteps is -1 up or 1 down. Handled is false where the event does nothing.
 type MouseResult struct {
 	Action     ActionID
 	Zone       FocusZone
 	Area       AreaID
-	Tab        string
+	Tab        TabID
+	Item       string
 	WheelSteps int
 	Handled    bool
 }
@@ -53,7 +54,7 @@ func (m *MouseMap) Handle(msg tea.MouseMsg) MouseResult {
 		if !ok {
 			return MouseResult{}
 		}
-		return MouseResult{Action: t.Action, Zone: t.Zone, Area: t.Area, Tab: t.Tab, Handled: true}
+		return MouseResult{Action: t.Action, Zone: t.Zone, Area: t.Area, Tab: t.Tab, Item: t.Item, Handled: true}
 	case tea.MouseWheelMsg:
 		steps := 0
 		switch event.Button {
@@ -83,7 +84,7 @@ func (m *MouseMap) at(x, y int, match func(Target) bool) (Target, bool) {
 }
 
 // element reports whether a click on t does more than focus its zone.
-func (t Target) element() bool { return t.Action != "" || t.Area != "" || t.Tab != "" }
+func (t Target) element() bool { return t.Action != "" || t.Area != "" || t.Tab != "" || t.Item != "" }
 
 // OffsetTargets returns targets moved by x columns and y rows, for a part drawn at that place of the screen.
 func OffsetTargets(targets []Target, x, y int) []Target {

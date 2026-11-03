@@ -98,9 +98,9 @@ func (s *Store[T]) sleep() func(time.Duration) {
 
 // retry repeats op while it fails transiently. A missing file is an answer, never transient.
 func (s *Store[T]) retry(op func() error) error {
-	return fileretry.Do(op, func(err error) bool {
+	return fileretry.Do(op, fileretry.Options{Transient: func(err error) bool {
 		return !errors.Is(err, os.ErrNotExist) && s.transient(err)
-	}, s.sleep())
+	}, Sleep: s.sleep()})
 }
 
 func revisionOf(data []byte) Revision {

@@ -39,10 +39,18 @@ func sampleAreas() []Area {
 	}
 }
 
-func sampleFrame(t *testing.T, st Styles, lang i18n.Lang) (*Frame, *Keymap) {
+// styledFrame is a frame with the styles every Render of a test draws with.
+type styledFrame struct {
+	*Frame
+	styles Styles
+}
+
+func (f styledFrame) Render(spec FrameSpec) (string, []Target) { return f.Frame.Render(f.styles, spec) }
+
+func sampleFrame(t *testing.T, st Styles, lang i18n.Lang) (styledFrame, *Keymap) {
 	t.Helper()
 	keys := sampleKeymap(t, st.Charset())
-	return NewFrame(st, newTranslator(t, lang, frameCatalogs(), keys), keys), keys
+	return styledFrame{NewFrame(keys, newTranslator(t, lang, frameCatalogs(), keys)), st}, keys
 }
 
 func sampleSpec(width, height int) FrameSpec {
@@ -368,8 +376,8 @@ func TestTargetsCoverWhatTheyName(t *testing.T) {
 			case tg.Zone == ZoneTabs:
 				found["tab "+string(tg.Area)] = true
 			case tg.Zone == ZoneSubtabs:
-				found["sub "+tg.Tab] = true
-				if !strings.Contains(strings.ToLower(cells), tg.Tab[:min(3, len(tg.Tab))]) {
+				found["sub "+string(tg.Tab)] = true
+				if !strings.Contains(strings.ToLower(cells), string(tg.Tab)[:min(3, len(tg.Tab))]) {
 					t.Errorf("%d columns: sub-tab %q covers %q", width, tg.Tab, cells)
 				}
 			case r.Y == 0:
@@ -439,13 +447,13 @@ func TestFrameEscapesControlCharacters(t *testing.T) {
 	keys := sampleKeymap(t, st.Charset())
 	cat := frameCatalogs()
 	cat[i18n.English]["ex.items"] = hostile
-	f := NewFrame(st, newTranslator(t, i18n.English, cat, keys), keys)
+	f := NewFrame(keys, newTranslator(t, i18n.English, cat, keys))
 	spec := sampleSpec(200, 10)
 	spec.ActiveArea = "items"
 	spec.Product, spec.Position = hostile, hostile
 	spec.Status = []StatusMark{{Kind: StatusFail, Text: hostile}, {Text: hostile}}
 	spec.Message = &Message{Kind: MessageError, Text: hostile}
-	out, _ := f.Render(spec)
+	out, _ := f.Render(st, spec)
 	if strings.ContainsAny(out, "\x1b\x07\r\u009b‮") {
 		t.Errorf("the frame passes a control character: %q", out)
 	}
