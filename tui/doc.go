@@ -128,6 +128,7 @@
 // the problems back with SetProblems. Enter never saves: it goes to the next field, opens the values of a
 // choice, starts taking a key, or yields the enter key on a list field, whose editor the application opens. A
 // choice holds known values only, a multiple choice ticks them, and the values a form returns are stable IDs.
+// Tab and shift+tab cycle through the fields, from the last to the first and back.
 // A masked field never shows what is typed, not in its row, a target or a problem, and is never handed a
 // stored secret: Stored says one exists, which an empty field keeps. Each problem stands under its field
 // until that field changes, a problem without a field above the form, and a section with a problem carries a

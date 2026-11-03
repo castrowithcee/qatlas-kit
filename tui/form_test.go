@@ -192,32 +192,95 @@ func TestSaveFromEveryFieldAndEnterNeverSaves(t *testing.T) {
 	}
 }
 
-func TestFormMovesBetweenFieldsAndLeavesTheEnds(t *testing.T) {
+func TestFormTabCyclesThroughTheFields(t *testing.T) {
 	f := newSampleForm(t, i18n.English, nil)
 	if _, handled := formKeys(f, "up"); handled {
 		t.Error("up on the first field is the application's, for the zone above")
 	}
-	if _, handled := f.Update(press("shift+tab")); handled {
-		t.Error("shift+tab on the first field is the application's")
+	if _, handled := f.Update(press("shift+tab")); !handled || f.Focused() != "notes" {
+		t.Errorf("shift+tab on the first field gave focus %q; it wraps to the last field", f.Focused())
 	}
 	var seen []string
-	for {
+	for range 6 {
 		seen = append(seen, string(f.Focused()))
 		if _, handled := f.Update(press("tab")); !handled {
-			break
+			t.Fatal("tab is always taken")
 		}
 	}
-	if got := strings.Join(seen, ","); got != "name,kind,water,token,notes" {
-		t.Errorf("tab walks %s; the read-only field and the closed section are stepped over", got)
+	if got := strings.Join(seen, ","); got != "notes,name,kind,water,token,notes" {
+		t.Errorf("tab walks %s; it wraps from the last field to the first and steps over the read-only field and the closed section", got)
 	}
+	for _, want := range []FieldID{"notes", "token", "water", "kind", "name"} {
+		if _, handled := f.Update(press("shift+tab")); !handled || f.Focused() != want {
+			t.Fatalf("shift+tab gave focus %q, want %q", f.Focused(), want)
+		}
+	}
+	f.Focus("notes")
 	if _, handled := formKeys(f, "down"); !handled || f.Focused() != "notes" {
-		t.Error("down on the last field moves on or is not taken")
+		t.Error("down on the last field stays")
 	}
 	if _, handled := f.Update(press("esc")); handled {
 		t.Error("back is the application's, which asks before it leaves a changed form")
 	}
 	if _, handled := f.Update(press("q")); handled {
 		t.Error("a letter the form does not read is taken")
+	}
+}
+
+func TestFormTabWrapsOverAnOpenSection(t *testing.T) {
+	f := newSampleForm(t, i18n.English, nil)
+	f.Focus("key")
+	if _, handled := f.Update(press("tab")); !handled || f.Focused() != "soil" {
+		t.Fatalf("tab in the open section gave %q", f.Focused())
+	}
+	if _, handled := f.Update(press("tab")); !handled || f.Focused() != "name" {
+		t.Errorf("tab on the last field gave %q; it wraps to the first", f.Focused())
+	}
+}
+
+func TestFormWithOneFieldKeepsTheFocus(t *testing.T) {
+	f := newSampleForm(t, i18n.English, func(s *FormSpec) {
+		s.Sections, s.Fields = nil, []FormField{
+			{ID: "name", Kind: FieldText, Label: "f.name"}, {ID: "origin", Kind: FieldReadOnly, Label: "f.origin"}}
+	})
+	for _, k := range []string{"tab", "shift+tab"} {
+		if _, handled := f.Update(press(k)); !handled || f.Focused() != "name" {
+			t.Errorf("%s gave focus %q handled %v; the only field keeps the focus", k, f.Focused(), handled)
+		}
+	}
+}
+
+func TestFormTabChangesNothingWhileAListCalendarOrKeyTakesTheKeys(t *testing.T) {
+	f := newSampleForm(t, i18n.English, nil)
+	f.Focus("kind")
+	f.Update(press("enter"))
+	if !f.open {
+		t.Fatal("enter does not open the list")
+	}
+	for _, k := range []string{"tab", "shift+tab"} {
+		if _, handled := f.Update(press(k)); !handled || f.Focused() != "kind" || !f.open {
+			t.Errorf("%s with an open list: focus %q open %v handled %v", k, f.Focused(), f.open, handled)
+		}
+	}
+	f.Focus("key")
+	f.Update(press("enter"))
+	if !f.capture {
+		t.Fatal("enter does not start taking a key")
+	}
+	f.Update(press("tab"))
+	if f.Focused() != "key" || f.capture {
+		t.Errorf("a key taken while capturing: focus %q capture %v", f.Focused(), f.capture)
+	}
+	d := newDateForm(t, i18n.English, nil)
+	d.Focus("until")
+	d.Update(press("enter"))
+	if !d.cal {
+		t.Fatal("enter does not open the calendar")
+	}
+	for _, k := range []string{"tab", "shift+tab"} {
+		if _, handled := d.Update(press(k)); d.Focused() != "until" || !d.cal {
+			t.Errorf("%s with an open calendar: focus %q cal %v handled %v", k, d.Focused(), d.cal, handled)
+		}
 	}
 }
 

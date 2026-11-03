@@ -477,6 +477,18 @@ func (f *Form) step(by int) bool {
 	return false
 }
 
+// wrap moves the focus like step but continues at the other end, so tab and shift+tab cycle through the fields;
+// a single field that takes input keeps the focus.
+func (f *Form) wrap(by int) {
+	n := len(f.fields)
+	for i := 1; i < n; i++ {
+		if j := ((f.focus+by*i)%n + n) % n; f.takes(j) {
+			f.setFocus(j)
+			return
+		}
+	}
+}
+
 func (f *Form) setFocus(i int) {
 	if i != f.focus {
 		f.open, f.capture, f.cal = false, false, false
@@ -586,8 +598,8 @@ func (f *Form) changed(i int) {
 // Update handles a key while the form has the focus. act is Keys.Save where the save key was pressed, from any
 // field, and Keys.Enter where enter was pressed on a list field, whose editor the application opens. handled is
 // false for a key the form leaves to the application: back, which leads to the leave question where Changed
-// says so, up above the first field and tab past the ends, which lead to the next zone, and every key it does
-// not read.
+// says so, up above the first field, which leads to the zone above, and every key it does not read. Tab and
+// shift+tab cycle through the fields and are always handled.
 func (f *Form) Update(msg tea.KeyPressMsg) (act ActionID, handled bool) {
 	if f.capture {
 		f.capture = false
@@ -688,12 +700,14 @@ func (f *Form) Act(id ActionID) (act ActionID, handled bool) {
 		}
 		field.ticked[field.cursor] = !field.ticked[field.cursor]
 		f.changed(f.focus)
-	case k.Up, k.Prev:
+	case k.Up:
 		return "", f.step(-1)
+	case k.Prev:
+		f.wrap(-1)
 	case k.Down:
 		f.step(1)
 	case k.Next:
-		return "", f.step(1)
+		f.wrap(1)
 	case k.Left, k.Right:
 		by := 1
 		if id == k.Left {
