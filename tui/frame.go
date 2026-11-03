@@ -28,13 +28,16 @@ type Tab struct {
 type Rect struct{ X, Y, Width, Height int }
 
 // Target is a part of a drawn screen a click can reach: a key that triggers Action, or a tab that opens
-// Area and, on the sub-tab line, Tab.
+// Area and, on the sub-tab line, Tab. A target with nothing but a zone is the free area of that zone.
 type Target struct {
 	Rect   Rect
 	Zone   FocusZone
 	Action ActionID
 	Area   AreaID
 	Tab    string
+	// Item names the element a click hit inside a part that draws many, such as a row of a list or a field
+	// of a filter bar. It is opaque: the part that drew the target reads it back in its Click.
+	Item string
 }
 
 // StatusMark is a part of the header after the product name. Kind gives it the status glyph in its colour
