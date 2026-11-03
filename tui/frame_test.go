@@ -136,6 +136,13 @@ func TestFrameKeepsItsOrderAndSize(t *testing.T) {
 
 func first(s string, _ []Target) string { return s }
 
+// footerOf is the footer rows of the frame spec draws, as the rows above and below it split them.
+func footerOf(f styledFrame, spec FrameSpec) string {
+	rows := plainRows(first(f.Render(spec)))
+	ws := f.Workspace(spec)
+	return strings.Join(rows[ws.Y+ws.Height:], "\n")
+}
+
 // A bar with the focus has "> " in front; the bar without it has blanks, so nothing moves.
 func TestFocusedBarCarriesTheMarker(t *testing.T) {
 	f, _ := sampleFrame(t, looks(t)["noneascii"], i18n.English)
@@ -286,12 +293,12 @@ func TestHintsFoldEqualLabels(t *testing.T) {
 // dropped.
 func TestFooterGivesWayByRank(t *testing.T) {
 	f, _ := sampleFrame(t, looks(t)["noneascii"], i18n.English)
-	spec := sampleSpec(0, 8)
+	spec := sampleSpec(0, 12)
 	order := []string{"up move", "3/12", "i info", "q quit", "F2 save", "enter open"}
 	gone := 0
 	for width := 100; width >= 1; width-- {
 		spec.Width = width
-		row := plainRows(first(f.Render(spec)))[7]
+		row := footerOf(f, spec)
 		if !strings.Contains(row, "? help") && width >= 6 {
 			t.Fatalf("%d columns drop the help key: %q", width, row)
 		}
@@ -315,13 +322,13 @@ func TestFooterGivesWayByRank(t *testing.T) {
 	}
 	for width := 60; width >= 16; width-- {
 		spec.Width = width
-		row := plainRows(first(f.Render(spec)))[7]
+		row := footerOf(f, spec)
 		if !strings.Contains(row, "? help") || !strings.Contains(row, "y ") || !strings.Contains(row, "n ") {
 			t.Errorf("%d columns drop an answer or the help key: %q", width, row)
 		}
 	}
 	spec.Width = 22
-	if row := plainRows(first(f.Render(spec)))[7]; !strings.Contains(row, "~") {
+	if row := footerOf(f, spec); !strings.Contains(row, "~") {
 		t.Errorf("a short answer carries no cut mark: %q", row)
 	}
 }
@@ -362,9 +369,11 @@ func TestFramesFollowTheirOwnKeymap(t *testing.T) {
 func TestTargetsCoverWhatTheyName(t *testing.T) {
 	f, keys := sampleFrame(t, looks(t)["noneascii"], i18n.English)
 	for _, width := range []int{100, 60, 30, 12} {
-		spec := sampleSpec(width, 9)
+		spec := sampleSpec(width, 12)
 		out, targets := f.Render(spec)
 		rows := plainRows(out)
+		ws := f.Workspace(spec)
+		footTop := ws.Y + ws.Height
 		found := map[string]bool{}
 		for _, tg := range targets {
 			r := tg.Rect
@@ -385,7 +394,7 @@ func TestTargetsCoverWhatTheyName(t *testing.T) {
 				if !strings.HasPrefix(cells, "["+keys.Label(tg.Action)+"]") {
 					t.Errorf("%d columns: header target %s covers %q", width, tg.Action, cells)
 				}
-			case r.Y == len(rows)-1:
+			case r.Y >= footTop:
 				found["foot "+string(tg.Action)] = true
 				if label := keys.Label(tg.Action); !strings.Contains(cells, label) && !strings.Contains(rows[r.Y], label+" "+cells) {
 					t.Errorf("%d columns: footer target %s covers %q", width, tg.Action, cells)
@@ -409,6 +418,7 @@ func TestTargetsCoverWhatTheyName(t *testing.T) {
 func TestMessageStandsUnderTheContent(t *testing.T) {
 	f, _ := sampleFrame(t, looks(t)["noneascii"], i18n.English)
 	spec := sampleSpec(30, 10)
+	spec.Footer = spec.Footer[:1]
 	spec.Message = &Message{Kind: MessageError, Text: "error: the sample store is gone; press esc"}
 	rows := plainRows(first(f.Render(spec)))
 	if got := f.Workspace(spec); got.Height != 3 {

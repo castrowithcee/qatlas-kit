@@ -175,11 +175,51 @@ func (it footerItem) dropOrder() (class, rank int, droppable bool) {
 	return 0, 0, false
 }
 
-// fitFooter drops groups until the line fits width, then shortens the labels of the answers, the longest
-// first. The remaining groups keep their order.
-func (s Styles) fitFooter(items []footerItem, width int) []footerItem {
+// footerRows is the number of lines the footer takes at width: one where every group fits, else two. It
+// depends on the plain texts alone, so it needs no styles.
+func footerRows(groups []HintGroup, position string, width int) int {
+	if width <= 0 || footerWidth(footerItems(groups, position)) <= width {
+		return 1
+	}
+	return 2
+}
+
+// splitFooter divides items over two lines: the groups at the left fill the first line, the rest and the
+// groups at the right end stand in the second. A group is never broken, so one that is wider than the
+// line stands alone in its line.
+func splitFooter(items []footerItem, width int) (first, second []footerItem) {
+	var left, right []footerItem
+	for _, it := range items {
+		if it.right {
+			right = append(right, it)
+		} else {
+			left = append(left, it)
+		}
+	}
+	n := 0
+	for n < len(left) && footerWidth(left[:n+1]) <= width {
+		n++
+	}
+	if n == 0 && len(left) > 0 {
+		n = 1
+	}
+	return left[:n], append(append([]footerItem(nil), left[n:]...), right...)
+}
+
+// fitsRows reports whether items fit width in rows lines (1 or 2).
+func fitsRows(items []footerItem, width, rows int) bool {
+	if rows < 2 {
+		return footerWidth(items) <= width
+	}
+	first, second := splitFooter(items, width)
+	return footerWidth(first) <= width && footerWidth(second) <= width
+}
+
+// fitFooter drops groups until the footer fits width in rows lines, then shortens the labels of the
+// answers, the longest first. The remaining groups keep their order.
+func (s Styles) fitFooter(items []footerItem, width, rows int) []footerItem {
 	items = append([]footerItem(nil), items...)
-	for footerWidth(items) > width {
+	for !fitsRows(items, width, rows) {
 		drop := -1
 		var bestClass, bestRank int
 		for i, it := range items {
@@ -196,7 +236,7 @@ func (s Styles) fitFooter(items []footerItem, width int) []footerItem {
 		}
 		items = append(items[:drop], items[drop+1:]...)
 	}
-	for footerWidth(items) > width {
+	for !fitsRows(items, width, rows) {
 		cut := -1
 		for i, it := range items {
 			w := lipgloss.Width(it.group.Label)
@@ -235,11 +275,39 @@ func footerWidth(items []footerItem) int {
 	return 0
 }
 
-// footer draws the footer line of width cells: the key groups at the left, the key of a group in
-// the footer key style and its label dimmed, navigation and position dimmed at the right end. Each key of
-// a group is a target for its action, the label one for the first action of the group.
+// footer draws the footer as one line of width cells.
 func (s Styles) footer(groups []HintGroup, position string, width int) (string, []Target) {
-	items := s.fitFooter(footerItems(groups, position), width)
+	lines, targets := s.footerLines(groups, position, width, 1)
+	return lines[0], targets
+}
+
+// footerLines draws the footer in exactly rows lines (1 or 2) of width cells: the key groups at the left, the
+// key of a group in the footer key style and its label dimmed, navigation and position dimmed at the right
+// end of the last line. Each key of a group is a target for its action, the label one for the first action
+// of the group; the targets count their Y from the first line.
+func (s Styles) footerLines(groups []HintGroup, position string, width, rows int) ([]string, []Target) {
+	items := s.fitFooter(footerItems(groups, position), width, rows)
+	parts := [][]footerItem{items}
+	if rows >= 2 {
+		if fitsRows(items, width, 1) {
+			parts = [][]footerItem{items, nil}
+		} else {
+			first, second := splitFooter(items, width)
+			parts = [][]footerItem{first, second}
+		}
+	}
+	lines := make([]string, len(parts))
+	var targets []Target
+	for y, part := range parts {
+		line, ts := s.footerRow(part, width)
+		lines[y] = line
+		targets = append(targets, OffsetTargets(ts, 0, y)...)
+	}
+	return lines, targets
+}
+
+// footerRow draws one line of the footer from items.
+func (s Styles) footerRow(items []footerItem, width int) (string, []Target) {
 	var left, right []footerItem
 	for _, it := range items {
 		if it.right {
