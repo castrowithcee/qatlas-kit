@@ -162,6 +162,12 @@ Components derived from `qatlas-cli` and `qatlas-sysmin` retain their original A
 | `qatlas-cli/internal/tui/canvas.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Painting every cell with the ground colour (`tui/styles.go`) |
 | `qatlas-cli/internal/tui/widgets.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Panel, tab strip, status mark, button and category mark (`tui/widgets.go`) |
 | `qatlas-cli/internal/tui/render.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Cell clipping, truncation, wrapping, padding and selected rows (`tui/widgets.go`, `tui/styles.go`) |
+| `qatlas-cli/internal/tui/layout.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Frame order, header layout and tab line narrowing (`tui/frame.go`) |
+| `qatlas-cli/internal/tui/areas.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Areas with sub-tabs and the sub-tab line (`tui/frame.go`) |
+| `qatlas-cli/internal/tui/footer.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Footer groups, ranks, dropping and shortening (`tui/footer.go`) |
+| `qatlas-cli/internal/tui/uniformkeys_test.go`, `qatlas-cli/internal/tui/keymap_test.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Zone order, tab wrap-around and footer key tests (`tui/frame_test.go`) |
+| `qatlas-sysmin/internal/tui/layout.go`, `qatlas-sysmin/internal/tui/areas.go`, `qatlas-sysmin/internal/tui/footer.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Header levels, bar focus mark and tab shrinking, compared with the CLI (`tui/frame.go`, `tui/footer.go`) |
+| `qatlas-sysmin/internal/tui/frame_bars_test.go`, `qatlas-sysmin/internal/tui/header_test.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Frame order, focus mark, narrow tab line and header tests (`tui/frame_test.go`) |
 | `qatlas-cli/internal/tui/titleline.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Title line (`tui/widgets.go`) |
 | `qatlas-cli/internal/tui/pickerbox.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Tick box (`tui/widgets.go`) |
 | `qatlas-cli/internal/tui/icons.go` | Copyright 2026 castrowithcee | AGPL-3.0 | UTF-8 terminal detection (`tui/color.go`) |
