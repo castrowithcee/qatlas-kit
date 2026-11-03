@@ -1,6 +1,6 @@
-# qatlas-kit
+# Qatlas Kit
 
-qatlas-kit is a Go module with reusable building blocks for terminal and command-line applications: CLI output
+Qatlas Kit is a Go module with reusable building blocks for terminal and command-line applications: CLI output
 and diagnostics, terminal user interface texts and preferences, configuration files, hash-chained logs, local
 processes and channels, an encrypted vault, and signed updates and releases. Several independent applications
 build on it, so a fix, especially a security fix, reaches each of them with a version upgrade.
