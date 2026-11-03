@@ -17,6 +17,7 @@ One line per package, in alphabetical order. The package documentation holds the
 - [`cmd/releasebuild`](cmd/releasebuild): runs `release/releasebuild` for the module in the current directory.
 - [`cobracli`](cobracli): applies the shared flags, help, version and error conventions to a Cobra command tree.
 - [`configfile`](configfile): writes configuration documents atomically, with locking, transactions and backups.
+- [`docker`](docker): reads containers from a Docker Engine over its Unix socket, groups them by Compose project, finds those that use a path and reads their CPU and memory use.
 - [`filelock`](filelock): provides an exclusive whole-file lock across processes.
 - [`fileretry`](fileretry): repeats a file operation that fails only because another process holds the file.
 - [`helptopics`](helptopics): shares plain-text help topics and terms between CLI, TUI and manpage.
