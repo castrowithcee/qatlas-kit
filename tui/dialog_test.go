@@ -43,15 +43,15 @@ func leaveSpec() DialogSpec {
 func confirmSpec() DialogSpec {
 	return DialogSpec{Title: "d.delete", Question: "Water every plant now?", Consequence: "The pump runs for a minute.",
 		Details: []string{"5 plants", "2 of them are resting"},
-		Answers: []Answer{{Action: "yes", Label: "a.yes"}, {Action: "no", Label: "a.no"}}, Default: "yes", Enter: "enter"}
+		Answers: []Answer{{Action: "yes", Label: "a.yes"}, {Action: "no", Label: "a.no"}}, Default: "yes", Keys: DialogKeys{Enter: "enter"}}
 }
 
 func unlockSpec() DialogSpec {
 	return DialogSpec{Title: "d.unlock", Question: "Type the passphrase of the shed.", Input: &DialogInput{Masked: true},
-		Answers: []Answer{{Action: "enter", Label: "a.unlock"}, {Action: "back", Label: "a.cancel"}}, Default: "enter", Enter: "enter"}
+		Answers: []Answer{{Action: "enter", Label: "a.unlock"}, {Action: "back", Label: "a.cancel"}}, Default: "enter", Keys: DialogKeys{Enter: "enter"}}
 }
 
-func newSampleDialog(t *testing.T, spec DialogSpec, lang i18n.Lang) *DialogModel {
+func newSampleDialog(t *testing.T, spec DialogSpec, lang i18n.Lang) *Dialog {
 	t.Helper()
 	keys := sampleKeymap(t, CharsetUnicode)
 	d, err := NewDialog(spec, keys, newTranslator(t, lang, dialogCatalogs(), keys))
@@ -83,14 +83,14 @@ func TestNewDialogRejectsWhatCannotWork(t *testing.T) {
 		{"answer twice", func() DialogSpec { s := deleteSpec(); s.Answers[1].Action = "yes"; return s }, "listed twice"},
 		{"no label", func() DialogSpec { s := deleteSpec(); s.Answers[1].Label = ""; return s }, "has no label"},
 		{"default no answer", func() DialogSpec { s := confirmSpec(); s.Default = "back"; return s }, "default \"back\" is no answer"},
-		{"default without enter", func() DialogSpec { s := confirmSpec(); s.Enter = ""; return s }, "needs the enter action"},
+		{"default without enter", func() DialogSpec { s := confirmSpec(); s.Keys.Enter = ""; return s }, "needs the enter action"},
 		{"enter is another answer", func() DialogSpec {
 			s := confirmSpec()
 			s.Answers = append(s.Answers, Answer{Action: "enter", Label: "a.keep"})
 			return s
 		}, "besides the default"},
 		{"danger no answer", func() DialogSpec { s := deleteSpec(); s.Danger = "discard"; return s }, "danger \"discard\" is no answer"},
-		{"danger on enter", func() DialogSpec { s := deleteSpec(); s.Default, s.Enter = "yes", "enter"; return s }, "enter never destroys"},
+		{"danger on enter", func() DialogSpec { s := deleteSpec(); s.Default, s.Keys.Enter = "yes", "enter"; return s }, "enter never destroys"},
 		{"letter answer while typing", func() DialogSpec {
 			s := unlockSpec()
 			s.Answers = append(s.Answers, Answer{Action: "yes", Label: "a.yes"})
@@ -141,7 +141,7 @@ func TestDialogStandsOverTheDimmedScreen(t *testing.T) {
 	st := looks(t)["dark"]
 	d := newSampleDialog(t, deleteSpec(), i18n.English)
 	room := Rect{Y: 3, Width: 100, Height: 26}
-	view, targets, ok := d.View(sampleScreen(100, 30), 100, 30, room, st)
+	view, targets, ok := d.Overlay(st, sampleScreen(100, 30), 100, 30, room)
 	if !ok {
 		t.Fatal("the dialog does not fit 100x30")
 	}
@@ -202,7 +202,7 @@ func TestDialogStandsOverTheDimmedScreen(t *testing.T) {
 	}
 	{
 		c := newSampleDialog(t, confirmSpec(), i18n.English)
-		view, _, _ := c.View(sampleScreen(100, 30), 100, 30, room, st)
+		view, _, _ := c.Overlay(st, sampleScreen(100, 30), 100, 30, room)
 		if strings.Contains(view, st.Button(ButtonDanger, "Water", false)) || !strings.Contains(ansi.Strip(view), "> Water <") {
 			t.Errorf("a question without danger draws one, or its default is not focused:\n%s", ansi.Strip(view))
 		}
@@ -220,12 +220,12 @@ func TestDialogTooSmallFillsTheWorkspace(t *testing.T) {
 	st := looks(t)["dark"]
 	for _, room := range []Rect{{Y: 3, Width: 43, Height: 26}, {Y: 3, Width: 100, Height: 8}} {
 		d := newSampleDialog(t, confirmSpec(), i18n.English)
-		if _, _, ok := d.View(sampleScreen(100, 30), 100, 30, room, st); ok {
+		if _, _, ok := d.Overlay(st, sampleScreen(100, 30), 100, 30, room); ok {
 			t.Errorf("the dialog claims to fit %+v", room)
 		}
 	}
 	d := newSampleDialog(t, confirmSpec(), i18n.English)
-	page, _ := d.Page(40, 8, st)
+	page, _ := d.View(st, 40, 8)
 	plain := ansi.Strip(page)
 	if !strings.Contains(plain, "Water every plant") || !strings.Contains(plain, "pump") || strings.Contains(plain, "[ Water ]") {
 		t.Errorf("the page lacks the question or names its answers twice:\n%s", plain)
@@ -234,8 +234,8 @@ func TestDialogTooSmallFillsTheWorkspace(t *testing.T) {
 		t.Errorf("the page is not 40x8:\n%s", plain)
 	}
 	keys := d.keys
-	frame := NewFrame(st, d.text, keys)
-	out, targets := frame.Render(FrameSpec{Width: 40, Height: 10, Product: "Garden", Workspace: page, Footer: d.Hints(),
+	frame := NewFrame(keys, d.text)
+	out, targets := frame.Render(st, FrameSpec{Width: 40, Height: 10, Product: "Garden", Workspace: page, Footer: d.Hints(),
 		Input: d.Input()})
 	if !strings.Contains(ansi.Strip(out), "y/enter Water") {
 		t.Fatalf("the footer lacks the answers:\n%s", ansi.Strip(out))
@@ -257,7 +257,7 @@ func TestEveryDialogControlHasATargetAndClicksAsItsKey(t *testing.T) {
 	st := looks(t)["noneascii"]
 	for _, spec := range []DialogSpec{deleteSpec(), leaveSpec(), confirmSpec(), unlockSpec()} {
 		d := newSampleDialog(t, spec, i18n.English)
-		view, targets, ok := d.View(sampleScreen(90, 30), 90, 30, Rect{Y: 2, Width: 90, Height: 27}, st)
+		view, targets, ok := d.Overlay(st, sampleScreen(90, 30), 90, 30, Rect{Y: 2, Width: 90, Height: 27})
 		if !ok {
 			t.Fatal("the dialog does not fit")
 		}
@@ -317,8 +317,8 @@ func TestInputDialogNeverShowsTheSecret(t *testing.T) {
 			t.Fatalf("enter gives %q with %q", answer, d.Value())
 		}
 		d.SetMessage(&Message{Kind: MessageError, Text: "error: " + canary + " is no passphrase of the shed"})
-		view, targets, ok := d.View(sampleScreen(90, 30), 90, 30, Rect{Y: 2, Width: 90, Height: 27}, st)
-		page, pageTargets := d.Page(50, 10, st)
+		view, targets, ok := d.Overlay(st, sampleScreen(90, 30), 90, 30, Rect{Y: 2, Width: 90, Height: 27})
+		page, pageTargets := d.View(st, 50, 10)
 		if !ok {
 			t.Fatal("the dialog does not fit")
 		}
@@ -339,7 +339,7 @@ func TestInputDialogNeverShowsTheSecret(t *testing.T) {
 			t.Errorf("esc gives %q", answer)
 		}
 		d.Update(tea.KeyPressMsg{Code: tea.KeyBackspace})
-		if view, _, _ := d.View(sampleScreen(90, 30), 90, 30, Rect{Y: 2, Width: 90, Height: 27}, st); strings.Contains(view, "is no passphrase") {
+		if view, _, _ := d.Overlay(st, sampleScreen(90, 30), 90, 30, Rect{Y: 2, Width: 90, Height: 27}); strings.Contains(view, "is no passphrase") {
 			t.Error("typing does not remove the error")
 		}
 	}
@@ -350,7 +350,7 @@ func TestInputDialogNeverShowsTheSecret(t *testing.T) {
 	}
 	d.SetMessage(&Message{Kind: MessageBusy, Text: "checking"})
 	d.Update(tea.KeyPressMsg{Code: 'x', Text: "x"})
-	if view, _, _ := d.View(sampleScreen(90, 30), 90, 30, Rect{Y: 2, Width: 90, Height: 27}, looks(t)["dark"]); !strings.Contains(view, "checking") {
+	if view, _, _ := d.Overlay(looks(t)["dark"], sampleScreen(90, 30), 90, 30, Rect{Y: 2, Width: 90, Height: 27}); !strings.Contains(view, "checking") {
 		t.Error("typing removes what is still running")
 	}
 	d.ClearInput()
@@ -360,7 +360,7 @@ func TestInputDialogNeverShowsTheSecret(t *testing.T) {
 	if _, handled := d.Update(press("a")); !handled || d.Value() != "a" {
 		t.Error("a letter in an input dialog is no text")
 	}
-	if view, _, _ := d.View(sampleScreen(90, 30), 90, 30, Rect{Y: 2, Width: 90, Height: 27}, looks(t)["dark"]); !strings.Contains(view, "passphrase") {
+	if view, _, _ := d.Overlay(looks(t)["dark"], sampleScreen(90, 30), 90, 30, Rect{Y: 2, Width: 90, Height: 27}); !strings.Contains(view, "passphrase") {
 		t.Error("a secret too short to hide in other texts garbles them and shows where its letters stand")
 	}
 }
@@ -370,7 +370,7 @@ func TestDialogReadsWithoutColourAndInGerman(t *testing.T) {
 		st := looks(t)[look]
 		for _, spec := range []DialogSpec{deleteSpec(), unlockSpec()} {
 			d := newSampleDialog(t, spec, i18n.German)
-			view, _, ok := d.View(sampleScreen(80, 24), 80, 24, Rect{Y: 2, Width: 80, Height: 21}, st)
+			view, _, ok := d.Overlay(st, sampleScreen(80, 24), 80, 24, Rect{Y: 2, Width: 80, Height: 21})
 			if !ok {
 				t.Fatalf("%s: does not fit 80x24", look)
 			}
@@ -399,7 +399,7 @@ func TestDialogEscapesControlCharacters(t *testing.T) {
 	spec.Question = "Delete \x1b[2Jbasil?"
 	spec.Details = []string{"note\x07"}
 	d := newSampleDialog(t, spec, i18n.English)
-	view, _, _ := d.View(sampleScreen(90, 30), 90, 30, Rect{Y: 2, Width: 90, Height: 27}, looks(t)["noneascii"])
+	view, _, _ := d.Overlay(looks(t)["noneascii"], sampleScreen(90, 30), 90, 30, Rect{Y: 2, Width: 90, Height: 27})
 	if strings.Contains(view, "\x1b[2J") || strings.Contains(view, "\x07") || !strings.Contains(view, `\x1b[2Jbasil`) {
 		t.Errorf("control characters reach the terminal:\n%q", view)
 	}

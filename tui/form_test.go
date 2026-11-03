@@ -59,7 +59,7 @@ func sampleFormSpec() FormSpec {
 	}
 }
 
-func newSampleForm(t *testing.T, lang i18n.Lang, edit func(*FormSpec)) *FormModel {
+func newSampleForm(t *testing.T, lang i18n.Lang, edit func(*FormSpec)) *Form {
 	t.Helper()
 	keys := sampleKeymap(t, CharsetUnicode)
 	spec := sampleFormSpec()
@@ -73,14 +73,14 @@ func newSampleForm(t *testing.T, lang i18n.Lang, edit func(*FormSpec)) *FormMode
 	return f
 }
 
-func formKeys(f *FormModel, names ...string) (act ActionID, handled bool) {
+func formKeys(f *Form, names ...string) (act ActionID, handled bool) {
 	for _, n := range names {
 		act, handled = f.Update(keyOf(n))
 	}
 	return act, handled
 }
 
-func typeForm(f *FormModel, text string) {
+func typeForm(f *Form, text string) {
 	for _, r := range text {
 		f.Update(tea.KeyPressMsg{Code: r, Text: string(r)})
 	}
@@ -157,7 +157,7 @@ func TestFormOpensOnTheFirstFieldInSectionOrder(t *testing.T) {
 	})
 	var order []string
 	for _, field := range f.fields {
-		order = append(order, field.ID)
+		order = append(order, string(field.ID))
 	}
 	if got := strings.Join(order, ","); got != "kind,origin,name,water,token,notes,key,soil" {
 		t.Errorf("fields stand as %s, want them in the order of their sections", got)
@@ -202,7 +202,7 @@ func TestFormMovesBetweenFieldsAndLeavesTheEnds(t *testing.T) {
 	}
 	var seen []string
 	for {
-		seen = append(seen, f.Focused())
+		seen = append(seen, string(f.Focused()))
 		if _, handled := f.Update(press("tab")); !handled {
 			break
 		}
@@ -237,7 +237,7 @@ func TestTextFieldEditsAndScrollsWithoutCutting(t *testing.T) {
 	if long != "sweet sil![31mredleaf" {
 		t.Errorf("a paste drops control characters only: %q", long)
 	}
-	view, _ := f.View(26, 12, Styles{})
+	view, _ := f.View(Styles{}, 26, 12)
 	row := ""
 	for _, line := range strings.Split(view, "\n") {
 		if strings.Contains(line, "> name") {
@@ -248,7 +248,7 @@ func TestTextFieldEditsAndScrollsWithoutCutting(t *testing.T) {
 		t.Errorf("the focused text does not scroll to its cursor: %q", row)
 	}
 	formKeys(f, "tab")
-	view, _ = f.View(26, 14, Styles{})
+	view, _ = f.View(Styles{}, 26, 14)
 	if plain := strings.Join(strings.Fields(view), ""); !strings.Contains(plain, "sweetsil![31mredleaf") {
 		t.Errorf("an unfocused long text is cut:\n%s", view)
 	}
@@ -276,7 +276,7 @@ func TestChoiceStepsInPlaceAndOpensItsValues(t *testing.T) {
 	if got := f.Values()["kind"].Choice; got != "fern" {
 		t.Errorf("the list stops at its end and takes %q", got)
 	}
-	view, _ := f.View(60, 20, Styles{})
+	view, _ := f.View(Styles{}, 60, 20)
 	if !strings.Contains(view, "fern") || !strings.Contains(view, "v") {
 		t.Errorf("a choice shows its value and the arrow:\n%s", view)
 	}
@@ -292,7 +292,7 @@ func TestMultipleChoiceTicksTheValueUnderTheCursor(t *testing.T) {
 	if _, handled := formKeys(f, "enter"); !handled || f.Focused() != "token" {
 		t.Error("enter on a multiple choice does not go on")
 	}
-	view, _ := f.View(70, 20, Styles{})
+	view, _ := f.View(Styles{}, 70, 20)
 	if !strings.Contains(view, "[x] Monday") || !strings.Contains(view, "[ ] Wednesday") {
 		t.Errorf("tick boxes are missing:\n%s", view)
 	}
@@ -305,7 +305,7 @@ func TestKeyFieldTakesTheNextKey(t *testing.T) {
 	if !f.Capturing() || f.Input() != InputKeyCapture {
 		t.Fatal("enter does not start taking a key")
 	}
-	if view, _ := f.View(70, 30, Styles{}); !strings.Contains(view, "press the new key") {
+	if view, _ := f.View(Styles{}, 70, 30); !strings.Contains(view, "press the new key") {
 		t.Errorf("the field does not ask for the key:\n%s", view)
 	}
 	f.Update(press("f3"))
@@ -326,7 +326,7 @@ func TestKeyFieldTakesTheNextKey(t *testing.T) {
 // a problem keeps it open.
 func TestAdvancedSectionStaysClosedUntilItHoldsSomething(t *testing.T) {
 	f := newSampleForm(t, i18n.English, nil)
-	view, _ := f.View(70, 30, Styles{})
+	view, _ := f.View(Styles{}, 70, 30)
 	if !strings.Contains(view, "Extra (closed)") || strings.Contains(view, "shortcut") {
 		t.Errorf("the advanced section is not closed:\n%s", view)
 	}
@@ -334,19 +334,19 @@ func TestAdvancedSectionStaysClosedUntilItHoldsSomething(t *testing.T) {
 	if f.Focused() != "key" {
 		t.Fatalf("page down leads to %s", f.Focused())
 	}
-	if view, _ := f.View(70, 30, Styles{}); strings.Contains(view, "(closed)") || !strings.Contains(view, "shortcut") {
+	if view, _ := f.View(Styles{}, 70, 30); strings.Contains(view, "(closed)") || !strings.Contains(view, "shortcut") {
 		t.Errorf("the section the focus jumped into stays closed:\n%s", view)
 	}
 	g := newSampleForm(t, i18n.English, nil)
-	g.SetProblems([]FormProblem{{FieldID: "soil", Cause: "the soil is unknown", NextStep: "name a soil"}})
+	g.SetProblems([]FormProblem{{Field: "soil", Cause: "the soil is unknown", NextStep: "name a soil"}})
 	if g.Focused() != "soil" {
 		t.Errorf("a problem in a closed section does not take the focus there: %s", g.Focused())
 	}
-	if view, _ := g.View(70, 30, Styles{}); !strings.Contains(view, "Extra [!]") {
+	if view, _ := g.View(Styles{}, 70, 30); !strings.Contains(view, "Extra [!]") {
 		t.Errorf("the section with a problem is not marked:\n%s", view)
 	}
 	h := newSampleForm(t, i18n.English, func(s *FormSpec) { s.Fields[7].Value.Text = "loam" })
-	if view, _ := h.View(70, 30, Styles{}); strings.Contains(view, "(closed)") {
+	if view, _ := h.View(Styles{}, 70, 30); strings.Contains(view, "(closed)") {
 		t.Errorf("a section with a value is closed:\n%s", view)
 	}
 }
@@ -356,13 +356,13 @@ func TestProblemsStandUnderTheirFieldUntilItChanges(t *testing.T) {
 	f.Focus("kind")
 	formKeys(f, "right")
 	f.SetProblems([]FormProblem{
-		{FieldID: "name", Cause: "the name is taken", NextStep: "choose another"},
+		{Field: "name", Cause: "the name is taken", NextStep: "choose another"},
 		{Cause: "the garden file is newer", NextStep: "reload"},
 	})
 	if f.Focused() != "name" || f.Values()["kind"].Choice != "tree" {
 		t.Errorf("a refused save moved the focus to %s or dropped a value", f.Focused())
 	}
-	view, _ := f.View(70, 30, Styles{})
+	view, _ := f.View(Styles{}, 70, 30)
 	lines := strings.Split(view, "\n")
 	if !strings.HasPrefix(lines[0], "[!] the garden file is newer - reload") {
 		t.Errorf("a problem without a field does not stand above the form:\n%s", view)
@@ -377,7 +377,7 @@ func TestProblemsStandUnderTheirFieldUntilItChanges(t *testing.T) {
 		t.Errorf("the problem does not stand under its field:\n%s", view)
 	}
 	typeForm(f, "x")
-	if view, _ := f.View(70, 30, Styles{}); strings.Contains(view, "name is taken") || !strings.Contains(view, "garden file") {
+	if view, _ := f.View(Styles{}, 70, 30); strings.Contains(view, "name is taken") || !strings.Contains(view, "garden file") {
 		t.Errorf("changing the field does not retire its problem alone:\n%s", view)
 	}
 }
@@ -413,12 +413,12 @@ func TestAMaskedFieldNeverShowsItsText(t *testing.T) {
 		f.Focus("token")
 		typeForm(f, canary)
 		f.Paste("more")
-		f.SetProblems([]FormProblem{{FieldID: "token", Cause: "token " + canary + "more is refused", NextStep: "type " + canary + "more"}})
+		f.SetProblems([]FormProblem{{Field: "token", Cause: "token " + canary + "more is refused", NextStep: "type " + canary + "more"}})
 		f.Focus("token")
 		for _, size := range []struct{ w, h int }{{120, 40}, {80, 30}, {60, 14}, {40, 6}, {30, 3}} {
-			for _, focus := range []string{"token", "name"} {
+			for _, focus := range []FieldID{"token", "name"} {
 				f.Focus(focus)
-				view, targets := f.View(size.w, size.h, st)
+				view, targets := f.View(st, size.w, size.h)
 				plain := ansi.Strip(view)
 				for _, part := range []string{canary, "feed-7f3a", "canary"} {
 					if strings.Contains(plain, part) {
@@ -440,7 +440,7 @@ func TestAMaskedFieldNeverShowsItsText(t *testing.T) {
 
 func TestStoredSecretShowsKeptAndEmptyKeepsIt(t *testing.T) {
 	f := newSampleForm(t, i18n.English, nil)
-	view, _ := f.View(70, 30, Styles{})
+	view, _ := f.View(Styles{}, 70, 30)
 	if !strings.Contains(view, "(stored, unchanged)") {
 		t.Errorf("a stored secret does not say it is kept:\n%s", view)
 	}
@@ -450,7 +450,7 @@ func TestStoredSecretShowsKeptAndEmptyKeepsIt(t *testing.T) {
 	f.Focus("token")
 	typeForm(f, "abc")
 	f.Focus("name")
-	if view, _ := f.View(70, 30, Styles{}); !strings.Contains(view, "(entered, hidden)") {
+	if view, _ := f.View(Styles{}, 70, 30); !strings.Contains(view, "(entered, hidden)") {
 		t.Errorf("a typed secret does not say so:\n%s", view)
 	}
 }
@@ -474,7 +474,7 @@ func TestFormLayoutsGiveWayAndKeepTheFocus(t *testing.T) {
 	for _, c := range cases {
 		f := newSampleForm(t, i18n.English, nil)
 		f.Focus("token")
-		view, targets := f.View(c.w, c.h, looks(t)["dark"])
+		view, targets := f.View(looks(t)["dark"], c.w, c.h)
 		plain := ansi.Strip(view)
 		lines := strings.Split(plain, "\n")
 		if len(lines) != c.h {
@@ -506,7 +506,7 @@ func TestFormReadsWithoutColour(t *testing.T) {
 		st := looks(t)[look]
 		f := newSampleForm(t, i18n.English, nil)
 		f.Focus("water")
-		view, _ := f.View(80, 30, st)
+		view, _ := f.View(st, 80, 30)
 		noColorSequence(t, look, view)
 		plain := ansi.Strip(view)
 		if !strings.Contains(plain, "> watering") || !strings.Contains(plain, ">[x] Wednesday") && !strings.Contains(plain, ">[ ] Monday") {
@@ -518,7 +518,7 @@ func TestFormReadsWithoutColour(t *testing.T) {
 func TestGermanFormFits(t *testing.T) {
 	for _, size := range []struct{ w, h int }{{120, 30}, {80, 24}, {50, 12}} {
 		f := newSampleForm(t, i18n.German, nil)
-		view, _ := f.View(size.w, size.h, looks(t)["dark"])
+		view, _ := f.View(looks(t)["dark"], size.w, size.h)
 		plain := ansi.Strip(view)
 		for _, l := range strings.Split(plain, "\n") {
 			if lipgloss.Width(l) != size.w {
@@ -553,9 +553,9 @@ func TestWheelMovesTheFocusAndStops(t *testing.T) {
 func TestEveryFormControlHasATargetAndClicksAsItsKey(t *testing.T) {
 	st := looks(t)["noneascii"]
 	for _, size := range []struct{ w, h int }{{120, 30}, {80, 30}, {80, 10}} {
-		for _, focus := range []string{"name", "kind", "water"} {
+		for _, focus := range []FieldID{"name", "kind", "water"} {
 			for _, open := range []bool{false, true} {
-				setup := func() *FormModel {
+				setup := func() *Form {
 					f := newSampleForm(t, i18n.English, nil)
 					f.Focus(focus)
 					if open && focus == "kind" {
@@ -564,7 +564,7 @@ func TestEveryFormControlHasATargetAndClicksAsItsKey(t *testing.T) {
 					return f
 				}
 				f := setup()
-				view, targets := f.View(size.w, size.h, st)
+				view, targets := f.View(st, size.w, size.h)
 				name := fmt.Sprintf("%dx%d %s open=%v", size.w, size.h, focus, open)
 				checkFormTargetsCover(t, name, f, view, targets)
 				m := NewMouseMap(targets, true)
@@ -588,16 +588,16 @@ func TestEveryFormControlHasATargetAndClicksAsItsKey(t *testing.T) {
 
 // pressFor does with keys what a click on tg stands for: a field takes the focus, and a target with an action
 // presses it there.
-func pressFor(t *testing.T, f *FormModel, tg Target) ActionID {
+func pressFor(t *testing.T, f *Form, tg Target) ActionID {
 	t.Helper()
 	id, rest, _ := strings.Cut(tg.Item[2:], "\x00")
-	if f.Open() && tg.Item[:2] != formOptionRef && id != f.Focused() {
+	if f.Open() && tg.Item[:2] != formOptionRef && FieldID(id) != f.Focused() {
 		// A click outside the open values closes them, as back does.
 		f.Act("back")
 	}
 	switch tg.Item[:2] {
 	case formSectionRef:
-		target := slices.IndexFunc(f.sections, func(s FormSection) bool { return s.ID == id })
+		target := slices.IndexFunc(f.sections, func(s FormSection) bool { return string(s.ID) == id })
 		for range f.sections {
 			at := slices.IndexFunc(f.sections, func(s FormSection) bool { return s.ID == f.fields[f.focus].Section })
 			switch {
@@ -608,7 +608,7 @@ func pressFor(t *testing.T, f *FormModel, tg Target) ActionID {
 			}
 		}
 		for _, field := range f.fields {
-			if field.Section == id && field.Kind != FieldReadOnly {
+			if string(field.Section) == id && field.Kind != FieldReadOnly {
 				// Within its own section the click goes to the first field, where no key leads.
 				f.Focus(field.ID)
 				break
@@ -623,17 +623,17 @@ func pressFor(t *testing.T, f *FormModel, tg Target) ActionID {
 			f.Act("up")
 		}
 	case formTickRef:
-		f.Focus(id)
+		f.Focus(FieldID(id))
 		for string(f.fields[f.focus].Choices[f.fields[f.focus].cursor].ID) != rest {
 			f.Act("right")
 		}
 	default:
-		if f.Focused() == id && f.Open() && tg.Action == "enter" {
+		if string(f.Focused()) == id && f.Open() && tg.Action == "enter" {
 			// A second click on a choice with its values open closes them, as back does.
 			f.Act("back")
 			return ""
 		}
-		f.Focus(id)
+		f.Focus(FieldID(id))
 	}
 	if tg.Action == "" {
 		return ""
@@ -642,7 +642,7 @@ func pressFor(t *testing.T, f *FormModel, tg Target) ActionID {
 	return act
 }
 
-func valuesEqual(a, b map[string]FormValue) bool {
+func valuesEqual(a, b map[FieldID]FormValue) bool {
 	for k, v := range a {
 		if !v.equal(b[k]) {
 			return false
@@ -653,7 +653,7 @@ func valuesEqual(a, b map[string]FormValue) bool {
 
 // checkFormTargetsCover checks that every drawn field label, section, tick box and open value has a target over
 // its cells.
-func checkFormTargetsCover(t *testing.T, name string, f *FormModel, view string, targets []Target) {
+func checkFormTargetsCover(t *testing.T, name string, f *Form, view string, targets []Target) {
 	t.Helper()
 	lines := strings.Split(ansi.Strip(view), "\n")
 	covered := func(x, y int, prefix string) bool {

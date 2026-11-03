@@ -30,7 +30,7 @@ func sampleTopics() []helptopics.Topic {
 }
 
 func sampleHelpKeys() HelpKeys {
-	return HelpKeys{Left: "left", Right: "right", NextTopic: "topic.next", PrevTopic: "topic.prev", Up: "up", Down: "down",
+	return HelpKeys{Left: "left", Right: "right", Next: "topic.next", Prev: "topic.prev", Up: "up", Down: "down",
 		PageUp: "pageup", PageDown: "pagedown", First: "first", Last: "last", Back: "back", Help: "help"}
 }
 
@@ -40,7 +40,7 @@ func sampleHelpSpec() HelpSpec {
 		Global: []ActionID{"save", "help", "command"}}
 }
 
-func newSampleHelp(t *testing.T, keys *Keymap, lang i18n.Lang) *HelpModel {
+func newSampleHelp(t *testing.T, keys *Keymap, lang i18n.Lang) *Help {
 	t.Helper()
 	if keys == nil {
 		keys = sampleKeymap(t, CharsetUnicode)
@@ -52,7 +52,7 @@ func newSampleHelp(t *testing.T, keys *Keymap, lang i18n.Lang) *HelpModel {
 	return h
 }
 
-func helpKeysTo(h *HelpModel, names ...string) (act ActionID, handled bool) {
+func helpKeysTo(h *Help, names ...string) (act ActionID, handled bool) {
 	for _, n := range names {
 		act, handled = h.Update(press(n))
 	}
@@ -76,7 +76,7 @@ func TestNewHelpRejectsWhatCannotWork(t *testing.T) {
 		{"missing key", func(s *HelpSpec) { s.Keys.PageDown = "" }, "page down key is missing"},
 		{"missing close key", func(s *HelpSpec) { s.Keys.Help = "" }, "help key is missing"},
 		{"unknown key", func(s *HelpSpec) { s.Keys.First = "jump" }, "no action of the key table"},
-		{"shared key", func(s *HelpSpec) { s.Keys.NextTopic = "right" }, "also the right key"},
+		{"shared key", func(s *HelpSpec) { s.Keys.Next = "right" }, "also the right key"},
 		{"unknown screen key", func(s *HelpSpec) { s.Screen = append(s.Screen, Hint{Action: "dig", Label: "h.new"}) }, "screen key"},
 		{"unknown global key", func(s *HelpSpec) { s.Global = append(s.Global, "dig") }, "global key"},
 		{"repeated global key", func(s *HelpSpec) { s.Global = append(s.Global, "save") }, "listed twice"},
@@ -92,7 +92,7 @@ func TestNewHelpRejectsWhatCannotWork(t *testing.T) {
 		t.Error("a help without key table was accepted")
 	}
 	spec := sampleHelpSpec()
-	spec.Keys.NextTopic, spec.Keys.PrevTopic, spec.Keys.First, spec.Keys.Last = "", "", "", ""
+	spec.Keys.Next, spec.Keys.Prev, spec.Keys.First, spec.Keys.Last = "", "", "", ""
 	spec.Screen, spec.Global = nil, nil
 	if _, err := NewHelp(spec, keys, text); err != nil {
 		t.Errorf("a help without the optional keys and key lists: %v", err)
@@ -112,7 +112,7 @@ func TestHelpKeysChangeTopicScrollAndClose(t *testing.T) {
 			t.Fatalf("%s: topic %q, act %q, handled %v; want %q", step.key, h.Topic(), act, handled, step.want)
 		}
 	}
-	h.Page(60, 12, st)
+	h.View(st, 60, 12)
 	helpKeysTo(h, "down", "down")
 	if h.scroll.offset != 2 {
 		t.Errorf("down twice scrolled to %d", h.scroll.offset)
@@ -122,7 +122,7 @@ func TestHelpKeysChangeTopicScrollAndClose(t *testing.T) {
 	if end == 0 || end != h.scroll.last {
 		t.Errorf("end scrolled to %d of %d", end, h.scroll.last)
 	}
-	view, _ := h.Page(60, 12, st)
+	view, _ := h.View(st, 60, 12)
 	if !strings.Contains(view, "last line of watering") {
 		t.Errorf("end does not show the last line:\n%s", view)
 	}
@@ -173,7 +173,7 @@ func TestFirstTopicEndsWithTheKeysInForce(t *testing.T) {
 		{i18n.German, "Dieser Bildschirm", "Überall", "F4 Speichern", "n neue Pflanze"},
 	} {
 		h := newSampleHelp(t, keys, tt.lang)
-		view, _ := h.Page(70, 40, st)
+		view, _ := h.View(st, 70, 40)
 		lines := strings.Split(view, "\n")
 		at := func(text string) int {
 			for i, l := range lines {
@@ -194,7 +194,7 @@ func TestFirstTopicEndsWithTheKeysInForce(t *testing.T) {
 			t.Errorf("%s: a listed key is missing:\n%s", tt.lang, view)
 		}
 		helpKeysTo(h, "right")
-		if view, _ := h.Page(70, 40, st); strings.Contains(view, tt.all) {
+		if view, _ := h.View(st, 70, 40); strings.Contains(view, tt.all) {
 			t.Errorf("%s: the second topic lists the keys:\n%s", tt.lang, view)
 		}
 	}
@@ -206,7 +206,7 @@ func TestHelpShowsTheTopicTextOfTheCommandLine(t *testing.T) {
 	h := newSampleHelp(t, nil, i18n.English)
 	helpKeysTo(h, "right")
 	const width = 50
-	view, _ := h.Page(width, 200, st)
+	view, _ := h.View(st, width, 200)
 	want := strings.Split(helptopics.Wrap(sampleTopics()[1].Text, width), "\n")
 	got := strings.Split(view, "\n")[2:]
 	for i, line := range want {
@@ -224,7 +224,7 @@ func TestHelpFitsOverTheScreenAndInTheWorkspace(t *testing.T) {
 		helpKeysTo(h, "right")
 		for _, size := range []struct{ width, height int }{{100, 30}, {60, 20}, {44, 12}, {30, 10}} {
 			room := Rect{Y: 2, Width: size.width, Height: size.height - 3}
-			view, targets, ok := h.View(sampleScreen(size.width, size.height), size.width, size.height, room, st)
+			view, targets, ok := h.Overlay(st, sampleScreen(size.width, size.height), size.width, size.height, room)
 			wantOK := size.width >= dialogMinInner+8 && room.Height-8 >= helpMinText
 			if ok != wantOK {
 				t.Fatalf("%s %dx%d: over the screen = %v, want %v", name, size.width, size.height, ok, wantOK)
@@ -241,13 +241,13 @@ func TestHelpFitsOverTheScreenAndInTheWorkspace(t *testing.T) {
 					}
 				}
 			}
-			page, _ := h.Page(size.width, size.height-3, st)
+			page, _ := h.View(st, size.width, size.height-3)
 			assertSize(t, page, size.width, size.height-3)
 			if !strings.Contains(ansi.Strip(page), "lines 1-") {
 				t.Errorf("%s %dx%d: the page does not say it scrolls:\n%s", name, size.width, size.height, page)
 			}
 		}
-		if page, targets := h.Page(0, 0, st); page != "" || targets != nil {
+		if page, targets := h.View(st, 0, 0); page != "" || targets != nil {
 			t.Errorf("%s: a page without room drew %q", name, page)
 		}
 	}
@@ -272,7 +272,7 @@ func assertSize(t *testing.T, view string, width, height int) {
 func TestEveryHelpControlHasATargetAndClicksAsItsKey(t *testing.T) {
 	st := looks(t)["noneascii"]
 	h := newSampleHelp(t, nil, i18n.English)
-	view, targets, ok := h.View(sampleScreen(100, 40), 100, 40, Rect{Y: 2, Width: 100, Height: 37}, st)
+	view, targets, ok := h.Overlay(st, sampleScreen(100, 40), 100, 40, Rect{Y: 2, Width: 100, Height: 37})
 	if !ok {
 		t.Fatal("the help does not fit")
 	}
@@ -320,8 +320,8 @@ func TestEveryHelpControlHasATargetAndClicksAsItsKey(t *testing.T) {
 		}
 		byKey := newSampleHelp(t, nil, i18n.English)
 		byClick := newSampleHelp(t, nil, i18n.English)
-		byKey.View(sampleScreen(100, 40), 100, 40, Rect{Y: 2, Width: 100, Height: 37}, st)
-		byClick.View(sampleScreen(100, 40), 100, 40, Rect{Y: 2, Width: 100, Height: 37}, st)
+		byKey.Overlay(st, sampleScreen(100, 40), 100, 40, Rect{Y: 2, Width: 100, Height: 37})
+		byClick.Overlay(st, sampleScreen(100, 40), 100, 40, Rect{Y: 2, Width: 100, Height: 37})
 		want, wantHandled := byKey.Act(tg.Action)
 		if !wantHandled {
 			want, wantHandled = tg.Action, true
@@ -341,7 +341,7 @@ func TestHelpWheelStopsAtTheEnds(t *testing.T) {
 	st := looks(t)["noneascii"]
 	h := newSampleHelp(t, nil, i18n.English)
 	helpKeysTo(h, "right")
-	h.Page(60, 12, st)
+	h.View(st, 60, 12)
 	h.Wheel(1)
 	if h.scroll.offset != WheelTextLines {
 		t.Errorf("a notch scrolled to %d", h.scroll.offset)
@@ -361,14 +361,14 @@ func TestHelpWheelStopsAtTheEnds(t *testing.T) {
 func TestHelpStylesHeadingsAndKeys(t *testing.T) {
 	all := looks(t)
 	h := newSampleHelp(t, nil, i18n.English)
-	view, _ := h.Page(70, 40, all["dark"])
+	view, _ := h.View(all["dark"], 70, 40)
 	if !strings.Contains(view, all["dark"].Render(StyleTitle, "Beds:")) {
 		t.Errorf("the heading is not bold:\n%q", view)
 	}
 	if !strings.Contains(view, all["dark"].Render(StyleFooterKey, "F2")) {
 		t.Errorf("the key is not in the key colour:\n%q", view)
 	}
-	plain, _ := h.Page(70, 40, all["noneascii"])
+	plain, _ := h.View(all["noneascii"], 70, 40)
 	if ansi.Strip(plain) != plain || !strings.Contains(plain, "[start]") {
 		t.Errorf("without colour the help draws escapes or loses the mark of the topic:\n%q", plain)
 	}
@@ -384,8 +384,8 @@ func TestHelpEscapesControlCharacters(t *testing.T) {
 		t.Fatal(err)
 	}
 	for name, st := range looks(t) {
-		view, _ := h.Page(70, 30, st)
-		over, _, _ := h.View(sampleScreen(90, 30), 90, 30, Rect{Y: 2, Width: 90, Height: 27}, st)
+		view, _ := h.View(st, 70, 30)
+		over, _, _ := h.Overlay(st, sampleScreen(90, 30), 90, 30, Rect{Y: 2, Width: 90, Height: 27})
 		for _, v := range []string{view, over} {
 			if strings.ContainsAny(ansi.Strip(v), "\x1b\x07\r") || !strings.Contains(v, `Plant\x1b[2J a seed\a first.\r`) {
 				t.Errorf("%s: a control character reached the view:\n%q", name, v)

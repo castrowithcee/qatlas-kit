@@ -57,7 +57,7 @@ func samplePlants() []ListItem {
 	}
 }
 
-func newSampleList(t *testing.T, st Styles, lang i18n.Lang, edit func(*ListSpec)) (*ListModel, *Keymap) {
+func newSampleList(t *testing.T, st Styles, lang i18n.Lang, edit func(*ListSpec)) (*List, *Keymap) {
 	t.Helper()
 	keys := sampleKeymap(t, st.Charset())
 	spec := ListSpec{Columns: sampleColumns(), Keys: sampleListKeys(), Empty: "list.empty", NoGroup: "list.nogroup"}
@@ -71,7 +71,7 @@ func newSampleList(t *testing.T, st Styles, lang i18n.Lang, edit func(*ListSpec)
 	return l, keys
 }
 
-func filledList(t *testing.T, edit func(*ListSpec)) *ListModel {
+func filledList(t *testing.T, edit func(*ListSpec)) *List {
 	t.Helper()
 	l, _ := newSampleList(t, Styles{}, i18n.English, edit)
 	if err := l.SetItems(samplePlants()); err != nil {
@@ -89,21 +89,21 @@ func keyOf(name string) tea.KeyPressMsg {
 	return press(name)
 }
 
-func keysTo(l *ListModel, names ...string) (open ItemID, handled bool) {
+func keysTo(l *List, names ...string) (open ItemID, handled bool) {
 	for _, n := range names {
 		open, handled = l.Update(keyOf(n))
 	}
 	return open, handled
 }
 
-func typeList(l *ListModel, text string) {
+func typeList(l *List, text string) {
 	for _, r := range text {
 		l.Update(tea.KeyPressMsg{Code: r, Text: string(r)})
 	}
 }
 
 // shownRows names the shown rows: entries by ID, group rows as "[key]".
-func shownRows(l *ListModel) string {
+func shownRows(l *List) string {
 	var out []string
 	for _, r := range l.rows {
 		if r.item < 0 {
@@ -115,7 +115,7 @@ func shownRows(l *ListModel) string {
 	return strings.Join(out, ",")
 }
 
-func selected(t *testing.T, l *ListModel) ItemID {
+func selected(t *testing.T, l *List) ItemID {
 	t.Helper()
 	id, ok := l.Selected()
 	if !ok {
@@ -303,7 +303,7 @@ func TestSearchAsTyped(t *testing.T) {
 	if open, _ := keysTo(l, "enter"); open != "thyme" {
 		t.Errorf("enter opens %q", open)
 	}
-	view, _ := l.View(40, 6, Styles{})
+	view, _ := l.View(Styles{}, 40, 6)
 	if first := strings.Split(view, "\n")[0]; !strings.HasPrefix(first, "thy_") {
 		t.Errorf("the search line comes first: %q", first)
 	}
@@ -355,7 +355,7 @@ func TestGroupsFoldAndFilter(t *testing.T) {
 	if !l.Select("mint") || shownRows(l) != "[herbs],basil,mint,thyme,[trees],oak,[],fern" {
 		t.Errorf("Select of an entry in a folded group unfolds it: %s", shownRows(l))
 	}
-	view, _ := l.View(60, 10, Styles{})
+	view, _ := l.View(Styles{}, 60, 10)
 	for _, want := range []string{"v # herbs (3)", "v # unsorted (1)"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("the group rows lack %q:\n%s", want, view)
@@ -457,7 +457,7 @@ func TestWindowKeepsTheSelectionInView(t *testing.T) {
 	const height = 8 // the header and seven rows
 	check := func(want string) {
 		t.Helper()
-		view, _ := l.View(50, height, Styles{})
+		view, _ := l.View(Styles{}, 50, height)
 		if !strings.Contains(view, "> "+want) {
 			t.Fatalf("the selection %s is not on screen:\n%s", want, view)
 		}
@@ -494,11 +494,11 @@ func TestWindowKeepsTheSelectionInView(t *testing.T) {
 func TestColumnsGiveWayInTheirOrder(t *testing.T) {
 	l := filledList(t, nil)
 	header := func(width int) string {
-		view, _ := l.View(width, 3, Styles{})
+		view, _ := l.View(Styles{}, width, 3)
 		return strings.TrimRight(strings.Split(view, "\n")[0], " ")
 	}
 	row := func(width int) string {
-		view, _ := l.View(width, 3, Styles{})
+		view, _ := l.View(Styles{}, width, 3)
 		return strings.TrimRight(strings.Split(view, "\n")[1], " ")
 	}
 	if got := header(80); got != "  NAME   STATE     SIZE  NOTE" {
@@ -530,7 +530,7 @@ func TestColumnsGiveWayInTheirOrder(t *testing.T) {
 	}
 	before := header(50)
 	l.SetFilter("thyme")
-	view, _ := l.View(50, 3, Styles{})
+	view, _ := l.View(Styles{}, 50, 3)
 	if got := strings.TrimRight(strings.Split(view, "\n")[1], " "); got != before {
 		t.Errorf("the widths change while filtering: %q, was %q", got, before)
 	}
@@ -540,7 +540,7 @@ func TestColumnsGiveWayInTheirOrder(t *testing.T) {
 // that clears it, in the key in force.
 func TestEmptyListAndFilterWithoutMatch(t *testing.T) {
 	l, _ := newSampleList(t, Styles{}, i18n.English, nil)
-	view, targets := l.View(60, 4, Styles{})
+	view, targets := l.View(Styles{}, 60, 4)
 	if !strings.Contains(view, "No plants yet; n adds one.") {
 		t.Errorf("the empty list:\n%s", view)
 	}
@@ -551,7 +551,7 @@ func TestEmptyListAndFilterWithoutMatch(t *testing.T) {
 		t.Fatal(err)
 	}
 	l.SetFilter("zzz")
-	view, _ = l.View(80, 5, Styles{})
+	view, _ = l.View(Styles{}, 80, 5)
 	if !strings.Contains(view, `No entry matches "zzz"; esc clears the filter.`) || strings.Contains(view, "No plants") {
 		t.Errorf("a filter without match:\n%s", view)
 	}
@@ -572,7 +572,7 @@ func TestListEscapesControlCharacters(t *testing.T) {
 		keysTo(l, "/")
 		typeList(l, "x")
 		l.query = append(l.query, '\x1b')
-		view, _ := l.View(80, 6, st)
+		view, _ := l.View(st, 80, 6)
 		plain := ansi.Strip(view)
 		if strings.ContainsAny(plain, "\x1b\x07") {
 			t.Errorf("%s: a control character reached the screen: %q", look, plain)
@@ -597,11 +597,11 @@ func TestRowClickMarksThenOpens(t *testing.T) {
 	l.SetGrouped(true)
 	l.Reset()
 	clickOn := func(item string, focused bool) (ItemID, bool) {
-		_, targets := l.View(60, 10, Styles{})
+		_, targets := l.View(Styles{}, 60, 10)
 		m := NewMouseMap(targets, true)
 		for _, tg := range targets {
 			if tg.Item == item {
-				return l.Click(m.Handle(click(tg.Rect.X+1, tg.Rect.Y)), focused)
+				return clickFocused(l, m.Handle(click(tg.Rect.X+1, tg.Rect.Y)), focused)
 			}
 		}
 		t.Fatalf("no target for %q", item)
@@ -626,10 +626,10 @@ func TestRowClickMarksThenOpens(t *testing.T) {
 	if open, _ := clickOn("oak", true); open != "" || l.Searching() || l.Query() != "a" || selected(t, l) != "oak" {
 		t.Errorf("a click while typing: open %q, searching %v, query %q", open, l.Searching(), l.Query())
 	}
-	if open, handled := l.Click(MouseResult{Zone: ZoneRows, Handled: true}, true); open != "" || handled {
+	if open, handled := clickFocused(l, MouseResult{Zone: ZoneRows, Handled: true}, true); open != "" || handled {
 		t.Error("the free area is the application's, to focus the rows")
 	}
-	if _, handled := l.Click(MouseResult{Item: "gone", Zone: ZoneRows, Action: "enter", Handled: true}, true); handled {
+	if _, handled := clickFocused(l, MouseResult{Item: "gone", Zone: ZoneRows, Action: "enter", Handled: true}, true); handled {
 		t.Error("a target of an entry no longer shown acted")
 	}
 }
@@ -646,7 +646,7 @@ func TestEveryControlHasATarget(t *testing.T) {
 	l.SetGrouped(true)
 	keysTo(l, "/")
 	typeList(l, "e")
-	view, targets := l.View(70, 12, st)
+	view, targets := l.View(st, 70, 12)
 	rows := strings.Split(ansi.Strip(view), "\n")
 	byRow := map[int]Target{}
 	for _, tg := range targets {
@@ -676,9 +676,9 @@ func TestEveryControlHasATarget(t *testing.T) {
 		}
 	}
 
-	bar := sampleBar(t, keys, i18n.English)
 	bl, _ := newSampleList(t, st, i18n.English, func(s *ListSpec) { s.SearchInBar = true })
-	line, barTargets := bar.View(80, st, bl)
+	bar := sampleBar(t, keys, i18n.English, bl)
+	line, barTargets := bar.View(st, 80)
 	fields := 0
 	for _, tg := range barTargets {
 		cells := ansi.Cut(ansi.Strip(line), tg.Rect.X, tg.Rect.X+tg.Rect.Width)
@@ -699,7 +699,7 @@ func TestEveryControlHasATarget(t *testing.T) {
 	if fields != 2 {
 		t.Errorf("%d field targets for two fields:\n%s", fields, line)
 	}
-	if open, handled := bl.Click(NewMouseMap(barTargets, true).Handle(click(75, 0)), false); open != "" || !handled || !bl.Searching() {
+	if open, handled := clickFocused(bl, NewMouseMap(barTargets, true).Handle(click(75, 0)), false); open != "" || !handled || !bl.Searching() {
 		t.Error("a click on the search field does not start the search")
 	}
 	bar.Focus(false)
@@ -713,4 +713,10 @@ func TestEveryControlHasATarget(t *testing.T) {
 			t.Errorf("value target %+v", tg)
 		}
 	}
+}
+
+// clickFocused hands the list a click after it says whether the rows had the focus before it.
+func clickFocused(l *List, r MouseResult, focused bool) (ItemID, bool) {
+	l.SetFocused(focused)
+	return l.Click(r)
 }

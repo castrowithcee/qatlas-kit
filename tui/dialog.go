@@ -24,6 +24,12 @@ type DialogInput struct {
 	Value  string
 }
 
+// DialogKeys are the actions of the key table a dialog reads beside its answers. Enter is the action of the
+// enter key; a dialog with a default needs it.
+type DialogKeys struct {
+	Enter ActionID
+}
+
 // DialogSpec is what a dialog asks. Question, Consequence and Details are plain text the application has
 // translated, since they name its data; the dialog escapes them.
 type DialogSpec struct {
@@ -42,9 +48,8 @@ type DialogSpec struct {
 	Default ActionID
 	// Danger is the answer of a destructive question that destroys; its button is drawn in the fail colour.
 	Danger ActionID
-	// Enter is the action of the enter key; a dialog with a default needs it.
-	Enter ActionID
-	Input *DialogInput
+	Input  *DialogInput
+	Keys   DialogKeys
 }
 
 // The smallest and the widest text of a dialog drawn over the screen.
@@ -59,10 +64,10 @@ const buttonGap = "  "
 // dialogInputRef is the target item of the input line of a dialog.
 const dialogInputRef = "\x00I"
 
-// DialogModel is an open dialog: a question answered by keys or buttons, or a short input. The answers are
+// Dialog is an open dialog: a question answered by keys or buttons, or a short input. The answers are
 // the only thing it does; every other key goes back to the application, which keeps the screen behind the
 // dialog from taking it.
-type DialogModel struct {
+type Dialog struct {
 	spec  DialogSpec
 	keys  *Keymap
 	text  Translator
@@ -75,7 +80,7 @@ type DialogModel struct {
 // an answer listed twice, a default or danger that is no answer, a default without the enter action or with an
 // enter key that is another answer, a danger that is the default, so enter never destroys, an answer of an
 // input dialog that has no key outside the typed text, and a masked input that starts with a value.
-func NewDialog(spec DialogSpec, keys *Keymap, text Translator) (*DialogModel, error) {
+func NewDialog(spec DialogSpec, keys *Keymap, text Translator) (*Dialog, error) {
 	if keys == nil || text == nil {
 		return nil, errors.New("the dialog needs a key table and a translator")
 	}
@@ -113,10 +118,10 @@ func NewDialog(spec DialogSpec, keys *Keymap, text Translator) (*DialogModel, er
 		switch {
 		case !slices.Contains(answers, spec.Default):
 			fail("default %q is no answer", spec.Default)
-		case !keys.known(spec.Enter):
-			fail("a default needs the enter action, %q is no action of the key table", spec.Enter)
-		case spec.Enter != spec.Default && slices.Contains(answers, spec.Enter):
-			fail("enter %q answers the dialog besides the default %q", spec.Enter, spec.Default)
+		case !keys.known(spec.Keys.Enter):
+			fail("a default needs the enter action, %q is no action of the key table", spec.Keys.Enter)
+		case spec.Keys.Enter != spec.Default && slices.Contains(answers, spec.Keys.Enter):
+			fail("enter %q answers the dialog besides the default %q", spec.Keys.Enter, spec.Default)
 		}
 	}
 	if spec.Danger != "" {
@@ -135,7 +140,7 @@ func NewDialog(spec DialogSpec, keys *Keymap, text Translator) (*DialogModel, er
 	}
 	spec.Answers = slices.Clone(spec.Answers)
 	spec.Details = slices.Clone(spec.Details)
-	d := &DialogModel{spec: spec, keys: keys, text: text}
+	d := &Dialog{spec: spec, keys: keys, text: text}
 	if spec.Input != nil {
 		in := *spec.Input
 		d.spec.Input = &in
@@ -150,7 +155,7 @@ func (k *Keymap) known(id ActionID) bool {
 	return ok
 }
 
-func (d *DialogModel) focus() InputFocus {
+func (d *Dialog) focus() InputFocus {
 	if d.spec.Input != nil {
 		return InputText
 	}
@@ -158,19 +163,19 @@ func (d *DialogModel) focus() InputFocus {
 }
 
 // Input is the input focus the dialog reads keys in: text in a dialog with an input, navigation otherwise.
-func (d *DialogModel) Input() InputFocus { return d.focus() }
+func (d *Dialog) Input() InputFocus { return d.focus() }
 
 // Update handles a key. answer is the answer the key gives, the default for enter; handled is false for a key
 // that neither answers nor edits the input, which the application handles or drops, but never passes to the
 // screen behind the dialog.
-func (d *DialogModel) Update(msg tea.KeyPressMsg) (answer ActionID, handled bool) {
+func (d *Dialog) Update(msg tea.KeyPressMsg) (answer ActionID, handled bool) {
 	focus := d.focus()
 	for _, a := range d.spec.Answers {
 		if d.keys.Is(msg, a.Action, focus) {
 			return a.Action, true
 		}
 	}
-	if d.spec.Default != "" && d.keys.Is(msg, d.spec.Enter, focus) {
+	if d.spec.Default != "" && d.keys.Is(msg, d.spec.Keys.Enter, focus) {
 		return d.spec.Default, true
 	}
 	if d.spec.Input != nil && d.input.edit(msg) {
@@ -181,7 +186,7 @@ func (d *DialogModel) Update(msg tea.KeyPressMsg) (answer ActionID, handled bool
 }
 
 // Paste puts pasted text into the input at its cursor; line breaks and other control characters are dropped.
-func (d *DialogModel) Paste(text string) bool {
+func (d *Dialog) Paste(text string) bool {
 	if d.spec.Input == nil || !d.input.insert(text) {
 		return false
 	}
@@ -189,7 +194,7 @@ func (d *DialogModel) Paste(text string) bool {
 	return true
 }
 
-func (d *DialogModel) clearError() {
+func (d *Dialog) clearError() {
 	if d.msg != nil && d.msg.Kind == MessageError {
 		d.msg = nil
 	}
@@ -198,7 +203,7 @@ func (d *DialogModel) clearError() {
 // Click handles a click on a target the dialog drew, as the MouseMap of its targets reports it: a button or
 // a key of the key line gives its answer, as its key does, and a click on the input does nothing more than
 // keep it.
-func (d *DialogModel) Click(r MouseResult) (answer ActionID, handled bool) {
+func (d *Dialog) Click(r MouseResult) (answer ActionID, handled bool) {
 	if !r.Handled {
 		return "", false
 	}
@@ -210,21 +215,21 @@ func (d *DialogModel) Click(r MouseResult) (answer ActionID, handled bool) {
 			return a.Action, true
 		}
 	}
-	if d.spec.Default != "" && r.Action == d.spec.Enter {
+	if d.spec.Default != "" && r.Action == d.spec.Keys.Enter {
 		return d.spec.Default, true
 	}
 	return "", false
 }
 
 // Value is the text of the input.
-func (d *DialogModel) Value() string { return d.input.String() }
+func (d *Dialog) Value() string { return d.input.String() }
 
 // ClearInput empties the input, such as after a wrong passphrase.
-func (d *DialogModel) ClearInput() { d.input.clear() }
+func (d *Dialog) ClearInput() { d.input.clear() }
 
 // SetMessage shows what is still running or the last error inside the dialog; nil removes it. Typing removes
 // an error.
-func (d *DialogModel) SetMessage(msg *Message) {
+func (d *Dialog) SetMessage(msg *Message) {
 	if msg == nil {
 		d.msg = nil
 		return
@@ -236,19 +241,19 @@ func (d *DialogModel) SetMessage(msg *Message) {
 // Hints are the answers as hints of the key line, the enter key beside the default. A dialog drawn over the
 // screen shows them itself; where it does not fit, the application puts them into the footer, whose targets
 // then answer it.
-func (d *DialogModel) Hints() []Hint {
+func (d *Dialog) Hints() []Hint {
 	var hints []Hint
 	for _, a := range d.spec.Answers {
 		hints = append(hints, Hint{Action: a.Action, Label: a.Label, Kind: HintAnswer})
-		if a.Action == d.spec.Default && d.spec.Enter != d.spec.Default {
-			hints = append(hints, Hint{Action: d.spec.Enter, Label: a.Label, Kind: HintAnswer})
+		if a.Action == d.spec.Default && d.spec.Keys.Enter != d.spec.Default {
+			hints = append(hints, Hint{Action: d.spec.Keys.Enter, Label: a.Label, Kind: HintAnswer})
 		}
 	}
 	return hints
 }
 
 // redact replaces the text of a masked input wherever a text of the dialog repeats it.
-func (d *DialogModel) redact(text string) string {
+func (d *Dialog) redact(text string) string {
 	if d.spec.Input == nil || !d.spec.Input.Masked {
 		return text
 	}
@@ -269,7 +274,7 @@ func redactSecret(text, secret string) string {
 
 // body is the content above the buttons in width cells, and the target of the input line, counted from its
 // top left.
-func (d *DialogModel) body(width int, styles Styles) ([]string, []Target) {
+func (d *Dialog) body(width int, styles Styles) ([]string, []Target) {
 	var lines []string
 	var targets []Target
 	wrapped := func(style TextStyle, text, lead string) {
@@ -313,7 +318,7 @@ func (d *DialogModel) body(width int, styles Styles) ([]string, []Target) {
 
 // buttons draws one button per answer label in rows of width cells, the default focused and the danger in the fail
 // colour, and returns a target per button, counted from the top left of the rows.
-func (d *DialogModel) buttons(width int, styles Styles) ([]string, []Target) {
+func (d *Dialog) buttons(width int, styles Styles) ([]string, []Target) {
 	var rows []string
 	var targets []Target
 	line, x := "", 0
@@ -354,7 +359,7 @@ func (d *DialogModel) buttons(width int, styles Styles) ([]string, []Target) {
 }
 
 // content is the whole dialog in width cells: the body, the buttons and the key line.
-func (d *DialogModel) content(width int, styles Styles) ([]string, []Target) {
+func (d *Dialog) content(width int, styles Styles) ([]string, []Target) {
 	lines, targets := d.body(width, styles)
 	lines = append(lines, "")
 	rows, bt := d.buttons(width, styles)
@@ -369,12 +374,12 @@ func (d *DialogModel) content(width int, styles Styles) ([]string, []Target) {
 	return lines, targets
 }
 
-// View draws the dialog over screen, the drawn screen of width by height cells: the screen dimmed, without
-// its colours, and the dialog in its frame centred in room, the part of the screen it may cover, such as the
-// workspace of the frame, so the header and the tab line stay in view. The targets are the dialog's alone, so
-// the screen behind it takes no click. ok is false where room is too small for the dialog; the application
-// then draws Page in the workspace and Hints in the footer.
-func (d *DialogModel) View(screen string, width, height int, room Rect, styles Styles) (view string, targets []Target, ok bool) {
+// Overlay draws the dialog with styles over screen, the drawn screen of width by height cells: the screen
+// dimmed, without its colours, and the dialog in its frame centred in room, the part of the screen it may
+// cover, such as the workspace of the frame, so the header and the tab line stay in view. The targets are the
+// dialog's alone, so the screen behind it takes no click. ok is false where room is too small for the dialog;
+// the application then draws View in the workspace and Hints in the footer.
+func (d *Dialog) Overlay(styles Styles, screen string, width, height int, room Rect) (view string, targets []Target, ok bool) {
 	inner := min(dialogMaxInner, room.Width-8)
 	if inner < dialogMinInner {
 		return "", nil, false
@@ -389,9 +394,9 @@ func (d *DialogModel) View(screen string, width, height int, room Rect, styles S
 	return overlay(screen, box, width, height, top, left, styles), OffsetTargets(ts, left+2, top+1), true
 }
 
-// Page draws the dialog as the content of a workspace of width by height cells, for a terminal too small to
-// draw it over the screen: the body without buttons and key line, which stand in the footer.
-func (d *DialogModel) Page(width, height int, styles Styles) (string, []Target) {
+// View draws the dialog with styles as the content of a workspace of width by height cells, for a terminal
+// too small to draw it over the screen: the body without buttons and key line, which stand in the footer.
+func (d *Dialog) View(styles Styles, width, height int) (string, []Target) {
 	width, height = max(width, 0), max(height, 0)
 	if height == 0 {
 		return "", nil

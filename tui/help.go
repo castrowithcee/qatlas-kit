@@ -15,9 +15,9 @@ import (
 
 // HelpKeys are the actions of the key table the help reads.
 type HelpKeys struct {
-	// Left and Right change the topic with wrap-around, and so do NextTopic and PrevTopic where the table has
-	// them, such as tab and shift+tab on the help level.
-	Left, Right, NextTopic, PrevTopic ActionID
+	// Left and Right change the topic with wrap-around, and so do Next and Prev where the table has them,
+	// such as tab and shift+tab on the help level.
+	Left, Right, Next, Prev ActionID
 	// Up, Down, PageUp and PageDown scroll the text and stop at its ends; First and Last, where the table has
 	// them, jump there.
 	Up, Down, PageUp, PageDown, First, Last ActionID
@@ -49,9 +49,9 @@ const helpHeadingWidth = 40
 // helpTopicRef starts the target item of a topic tab.
 const helpTopicRef = "\x00t"
 
-// HelpModel is the open help: one topic of the application's help topics at a time, scrolled within the room
+// Help is the open help: one topic of the application's help topics at a time, scrolled within the room
 // it has. It holds the topic and the scroll position.
-type HelpModel struct {
+type Help struct {
 	spec   HelpSpec
 	keys   *Keymap
 	text   Translator
@@ -63,7 +63,7 @@ type HelpModel struct {
 // without name or text, a name with a blank or control character or one that two topics share, a missing
 // key of Left, Right, Up, Down, PageUp, PageDown, Back or Help, a key that names no action of keys or that two
 // help keys share, and a key list entry that names no action of keys or a global action listed twice.
-func NewHelp(spec HelpSpec, keys *Keymap, text Translator) (*HelpModel, error) {
+func NewHelp(spec HelpSpec, keys *Keymap, text Translator) (*Help, error) {
 	if keys == nil || text == nil {
 		return nil, errors.New("the help needs a key table and a translator")
 	}
@@ -87,8 +87,8 @@ func NewHelp(spec HelpSpec, keys *Keymap, text Translator) (*HelpModel, error) {
 	}
 	k := spec.Keys
 	errs = append(errs, checkKeys("help", keys, []namedKey{
-		{"left", k.Left, true}, {"right", k.Right, true}, {"next topic", k.NextTopic, false},
-		{"previous topic", k.PrevTopic, false}, {"up", k.Up, true}, {"down", k.Down, true},
+		{"left", k.Left, true}, {"right", k.Right, true}, {"next", k.Next, false},
+		{"prev", k.Prev, false}, {"up", k.Up, true}, {"down", k.Down, true},
 		{"page up", k.PageUp, true}, {"page down", k.PageDown, true}, {"first", k.First, false},
 		{"last", k.Last, false}, {"back", k.Back, true}, {"help", k.Help, true},
 	})...)
@@ -111,7 +111,7 @@ func NewHelp(spec HelpSpec, keys *Keymap, text Translator) (*HelpModel, error) {
 	spec.Topics = slices.Clone(spec.Topics)
 	spec.Screen = slices.Clone(spec.Screen)
 	spec.Global = slices.Clone(spec.Global)
-	return &HelpModel{spec: spec, keys: keys, text: text}, nil
+	return &Help{spec: spec, keys: keys, text: text}, nil
 }
 
 // namedKey is one key of a component's key set with the name its refusal uses.
@@ -143,11 +143,11 @@ func checkKeys(part string, keys *Keymap, set []namedKey) []error {
 }
 
 // Topic is the name of the topic shown.
-func (h *HelpModel) Topic() string { return h.spec.Topics[h.topic].Name }
+func (h *Help) Topic() string { return h.spec.Topics[h.topic].Name }
 
 // SetTopic shows the named topic from its top, such as the topic a command or a link asks for. It reports
 // false and keeps the topic for an unknown name.
-func (h *HelpModel) SetTopic(name string) bool {
+func (h *Help) SetTopic(name string) bool {
 	i := slices.IndexFunc(h.spec.Topics, func(t helptopics.Topic) bool { return t.Name == name })
 	if i < 0 {
 		return false
@@ -160,7 +160,7 @@ func (h *HelpModel) SetTopic(name string) bool {
 // Update handles a key. act is the action the application runs as that key while the help is open: Back or
 // Help, which close it. The keys that change the topic or scroll are handled inside; handled is false for
 // every other key, which the application handles or drops.
-func (h *HelpModel) Update(msg tea.KeyPressMsg) (act ActionID, handled bool) {
+func (h *Help) Update(msg tea.KeyPressMsg) (act ActionID, handled bool) {
 	for _, id := range h.navKeys() {
 		if h.keys.Is(msg, id, InputNavigation) {
 			return h.Act(id)
@@ -169,10 +169,10 @@ func (h *HelpModel) Update(msg tea.KeyPressMsg) (act ActionID, handled bool) {
 	return "", false
 }
 
-func (h *HelpModel) navKeys() []ActionID {
+func (h *Help) navKeys() []ActionID {
 	k := h.spec.Keys
 	var ids []ActionID
-	for _, id := range []ActionID{k.Back, k.Help, k.Left, k.Right, k.NextTopic, k.PrevTopic, k.Up, k.Down,
+	for _, id := range []ActionID{k.Back, k.Help, k.Left, k.Right, k.Next, k.Prev, k.Up, k.Down,
 		k.PageUp, k.PageDown, k.First, k.Last} {
 		if id != "" {
 			ids = append(ids, id)
@@ -182,7 +182,7 @@ func (h *HelpModel) navKeys() []ActionID {
 }
 
 // Act runs one of the help keys as its key does, for a click or a command that stands for the key.
-func (h *HelpModel) Act(id ActionID) (act ActionID, handled bool) {
+func (h *Help) Act(id ActionID) (act ActionID, handled bool) {
 	k := h.spec.Keys
 	if id == "" {
 		return "", false
@@ -190,9 +190,9 @@ func (h *HelpModel) Act(id ActionID) (act ActionID, handled bool) {
 	switch id {
 	case k.Back, k.Help:
 		return id, true
-	case k.Left, k.PrevTopic:
+	case k.Left, k.Prev:
 		h.SetTopic(h.spec.Topics[wrap(h.topic-1, len(h.spec.Topics))].Name)
-	case k.Right, k.NextTopic:
+	case k.Right, k.Next:
 		h.SetTopic(h.spec.Topics[wrap(h.topic+1, len(h.spec.Topics))].Name)
 	case k.Up:
 		h.scroll.by(-1)
@@ -215,7 +215,7 @@ func (h *HelpModel) Act(id ActionID) (act ActionID, handled bool) {
 // Click handles a click on a target the help drew, as the MouseMap of its targets reports it: a topic tab
 // shows its topic as the topic keys would, a key of the key line acts as that key, and a line of the key
 // list yields its action, which the application runs as if its key were pressed while the help is open.
-func (h *HelpModel) Click(r MouseResult) (act ActionID, handled bool) {
+func (h *Help) Click(r MouseResult) (act ActionID, handled bool) {
 	if !r.Handled {
 		return "", false
 	}
@@ -232,16 +232,16 @@ func (h *HelpModel) Click(r MouseResult) (act ActionID, handled bool) {
 }
 
 // listed reports whether the key list names the action.
-func (h *HelpModel) listed(id ActionID) bool {
+func (h *Help) listed(id ActionID) bool {
 	return slices.Contains(h.spec.Global, id) || slices.ContainsFunc(h.spec.Screen, func(hint Hint) bool { return hint.Action == id })
 }
 
 // Wheel scrolls the text by the notches of the wheel, WheelTextLines a notch, and stops at its ends.
-func (h *HelpModel) Wheel(steps int) { h.scroll.by(steps * WheelTextLines) }
+func (h *Help) Wheel(steps int) { h.scroll.by(steps * WheelTextLines) }
 
 // Hints are the help keys as hints of a key line. The help drawn over the screen shows them itself; where it
 // fills the workspace, the application puts them into the footer.
-func (h *HelpModel) Hints() []Hint {
+func (h *Help) Hints() []Hint {
 	k := h.spec.Keys
 	var hints []Hint
 	add := func(label TextID, priority int, kind HintKind, ids ...ActionID) {
@@ -251,7 +251,7 @@ func (h *HelpModel) Hints() []Hint {
 			}
 		}
 	}
-	add(TextHelpTopic, 0, HintNormal, k.Left, k.Right, k.NextTopic, k.PrevTopic)
+	add(TextHelpTopic, 0, HintNormal, k.Left, k.Right, k.Next, k.Prev)
 	add(TextHelpScroll, 1, HintNormal, k.Up, k.Down)
 	add(TextHelpPage, 2, HintNormal, k.PageUp, k.PageDown)
 	add(TextKeyFirst, 3, HintNormal, k.First)
@@ -268,7 +268,7 @@ type textRow struct {
 
 // rows is the text of the topic shown in width cells: its lines wrapped as the command line wraps them, a
 // heading in bold, and after the first topic the key list with one target per key.
-func (h *HelpModel) rows(width int, styles Styles) []textRow {
+func (h *Help) rows(width int, styles Styles) []textRow {
 	var rows []textRow
 	for _, line := range strings.Split(h.spec.Topics[h.topic].Text, "\n") {
 		line = Escape(line)
@@ -294,7 +294,7 @@ func (h *HelpModel) rows(width int, styles Styles) []textRow {
 
 // keyList is one list of keys under its heading, after a blank line, one group a line; nothing where no hint
 // has a key.
-func (h *HelpModel) keyList(heading TextID, hints []Hint, width int, styles Styles) []textRow {
+func (h *Help) keyList(heading TextID, hints []Hint, width int, styles Styles) []textRow {
 	groups := h.keys.Hints(hints, InputNavigation, h.text)
 	if len(groups) == 0 {
 		return nil
@@ -316,7 +316,7 @@ func (h *HelpModel) keyList(heading TextID, hints []Hint, width int, styles Styl
 
 // strip is the line of topic tabs in width cells, the topic shown in brackets or filled, and a target per
 // drawn tab. Topics before the first that lets the strip fit are left out, so the topic shown is always on it.
-func (h *HelpModel) strip(width int, styles Styles) (string, []Target) {
+func (h *Help) strip(width int, styles Styles) (string, []Target) {
 	names := make([]string, len(h.spec.Topics))
 	for i, t := range h.spec.Topics {
 		names[i] = t.Name
@@ -337,7 +337,7 @@ func (h *HelpModel) strip(width int, styles Styles) (string, []Target) {
 }
 
 // window is rows cut to room lines from the scroll position, with the position line where they do not fit.
-func (h *HelpModel) window(rows []textRow, room, width int, styles Styles) []textRow {
+func (h *Help) window(rows []textRow, room, width int, styles Styles) []textRow {
 	start, end, position := h.scroll.window(len(rows), room, h.text)
 	out := slices.Clone(rows[start:end])
 	if position != "" {
@@ -355,11 +355,12 @@ func place(lines []string, targets []Target, rows []textRow, x int) ([]string, [
 	return lines, targets
 }
 
-// View draws the help over screen, the drawn screen of width by height cells: the screen dimmed and the help
-// in its frame centred in room, the part of the screen it may cover, with the topic tabs, the text of the
-// topic shown, the position where it scrolls, and the key line. The targets are the help's alone. ok is false
-// where room is too small; the application then draws Page in the workspace and Hints in the footer.
-func (h *HelpModel) View(screen string, width, height int, room Rect, styles Styles) (view string, targets []Target, ok bool) {
+// Overlay draws the help with styles over screen, the drawn screen of width by height cells: the screen
+// dimmed and the help in its frame centred in room, the part of the screen it may cover, with the topic tabs,
+// the text of the topic shown, the position where it scrolls, and the key line. The targets are the help's
+// alone. ok is false where room is too small; the application then draws View in the workspace and Hints in
+// the footer.
+func (h *Help) Overlay(styles Styles, screen string, width, height int, room Rect) (view string, targets []Target, ok bool) {
 	inner := min(helpMaxInner, room.Width-8)
 	textRoom := room.Height - 2 - 2 - 4
 	if inner < dialogMinInner || textRoom < helpMinText {
@@ -378,9 +379,10 @@ func (h *HelpModel) View(screen string, width, height int, room Rect, styles Sty
 	return overlay(screen, box, width, height, top, left, styles), OffsetTargets(ts, left+2, top+1), true
 }
 
-// Page draws the help as the content of a workspace of width by height cells, for a terminal too small to
-// draw it over the screen: the title and the topic tabs, then the text; the keys stand in the footer.
-func (h *HelpModel) Page(width, height int, styles Styles) (string, []Target) {
+// View draws the help with styles as the content of a workspace of width by height cells, for a terminal too
+// small to draw it over the screen: the title and the topic tabs, then the text; the keys stand in the
+// footer.
+func (h *Help) View(styles Styles, width, height int) (string, []Target) {
 	width, height = max(width, 0), max(height, 0)
 	if height == 0 || width == 0 {
 		return finishPage(nil, nil, width, height)

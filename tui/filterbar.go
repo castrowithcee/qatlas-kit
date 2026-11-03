@@ -10,26 +10,29 @@ import (
 	"charm.land/lipgloss/v2"
 )
 
-// FilterOption is one value of a field of a filter bar.
-type FilterOption struct {
-	ID    string
-	Label TextID
-}
-
 // FilterField is one choice field of a filter bar, such as the grouping, a state or the sort order. Selected
 // is the ID of the value in force; empty takes the first.
 type FilterField struct {
-	ID       string
+	ID       FieldID
 	Label    TextID
-	Options  []FilterOption
-	Selected string
+	Options  []Choice
+	Selected ChoiceID
 }
 
-// FilterKeys are the actions of the key table a filter bar reads: Left and Right change the value of the
-// field, Next and Prev step through the fields, Enter opens the list of values and takes one, Up and Down move
-// in it, and Back closes it without change.
-type FilterKeys struct {
+// FilterBarKeys are the actions of the key table a filter bar reads: Left and Right change the value of the
+// field, Next and Prev step through the fields, Enter opens the list of values and takes one, Up and Down
+// move in it, and Back closes it without change.
+type FilterBarKeys struct {
 	Left, Right, Next, Prev, Up, Down, Enter, Back ActionID
+}
+
+// FilterBarSpec is what a filter bar holds and the keys it reads.
+type FilterBarSpec struct {
+	Fields []FilterField
+	Keys   FilterBarKeys
+	// List is the list the bar stands above. Where it draws its search in the bar, its search field stands at
+	// the right end of the bar; nil is none.
+	List *List
 }
 
 // The target items of a filter bar start with a control character, which no field or value ID holds.
@@ -49,7 +52,8 @@ const (
 // the values, the focused field and the open list of values.
 type FilterBar struct {
 	fields []FilterField
-	nav    FilterKeys
+	nav    FilterBarKeys
+	list   *List
 	keys   *Keymap
 	text   Translator
 
@@ -58,14 +62,15 @@ type FilterBar struct {
 	choice int
 }
 
-// NewFilterBar checks the fields and returns a bar without focus. It rejects a bar without fields, a field
+// NewFilterBar checks spec and returns a bar without focus. It rejects a bar without fields, a field
 // or value without ID or label, an ID with a control character or listed twice, a field with fewer than two
 // values, a selected value that is no value of its field, and a key that names no action of keys or is named
 // twice.
-func NewFilterBar(fields []FilterField, nav FilterKeys, keys *Keymap, text Translator) (*FilterBar, error) {
+func NewFilterBar(spec FilterBarSpec, keys *Keymap, text Translator) (*FilterBar, error) {
 	if keys == nil || text == nil {
 		return nil, errors.New("the filter bar needs a key table and a translator")
 	}
+	fields, nav := spec.Fields, spec.Keys
 	var errs []error
 	used := map[ActionID]bool{}
 	for _, id := range []ActionID{nav.Left, nav.Right, nav.Next, nav.Prev, nav.Up, nav.Down, nav.Enter, nav.Back} {
@@ -81,14 +86,14 @@ func NewFilterBar(fields []FilterField, nav FilterKeys, keys *Keymap, text Trans
 		errs = append(errs, errors.New("the filter bar has no field"))
 	}
 	badID := func(id string) bool { return id == "" || strings.IndexFunc(id, unicode.IsControl) >= 0 }
-	seen := map[string]bool{}
+	seen := map[FieldID]bool{}
 	list := make([]FilterField, len(fields))
 	for i, f := range fields {
 		fail := func(format string, args ...any) {
 			errs = append(errs, fmt.Errorf("filter field %q: "+format, append([]any{f.ID}, args...)...))
 		}
 		switch {
-		case badID(f.ID):
+		case badID(string(f.ID)):
 			fail("an ID is not empty and holds no control character")
 		case seen[f.ID]:
 			fail("is listed twice")
@@ -100,10 +105,10 @@ func NewFilterBar(fields []FilterField, nav FilterKeys, keys *Keymap, text Trans
 		if len(f.Options) < 2 {
 			fail("%d values; a field to choose from has at least two", len(f.Options))
 		}
-		values := map[string]bool{}
+		values := map[ChoiceID]bool{}
 		for _, o := range f.Options {
 			switch {
-			case badID(o.ID):
+			case badID(string(o.ID)):
 				fail("value %q: an ID is not empty and holds no control character", o.ID)
 			case values[o.ID]:
 				fail("value %q is listed twice", o.ID)
@@ -113,7 +118,7 @@ func NewFilterBar(fields []FilterField, nav FilterKeys, keys *Keymap, text Trans
 				fail("value %q has no label", o.ID)
 			}
 		}
-		f.Options = append([]FilterOption(nil), f.Options...)
+		f.Options = append([]Choice(nil), f.Options...)
 		switch {
 		case f.Selected == "" && len(f.Options) > 0:
 			f.Selected = f.Options[0].ID
@@ -125,21 +130,21 @@ func NewFilterBar(fields []FilterField, nav FilterKeys, keys *Keymap, text Trans
 	if err := errors.Join(errs...); err != nil {
 		return nil, err
 	}
-	return &FilterBar{fields: list, nav: nav, keys: keys, text: text, focus: -1}, nil
+	return &FilterBar{fields: list, nav: nav, list: spec.List, keys: keys, text: text, focus: -1}, nil
 }
 
 // Fields are the fields with the values in force.
 func (b *FilterBar) Fields() []FilterField {
 	out := make([]FilterField, len(b.fields))
 	for i, f := range b.fields {
-		f.Options = append([]FilterOption(nil), f.Options...)
+		f.Options = append([]Choice(nil), f.Options...)
 		out[i] = f
 	}
 	return out
 }
 
 // Value is the ID of the value in force of the field id, empty for an unknown field.
-func (b *FilterBar) Value(id string) string {
+func (b *FilterBar) Value(id FieldID) ChoiceID {
 	for _, f := range b.fields {
 		if f.ID == id {
 			return f.Selected
@@ -217,14 +222,14 @@ func (b *FilterBar) Update(msg tea.KeyPressMsg) (changed FilterField, handled bo
 
 // Click handles a click on a target the bar drew, as the MouseMap of its targets reports it: a click on a
 // field focuses it and opens its list of values, as enter does, a second one closes it, and a click on a
-// value of the open list takes it. A click on the search field is the search key of the list; ListModel.Click
+// value of the open list takes it. A click on the search field is the search key of the list; List.Click
 // runs it.
 func (b *FilterBar) Click(r MouseResult) (changed FilterField, handled bool) {
 	if !r.Handled {
 		return FilterField{}, false
 	}
 	if id, ok := strings.CutPrefix(r.Item, fieldRef); ok {
-		i := b.field(id)
+		i := b.field(FieldID(id))
 		if i < 0 {
 			return FilterField{}, false
 		}
@@ -237,12 +242,12 @@ func (b *FilterBar) Click(r MouseResult) (changed FilterField, handled bool) {
 	}
 	if rest, ok := strings.CutPrefix(r.Item, optionRef); ok {
 		id, value, _ := strings.Cut(rest, "\x00")
-		i := b.field(id)
+		i := b.field(FieldID(id))
 		if i < 0 || !b.open || b.focus != i {
 			return FilterField{}, false
 		}
 		for j, o := range b.fields[i].Options {
-			if o.ID == value {
+			if string(o.ID) == value {
 				return b.choose(i, j), true
 			}
 		}
@@ -250,7 +255,7 @@ func (b *FilterBar) Click(r MouseResult) (changed FilterField, handled bool) {
 	return FilterField{}, false
 }
 
-func (b *FilterBar) field(id string) int {
+func (b *FilterBar) field(id FieldID) int {
 	for i, f := range b.fields {
 		if f.ID == id {
 			return i
@@ -277,7 +282,7 @@ func (b *FilterBar) choose(i, j int) FilterField {
 	}
 	f.Selected = f.Options[j].ID
 	out := *f
-	out.Options = append([]FilterOption(nil), f.Options...)
+	out.Options = append([]Choice(nil), f.Options...)
 	return out
 }
 
@@ -323,13 +328,14 @@ func barMarker(focused bool) string {
 }
 
 // View draws the bar on one line of width cells: the fields as choice fields "label: value", the focused one
-// behind the marker ">", and the search field of list at the right end where list draws its search in the
-// bar; list may be nil. Where the fields do not all fit, their values are cut; where even that is not enough,
-// the focused field stands alone, an unfocused bar shows its values dimmed or, while a search is typed, the
-// search field. It returns a target for the free area of the bar, one per drawn field and one for the search
-// field, counted from the left of the bar.
-func (b *FilterBar) View(width int, styles Styles, list *ListModel) (string, []Target) {
+// behind the marker ">", and the search field of the list of the spec at the right end where the list draws
+// its search in the bar. Where the fields do not all fit, their values are cut; where even that is not
+// enough, the focused field stands alone, an unfocused bar shows its values dimmed or, while a search is
+// typed, the search field. It returns a target for the free area of the bar, one per drawn field and one for
+// the search field, counted from the left of the bar.
+func (b *FilterBar) View(styles Styles, width int) (string, []Target) {
 	width = max(width, 0)
+	list := b.list
 	n := len(b.fields)
 	labels, values := make([]string, n), make([]string, n)
 	for i := range b.fields {
@@ -378,7 +384,7 @@ func (b *FilterBar) View(width int, styles Styles, list *ListModel) (string, []T
 			line.WriteString(barMarker(i == b.focus) + fieldStyle(styles, i == b.focus).Render(text))
 			w := 2 + lipgloss.Width(text)
 			targets = append(targets, Target{Rect: Rect{X: x, Width: w, Height: 1}, Zone: ZoneFilters,
-				Action: b.nav.Enter, Item: fieldRef + b.fields[i].ID})
+				Action: b.nav.Enter, Item: fieldRef + string(b.fields[i].ID)})
 			x += w
 		}
 		if searchWidth > 0 {
@@ -394,7 +400,7 @@ func (b *FilterBar) View(width int, styles Styles, list *ListModel) (string, []T
 	} else if b.focus >= 0 {
 		text := fieldText(styles, labels[b.focus], values[b.focus], max(width-2, 1))
 		targets = append(targets, Target{Rect: Rect{Width: width, Height: 1}, Zone: ZoneFilters,
-			Action: b.nav.Enter, Item: fieldRef + b.fields[b.focus].ID})
+			Action: b.nav.Enter, Item: fieldRef + string(b.fields[b.focus].ID)})
 		line = barMarker(true) + fieldStyle(styles, true).Render(text)
 	} else if !idle {
 		line = searchField(0, width)
@@ -428,7 +434,7 @@ func (b *FilterBar) ValueList(styles Styles) (string, []Target) {
 	for j, label := range labels {
 		lines[j] = styles.Row(label, inner, j == b.choice)
 		targets = append(targets, Target{Rect: Rect{X: 2, Y: 1 + j, Width: inner, Height: 1}, Zone: ZoneFilters,
-			Action: b.nav.Enter, Item: optionRef + f.ID + "\x00" + f.Options[j].ID})
+			Action: b.nav.Enter, Item: optionRef + string(f.ID) + "\x00" + string(f.Options[j].ID)})
 	}
 	return strings.Join(styles.Panel(title, "", lines, inner+4, len(lines)+2, true), "\n"), targets
 }

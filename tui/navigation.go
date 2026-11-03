@@ -60,7 +60,7 @@ func StepArea(areas []Area, active AreaID, step int) AreaID {
 }
 
 // StepTab is StepArea for the sub-tabs of area.
-func StepTab(area Area, active string, step int) string {
+func StepTab(area Area, active TabID, step int) TabID {
 	if len(area.Tabs) == 0 {
 		return active
 	}
@@ -100,7 +100,7 @@ func CheckAreas(areas []Area) error {
 		if a.Title == "" {
 			errs = append(errs, fmt.Errorf("area %q has no title", a.ID))
 		}
-		tabs := map[string]bool{}
+		tabs := map[TabID]bool{}
 		for j, t := range a.Tabs {
 			switch {
 			case t.ID == "":

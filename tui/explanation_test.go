@@ -24,8 +24,8 @@ func explanationKeymap(t *testing.T) *Keymap {
 	return k
 }
 
-func sampleExplanation() Explanation {
-	return Explanation{Title: "Bed", Body: "The bed the plant grows in; its soil decides how often it needs water.",
+func sampleExplanation() ExplanationItem {
+	return ExplanationItem{Title: "Bed", Body: "The bed the plant grows in; its soil decides how often it needs water.",
 		Term: helptopics.Term{ID: "term.bed", Title: "Bed", Text: "A bed is one patch of soil. Several plants can share a bed."},
 		URL:  "https://garden.example/guide/beds"}
 }
@@ -39,7 +39,7 @@ func sampleExplanationKeys() ExplanationKeys {
 	return ExplanationKeys{Back: "back", Info: "info", Copy: "copy", Up: "up", Down: "down", Link: "open"}
 }
 
-func newSampleExplanation(t *testing.T, item Explanation, lang i18n.Lang) *ExplanationModel {
+func newSampleExplanation(t *testing.T, item ExplanationItem, lang i18n.Lang) *Explanation {
 	t.Helper()
 	keys := explanationKeymap(t)
 	e, err := NewExplanation(ExplanationSpec{Item: item, Keys: sampleExplanationKeys()}, keys, newTranslator(t, lang, nil, keys))
@@ -60,7 +60,7 @@ func TestNewExplanationRejectsWhatCannotWork(t *testing.T) {
 		{"missing key", func(s *ExplanationSpec) { s.Keys.Copy = "" }, "copy key is missing"},
 		{"unknown key", func(s *ExplanationSpec) { s.Keys.Link = "browse" }, "no action of the key table"},
 		{"shared key", func(s *ExplanationSpec) { s.Keys.Info = "back" }, "also the back key"},
-		{"nothing to explain", func(s *ExplanationSpec) { s.Item = Explanation{Title: "Bed", Body: " "} }, "nothing to explain"},
+		{"nothing to explain", func(s *ExplanationSpec) { s.Item = ExplanationItem{Title: "Bed", Body: " "} }, "nothing to explain"},
 		{"term without ID", func(s *ExplanationSpec) { s.Item.Term.ID = "" }, "an ID"},
 		{"term of four sentences", func(s *ExplanationSpec) { s.Item.Term.Text = "One. Two. Three. Four." }, "sentences"},
 		{"term with control", func(s *ExplanationSpec) { s.Item.Term.Text = "Soil\x1b[2J." }, "a text"},
@@ -84,7 +84,7 @@ func TestNewExplanationRejectsWhatCannotWork(t *testing.T) {
 	if _, err := NewExplanation(ExplanationSpec{Item: sampleExplanation(), Keys: sampleExplanationKeys()}, keys, nil); err == nil {
 		t.Error("an explanation without translator was accepted")
 	}
-	for _, item := range []Explanation{{Body: "Soil."}, {Term: sampleExplanation().Term}, {URL: "http://garden.example"}} {
+	for _, item := range []ExplanationItem{{Body: "Soil."}, {Term: sampleExplanation().Term}, {URL: "http://garden.example"}} {
 		spec := ExplanationSpec{Item: item, Keys: sampleExplanationKeys()}
 		spec.Keys.Link = ""
 		if _, err := NewExplanation(spec, keys, text); err != nil {
@@ -98,7 +98,7 @@ func TestSetItemKeepsTheShownOneOnRefusal(t *testing.T) {
 	long := sampleExplanation()
 	long.Body = strings.Repeat("Water the bed in the morning. ", 40)
 	e := newSampleExplanation(t, long, i18n.English)
-	e.Page(40, 10, st)
+	e.View(st, 40, 10)
 	e.Wheel(1)
 	if err := e.SetItem(long); err != nil || e.scroll.offset == 0 {
 		t.Fatalf("the same explanation started over: %v, offset %d", err, e.scroll.offset)
@@ -135,7 +135,7 @@ func TestExplanationKeys(t *testing.T) {
 			t.Errorf("%s was taken by the explanation: %q", key, act)
 		}
 	}
-	plain := newSampleExplanation(t, Explanation{Body: "Soil."}, i18n.English)
+	plain := newSampleExplanation(t, ExplanationItem{Body: "Soil."}, i18n.English)
 	if act, handled := plain.Update(press("o")); handled || act != "" {
 		t.Errorf("the link key acts without an address: %q", act)
 	}
@@ -148,7 +148,7 @@ func TestExplanationOverTheScreen(t *testing.T) {
 		e := newSampleExplanation(t, sampleExplanation(), i18n.German)
 		for _, size := range []struct{ width, height int }{{100, 30}, {40, 16}, {27, 10}} {
 			room := Rect{Y: 2, Width: size.width, Height: size.height - 3}
-			view, targets, ok := e.View(sampleScreen(size.width, size.height), size.width, size.height, room, st)
+			view, targets, ok := e.Overlay(st, sampleScreen(size.width, size.height), size.width, size.height, room)
 			if want := size.width-8 >= explanationMinInner; ok != want {
 				t.Fatalf("%s %dx%d: over the screen = %v, want %v", name, size.width, size.height, ok, want)
 			}
@@ -172,7 +172,7 @@ func TestExplanationOverTheScreen(t *testing.T) {
 				}
 			}
 		}
-		view, _, _ := e.View(sampleScreen(120, 30), 120, 30, Rect{Y: 2, Width: 120, Height: 27}, st)
+		view, _, _ := e.Overlay(st, sampleScreen(120, 30), 120, 30, Rect{Y: 2, Width: 120, Height: 27})
 		if !strings.Contains(ansi.Strip(view), "https://garden.example/guide/beds") {
 			t.Errorf("%s: the address is not shown in full:\n%s", name, ansi.Strip(view))
 		}
@@ -195,7 +195,7 @@ func TestExplanationClicks(t *testing.T) {
 	st := looks(t)["noneascii"]
 	e := newSampleExplanation(t, sampleExplanation(), i18n.English)
 	room := Rect{Y: 2, Width: 60, Height: 27}
-	view, targets, ok := e.View(sampleScreen(60, 30), 60, 30, room, st)
+	view, targets, ok := e.Overlay(st, sampleScreen(60, 30), 60, 30, room)
 	if !ok {
 		t.Fatal("the explanation does not fit")
 	}
@@ -253,7 +253,7 @@ func TestExplanationPane(t *testing.T) {
 	for name, st := range looks(t) {
 		e := newSampleExplanation(t, item, i18n.English)
 		for _, size := range []struct{ width, height int }{{40, 12}, {40, 60}, {3, 1}} {
-			view, targets := e.Pane(size.width, size.height, st)
+			view, targets := e.Pane(st, size.width, size.height)
 			assertSize(t, view, size.width, size.height)
 			if len(targets) == 0 || targets[0].Zone != ZoneDetail || targets[0].Rect != (Rect{Width: size.width, Height: size.height}) {
 				t.Errorf("%s %dx%d: the pane has no zone target: %+v", name, size.width, size.height, targets)
@@ -264,9 +264,9 @@ func TestExplanationPane(t *testing.T) {
 				}
 			}
 		}
-		e.Pane(40, 12, st)
+		e.Pane(st, 40, 12)
 		e.Wheel(100)
-		view, _ := e.Pane(40, 12, st)
+		view, _ := e.Pane(st, 40, 12)
 		if !strings.Contains(view, "Bed") || e.scroll.offset != e.scroll.last || e.scroll.last == 0 {
 			t.Errorf("%s: the wheel does not stop at the end (%d of %d):\n%s", name, e.scroll.offset, e.scroll.last, view)
 		}
@@ -281,7 +281,7 @@ func TestExplanationPane(t *testing.T) {
 func TestExplanationPage(t *testing.T) {
 	st := looks(t)["noneascii"]
 	e := newSampleExplanation(t, sampleExplanation(), i18n.English)
-	view, targets := e.Page(60, 20, st)
+	view, targets := e.View(st, 60, 20)
 	assertSize(t, view, 60, 20)
 	if !strings.HasPrefix(view, "Bed") || len(targets) == 0 || targets[len(targets)-1].Action != "open" {
 		t.Errorf("the page lacks its title or the target of the address: %+v\n%s", targets, view)
@@ -289,11 +289,11 @@ func TestExplanationPage(t *testing.T) {
 	if strings.Contains(strings.Join(texts(e.keys.Hints(e.Hints(), InputNavigation, e.text)), " "), "scroll") {
 		t.Error("a text that fits names the scroll keys")
 	}
-	e.Page(60, 5, st)
+	e.View(st, 60, 5)
 	if !strings.Contains(strings.Join(texts(e.keys.Hints(e.Hints(), InputNavigation, e.text)), " "), "↑/↓ scroll") {
 		t.Error("a text that scrolls does not name the scroll keys")
 	}
-	if page, _ := e.Page(0, 3, st); page != "\n\n" {
+	if page, _ := e.View(st, 0, 3); page != "\n\n" {
 		t.Errorf("a page without width drew %q", page)
 	}
 }

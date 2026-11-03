@@ -28,6 +28,13 @@
 // name the reason of every refusal. A Keymap satisfies KeyLabels, so labels and the key placeholders of
 // every text follow a binding at once.
 //
+// The parts with state share one shape. NewX checks an XSpec, which holds the content and, in Keys, the
+// actions of the key table the part reads, against the Keymap and the Translator and refuses what cannot
+// work. Update reads a key press and Click the MouseResult of a target the part drew; both return what the
+// application runs. View draws with the Styles of that drawing in width by height cells and returns the lines
+// and their targets; a part that also stands over the screen draws there with Overlay, which reports false
+// where the room is too small. The styles come with every drawing, so a change of the theme keeps the state.
+//
 // A Frame draws the frame every screen stands in from the FrameSpec the application fills for each
 // render: the header with the product name, status marks, back button and header keys; the tab line with
 // one tab per Area as its digit and title; the sub-tabs of the active area where it has more than one; a
@@ -68,73 +75,76 @@
 // then the text inside a word; the empty line lists the commands that are not hidden. A command names the
 // action, and where it opens one, the area and tab that its key or tab click already triggers, so Update and
 // Click yield what the dispatcher of the application runs for that key. It acts only where Available says its
-// key acts; anywhere else the line stays open with the typed text and the reason. The line reads keys where
-// text is typed, so a letter is always text, and moves with the actions of CommandKeys. View draws a panel
-// with the key in force beside each command, at most twelve rows that scroll with the choice and one target
-// per row; the application places it over the workspace, or on it where the terminal is too small.
+// key acts, in the Context the application sets when it opens the line; anywhere else the line stays open
+// with the typed text and the reason. The line reads keys where text is typed, so a letter is always text,
+// and moves with the actions of CommandLineKeys. View draws a panel with the key in force beside each
+// command, at most twelve rows that scroll with the choice and one target per row; the application places it
+// over the workspace, or on it where the terminal is too small.
 //
-// A ListModel shows the entries an application hands it, each with a stable ItemID, its cells and a group
-// key, as a table under dimmed upper-case column titles. The selection follows the ID, never the position,
-// when the entries, the filter or the grouping change; it is always on screen, and the scroll position stays
-// while the selection is on the page. The filter reads the cells and the search text of an entry, ignores
-// case, and only decides what shows: it removes nothing and keeps the order. A list whose letters are actions
-// starts the filter with its search key; a pure choice list filters with every typed character. Enter keeps a
-// typed filter, the first back clears it, and the next one is left to the application. Groups are presentation
+// A List shows the entries an application hands it, each with a stable ItemID, its cells and a group key, as
+// a table under dimmed upper-case column titles. The selection follows the ID, never the position, when the
+// entries, the filter or the grouping change; it is always on screen, and the scroll position stays while the
+// selection is on the page. The filter reads the cells and the search text of an entry, ignores case, and
+// only decides what shows: it removes nothing and keeps the order. A list whose letters are actions starts
+// the filter with its search key; a pure choice list filters with every typed character. Enter keeps a typed
+// filter, the first back clears it, and the next one is left to the application. Groups are presentation
 // only: they stand in alphabetical order with the group without key last, left, right and enter fold them, a
 // filter opens the groups with hits without changing their fold state, and the position counts entries only,
-// "pos/total" or, with a filter, "pos/shown (N total)". When a row does not fit, the free text column gives way
-// first, then the short labels of a column, then the optional columns from the right, and then the widest
-// values, never below their title; the first column is never cut, and the widths come from every entry, so they
-// stay while a filter is typed. An empty list shows the application's sentence with the next step, and a filter
-// without match names the key that clears it. Cells, group keys and the typed filter are escaped.
+// "pos/total" or, with a filter, "pos/shown (N total)". When a row does not fit, the free text column gives
+// way first, then the short labels of a column, then the optional columns from the right, and then the widest
+// values, never below their title; the first column is never cut, and the widths come from every entry, so
+// they stay while a filter is typed. An empty list shows the application's sentence with the next step, and a
+// filter without match names the key that clears it. Cells, group keys and the typed filter are escaped.
 //
-// A click on a row marks it, and only a click on the marked row while the rows have the focus opens it, as
-// enter does; a click on a group row folds it, and one on the search line starts the search. Each such target
-// carries the action of its key and an Item the list reads back in Click; a target with a zone alone is the
-// free area of the zone. A FilterBar holds choice fields such as the grouping, a state or the sort order:
-// left and right change the value, enter opens the list of values, which back closes without change, and tab
-// and shift+tab step through the fields and leave the bar at its ends to the application. Its values change
-// only what the application hands to the list, never its data. A click on a field opens its values and one on
-// a value takes it; the search field of a list may stand at the right end of the bar.
+// A click on a row marks it, and only a click on the marked row while the rows have the focus, as SetFocused
+// says, opens it, as enter does; a click on a group row folds it, and one on the search line starts the
+// search. Each such target carries the action of its key and an Item the list reads back in Click; a target
+// with a zone alone is the free area of the zone. A FilterBar holds choice fields such as the grouping, a
+// state or the sort order: left and right change the value, enter opens the list of values, which back closes
+// without change, and tab and shift+tab step through the fields and leave the bar at its ends to the
+// application. Its values change only what the application hands to the list, never its data. A click on a
+// field opens its values and one on a value takes it; the search field of a list may stand at the right end
+// of the bar.
 //
-// A FormModel shows the fields an application hands it, each with a stable ID, a kind, a label and a value,
-// and knows no schema: the application checks the values when the save key is pressed, from any field, and
-// hands the problems back with SetProblems. Enter never saves: it goes to the next field, opens the values of a
+// A Form shows the fields an application hands it, each with a stable ID, a kind, a label and a value, and
+// knows no schema: the application checks the values when the save key is pressed, from any field, and hands
+// the problems back with SetProblems. Enter never saves: it goes to the next field, opens the values of a
 // choice, starts taking a key, or yields the enter key on a list field, whose editor the application opens. A
 // choice holds known values only, a multiple choice ticks them, and the values a form returns are stable IDs.
-// A masked field never shows what is typed, not in its row, a target or a problem, and is never handed a stored
-// secret: Stored says one exists, which an empty field keeps. Each problem stands under its field until that
-// field changes, a problem without a field above the form, and a section with a problem carries a mark and
-// opens. An advanced section stays closed and dimmed while it holds nothing. On a wide terminal the sections
-// stand as a numbered list beside the fields of the focused one; where the form does not fit, the fields lose
-// their frames, then the headings go, then the fields around the focus stand alone, and last the form asks for
-// a larger terminal, so the focus is always in view. A click on a field focuses it and types nothing; on a
-// choice or list field it is enter, on a tick box the toggle key, on a section a jump to its first field.
+// A masked field never shows what is typed, not in its row, a target or a problem, and is never handed a
+// stored secret: Stored says one exists, which an empty field keeps. Each problem stands under its field
+// until that field changes, a problem without a field above the form, and a section with a problem carries a
+// mark and opens. An advanced section stays closed and dimmed while it holds nothing. On a wide terminal the
+// sections stand as a numbered list beside the fields of the focused one; where the form does not fit, the
+// fields lose their frames, then the headings go, then the fields around the focus stand alone, and last the
+// form asks for a larger terminal, so the focus is always in view. A click on a field focuses it and types
+// nothing; on a choice or list field it is enter, on a tick box the toggle key, on a section a jump to its
+// first field.
 //
-// A DialogModel asks a question over the screen: the warning glyph and the question in bold, one sentence on
-// what follows, the details, one button per answer and the key line of the answers, from the same answers, so
-// no dialog names one twice. Only the answers act; every other key goes back to the application, so a stray key
+// A Dialog asks a question over the screen: the warning glyph and the question in bold, one sentence on what
+// follows, the details, one button per answer and the key line of the answers, from the same answers, so no
+// dialog names one twice. Only the answers act; every other key goes back to the application, so a stray key
 // neither saves nor destroys. The answer to enter is the default and shows focused, and the destroying answer
 // of a destructive question is drawn in the fail colour and can never be the default. A dialog with an input
-// reads typed text, shows what runs and the last error inside itself and never shows a masked input. View
-// dims the screen behind it and returns the targets of the dialog alone; where it does not fit, Page fills the
-// workspace and Hints go into the footer, whose targets answer it.
+// reads typed text, shows what runs and the last error inside itself and never shows a masked input. Overlay
+// dims the screen behind it and returns the targets of the dialog alone; where it does not fit, View fills
+// the workspace and Hints go into the footer, whose targets answer it.
 //
 // Help explains in three stages: the one-line hint under the focused field, the explanation of the focused
-// element, and the help with its topics. A HelpModel shows the application's helptopics.Topic values, the
-// same topics its command line and manpage show, wrapped as the command line wraps them, with a short
-// unindented line that ends in a colon as a heading. The first topic ends with the keys of the screen the help
-// was opened from and the keys that act everywhere, in the binding in force. Left and right, and the topic
-// keys of the help level, change the topic with wrap-around; the scroll keys and the wheel stop at the ends;
-// back and the help key close it. An ExplanationModel shows a title, the long text, a helptopics.Term and the
-// address of the documentation, which is shown in full and, where the terminal takes escapes, also linked; it
-// accepts only an absolute http or https address of printable ASCII, so the address cannot end the link
-// sequence. Back and the info key close it, and the copy key hands Text to the application, which holds
-// nothing that is not shown and no control character. Both stand over the screen like a dialog, or fill the
-// workspace with Page where room is too small; an explanation also stands in a Pane beside a form or a list.
-// Every topic tab, key, line of the key list and address is a target that does what its key does, and a click
-// anywhere else on an explanation over the screen closes it. Only their own keys act; every other key goes
-// back to the application.
+// element, and the help with its topics. The Help shows the application's helptopics.Topic values, the same
+// topics its command line and manpage show, wrapped as the command line wraps them, with a short unindented
+// line that ends in a colon as a heading. The first topic ends with the keys of the screen the help was
+// opened from and the keys that act everywhere, in the binding in force. Left and right, and the topic keys
+// of the help level, change the topic with wrap-around; the scroll keys and the wheel stop at the ends; back
+// and the help key close it. An Explanation shows a title, the long text, a helptopics.Term and the address
+// of the documentation, which is shown in full and, where the terminal takes escapes, also linked; it accepts
+// only an absolute http or https address of printable ASCII, so the address cannot end the link sequence.
+// Back and the info key close it, and the copy key hands Text to the application, which holds nothing that is
+// not shown and no control character. Both stand over the screen like a dialog, or fill the workspace with
+// View where room is too small; an explanation also stands in a Pane beside a form or a list. Every topic
+// tab, key, line of the key list and address is a target that does what its key does, and a click anywhere
+// else on an explanation over the screen closes it. Only their own keys act; every other key goes back to the
+// application.
 //
 // Colours come from themes. Screen code names roles, never colour values: a Palette assigns one colour per
 // role, Styles build text styles and widgets on it. A ThemeSet holds the terminal theme, the application's

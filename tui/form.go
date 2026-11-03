@@ -43,10 +43,16 @@ func (k FieldKind) known() bool {
 
 func (k FieldKind) typed() bool { return k == FieldText || k == FieldMasked }
 
-// ChoiceID is the stable, untranslated ID of a value of a choice field.
+// FieldID is the stable, untranslated ID of a field of a form or a filter bar.
+type FieldID string
+
+// SectionID is the stable, untranslated ID of a section of a form.
+type SectionID string
+
+// ChoiceID is the stable, untranslated ID of a value of a choice field or of a field of a filter bar.
 type ChoiceID string
 
-// Choice is one value of a choice field.
+// Choice is one value of a choice field or of a field of a filter bar.
 type Choice struct {
 	ID    ChoiceID
 	Label TextID
@@ -73,8 +79,8 @@ func (v FormValue) equal(o FormValue) bool {
 // the focused field, and the note in the row of a read-only field. Stored says that a masked field has a
 // value already, which an empty field keeps; the form is never handed that value.
 type FormField struct {
-	ID      string
-	Section string
+	ID      FieldID
+	Section SectionID
 	Kind    FieldKind
 	Label   TextID
 	Value   FormValue
@@ -87,16 +93,16 @@ type FormField struct {
 // An advanced section stays closed and dimmed while none of its fields holds a value or a problem, the focus
 // is not in it and the person has not opened it.
 type FormSection struct {
-	ID       string
+	ID       SectionID
 	Title    TextID
 	Lead     TextID
 	Advanced bool
 }
 
-// FormProblem is a problem of a refused save, with its cause and the next step; FieldID names the field it
+// FormProblem is a problem of a refused save, with its cause and the next step; Field names the field it
 // stands under, empty or unknown for a problem that stands above the form.
 type FormProblem struct {
-	FieldID  string
+	Field    FieldID
 	Cause    string
 	NextStep string
 }
@@ -135,9 +141,9 @@ type formField struct {
 	initial FormValue
 }
 
-// FormModel is an open form: its fields, the focus, the values typed and chosen, an open list of values and
+// Form is an open form: its fields, the focus, the values typed and chosen, an open list of values and
 // the problems of the last refused save.
-type FormModel struct {
+type Form struct {
 	keys     FormKeys
 	table    *Keymap
 	text     Translator
@@ -145,8 +151,8 @@ type FormModel struct {
 	sections []FormSection
 
 	focus    int
-	pinned   map[string]bool
-	problems map[string][]FormProblem
+	pinned   map[SectionID]bool
+	problems map[FieldID][]FormProblem
 	other    []FormProblem
 	open     bool
 	pick     int
@@ -160,7 +166,7 @@ type FormModel struct {
 // that is none of them, choices on another kind, a section that holds no field or that a field names without
 // it being declared, a form that mixes fields with and without section, and a key that names no action of
 // the key table or that two form keys share. The fields stand in the order of their sections.
-func NewForm(spec FormSpec, keys *Keymap, text Translator) (*FormModel, error) {
+func NewForm(spec FormSpec, keys *Keymap, text Translator) (*Form, error) {
 	if keys == nil || text == nil {
 		return nil, errors.New("the form needs a key table and a translator")
 	}
@@ -183,10 +189,10 @@ func NewForm(spec FormSpec, keys *Keymap, text Translator) (*FormModel, error) {
 		used[n.id] = n.name
 	}
 	badID := func(id string) bool { return id == "" || strings.IndexFunc(id, unicode.IsControl) >= 0 }
-	order := map[string]int{}
+	order := map[SectionID]int{}
 	for i, s := range spec.Sections {
 		switch _, dup := order[s.ID]; {
-		case badID(s.ID):
+		case badID(string(s.ID)):
 			errs = append(errs, fmt.Errorf("section %q: an ID is not empty and holds no control character", s.ID))
 		case dup:
 			errs = append(errs, fmt.Errorf("section %q is listed twice", s.ID))
@@ -199,12 +205,12 @@ func NewForm(spec FormSpec, keys *Keymap, text Translator) (*FormModel, error) {
 	if len(spec.Fields) == 0 {
 		errs = append(errs, errors.New("the form has no field"))
 	}
-	seen := map[string]bool{}
-	filled := map[string]bool{}
+	seen := map[FieldID]bool{}
+	filled := map[SectionID]bool{}
 	takes := false
 	for _, f := range spec.Fields {
 		switch {
-		case badID(f.ID):
+		case badID(string(f.ID)):
 			errs = append(errs, fmt.Errorf("field %q: an ID is not empty and holds no control character", f.ID))
 		case seen[f.ID]:
 			errs = append(errs, fmt.Errorf("field %q is listed twice", f.ID))
@@ -234,8 +240,8 @@ func NewForm(spec FormSpec, keys *Keymap, text Translator) (*FormModel, error) {
 	if err := errors.Join(errs...); err != nil {
 		return nil, err
 	}
-	f := &FormModel{keys: k, table: keys, text: text, sections: slices.Clone(spec.Sections),
-		pinned: map[string]bool{}, problems: map[string][]FormProblem{}, focus: -1}
+	f := &Form{keys: k, table: keys, text: text, sections: slices.Clone(spec.Sections),
+		pinned: map[SectionID]bool{}, problems: map[FieldID][]FormProblem{}, focus: -1}
 	fields := slices.Clone(spec.Fields)
 	slices.SortStableFunc(fields, func(a, b FormField) int { return order[a.Section] - order[b.Section] })
 	for _, field := range fields {
@@ -353,7 +359,7 @@ func (f *formField) hasValue() bool {
 	return len(f.line.runes) > 0
 }
 
-func (f *FormModel) index(id string) int {
+func (f *Form) index(id FieldID) int {
 	for i, field := range f.fields {
 		if field.ID == id {
 			return i
@@ -362,7 +368,7 @@ func (f *FormModel) index(id string) int {
 	return -1
 }
 
-func (f *FormModel) section(id string) (FormSection, bool) {
+func (f *Form) section(id SectionID) (FormSection, bool) {
 	for _, s := range f.sections {
 		if s.ID == id {
 			return s, true
@@ -372,7 +378,7 @@ func (f *FormModel) section(id string) (FormSection, bool) {
 }
 
 // closed reports whether the fields of a section are folded away.
-func (f *FormModel) closed(id string) bool {
+func (f *Form) closed(id SectionID) bool {
 	s, ok := f.section(id)
 	if !ok || !s.Advanced || f.pinned[id] {
 		return false
@@ -387,11 +393,11 @@ func (f *FormModel) closed(id string) bool {
 }
 
 // takes reports whether the field at i can have the focus.
-func (f *FormModel) takes(i int) bool {
+func (f *Form) takes(i int) bool {
 	return f.fields[i].Kind != FieldReadOnly && !f.closed(f.fields[i].Section)
 }
 
-func (f *FormModel) firstTaking() int {
+func (f *Form) firstTaking() int {
 	for i := range f.fields {
 		if f.takes(i) {
 			return i
@@ -406,7 +412,7 @@ func (f *FormModel) firstTaking() int {
 }
 
 // step moves the focus to the next field that takes input in direction by and reports whether there is one.
-func (f *FormModel) step(by int) bool {
+func (f *Form) step(by int) bool {
 	for i := f.focus + by; i >= 0 && i < len(f.fields); i += by {
 		if f.takes(i) {
 			f.setFocus(i)
@@ -416,7 +422,7 @@ func (f *FormModel) step(by int) bool {
 	return false
 }
 
-func (f *FormModel) setFocus(i int) {
+func (f *Form) setFocus(i int) {
 	if i != f.focus {
 		f.open, f.capture = false, false
 	}
@@ -424,10 +430,10 @@ func (f *FormModel) setFocus(i int) {
 }
 
 // Focused is the ID of the field with the focus.
-func (f *FormModel) Focused() string { return f.fields[f.focus].ID }
+func (f *Form) Focused() FieldID { return f.fields[f.focus].ID }
 
 // Focus gives the focus to the field id and opens its section; false for a field that cannot take it.
-func (f *FormModel) Focus(id string) bool {
+func (f *Form) Focus(id FieldID) bool {
 	i := f.index(id)
 	if i < 0 || f.fields[i].Kind == FieldReadOnly {
 		return false
@@ -441,7 +447,7 @@ func (f *FormModel) Focus(id string) bool {
 
 // Input is the input focus the form reads keys in: key capture while a key is taken, text in a text or masked
 // field, navigation otherwise. The application switches the mouse off while a key is taken.
-func (f *FormModel) Input() InputFocus {
+func (f *Form) Input() InputFocus {
 	switch {
 	case f.capture:
 		return InputKeyCapture
@@ -452,15 +458,15 @@ func (f *FormModel) Input() InputFocus {
 }
 
 // Capturing reports whether the key field with the focus waits for a key.
-func (f *FormModel) Capturing() bool { return f.capture }
+func (f *Form) Capturing() bool { return f.capture }
 
 // Open reports whether the list of values of the focused choice field is open.
-func (f *FormModel) Open() bool { return f.open }
+func (f *Form) Open() bool { return f.open }
 
 // Values are the values of every field by ID, each a copy. A masked field holds what was typed; empty keeps
 // a stored value.
-func (f *FormModel) Values() map[string]FormValue {
-	out := make(map[string]FormValue, len(f.fields))
+func (f *Form) Values() map[FieldID]FormValue {
+	out := make(map[FieldID]FormValue, len(f.fields))
 	for i := range f.fields {
 		out[f.fields[i].ID] = f.fields[i].value()
 	}
@@ -469,7 +475,7 @@ func (f *FormModel) Values() map[string]FormValue {
 
 // SetValue gives the field id a new value, such as the summary of a list after its editor, under the rules of
 // NewForm, and retires the problems of the field.
-func (f *FormModel) SetValue(id string, v FormValue) error {
+func (f *Form) SetValue(id FieldID, v FormValue) error {
 	i := f.index(id)
 	if i < 0 {
 		return fmt.Errorf("field %q is no field of the form", id)
@@ -484,7 +490,7 @@ func (f *FormModel) SetValue(id string, v FormValue) error {
 
 // Changed reports whether a value differs from the one the form opened with, or a masked field was typed in;
 // leaving a changed form asks first.
-func (f *FormModel) Changed() bool {
+func (f *Form) Changed() bool {
 	for i := range f.fields {
 		if !f.fields[i].value().equal(f.fields[i].initial) {
 			return true
@@ -496,16 +502,16 @@ func (f *FormModel) Changed() bool {
 // SetProblems shows the problems of a refused save: each under its field, one without a field above the
 // form. A section with a problem opens, the focus goes to the first field with one, and a problem stays until
 // its field changes. Every value stays as it was typed.
-func (f *FormModel) SetProblems(problems []FormProblem) {
-	f.problems, f.other = map[string][]FormProblem{}, nil
+func (f *Form) SetProblems(problems []FormProblem) {
+	f.problems, f.other = map[FieldID][]FormProblem{}, nil
 	first := -1
 	for _, p := range problems {
-		i := f.index(p.FieldID)
+		i := f.index(p.Field)
 		if i < 0 {
 			f.other = append(f.other, p)
 			continue
 		}
-		f.problems[p.FieldID] = append(f.problems[p.FieldID], p)
+		f.problems[p.Field] = append(f.problems[p.Field], p)
 		if first < 0 && f.fields[i].Kind != FieldReadOnly {
 			first = i
 		}
@@ -515,14 +521,14 @@ func (f *FormModel) SetProblems(problems []FormProblem) {
 	}
 }
 
-func (f *FormModel) changed(i int) { delete(f.problems, f.fields[i].ID) }
+func (f *Form) changed(i int) { delete(f.problems, f.fields[i].ID) }
 
 // Update handles a key while the form has the focus. act is Keys.Save where the save key was pressed, from any
 // field, and Keys.Enter where enter was pressed on a list field, whose editor the application opens. handled is
 // false for a key the form leaves to the application: back, which leads to the leave question where Changed
 // says so, up above the first field and tab past the ends, which lead to the next zone, and every key it does
 // not read.
-func (f *FormModel) Update(msg tea.KeyPressMsg) (act ActionID, handled bool) {
+func (f *Form) Update(msg tea.KeyPressMsg) (act ActionID, handled bool) {
 	if f.capture {
 		f.capture = false
 		if f.table.Is(msg, f.keys.Back, InputKeyCapture) {
@@ -553,7 +559,7 @@ func (f *FormModel) Update(msg tea.KeyPressMsg) (act ActionID, handled bool) {
 
 // Paste puts pasted text into the focused text or masked field at its cursor; line breaks and other control
 // characters are dropped.
-func (f *FormModel) Paste(text string) bool {
+func (f *Form) Paste(text string) bool {
 	field := &f.fields[f.focus]
 	if f.open || f.capture || !field.Kind.typed() || !field.line.insert(text) {
 		return false
@@ -563,7 +569,7 @@ func (f *FormModel) Paste(text string) bool {
 }
 
 // Act runs one of the form keys as its key does, for a click or a command that stands for the key.
-func (f *FormModel) Act(id ActionID) (act ActionID, handled bool) {
+func (f *Form) Act(id ActionID) (act ActionID, handled bool) {
 	k := f.keys
 	if id == "" {
 		return "", false
@@ -648,7 +654,7 @@ func (f *FormModel) Act(id ActionID) (act ActionID, handled bool) {
 }
 
 // choose gives the focused choice field its value j and closes the list.
-func (f *FormModel) choose(j int) {
+func (f *Form) choose(j int) {
 	f.open = false
 	field := &f.fields[f.focus]
 	if field.choice != j {
@@ -658,7 +664,7 @@ func (f *FormModel) choose(j int) {
 }
 
 // jumpSection moves the focus to the first field of the section by places on, opening it.
-func (f *FormModel) jumpSection(by int) bool {
+func (f *Form) jumpSection(by int) bool {
 	if len(f.sections) < 2 {
 		return false
 	}
@@ -676,7 +682,7 @@ func (f *FormModel) jumpSection(by int) bool {
 }
 
 // enterSection opens the section id and gives the focus to its first field that takes input.
-func (f *FormModel) enterSection(id string) bool {
+func (f *Form) enterSection(id SectionID) bool {
 	f.pinned[id] = true
 	for i := range f.fields {
 		if f.fields[i].Section == id && f.fields[i].Kind != FieldReadOnly {
@@ -691,13 +697,13 @@ func (f *FormModel) enterSection(id string) bool {
 // field gives it the focus and types nothing; on a choice field it also opens the list of values, and on a
 // list field it is enter. A key field takes a key from the second click on, as enter does. A click on a tick
 // box ticks its value, one on a value of the open list takes it, and one on a section goes to its first field.
-func (f *FormModel) Click(r MouseResult) (act ActionID, handled bool) {
+func (f *Form) Click(r MouseResult) (act ActionID, handled bool) {
 	if !r.Handled || f.capture {
 		return "", false
 	}
 	switch {
 	case strings.HasPrefix(r.Item, formFieldRef):
-		i := f.index(strings.TrimPrefix(r.Item, formFieldRef))
+		i := f.index(FieldID(strings.TrimPrefix(r.Item, formFieldRef)))
 		if i < 0 || !f.takes(i) {
 			return "", false
 		}
@@ -713,7 +719,7 @@ func (f *FormModel) Click(r MouseResult) (act ActionID, handled bool) {
 		return "", true
 	case strings.HasPrefix(r.Item, formTickRef):
 		id, value, _ := strings.Cut(strings.TrimPrefix(r.Item, formTickRef), "\x00")
-		i := f.index(id)
+		i := f.index(FieldID(id))
 		if i < 0 || !f.takes(i) {
 			return "", false
 		}
@@ -726,7 +732,7 @@ func (f *FormModel) Click(r MouseResult) (act ActionID, handled bool) {
 		}
 	case strings.HasPrefix(r.Item, formOptionRef):
 		id, value, _ := strings.Cut(strings.TrimPrefix(r.Item, formOptionRef), "\x00")
-		if !f.open || f.index(id) != f.focus {
+		if !f.open || f.index(FieldID(id)) != f.focus {
 			return "", false
 		}
 		for j, c := range f.fields[f.focus].Choices {
@@ -736,7 +742,7 @@ func (f *FormModel) Click(r MouseResult) (act ActionID, handled bool) {
 			}
 		}
 	case strings.HasPrefix(r.Item, formSectionRef):
-		id := strings.TrimPrefix(r.Item, formSectionRef)
+		id := SectionID(strings.TrimPrefix(r.Item, formSectionRef))
 		if _, ok := f.section(id); ok {
 			return "", f.enterSection(id)
 		}
@@ -746,7 +752,7 @@ func (f *FormModel) Click(r MouseResult) (act ActionID, handled bool) {
 
 // Wheel moves the focus, or the cursor of an open list of values, by the notches of the wheel and stops at
 // the ends.
-func (f *FormModel) Wheel(steps int) {
+func (f *Form) Wheel(steps int) {
 	if f.open {
 		f.pick = WheelStep(f.pick, len(f.fields[f.focus].Choices), steps)
 		return
@@ -763,7 +769,7 @@ func (f *FormModel) Wheel(steps int) {
 // Hints are the keys of the focused field for the footer: what enter does there, toggle on a multiple
 // choice, save, and the moves between fields; in an open list of values its moves, enter and back; while a
 // key is taken, back.
-func (f *FormModel) Hints() []Hint {
+func (f *Form) Hints() []Hint {
 	k := f.keys
 	nav := []Hint{{Action: k.Next, Label: TextKeyNext, Kind: HintNavigation}, {Action: k.Prev, Label: TextKeyPrevious, Kind: HintNavigation}}
 	switch {
