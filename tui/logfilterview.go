@@ -154,25 +154,24 @@ func (l *LogView) updateFilter(msg tea.KeyPressMsg) bool {
 	m, fk := l.fm, l.spec.Keys.FilterForm
 	focus := m.form.Input()
 	for _, id := range []ActionID{fk.Back, fk.Save, fk.Enter} {
-		if l.keys.Is(msg, id, focus) {
+		// Enter on a button is the button's: the form reports its action.
+		if l.keys.Is(msg, id, focus) && !(id == fk.Enter && m.form.onButton()) {
 			return l.filterAct(id)
 		}
 	}
-	m.form.Update(msg)
+	if act, _ := m.form.Update(msg); act == fk.Save || act == fk.Back {
+		return l.filterAct(act)
+	}
 	l.syncKind()
 	return true
 }
 
 // filterAct is a key of the open modal. Back discards, and the save key and enter apply, enter from every
-// field but a date, where it opens the calendar as in every form. Enter on a button does what the key of that
-// button does. A choice list opens by a click on the field
+// field but a date, where it opens the calendar as in every form. A choice list opens by a click on the field
 // and its value changes with left and right. While a list or the calendar is open every key goes to it, enter
 // chooses, and back closes only that.
 func (l *LogView) filterAct(id ActionID) bool {
 	m, fk := l.fm, l.spec.Keys.FilterForm
-	if button, ok := m.form.FocusedButton(); ok && id == fk.Enter {
-		id = button
-	}
 	switch {
 	case m.inner():
 		m.form.Act(id)

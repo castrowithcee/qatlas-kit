@@ -131,7 +131,8 @@
 // FormSpec.Buttons add buttons below the fields, each an action of the key table and a label drawn behind the
 // key in force. Tab and shift+tab cycle through the fields and then the buttons, from the last button to the
 // first field and back; the focused button reads "> label <" without colour. Enter on a button, its click and
-// its key give its action and nothing more, as Update and Click report it. While a button has the focus,
+// its key give its action and nothing more, as Update and Click report it; back is reported as the back key
+// with handled false, so the application still asks before it leaves a changed form. While a button has the focus,
 // typing, paste, left, right, up, down and the wheel change nothing; a click on a field takes the focus.
 // A button with the focus is always in view: the fields get the height that is left, or none, and only where
 // not even the buttons fit does the form ask for a larger terminal. With a field focused, the form is drawn

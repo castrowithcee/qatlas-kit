@@ -663,9 +663,10 @@ func (f *Form) changed(i int) {
 }
 
 // Update handles a key while the form has the focus. act is Keys.Save where the save key was pressed, from any
-// field, and Keys.Enter where enter was pressed on a list field, whose editor the application opens. handled is
-// false for a key the form leaves to the application: back, which leads to the leave question where Changed
-// says so, up above the first field, which leads to the zone above, and every key it does not read. Tab and
+// field, Keys.Enter where enter was pressed on a list field, whose editor the application opens, and the action of
+// a button where its key or enter on the focused button was pressed. handled is false for a key the form leaves
+// to the application: back, which leads to the leave question where Changed says so and is reported as act
+// Keys.Back, up above the first field, which leads to the zone above, and every key it does not read. Tab and
 // shift+tab cycle through the fields and the buttons and are always handled. The key of a button gives its
 // action; while a button has the focus, typing changes no field and up and down stay on it.
 func (f *Form) Update(msg tea.KeyPressMsg) (act ActionID, handled bool) {
@@ -714,7 +715,8 @@ func (f *Form) Paste(text string) bool {
 }
 
 // Act runs one of the form keys or the action of a button as its key does, for a click or a command that
-// stands for the key. Enter on a focused button runs the action of that button and nothing more.
+// stands for the key, and reports as Update does. Enter on a focused button runs the action of that button and
+// nothing more, back included: act is Keys.Back with handled false.
 func (f *Form) Act(id ActionID) (act ActionID, handled bool) {
 	k := f.keys
 	if id == "" {
@@ -765,7 +767,7 @@ func (f *Form) Act(id ActionID) (act ActionID, handled bool) {
 		}
 		return k.Save, true
 	case k.Back:
-		return "", false
+		return k.Back, false
 	case k.Enter:
 		switch field.Kind {
 		case FieldChoice:

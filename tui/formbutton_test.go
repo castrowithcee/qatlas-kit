@@ -69,7 +69,7 @@ func TestFormButtonEnterClickAndKeyGiveTheSameAction(t *testing.T) {
 		key     string
 		act     ActionID
 		handled bool
-	}{{"save", "f2", "save", true}, {"back", "esc", "", false}, {"reload", "ctrl+r", "reload", true}} {
+	}{{"save", "f2", "save", true}, {"back", "esc", "back", false}, {"reload", "ctrl+r", "reload", true}} {
 		f := newSampleForm(t, i18n.English, withButtons)
 		f.Focus("notes")
 		for range i + 1 {
@@ -303,6 +303,28 @@ func TestFormFocusIsAlwaysInView(t *testing.T) {
 			if !strings.Contains(gv, "Resize") && !strings.Contains(gv, "> name") {
 				t.Errorf("%dx%d: the focused field is not in view:\n%s", w, h, gv)
 			}
+		}
+	}
+}
+
+func TestFormBackIsReportedByEveryWayToPressIt(t *testing.T) {
+	f := newSampleForm(t, i18n.English, withButtons)
+	f.Focus("notes")
+	f.Update(press("tab"))
+	f.Update(press("tab"))
+	if a, _ := f.FocusedButton(); a != "back" {
+		t.Fatalf("focus on %q", a)
+	}
+	// An application reads nothing but the result of Update and Click.
+	for name, got := range map[string]func() (ActionID, bool){
+		"enter on the button": func() (ActionID, bool) { return f.Update(press("enter")) },
+		"the back key":        func() (ActionID, bool) { return f.Update(press("esc")) },
+		"a click": func() (ActionID, bool) {
+			return f.Click(MouseResult{Handled: true, Action: "back", Item: formButtonRef + "1"})
+		},
+	} {
+		if act, handled := got(); act != "back" || handled {
+			t.Errorf("%s gave %q, %v; want back, not handled", name, act, handled)
 		}
 	}
 }
