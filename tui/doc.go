@@ -140,6 +140,27 @@
 // does the form ask for a larger terminal. A click on a field focuses it and types nothing; on a choice or
 // list field it is enter, on a tick box the toggle key, on a section a jump to its first field.
 //
+// A date field (FieldDate) is typed as YYYY-MM-DD, or as YYYY-MM-DD HH:MM where DateField.Time is set, and
+// its value is a time.Time in the local time zone of the process (time.Local), cut to the day or the minute;
+// an empty field has the zero time. DateField.Min and Max bound it, both allowed, and a date without time
+// compares by its day. A text that is not a value, whether in the wrong format, a day that does not exist or
+// outside the bounds, never becomes the value: Values holds the last valid value meanwhile, and a problem
+// stands under the field once it is left, or at once where the save key was refused over it; the save key
+// stays in the form on that field. DateField.Now is the clock of the field, time.Now where nil, and gives
+// the calendar its today.
+//
+// Enter, or a click on the calendar symbol at the right end of the value, opens a month view below the field,
+// above it where it does not fit. Left and right move the day, up and down the week, page up and page down
+// the month, first goes to today, enter takes the day and back closes it unchanged; the keys are the form
+// keys and no others. The month view has a target per selectable day and one per button for the previous and
+// the next month and for today, each drawn with the key in force and acting as that key; the wheel moves by
+// a week. A day outside Min and Max is drawn as dashes, has no target, and no key lands on it. A day taken
+// keeps the hour and minute of the field, 00:00 where it is empty, moved into the bounds where the day has no
+// such time. The week starts on the day of tui.calendar.weekstart and the names of months and weekdays come
+// from the catalog, so a language sets them. While the calendar is open it takes every key, and a click on
+// anything but the calendar and the symbol of its field does nothing. A click on the row of a date field
+// only focuses it.
+//
 // A Dialog asks a question over the screen: the warning glyph and the question in bold, one sentence on what
 // follows, the details, one button per answer and the key line of the answers, from the same answers, so no
 // dialog names one twice. Only the answers act; every other key goes back to the application, so a stray key
