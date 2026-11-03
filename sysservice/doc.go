@@ -18,4 +18,16 @@
 // effective value, so a later line cannot undo them silently. Forbidden settings are rejected in every
 // section and wherever they appear, and anything the parser cannot interpret is an error. The check
 // verifies the unit text only; it does not run systemd and is not a sandbox audit of the program.
+//
+// [Companion] lets selfupdate install the unit together with the program. After the installation,
+// [Restart] runs "systemctl daemon-reload" if the unit was written, then "systemctl restart <program>".
+// Its errors name the installed version and the failed step, but never systemctl's output. It does not
+// check for root. [Shadowed] reports a complete unit of the same name in /etc/systemd/system, which
+// overrides the installed one, so the program can warn. A drop-in directory does not count.
+//
+//	client.Companions = []selfupdate.Companion{sysservice.Companion("tool")}
+//	result, err := client.Update(ctx)
+//	if err == nil && result.Updated {
+//		err = sysservice.Restart(ctx, "tool", result)
+//	}
 package sysservice
