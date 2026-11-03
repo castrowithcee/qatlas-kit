@@ -28,6 +28,7 @@ const (
 	logMaxSourceCells = 16
 	logMinText        = 12
 	logStampLayout    = "15:04:05"
+	logMinuteLayout   = "15:04"
 	logStampCells     = 8
 	logGutter         = 2
 	logSearchFieldMax = 30
@@ -44,7 +45,7 @@ type LogLine struct {
 	Source string
 }
 
-// LogViewKeys are the actions of the key table a log view reads. LogViewActions defines the five that are
+// LogViewKeys are the actions of the key table a log view reads. LogViewActions defines the six that are
 // specific to it; the others are the movement and search actions the table already holds for lists.
 type LogViewKeys struct {
 	// Up and Down scroll by a line, PageUp and PageDown by a page; First, where the table has it, jumps to the
@@ -59,6 +60,10 @@ type LogViewKeys struct {
 	NextMatch, PrevMatch ActionID
 	// Wrap and Timestamps switch the wrapping of long lines and the time column.
 	Wrap, Timestamps ActionID
+	// Filter opens the choice of the period; it is optional, and without it the view has no filter button.
+	Filter ActionID
+	// FilterForm are the form keys the choice of the period reads; the filter action needs all of them.
+	FilterForm FormKeys
 }
 
 // The IDs of the actions LogViewActions defines.
@@ -68,6 +73,7 @@ const (
 	ActionLogPrevMatch  ActionID = "log.prev"
 	ActionLogWrap       ActionID = "log.wrap"
 	ActionLogTimestamps ActionID = "log.time"
+	ActionLogFilter     ActionID = "log.filter"
 )
 
 // LogViewActions are the actions only a log view needs, with their default keys, for an application to add
@@ -80,6 +86,7 @@ func LogViewActions() []Action {
 		{ID: ActionLogPrevMatch, Level: LevelLetter, DefaultKeys: []string{"["}, Help: TextLogPrevMatch},
 		{ID: ActionLogWrap, Level: LevelLetter, DefaultKeys: []string{"w"}, Help: TextLogWrap},
 		{ID: ActionLogTimestamps, Level: LevelLetter, DefaultKeys: []string{"t"}, Help: TextLogTimestamps},
+		{ID: ActionLogFilter, Level: LevelLetter, DefaultKeys: []string{"T"}, Help: TextLogFilter},
 	}
 }
 
@@ -91,6 +98,14 @@ type LogViewSpec struct {
 	Keys  LogViewKeys
 	// Wrap and Timestamps are the start state of the two switches.
 	Wrap, Timestamps bool
+	// Filter is the period the view starts with; the zero value shows every line. A count in it must use one
+	// of Units.
+	Filter LogFilter
+	// Units are the units the application offers for a count of the last minutes, hours, days or months; none
+	// offers all four.
+	Units []LogFilterUnit
+	// Now is the clock of the view, for a period relative to now and for the end of a range; nil takes time.Now.
+	Now func() time.Time
 }
 
 type logLine struct {
@@ -125,6 +140,12 @@ type LogView struct {
 	hasCur    bool
 
 	wrap, stamps bool
+
+	filter  LogFilter
+	units   []LogFilterUnit
+	now     func() time.Time
+	pending bool            // the filter was changed by the user and the application has not taken it yet
+	fm      *logFilterModal // the open choice of the period
 	// What the last drawing found, for the keys and the wheel.
 	width, body, page int
 }
@@ -148,22 +169,133 @@ func NewLogView(spec LogViewSpec, keys *Keymap, text Translator) (*LogView, erro
 		{"first", k.First, false}, {"last", k.Last, true}, {"search", k.Search, true}, {"enter", k.Enter, true},
 		{"back", k.Back, true}, {"follow", k.Follow, true}, {"next match", k.NextMatch, true},
 		{"previous match", k.PrevMatch, true}, {"wrap", k.Wrap, true}, {"timestamps", k.Timestamps, true},
+		{"filter", k.Filter, false},
 	})...)
+	units := slices.Clone(spec.Units)
+	if len(units) == 0 {
+		units = allLogUnits()
+	}
+	for i, u := range units {
+		switch {
+		case !u.valid():
+			errs = append(errs, fmt.Errorf("log view: filter unit %d is unknown", u))
+		case slices.Contains(units[:i], u):
+			errs = append(errs, fmt.Errorf("log view: filter unit %d is listed twice", u))
+		}
+	}
+	l := &LogView{spec: spec, keys: keys, text: text, following: true, wrap: spec.Wrap, stamps: spec.Timestamps,
+		units: units, now: spec.Now, width: 80, body: 23, page: 22}
+	if l.now == nil {
+		l.now = time.Now
+	}
+	if err := spec.Filter.Validate(); err != nil {
+		errs = append(errs, fmt.Errorf("log view: the start filter: %w", err))
+	} else if spec.Filter.Kind == LogFilterLast && !slices.Contains(units, spec.Filter.Unit) {
+		errs = append(errs, fmt.Errorf("log view: the start filter: %w", ErrLogFilterUnit))
+	}
+	if k.Filter != "" {
+		for _, kind := range []ChoiceID{logKindAll, logKindLast, logKindRange} {
+			if _, err := l.filterForm(&logFilterModal{kind: kind, count: "1", unit: firstUnit(units[0])}); err != nil {
+				errs = append(errs, fmt.Errorf("log view: the filter form: %w", err))
+				break
+			}
+		}
+	}
 	if err := errors.Join(errs...); err != nil {
 		return nil, err
 	}
 	if spec.Lines == 0 {
-		spec.Lines = LogViewDefaultLines
+		l.spec.Lines = LogViewDefaultLines
 	}
-	return &LogView{spec: spec, keys: keys, text: text, following: true, wrap: spec.Wrap, stamps: spec.Timestamps,
-		width: 80, body: 23, page: 22}, nil
+	l.filter = spec.Filter.normalized()
+	l.syncFollow()
+	return l, nil
 }
 
 // Len is the number of lines held.
 func (l *LogView) Len() int { return len(l.buf) }
 
-// Following reports whether the view shows the newest line as lines arrive.
-func (l *LogView) Following() bool { return l.following }
+// Following reports whether the view shows the newest line as lines arrive. It does not while the filter is a
+// range that has ended.
+func (l *LogView) Following() bool { return l.following && l.canFollow() }
+
+// Filter is the period the view shows.
+func (l *LogView) Filter() LogFilter { return l.filter }
+
+// FilterUnits are the units the view offers for a count, in the order of the spec.
+func (l *LogView) FilterUnits() []LogFilterUnit { return slices.Clone(l.units) }
+
+// SetFilter makes f the period; following resumes unless the period is a range that has ended. It refuses a filter that is invalid or counts in a unit the view does not
+// offer, and then changes nothing. The lines already held that lie outside the new period go; lines for the
+// new period are the application's to supply again with Append. A change the application makes itself is not
+// reported by TakeFilterChange.
+func (l *LogView) SetFilter(f LogFilter) error {
+	if err := l.checkFilter(f); err != nil {
+		return err
+	}
+	l.applyFilter(f)
+	return nil
+}
+
+// TakeFilterChange returns the period the user chose and true once after each change the view made on its
+// own, and then false until the next; the application reloads the lines for it, with Bounds for the time of
+// the reload. The view loads nothing itself.
+func (l *LogView) TakeFilterChange() (LogFilter, bool) {
+	if !l.pending {
+		return LogFilter{}, false
+	}
+	l.pending = false
+	return l.filter, true
+}
+
+// canFollow reports whether following makes sense: not once the end of the period has passed.
+func (l *LogView) canFollow() bool { return !l.filter.closed(l.now()) }
+
+// syncFollow stops following when the period has ended.
+func (l *LogView) syncFollow() {
+	if l.following && !l.canFollow() {
+		l.pause()
+	}
+}
+
+// applyFilter sets the period and drops the held lines outside it, at the time of the clock now. The lines
+// that remain keep their order but not their numbers, so the position starts at the oldest line and the
+// current match goes; the search is made again over what remains.
+func (l *LogView) applyFilter(f LogFilter) {
+	f = f.normalized()
+	if f.same(l.filter) {
+		return
+	}
+	l.filter = f
+	begin, end := f.Bounds(l.now())
+	kept := make([]logLine, 0, len(l.buf))
+	for i := range l.buf {
+		if ln := l.line(i); inPeriod(ln.at, begin, end) {
+			kept = append(kept, ln)
+		}
+	}
+	l.buf, l.start = kept, 0
+	l.hasCur, l.unseen = false, 0
+	l.top = l.first()
+	l.queryChanged()
+	if l.canFollow() {
+		l.resume()
+	} else {
+		l.syncFollow()
+	}
+}
+
+// Clear drops every line held, the matches and the count of new lines and puts the position at the start. The
+// period, the search text, the wrap and time switches stay, and following resumes where the period allows it.
+// The application calls it before it supplies the lines of a new period.
+func (l *LogView) Clear() {
+	l.buf, l.start, l.srcWidth = nil, 0, 0
+	l.hits, l.hasCur, l.unseen = l.hits[:0], false, 0
+	l.top = l.first()
+	l.following = false
+	l.resume()
+	l.syncFollow()
+}
 
 // Query is the search text.
 func (l *LogView) Query() string { return l.query.String() }
@@ -173,6 +305,9 @@ func (l *LogView) Searching() bool { return l.searching }
 
 // Input is the input focus the view reads keys in: text while a search is typed, navigation otherwise.
 func (l *LogView) Input() InputFocus {
+	if l.fm != nil {
+		return l.fm.form.Input()
+	}
 	if l.searching {
 		return InputText
 	}
@@ -186,9 +321,15 @@ func (l *LogView) line(i int) logLine { return l.buf[(l.start+i)%len(l.buf)] }
 // Append adds lines at the end. A text with line breaks becomes several lines; a line break is "\n" or
 // "\r\n", and one at the very end of a text ends its last line instead of adding an empty one. Every line is
 // escaped before it is stored and cut to LogViewMaxLineRunes characters with a visible mark. When the buffer
-// is full, the oldest lines go; the position, the matches and the current match follow what remains.
+// is full, the oldest lines go; the position, the matches and the current match follow what remains. A line
+// whose time lies outside the period of the filter, at the time of the call, is not kept; a line without time
+// is.
 func (l *LogView) Append(lines ...LogLine) {
+	begin, end := l.filter.Bounds(l.now())
 	for _, in := range lines {
+		if !inPeriod(in.Time, begin, end) {
+			continue
+		}
 		text := strings.ReplaceAll(in.Text, "\r\n", "\n")
 		text = strings.TrimSuffix(text, "\n")
 		source := Escape(truncateRunes(in.Source, logMaxSourceRunes))
@@ -207,6 +348,7 @@ func (l *LogView) Append(lines ...LogLine) {
 		l.hasCur = false
 	}
 	l.top = max(l.top, first)
+	l.syncFollow()
 }
 
 func (l *LogView) push(ln logLine) {
@@ -390,7 +532,11 @@ func (l *LogView) pause() {
 	}
 }
 
-func (l *LogView) resume() { l.following, l.unseen = true, 0 }
+func (l *LogView) resume() {
+	if l.canFollow() {
+		l.following, l.unseen = true, 0
+	}
+}
 
 // scroll moves the first shown line by n lines and stops at both ends. Up stops following; reaching the end
 // resumes it only where resume says so.
@@ -411,7 +557,13 @@ func (l *LogView) scroll(n int, resume bool) {
 
 // Wheel scrolls by the notches of the wheel, WheelTextLines a notch. Up stops following, and the end of
 // the lines resumes it.
-func (l *LogView) Wheel(steps int) { l.scroll(steps*WheelTextLines, true) }
+func (l *LogView) Wheel(steps int) {
+	if l.fm != nil {
+		l.fm.form.Wheel(steps)
+		return
+	}
+	l.scroll(steps*WheelTextLines, true)
+}
 
 // goTo shows the line seq, about in the middle of the page, and stops following.
 func (l *LogView) goTo(seq uint64) {
@@ -458,10 +610,13 @@ func (l *LogView) stepMatch(forward bool) {
 // Update handles a key. handled is false for a key the view leaves to the application, such as back with
 // no search to cancel.
 func (l *LogView) Update(msg tea.KeyPressMsg) (handled bool) {
+	if l.fm != nil {
+		return l.updateFilter(msg)
+	}
 	focus := l.Input()
 	k := l.spec.Keys
 	for _, id := range []ActionID{k.Back, k.Enter, k.Search, k.Up, k.Down, k.PageUp, k.PageDown, k.First, k.Last,
-		k.Follow, k.NextMatch, k.PrevMatch, k.Wrap, k.Timestamps} {
+		k.Follow, k.NextMatch, k.PrevMatch, k.Wrap, k.Timestamps, k.Filter} {
 		if id != "" && l.keys.Is(msg, id, focus) {
 			return l.Act(id)
 		}
@@ -478,6 +633,9 @@ func (l *LogView) Act(id ActionID) (handled bool) {
 	k := l.spec.Keys
 	if id == "" {
 		return false
+	}
+	if l.fm != nil {
+		return l.filterAct(id)
 	}
 	switch id {
 	case k.Back:
@@ -523,6 +681,8 @@ func (l *LogView) Act(id ActionID) (handled bool) {
 		l.wrap = !l.wrap
 	case k.Timestamps:
 		l.stamps = !l.stamps
+	case k.Filter:
+		l.openFilter()
 	default:
 		return false
 	}
@@ -532,11 +692,17 @@ func (l *LogView) Act(id ActionID) (handled bool) {
 // Click handles a click on a target the view drew, as the MouseMap of its targets reports it: a button of the
 // status line does what its key does.
 func (l *LogView) Click(r MouseResult) (handled bool) {
+	if l.fm != nil {
+		return l.clickFilter(r)
+	}
 	return r.Handled && l.Act(r.Action)
 }
 
 // Hints are the keys of the view for a key line, for the input focus Input names.
 func (l *LogView) Hints() []Hint {
+	if l.fm != nil {
+		return l.filterHints()
+	}
 	k := l.spec.Keys
 	if l.searching {
 		return []Hint{{Action: k.Enter, Label: TextKeyEnter}, {Action: k.Back, Label: TextKeyBack, Kind: HintAlways}}
@@ -545,6 +711,9 @@ func (l *LogView) Hints() []Hint {
 	if l.needle != "" {
 		hints = append(hints, Hint{Action: k.NextMatch, Label: TextLogNextMatch, Priority: 1},
 			Hint{Action: k.PrevMatch, Label: TextLogPrevMatch, Priority: 1})
+	}
+	if k.Filter != "" {
+		hints = append(hints, Hint{Action: k.Filter, Label: TextLogFilter, Priority: 2})
 	}
 	hints = append(hints, Hint{Action: k.Wrap, Label: TextLogWrap, Priority: 2},
 		Hint{Action: k.Timestamps, Label: TextLogTimestamps, Priority: 2},
@@ -565,6 +734,7 @@ func (l *LogView) View(styles Styles, width, height int) (string, []Target) {
 		return finishPage(nil, nil, width, height)
 	}
 	l.width, l.body = width, height
+	l.syncFollow()
 	if height >= 2 {
 		l.body = height - 1
 	}
@@ -756,7 +926,9 @@ func (l *LogView) logButtons(styles Styles) []logButton {
 		}
 	}
 	followShort := join(key(k.Follow), state(l.following))
-	if !l.following && l.unseen > 0 {
+	if !l.canFollow() {
+		word = l.text.Lookup(TextLogRangeEnded)
+	} else if !l.following && l.unseen > 0 {
 		followShort += ", " + l.text.Lookup(TextLogNew, l.unseen)
 	}
 	btns := []logButton{{action: k.Follow, rank: 0, kind: kind(l.following),
@@ -770,16 +942,49 @@ func (l *LogView) logButtons(styles Styles) []logButton {
 		search.short = join(key(k.Search), q, info)
 	}
 	btns = append(btns, search)
+	if k.Filter != "" {
+		sum := l.filterSummary()
+		btns = append(btns, logButton{action: k.Filter, rank: 2, kind: kind(l.filter.Kind != LogFilterAll),
+			full: join(key(k.Filter), l.text.Lookup(TextLogFilter)+":", sum), short: join(key(k.Filter), sum)})
+	}
 	if l.needle != "" && len(l.hits) > 0 {
 		btns = append(btns,
-			logButton{action: k.PrevMatch, rank: 3, full: join(key(k.PrevMatch), l.text.Lookup(TextLogPrevMatch)), short: key(k.PrevMatch)},
-			logButton{action: k.NextMatch, rank: 2, full: join(key(k.NextMatch), l.text.Lookup(TextLogNextMatch)), short: key(k.NextMatch)})
+			logButton{action: k.PrevMatch, rank: 4, full: join(key(k.PrevMatch), l.text.Lookup(TextLogPrevMatch)), short: key(k.PrevMatch)},
+			logButton{action: k.NextMatch, rank: 3, full: join(key(k.NextMatch), l.text.Lookup(TextLogNextMatch)), short: key(k.NextMatch)})
 	}
 	return append(btns,
-		logButton{action: k.Wrap, rank: 4, kind: kind(l.wrap),
+		logButton{action: k.Wrap, rank: 5, kind: kind(l.wrap),
 			full: join(key(k.Wrap), l.text.Lookup(TextLogWrap), state(l.wrap)), short: join(key(k.Wrap), state(l.wrap))},
-		logButton{action: k.Timestamps, rank: 5, kind: kind(l.stamps),
+		logButton{action: k.Timestamps, rank: 6, kind: kind(l.stamps),
 			full: join(key(k.Timestamps), l.text.Lookup(TextLogTimestamps), state(l.stamps)), short: join(key(k.Timestamps), state(l.stamps))})
+}
+
+// filterSummary names the period in few words: all, the last count and unit, or the range with the dates in
+// the layout of the language; the year is named only where it is not the year of the clock.
+func (l *LogView) filterSummary() string {
+	f := l.filter
+	switch f.Kind {
+	case LogFilterLast:
+		unit := map[LogFilterUnit]TextID{LogUnitMinutes: TextLogUnitMinutes, LogUnitHours: TextLogUnitHours,
+			LogUnitDays: TextLogUnitDays, LogUnitMonths: TextLogUnitMonths}[f.Unit]
+		return l.text.Lookup(TextLogFilterLast, f.Count, l.text.Lookup(unit))
+	case LogFilterRange:
+		layout := TextLogDateTime
+		if y := l.now().Year(); f.From.Year() != y || f.Until.Year() != y {
+			layout = TextLogDateTimeYear
+		}
+		until := f.Until.Format(logMinuteLayout)
+		if fy, fm, fd := f.From.Date(); !sameDay(f.Until, fy, fm, fd) {
+			until = f.Until.Format(l.text.Lookup(layout))
+		}
+		return l.text.Lookup(TextLogFilterRange, f.From.Format(l.text.Lookup(layout)), until)
+	}
+	return l.text.Lookup(TextLogFilterAll)
+}
+
+func sameDay(t time.Time, y int, m time.Month, d int) bool {
+	ty, tm, td := t.Date()
+	return ty == y && tm == m && td == d
 }
 
 // matchInfo says how many matches the search has, or which one is current.
@@ -804,7 +1009,7 @@ func logQueryTail(q, mark string) string {
 }
 
 // status is the last row: buttons from the left and the position at the right. Where the width runs short,
-// first the labels go and the keys stay, then buttons go by rank, the follow and search buttons last, and the
+// first the labels go and the keys stay, then buttons go by rank, the period button before the follow and search buttons, and the
 // position gives way last: to a shorter form, and only below that is it cut. While the search text is typed
 // the row holds that field and the position.
 func (l *LogView) status(styles Styles, width, at, shown int) (string, []Target) {

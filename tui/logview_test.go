@@ -18,7 +18,7 @@ import (
 func logKeys() LogViewKeys {
 	return LogViewKeys{Up: "up", Down: "down", PageUp: "pageup", PageDown: "pagedown", First: "first", Last: "last",
 		Search: "search", Enter: "enter", Back: "back", Follow: ActionLogFollow, NextMatch: ActionLogNextMatch,
-		PrevMatch: ActionLogPrevMatch, Wrap: ActionLogWrap, Timestamps: ActionLogTimestamps}
+		PrevMatch: ActionLogPrevMatch, Wrap: ActionLogWrap, Timestamps: ActionLogTimestamps, Filter: ActionLogFilter, FilterForm: sampleFormKeys}
 }
 
 func logKeymap(t *testing.T) *Keymap {
@@ -499,12 +499,12 @@ func buttonLog(t *testing.T) *LogView {
 }
 
 type logState struct {
-	following, wrap, stamps, searching, hasCur bool
-	cur, top                                   uint64
+	following, wrap, stamps, searching, hasCur, askOpen bool
+	cur, top                                            uint64
 }
 
 func stateOf(l *LogView) logState {
-	return logState{l.following, l.wrap, l.stamps, l.searching, l.hasCur, l.cur, l.top}
+	return logState{l.following, l.wrap, l.stamps, l.searching, l.hasCur, l.fm != nil, l.cur, l.top}
 }
 
 // statusTargets draws the log view and returns its status row and the targets that sit on it.
@@ -523,7 +523,7 @@ func statusTargets(t *testing.T, l *LogView, w, h int) (string, []Target) {
 
 func TestLogViewButtonClickIsItsKey(t *testing.T) {
 	keys := map[ActionID]tea.KeyPressMsg{
-		ActionLogFollow: typed('L'), ActionLogWrap: typed('w'), ActionLogTimestamps: typed('t'),
+		ActionLogFollow: typed('L'), ActionLogWrap: typed('w'), ActionLogTimestamps: typed('t'), ActionLogFilter: typed('T'),
 		"search": typed('/'), ActionLogPrevMatch: typed('['), ActionLogNextMatch: typed(']'),
 	}
 	_, targets := statusTargets(t, buttonLog(t), 160, 8)
@@ -594,13 +594,13 @@ func TestLogViewButtonsNameTheKeyAndTheState(t *testing.T) {
 	actions := LogViewActions()
 	for i := range actions {
 		actions[i].Level, actions[i].Rebind = LevelGlobal, RebindReplace
-		actions[i].DefaultKeys = []string{[]string{"f3", "f4", "f6", "f7", "f9"}[i]}
+		actions[i].DefaultKeys = []string{[]string{"f3", "f4", "f6", "f7", "f9", "f15"}[i]}
 	}
 	keys, err := NewKeymap(append(sampleActions(), actions...), CharsetUnicode)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := keys.Bind(map[ActionID]string{ActionLogWrap: "f14", ActionLogFollow: "f13"}); err != nil {
+	if err := keys.Bind(map[ActionID]string{ActionLogWrap: "f14", ActionLogFollow: "f13", ActionLogFilter: "f16"}); err != nil {
 		t.Fatal(err)
 	}
 	l, err := NewLogView(LogViewSpec{Keys: logKeys()}, keys, newTranslator(t, i18n.English, nil, keys))
@@ -617,15 +617,15 @@ func TestLogViewButtonsNameTheKeyAndTheState(t *testing.T) {
 	l.Act("search")
 	typeText(l, "hit")
 	l.Act("enter")
-	row, _ := statusTargets(t, l, 160, 8)
-	for _, want := range []string{"[ F13 paused ]", "[ F14 wrap lines off ]", "[ F9 timestamps off ]", "[ F6 previous match ]", "[ F4 next match ]"} {
+	row, _ := statusTargets(t, l, 200, 8)
+	for _, want := range []string{"[ F13 paused ]", "[ F14 wrap lines off ]", "[ F9 timestamps off ]", "[ F16 period: all ]", "[ F6 previous match ]", "[ F4 next match ]"} {
 		if !strings.Contains(row, want) {
 			t.Errorf("%q missing in %q", want, row)
 		}
 	}
 	l.Act(ActionLogWrap)
 	l.Act(ActionLogFollow)
-	row, _ = statusTargets(t, l, 160, 8)
+	row, _ = statusTargets(t, l, 200, 8)
 	for _, want := range []string{"[ F13 following ]", "[ F14 wrap lines on ]"} {
 		if !strings.Contains(row, want) {
 			t.Errorf("%q missing in %q", want, row)
@@ -653,6 +653,7 @@ func TestLogViewStatusDegradesByRank(t *testing.T) {
 	}{
 		{ActionLogTimestamps, []string{"timestamps"}}, {ActionLogWrap, []string{"wrap lines"}},
 		{ActionLogPrevMatch, []string{"previous match"}}, {ActionLogNextMatch, []string{"next match"}},
+		{ActionLogFilter, []string{"period"}},
 		{ActionLogFollow, []string{"following", "paused"}},
 	}
 	prev := 1 << 30

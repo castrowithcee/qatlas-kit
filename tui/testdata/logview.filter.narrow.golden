@@ -1,0 +1,16 @@
+  09:27:00 db     slow query: select * from beds where soil = 'clay~
+  09:27:02 api    POST /plants 201 41ms                             
+  09:27:03 worker job 32 started                                    
+  09:27:05 worker job 32 finished                                   
+  09:27:06 api    GET /beds 200 9ms                                 
+  09:27:08 api    GET /beds/2 500 17ms error: bed not found         
+  09:27:09 db     checkpoint complete                               
+  09:27:11 api    GET /plants 200 11ms                              
+* 09:27:12 worker job 33 failed: Timeout after 30s                  
+                                                                    
+                                                                    
+                                                                    
+                                                                    
+                                                                    
+                                                                    
+[ L on ]  [ / fail 1 matches ]  [ T last 3 min ]      lines 1-9 of 9

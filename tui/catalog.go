@@ -132,6 +132,35 @@ const (
 	TextLogOn            TextID = "tui.log.on"
 	TextLogOff           TextID = "tui.log.off"
 	TextLogPositionShort TextID = "tui.log.positionshort"
+	TextLogFilter        TextID = "tui.log.filter"
+	TextLogFilterAll     TextID = "tui.log.filterall"
+	TextLogFilterLast    TextID = "tui.log.filterlast"
+	TextLogFilterRange   TextID = "tui.log.filterrange"
+	TextLogRangeEnded    TextID = "tui.log.rangeended"
+	TextLogUnitMinutes   TextID = "tui.log.unitminutes"
+	TextLogUnitHours     TextID = "tui.log.unithours"
+	TextLogUnitDays      TextID = "tui.log.unitdays"
+	TextLogUnitMonths    TextID = "tui.log.unitmonths"
+	TextLogDateTime      TextID = "tui.log.datetime"
+	TextLogDateTimeYear  TextID = "tui.log.datetimeyear"
+	TextLogFilterTitle   TextID = "tui.log.filtertitle"
+	TextLogKindLast      TextID = "tui.log.kindlast"
+	TextLogKindRange     TextID = "tui.log.kindrange"
+	TextLogFieldKind     TextID = "tui.log.fieldkind"
+	TextLogFieldCount    TextID = "tui.log.fieldcount"
+	TextLogFieldUnit     TextID = "tui.log.fieldunit"
+	TextLogFieldFrom     TextID = "tui.log.fieldfrom"
+	TextLogFieldUntil    TextID = "tui.log.fielduntil"
+	TextLogUnitNameMin   TextID = "tui.log.unitnamemin"
+	TextLogUnitNameHour  TextID = "tui.log.unitnamehour"
+	TextLogUnitNameDay   TextID = "tui.log.unitnameday"
+	TextLogUnitNameMonth TextID = "tui.log.unitnamemonth"
+	TextLogProblemCount  TextID = "tui.log.problemcount"
+	TextLogNextCount     TextID = "tui.log.nextcount"
+	TextLogProblemOpen   TextID = "tui.log.problemopen"
+	TextLogNextOpen      TextID = "tui.log.nextopen"
+	TextLogProblemOrder  TextID = "tui.log.problemorder"
+	TextLogNextOrder     TextID = "tui.log.nextorder"
 
 	TextSettingsTitle    TextID = "tui.settings.title"
 	TextSettingsGeneral  TextID = "tui.settings.general"
@@ -281,6 +310,35 @@ func ModuleCatalog() i18n.Catalogs[TextID] {
 			TextLogOn:            "on",
 			TextLogOff:           "off",
 			TextLogPositionShort: "%d-%d/%d",
+			TextLogFilter:        "period",
+			TextLogFilterAll:     "all",
+			TextLogFilterLast:    "last %d %s",
+			TextLogFilterRange:   "%s–%s",
+			TextLogRangeEnded:    "range ended",
+			TextLogUnitMinutes:   "min",
+			TextLogUnitHours:     "h",
+			TextLogUnitDays:      "d",
+			TextLogUnitMonths:    "mo",
+			TextLogDateTime:      "Jan 2 15:04",
+			TextLogDateTimeYear:  "Jan 2 2006 15:04",
+			TextLogFilterTitle:   "Time period",
+			TextLogKindLast:      "last n units",
+			TextLogKindRange:     "from - until",
+			TextLogFieldKind:     "Show",
+			TextLogFieldCount:    "Count",
+			TextLogFieldUnit:     "Unit",
+			TextLogFieldFrom:     "From",
+			TextLogFieldUntil:    "Until",
+			TextLogUnitNameMin:   "minutes",
+			TextLogUnitNameHour:  "hours",
+			TextLogUnitNameDay:   "days",
+			TextLogUnitNameMonth: "months",
+			TextLogProblemCount:  "not a whole number from 1 to %d",
+			TextLogNextCount:     "type the count in digits",
+			TextLogProblemOpen:   "no date or time",
+			TextLogNextOpen:      "type one or pick it in the calendar",
+			TextLogProblemOrder:  "the end is before the start",
+			TextLogNextOrder:     "set the end to the start or later",
 
 			TextSettingsTitle:    "Settings",
 			TextSettingsGeneral:  "General",
@@ -425,6 +483,35 @@ func ModuleCatalog() i18n.Catalogs[TextID] {
 			TextLogOn:            "an",
 			TextLogOff:           "aus",
 			TextLogPositionShort: "%d-%d/%d",
+			TextLogFilter:        "Zeitraum",
+			TextLogFilterAll:     "alle",
+			TextLogFilterLast:    "letzte %d %s",
+			TextLogFilterRange:   "%s–%s",
+			TextLogRangeEnded:    "Zeitraum vorbei",
+			TextLogUnitMinutes:   "Min.",
+			TextLogUnitHours:     "Std.",
+			TextLogUnitDays:      "Tg.",
+			TextLogUnitMonths:    "Mon.",
+			TextLogDateTime:      "02.01. 15:04",
+			TextLogDateTimeYear:  "02.01.2006 15:04",
+			TextLogFilterTitle:   "Zeitraum",
+			TextLogKindLast:      "letzte n Einheiten",
+			TextLogKindRange:     "von - bis",
+			TextLogFieldKind:     "Anzeigen",
+			TextLogFieldCount:    "Anzahl",
+			TextLogFieldUnit:     "Einheit",
+			TextLogFieldFrom:     "Von",
+			TextLogFieldUntil:    "Bis",
+			TextLogUnitNameMin:   "Minuten",
+			TextLogUnitNameHour:  "Stunden",
+			TextLogUnitNameDay:   "Tage",
+			TextLogUnitNameMonth: "Monate",
+			TextLogProblemCount:  "keine ganze Zahl von 1 bis %d",
+			TextLogNextCount:     "die Anzahl in Ziffern eingeben",
+			TextLogProblemOpen:   "kein Datum und keine Uhrzeit",
+			TextLogNextOpen:      "eingeben oder im Kalender wählen",
+			TextLogProblemOrder:  "das Ende liegt vor dem Anfang",
+			TextLogNextOrder:     "das Ende auf den Anfang oder später legen",
 
 			TextSettingsTitle:    "Einstellungen",
 			TextSettingsGeneral:  "Allgemein",

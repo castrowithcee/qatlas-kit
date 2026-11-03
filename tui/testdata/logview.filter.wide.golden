@@ -1,0 +1,16 @@
+  09:26:56 api    GET /plants 200 12ms                                                                                  
+  09:26:57 api    GET /plants/7 404 3ms                                                                                 
+* 09:26:59 worker job 31 failed: timeout after 30s while waiting for the upstream service to answer                     
+  09:27:00 db     slow query: select * from beds where soil = 'clay' order by name                                      
+  09:27:02 api    POST /plants 201 41ms                                                                                 
+  09:27:03 worker job 32 started                                                                                        
+  09:27:05 worker job 32 finished                                                                                       
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+                                                                                                                        
+[ L range ended ]  [ / fail 1 matches ]  [ T Mar 14 09:26–09:27 ]  [ [ ]  [ ] ]  [ w off ]  [ t on ]      lines 1-7 of 7

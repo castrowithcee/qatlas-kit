@@ -13,4 +13,4 @@
   09:27:11 api    GET /plants 200 11ms                                                                                  
 * 09:27:12 worker job 33 failed: Timeout after 30s                                                                      
                                                                                                                         
-[ L paused ]  [ / fail match 1/2 ]  [ [ previous match ]  [ ] next match ]  [ w off ]  [ t on ]         lines 1-14 of 14
+[ L paused ]  [ / fail match 1/2 ]  [ T period: all ]  [ [ ]  [ ] next match ]  [ w off ]  [ t on ]     lines 1-14 of 14
