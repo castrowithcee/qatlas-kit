@@ -28,6 +28,24 @@
 // name the reason of every refusal. A Keymap satisfies KeyLabels, so labels and the key placeholders of
 // every text follow a binding at once.
 //
+// A Frame draws the frame every screen stands in from the FrameSpec the application fills for each
+// render: the header with the product name, status marks, back button and header keys; the tab line with
+// one tab per Area as its digit and title; the sub-tabs of the active area where it has more than one; a
+// rule; the workspace, cut or padded to its rows, with the message under it; and the footer as the last
+// line. Workspace gives the room the content has, and Render returns the click targets of the drawn keys
+// and tabs for that frame only. The header stays one line: the status marks take their short words and go
+// before the header keys, and the header keys go before the back button. A tab line that runs short closes
+// its gaps and then shrinks the inactive tabs to their digit; the active tab stays whole. CheckAreas holds
+// areas to what the tab line can draw. The focus zones have a fixed order that CycleZone walks with
+// wrap-around, as StepArea and StepTab do for the tabs.
+//
+// Header and footer show hints. Keymap.Hints resolves each hint to the keys of its action that act in the
+// input focus of the screen, so a line never names a key that does nothing, and folds hints whose labels
+// read the same into one group; a language with longer words folds two hints by giving them the same text,
+// never by an empty one. When the footer runs short, navigation and position at its right end go first,
+// then the normal hints by priority; a hint that always stays, such as help, is never dropped, and the
+// answers of an open question are shortened instead.
+//
 // Colours come from themes. Screen code names roles, never colour values: a Palette assigns one colour per
 // role, Styles build text styles and widgets on it. A ThemeSet holds the terminal theme, the application's
 // own themes and the built-in schemes; each theme is data, either hand-picked palettes per colour profile
