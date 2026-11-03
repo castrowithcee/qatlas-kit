@@ -14,7 +14,7 @@ import (
 
 func sampleListKeys() ListKeys {
 	return ListKeys{Up: "up", Down: "down", PageUp: "pageup", PageDown: "pagedown", First: "first", Last: "last",
-		Left: "left", Right: "right", Enter: "enter", Search: "search", Back: "back"}
+		Left: "left", Right: "right", Enter: "enter", Search: "search", Back: "back", Toggle: "toggle"}
 }
 
 func listCatalogs() i18n.Catalogs[TextID] {
@@ -106,7 +106,9 @@ func typeList(l *List, text string) {
 func shownRows(l *List) string {
 	var out []string
 	for _, r := range l.rows {
-		if r.item < 0 {
+		if r.all {
+			out = append(out, "*")
+		} else if r.item < 0 {
 			out = append(out, "["+r.group+"]")
 		} else {
 			out = append(out, string(l.items[r.item].ID))
@@ -719,4 +721,279 @@ func TestEveryControlHasATarget(t *testing.T) {
 func clickFocused(l *List, r MouseResult, focused bool) (ItemID, bool) {
 	l.SetFocused(focused)
 	return l.Click(r)
+}
+
+func tickList(t *testing.T, edit func(*ListSpec)) *List {
+	t.Helper()
+	l := filledList(t, func(s *ListSpec) {
+		s.Ticks = true
+		if edit != nil {
+			edit(s)
+		}
+	})
+	l.SetGrouped(true)
+	l.Reset()
+	return l
+}
+
+func ticks(l *List) string {
+	ids := l.Ticked()
+	out := make([]string, len(ids))
+	for i, id := range ids {
+		out[i] = string(id)
+	}
+	return strings.Join(out, ",")
+}
+
+func TestNewListTicksNeedAToggleAction(t *testing.T) {
+	keys := sampleKeymap(t, CharsetUnicode)
+	text := newTranslator(t, i18n.English, listCatalogs(), keys)
+	cases := map[string]func(*ListSpec){
+		"no toggle key":      func(s *ListSpec) { s.Keys.Toggle = "" },
+		"unknown toggle key": func(s *ListSpec) { s.Keys.Toggle = "gone" },
+		"shared toggle key":  func(s *ListSpec) { s.Keys.Toggle = s.Keys.Enter },
+	}
+	for name, edit := range cases {
+		spec := ListSpec{Columns: sampleColumns(), Keys: sampleListKeys(), Empty: "list.empty", Ticks: true}
+		edit(&spec)
+		if _, err := NewList(spec, keys, text); err == nil {
+			t.Errorf("%s: accepted", name)
+		}
+	}
+	spec := ListSpec{Columns: sampleColumns(), Keys: sampleListKeys(), Empty: "list.empty", AllRow: true}
+	if _, err := NewList(spec, keys, text); err == nil {
+		t.Error("the row of all without tick boxes was accepted")
+	}
+	spec = ListSpec{Columns: sampleColumns(), Keys: sampleListKeys(), Empty: "list.empty"}
+	spec.Keys.Toggle = ""
+	if _, err := NewList(spec, keys, text); err != nil {
+		t.Errorf("a list without tick boxes needs no toggle key: %v", err)
+	}
+}
+
+func TestTicksOfEntries(t *testing.T) {
+	l := tickList(t, nil)
+	keysTo(l, "space", "down", "down", "down", "down", "space")
+	if got := ticks(l); got != "basil,oak" {
+		t.Fatalf("ticked = %q, want basil,oak", got)
+	}
+	if err := l.SetTicked([]ItemID{"mint", "nope"}); err == nil || ticks(l) != "basil,oak" {
+		t.Errorf("an unknown ID was accepted or changed the ticks: %v, %q", err, ticks(l))
+	}
+	if err := l.SetTicked([]ItemID{"fern", "basil"}); err != nil || ticks(l) != "basil,fern" {
+		t.Errorf("SetTicked: %v, %q (the order is the one of the entries)", err, ticks(l))
+	}
+	items := samplePlants()[:4]
+	items[0].Cells[3] = "changed"
+	if err := l.SetItems(items); err != nil || ticks(l) != "basil" {
+		t.Errorf("SetItems keeps known ticks and drops vanished ones: %v, %q", err, ticks(l))
+	}
+	l.Select("basil")
+	if got, ok := l.Current(); !ok || got.ID != "basil" || got.Cells[3] != "changed" {
+		t.Errorf("Current = %+v, %v", got, ok)
+	}
+	keysTo(l, "up")
+	if _, ok := l.Current(); ok {
+		t.Error("a group row is the current entry")
+	}
+	plain := filledList(t, nil)
+	if _, handled := keysTo(plain, "space"); handled || ticks(plain) != "" {
+		t.Error("the toggle key acted in a list without tick boxes")
+	}
+}
+
+func TestGroupToggleSequenceReturnsToThePartialSelection(t *testing.T) {
+	l := tickList(t, nil)
+	l.SetTicked([]ItemID{"basil"})
+	keysTo(l, "up")
+	if l.mark().group != "herbs" {
+		t.Fatalf("not on the group row: %+v", l.mark())
+	}
+	want := []string{"basil,mint,thyme", "", "basil", "basil,mint,thyme", "", "basil"}
+	for i, w := range want {
+		keysTo(l, "space")
+		if got := ticks(l); got != w {
+			t.Fatalf("toggle %d: ticked %q, want %q", i+1, got, w)
+		}
+	}
+	// Without a partial selection the group alternates between all and none.
+	l = tickList(t, nil)
+	keysTo(l, "up")
+	for i, w := range []string{"basil,mint,thyme", "", "basil,mint,thyme", ""} {
+		keysTo(l, "space")
+		if got := ticks(l); got != w {
+			t.Fatalf("plain toggle %d: ticked %q, want %q", i+1, got, w)
+		}
+	}
+	// A single toggle in the group forgets the partial selection: the basil that is back in the memory
+	// would otherwise return after none.
+	l = tickList(t, nil)
+	l.SetTicked([]ItemID{"basil"})
+	keysTo(l, "up", "space", "space", "down", "space", "space", "up", "space")
+	if got := ticks(l); got != "basil,mint,thyme" {
+		t.Errorf("after a single toggle the next step from none is all: %q", got)
+	}
+	// SetTicked and SetItems forget it too.
+	for _, forget := range []func(){func() { l.SetTicked([]ItemID{}) }, func() { l.SetItems(samplePlants()) }} {
+		l = tickList(t, nil)
+		l.SetTicked([]ItemID{"basil"})
+		keysTo(l, "up", "space", "space")
+		forget()
+		keysTo(l, "space")
+		if got := ticks(l); got != "basil,mint,thyme" {
+			t.Errorf("the memory outlived a change of the ticks: %q", got)
+		}
+	}
+}
+
+func TestGroupToggleActsOnShownEntriesOnly(t *testing.T) {
+	l := tickList(t, nil)
+	l.SetTicked([]ItemID{"mint"})
+	l.SetFilter("blooming") // basil and thyme of herbs
+	if got := shownRows(l); got != "[herbs],basil,thyme" {
+		t.Fatalf("rows = %s", got)
+	}
+	st := looks(t)["noneascii"]
+	if view, _ := l.View(st, 60, 8); strings.Contains(ansi.Strip(view), "[-]") {
+		t.Errorf("the box counts the shown entries, none of which is ticked:\n%s", ansi.Strip(view))
+	}
+	keysTo(l, "up", "space")
+	if got := ticks(l); got != "basil,mint,thyme" {
+		t.Errorf("filtered toggle ticked %q", got)
+	}
+	keysTo(l, "space")
+	if got := ticks(l); got != "mint" {
+		t.Errorf("filtered toggle back left %q; the hidden mint stays", got)
+	}
+}
+
+func TestTickBoxesShowThreeStatesWithoutColour(t *testing.T) {
+	for _, name := range []string{"noneascii", "mono"} {
+		st := looks(t)[name]
+		l := tickList(t, nil)
+		row := func() string {
+			view, _ := l.View(st, 60, 12)
+			return strings.Split(ansi.Strip(view), "\n")[1]
+		}
+		if got := row(); !strings.Contains(got, "[ ] ") {
+			t.Errorf("%s: none: %q", name, got)
+		}
+		l.SetTicked([]ItemID{"basil"})
+		if got := row(); !strings.Contains(got, "[-] ") {
+			t.Errorf("%s: some: %q", name, got)
+		}
+		l.SetTicked([]ItemID{"basil", "mint", "thyme"})
+		if got := row(); !strings.Contains(got, "[x] ") {
+			t.Errorf("%s: all: %q", name, got)
+		}
+		view := ansi.Strip(func() string { v, _ := l.View(st, 60, 12); return v }())
+		if !strings.Contains(view, "[x] basil") || !strings.Contains(view, "[ ] oak") {
+			t.Errorf("%s: entries:\n%s", name, view)
+		}
+	}
+}
+
+func TestClickOnTitleFoldsAndClickOnBoxTicks(t *testing.T) {
+	l := tickList(t, nil)
+	l.SetTicked([]ItemID{"basil"})
+	at := func(item string) (Target, *MouseMap) {
+		_, targets := l.View(Styles{}, 60, 12)
+		for i := len(targets) - 1; i >= 0; i-- {
+			if targets[i].Item == item {
+				return targets[i], NewMouseMap(targets, true)
+			}
+		}
+		t.Fatalf("no target for %q", item)
+		return Target{}, nil
+	}
+	tg, m := at(groupRef + "herbs")
+	if _, handled := l.Click(m.Handle(click(tg.Rect.X+30, tg.Rect.Y))); !handled || shownRows(l) != "[herbs],[trees],oak,[],fern" || ticks(l) != "basil" {
+		t.Fatalf("a click on the title: rows %s, ticks %q", shownRows(l), ticks(l))
+	}
+	tg, m = at(tickRef + groupRef + "herbs")
+	if _, handled := l.Click(m.Handle(click(tg.Rect.X+1, tg.Rect.Y))); !handled {
+		t.Fatal("the click on the group box was not handled")
+	}
+	if ticks(l) != "basil,mint,thyme" || shownRows(l) != "[herbs],[trees],oak,[],fern" {
+		t.Errorf("a click on the group box: ticks %q, rows %s (it ticks the folded entries too and folds nothing)", ticks(l), shownRows(l))
+	}
+	if _, handled := l.Click(m.Handle(click(tg.Rect.X+2, tg.Rect.Y))); !handled || ticks(l) != "" {
+		t.Errorf("the second click on the box: ticks %q", ticks(l))
+	}
+	l.SetFocused(true)
+	tg, m = at(tickRef + "oak")
+	if open, _ := l.Click(m.Handle(click(tg.Rect.X, tg.Rect.Y))); open != "" || ticks(l) != "oak" {
+		t.Errorf("a click on the box of an entry: open %q, ticks %q", open, ticks(l))
+	}
+	if open, _ := l.Click(m.Handle(click(tg.Rect.X+2, tg.Rect.Y))); open != "" || ticks(l) != "" {
+		t.Errorf("a click on the box of the marked entry opened it or did not toggle: open %q, ticks %q", open, ticks(l))
+	}
+}
+
+func TestRowOfAllActsAcrossGroups(t *testing.T) {
+	for _, lang := range []struct {
+		lang i18n.Lang
+		word string
+	}{{i18n.English, "all (5)"}, {i18n.German, "alle (5)"}} {
+		l, _ := newSampleList(t, Styles{}, lang.lang, func(s *ListSpec) { s.Ticks, s.AllRow = true, true })
+		l.SetItems(samplePlants())
+		l.SetGrouped(true)
+		l.Reset()
+		view, _ := l.View(Styles{}, 60, 12)
+		if !strings.Contains(view, "[ ] "+lang.word) {
+			t.Errorf("%s: no row of all:\n%s", lang.lang, view)
+		}
+		if got := shownRows(l); got != "*,[herbs],basil,mint,thyme,[trees],oak,[],fern" {
+			t.Fatalf("rows = %s", got)
+		}
+	}
+	l := tickList(t, func(s *ListSpec) { s.AllRow = true })
+	l.SetTicked([]ItemID{"oak"})
+	keysTo(l, "up", "up")
+	if !l.mark().all {
+		t.Fatalf("not on the row of all: %+v", l.mark())
+	}
+	for i, w := range []string{"basil,mint,oak,thyme,fern", "", "oak", "basil,mint,oak,thyme,fern"} {
+		keysTo(l, "space")
+		if got := ticks(l); got != w {
+			t.Fatalf("toggle %d: %q, want %q", i+1, got, w)
+		}
+	}
+	keysTo(l, "left", "enter")
+	if shownRows(l) != "*,[herbs],basil,mint,thyme,[trees],oak,[],fern" {
+		t.Errorf("left or enter folded something on the row of all: %s", shownRows(l))
+	}
+	if _, ok := l.Selected(); ok {
+		t.Error("the row of all is an entry")
+	}
+	l.SetFilter("zzz")
+	if shownRows(l) != "" {
+		t.Errorf("rows %s with no match", shownRows(l))
+	}
+}
+
+func TestNarrowTerminalKeepsOnlyTheID(t *testing.T) {
+	keys := sampleKeymap(t, CharsetUnicode)
+	spec := ListSpec{Keys: sampleListKeys(), Empty: "list.empty", Ticks: true, Columns: []Column{
+		{Title: "col.name"}, {Title: "col.note", Flex: true, Optional: true},
+	}}
+	l, err := NewList(spec, keys, newTranslator(t, i18n.English, listCatalogs(), keys))
+	if err != nil {
+		t.Fatal(err)
+	}
+	l.SetItems([]ListItem{{ID: "installation-checker", Cells: []string{"installation-checker", "checks the installation"}}})
+	row := func(width int) string {
+		view, _ := l.View(Styles{}, width, 3)
+		return strings.TrimRight(strings.Split(view, "\n")[1], " ")
+	}
+	if got := row(60); got != "> [ ] installation-checker  checks the installation" {
+		t.Errorf("wide: %q", got)
+	}
+	if got := row(26); got != "> [ ] installation-checker" {
+		t.Errorf("narrow keeps the ID whole and drops the description: %q", got)
+	}
+	view, _ := l.View(Styles{}, 26, 3)
+	if strings.Contains(view, "NOTE") {
+		t.Errorf("the title of the dropped column stays:\n%s", view)
+	}
 }
