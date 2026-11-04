@@ -21,12 +21,24 @@ const (
 )
 
 func endpointPath(e Endpoint) (string, error) {
-	if !component(e.RuntimeDirName) || !component(e.SocketBase) || !filepath.IsAbs(e.FallbackDir) {
-		return "", fmt.Errorf("%s: runtime directory name, socket base, or absolute fallback directory is invalid", e.label())
+	fallbackOK := filepath.IsAbs(e.FallbackDir) || (e.RuntimeRoot != "" && e.FallbackDir == "")
+	if !component(e.RuntimeDirName) || !component(e.SocketBase) || !fallbackOK ||
+		(e.RuntimeRoot != "" && !filepath.IsAbs(e.RuntimeRoot)) {
+		return "", fmt.Errorf("%s: runtime directory name, socket base, absolute fallback directory, or absolute runtime root is invalid", e.label())
 	}
-	root, err := runtimeRoot(e.FallbackDir)
-	if err != nil {
-		return "", fmt.Errorf("%s: %w", e.label(), err)
+	var root string
+	if e.RuntimeRoot != "" {
+		// An explicit root replaces the search and never falls back to a
+		// shorter location.
+		if err := privateExistingDir(e.RuntimeRoot); err != nil {
+			return "", fmt.Errorf("%s: runtime root: %w", e.label(), err)
+		}
+		root = e.RuntimeRoot
+	} else {
+		var err error
+		if root, err = runtimeRoot(e.FallbackDir); err != nil {
+			return "", fmt.Errorf("%s: %w", e.label(), err)
+		}
 	}
 	dir := filepath.Join(root, e.RuntimeDirName)
 	if err := privateExistingDir(dir); err != nil && !errors.Is(err, fs.ErrNotExist) {
@@ -34,6 +46,9 @@ func endpointPath(e Endpoint) (string, error) {
 	}
 	path := filepath.Join(dir, e.SocketBase+".sock")
 	if len(path) > maxSocketPath {
+		if e.RuntimeRoot != "" {
+			return "", &PathTooLongError{Path: path}
+		}
 		return shortSocketPath(e, path)
 	}
 	return path, nil

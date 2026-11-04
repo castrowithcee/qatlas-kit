@@ -8,14 +8,18 @@ import (
 	"time"
 )
 
-// Endpoint contains names supplied by the consuming application. FallbackDir
-// is an absolute directory used when no private user runtime directory exists.
-// RuntimeDirName and SocketBase must each be a single path component on Unix.
-// On Windows, PipePrefix and SocketBase form the pipe name with the user's SID.
+// Endpoint contains names supplied by the consuming application; the package
+// documentation gives where the channel lives. RuntimeDirName and SocketBase
+// must each be a single path component on Unix. RuntimeRoot, when set, must be
+// an absolute, existing, private directory of the user. FallbackDir must be
+// absolute, and may be empty only with RuntimeRoot. On Windows, PipePrefix and
+// SocketBase form the pipe name with the user's SID, and RuntimeRoot and
+// FallbackDir are ignored.
 type Endpoint struct {
 	RuntimeDirName string
 	SocketBase     string
 	FallbackDir    string
+	RuntimeRoot    string
 	ErrorName      string
 	PipePrefix     string
 }
