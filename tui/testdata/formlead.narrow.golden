@@ -1,0 +1,24 @@
+This sentence is deliberately long so   
+that it has to wrap onto several lines  
+of a narrow form without losing a single
+word of it.                             
+                                        
+General                                 
+         #=============================#
+> name   | basil_                      |
+         #=============================#
+         A short name of the plant.     
+         +-----------------------------+
+  kind   | herb                      v |
+         +-----------------------------+
+         +-----------------------------+
+  origin | greenhouse (set by the      |
+         | nursery)                    |
+         +-----------------------------+
+  ~                                     
+                                        
+                                        
+                                        
+                                        
+[ F2 save ]  [ esc cancel ]             
+[ ctrl+r reload ]                       

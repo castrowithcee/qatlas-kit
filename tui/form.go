@@ -161,7 +161,9 @@ type FormButton struct {
 // saves; the form knows no schema. Buttons stand below the fields, and tab reaches them after the last field.
 type FormSpec struct {
 	// Title is the text in the frame of the form drawn by Overlay; without one the frame has no title.
-	Title    TextID
+	Title TextID
+	// Lead is one or two sentences on the whole form, drawn dimmed under the title above the fields.
+	Lead     TextID
 	Fields   []FormField
 	Sections []FormSection
 	Keys     FormKeys
@@ -204,6 +206,7 @@ type Form struct {
 	sections []FormSection
 	buttons  []FormButton
 	title    TextID
+	lead     TextID
 
 	// focus is the field with the focus, or the one the focus left for a button; btn is the focused button,
 	// -1 while a field has the focus.
@@ -322,7 +325,7 @@ func NewForm(spec FormSpec, keys *Keymap, text Translator) (*Form, error) {
 		return nil, err
 	}
 	f := &Form{keys: k, table: keys, text: text, sections: slices.Clone(spec.Sections),
-		buttons: slices.Clone(spec.Buttons), title: spec.Title, btn: -1, pinned: map[SectionID]bool{}, problems: map[FieldID][]FormProblem{}, focus: -1}
+		buttons: slices.Clone(spec.Buttons), title: spec.Title, lead: spec.Lead, btn: -1, pinned: map[SectionID]bool{}, problems: map[FieldID][]FormProblem{}, focus: -1}
 	fields := slices.Clone(spec.Fields)
 	slices.SortStableFunc(fields, func(a, b FormField) int { return order[a.Section] - order[b.Section] })
 	for _, field := range fields {
@@ -648,6 +651,9 @@ func (f *Form) Changed() bool {
 	}
 	return false
 }
+
+// SetLead replaces the lead; values, focus and an open list of values stay.
+func (f *Form) SetLead(id TextID) { f.lead = id }
 
 // SetProblems shows the problems of a refused save: each under its field, one without a field above the
 // form. A section with a problem opens, the focus goes to the first field with one, and a problem stays until
