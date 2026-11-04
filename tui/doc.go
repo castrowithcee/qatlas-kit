@@ -159,25 +159,25 @@
 // without the buttons where they do not fit beside it. Overlay draws the form as a modal in the way of
 // Dialog.Overlay, under FormSpec.Title in its frame, with its buttons and the keys of Hints, and ok is false
 // where room does not hold it, also with a list of values or the calendar open; the application then draws
-// View in the workspace and Hints in the footer. The title is a catalog text, and the modal shows no more of a
-// masked field than View does.
-// A masked field never shows what is typed, not in its row, a target or a problem, and is never handed a
-// stored secret: Stored says one exists, which an empty field keeps. FieldMaskedBlock is the same for a
-// secret of several lines, such as a private key: its value is text with "\n" line breaks of at most 64 KiB,
-// and it shows a placeholder with the number of lines, never the content or its length. Paste replaces the
-// whole value, typed characters are appended, enter adds a line break instead of going on, and backspace or
-// delete clears the field; tab, the save key and a click work as in any field. A paste or key with a
+// View in the workspace and Hints in the footer. The modal shows no more of a masked field than View does.
+// FormSpec.Lead is one or two dimmed sentences under the title, wrapped and never cut. It stays in view at
+// every focus, in View as in the modal, counts for ok, and SetLead changes it and keeps values, focus and
+// open list. A masked field never shows what is typed, not in its row, a target or a problem, and is never
+// handed a stored secret: Stored says one exists, which an empty field keeps. FieldMaskedBlock is the same
+// for a secret of several lines, such as a private key: its value is text with "\n" line breaks of at most 64
+// KiB, and it shows a placeholder with the number of lines, never the content or its length. Paste replaces
+// the whole value, typed characters are appended, enter adds a line break instead of going on, and backspace
+// or delete clears the field; tab, the save key and a click work as in any field. A paste or key with a
 // character other than line break and tab, or that would pass the limit, is refused whole with a message
-// under the field. Each problem stands under its field
-// until that field changes, a problem without a field above the form, and a section with a problem carries a
-// mark and opens. An advanced section stays closed and dimmed while it holds nothing. On a wide terminal the
-// sections stand as a numbered list beside the fields of the focused one. The fields lose their frames only
-// where the width does not hold them, and then only the focused field stands on a surface, so two fields never
-// run together. Where the height is short, the form scrolls with the focus, which is always in view: whole
-// fields stand around it, with "…" above and below where fields are left out. Each section has its own label
-// column, and a label longer than the column wraps inside it. Only where even the focused field does not fit
-// does the form ask for a larger terminal. A click on a field focuses it and types nothing; on a choice or
-// list field it is enter, on a tick box the toggle key, on a section a jump to its first field.
+// under the field. Each problem stands under its field until that field changes, a problem without a field
+// above the form, and a section with a problem carries a mark and opens. An advanced section stays closed and
+// dimmed while it holds nothing. On a wide terminal the sections stand as a numbered list beside the fields
+// of the focused one. The fields lose their frames only where the width does not hold them, and then only the
+// focused field stands on a surface. Where the height is short, the form scrolls with the focus, which is
+// always in view: whole fields stand around it, with "…" above and below where fields are left out. Each
+// section has its own label column, in which a longer label wraps. Only where even the focused field does not
+// fit does the form ask for a larger terminal. A click on a field focuses it and types nothing; on a choice
+// or list field it is enter, on a tick box the toggle key, on a section a jump to its first field.
 //
 // A date field (FieldDate) is typed as YYYY-MM-DD, or as YYYY-MM-DD HH:MM where DateField.Time is set, and
 // its value is a time.Time in the local time zone of the process (time.Local), cut to the day or the minute;
