@@ -1,0 +1,50 @@
+Garden  ok                                        
+  1 Plants  2 Beds                                
+  basil  resting                                  
+  basil  resting                                  
+  basil  resting                                  
+  basil  resting                                  
+  basil  resting                                  
+  basil  resting                                  
+  basil  resting                                  
+  basil  resting                                  
+  #= Edit plant ===============================#  
+  | General                                    |  
+  |          #===============================# |  
+  | > name   | basil_                        | |  
+  |          #===============================# |  
+  |          A short name of the plant.        |  
+  |          +-------------------------------+ |  
+  |   kind   | herb                        v | |  
+  |          +-------------------------------+ |  
+  |          +-------------------------------+ |  
+  |   origin | greenhouse (set by the        | |  
+  |          | nursery)                      | |  
+  |          +-------------------------------+ |  
+  | Care                                       |  
+  |                +-------------------------+ |  
+  |   watering     |  [ ] Monday             | |  
+  |                |  [x] Wednesday          | |  
+  |                |  [ ] Friday             | |  
+  |                +-------------------------+ |  
+  |                +-------------------------+ |  
+  |   feeder token | (stored, unchanged)     | |  
+  |                +-------------------------+ |  
+  |                +-------------------------+ |  
+  |   notes        | 2 notes                 | |  
+  |                +-------------------------+ |  
+  | Extra (closed)                             |  
+  |                                            |  
+  | [ F2 save ]  [ esc cancel ]                |  
+  | [ ctrl+r reload ]                          |  
+  |                                            |  
+  | F2 save                     tab next field |  
+  #============================================#  
+  basil  resting                                  
+  basil  resting                                  
+  basil  resting                                  
+  basil  resting                                  
+  basil  resting                                  
+  basil  resting                                  
+  basil  resting                                  
+  basil  resting                                  

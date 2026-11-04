@@ -1,9 +1,13 @@
 package tui
 
 import (
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
+
+	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/castrowithcee/qatlas-kit/i18n"
 )
@@ -326,5 +330,193 @@ func TestFormBackIsReportedByEveryWayToPressIt(t *testing.T) {
 		if act, handled := got(); act != "back" || handled {
 			t.Errorf("%s gave %q, %v; want back, not handled", name, act, handled)
 		}
+	}
+}
+
+func withModal(s *FormSpec) {
+	withButtons(s)
+	s.Title = "t.plant"
+}
+
+func TestFormOverlayStandsCentredWithTitleAndOwnTargets(t *testing.T) {
+	st := looks(t)["dark"]
+	f := newSampleForm(t, i18n.English, withModal)
+	room := Rect{Y: 3, Width: 100, Height: 46}
+	view, targets, ok := f.Overlay(st, sampleScreen(100, 50), 100, 50, room)
+	if !ok {
+		t.Fatal("the form does not fit 100x30")
+	}
+	plain := strings.Split(ansi.Strip(view), "\n")
+	if len(plain) != 50 {
+		t.Fatalf("%d lines", len(plain))
+	}
+	top, bottom, left, right := -1, -1, -1, -1
+	for i, line := range plain {
+		if lipgloss.Width(line) != 100 {
+			t.Fatalf("line %d has %d cells", i, lipgloss.Width(line))
+		}
+		if j := strings.Index(line, "╭"); j >= 0 && top < 0 {
+			top, left = i, lipgloss.Width(line[:j])
+			right = 100 - left - lipgloss.Width(line[j:strings.Index(line, "╮")+len("╮")])
+		}
+		if strings.Contains(line, "╰") {
+			bottom = i
+		}
+	}
+	if top < room.Y || abs(left-right) > 1 || abs((top-room.Y)-(room.Y+room.Height-1-bottom)) > 1 {
+		t.Errorf("the form spans rows %d-%d, columns from %d, not centred in its room:\n%s", top, bottom, left, ansi.Strip(view))
+	}
+	if !strings.Contains(plain[top], "Edit plant") {
+		t.Errorf("the frame has no title: %q", plain[top])
+	}
+	if !strings.HasPrefix(plain[0], "Garden") || strings.Contains(view, "\x1b[31m") {
+		t.Error("the screen behind is not dimmed and stripped")
+	}
+	if !strings.Contains(strings.Join(plain, "\n"), "[ F2 save ]") {
+		t.Errorf("no save button:\n%s", ansi.Strip(view))
+	}
+	if !strings.Contains(plain[bottom-1], "tab") {
+		t.Errorf("no key line above the frame: %q", plain[bottom-1])
+	}
+	if len(targets) == 0 {
+		t.Fatal("no targets")
+	}
+	for _, tg := range targets {
+		r := tg.Rect
+		if r.X < left || r.X+r.Width > 100-right || r.Y <= top || r.Y >= bottom {
+			t.Errorf("target %+v lies outside the frame (rows %d-%d, columns %d-%d)", tg, top, bottom, left, 100-right)
+		}
+	}
+	// The buttons stand where their targets say, and a click on one gives its action.
+	var got []ActionID
+	for _, tg := range targets {
+		if !strings.HasPrefix(tg.Item, formButtonRef) {
+			continue
+		}
+		row := plain[tg.Rect.Y]
+		if cellsAt(row, tg.Rect.X, tg.Rect.Width) == "" || !strings.Contains(row, strings.TrimSpace(cellsAt(row, tg.Rect.X, tg.Rect.Width))) {
+			t.Errorf("button target %+v does not cover its button in %q", tg, row)
+		}
+		got = append(got, pressFor(t, f, tg))
+	}
+	if !slices.Equal(got, []ActionID{"save", "back", "reload"}) {
+		t.Errorf("the buttons gave %v", got)
+	}
+	// A click on a field focuses it.
+	for _, tg := range targets {
+		if tg.Item == formFieldRef+"soil" {
+			pressFor(t, f, tg)
+			if f.Focused() != "soil" {
+				t.Errorf("a click on the field focused %q", f.Focused())
+			}
+			if !strings.Contains(plain[tg.Rect.Y], "soil") {
+				t.Errorf("the field target is not on its row: %q", plain[tg.Rect.Y])
+			}
+		}
+	}
+}
+
+func TestFormOverlayWithoutTitleHasNoTitle(t *testing.T) {
+	f := newSampleForm(t, i18n.English, withButtons)
+	view, _, ok := f.Overlay(looks(t)["dark"], sampleScreen(100, 50), 100, 50, Rect{Y: 2, Width: 100, Height: 48})
+	if !ok {
+		t.Fatal("does not fit")
+	}
+	for _, line := range strings.Split(ansi.Strip(view), "\n") {
+		if j := strings.Index(line, "╭"); j >= 0 {
+			if frame := line[j:]; strings.Trim(frame[:strings.Index(frame, "╮")+len("╮")], "╭─╮") != "" {
+				t.Errorf("the frame carries a title: %q", line)
+			}
+		}
+	}
+}
+
+func TestFormOverlayNeedsRoom(t *testing.T) {
+	st := looks(t)["noneascii"]
+	minHeight := func(f *Form) int {
+		for h := 1; h <= 60; h++ {
+			if _, _, ok := f.Overlay(st, sampleScreen(100, 60), 100, 60, Rect{Width: 100, Height: h}); ok {
+				return h
+			}
+		}
+		t.Fatal("never fits")
+		return 0
+	}
+	if _, _, ok := newSampleForm(t, i18n.English, withModal).Overlay(st, sampleScreen(40, 30), 40, 30, Rect{Width: 43, Height: 30}); ok {
+		t.Error("the form fits a room narrower than the modal minimum")
+	}
+	closed := newSampleForm(t, i18n.English, withModal)
+	base := minHeight(closed)
+	if v, ts, ok := closed.Overlay(st, "", 100, 60, Rect{Width: 100, Height: base - 1}); ok || v != "" || ts != nil {
+		t.Error("a room one row short still draws")
+	}
+	open := newSampleForm(t, i18n.English, withModal)
+	open.Focus("kind")
+	open.Update(press("enter"))
+	if !open.Open() {
+		t.Fatal("the list did not open")
+	}
+	if got := minHeight(open); got <= base {
+		t.Errorf("the open list needs %d rows, the closed form %d", got, base)
+	}
+	if _, _, ok := open.Overlay(st, sampleScreen(100, 60), 100, 60, Rect{Width: 100, Height: base}); ok {
+		t.Error("the open list fits where only the closed form does")
+	}
+	cal := newDateForm(t, i18n.English, func(s *FormSpec) { s.Title = "" })
+	cb := minHeight(cal)
+	cal.Focus("from")
+	cal.Click(MouseResult{Handled: true, Item: formCalendarRef + "from"})
+	if !cal.cal {
+		t.Fatal("the calendar did not open")
+	}
+	if _, _, ok := cal.Overlay(st, sampleScreen(100, 60), 100, 60, Rect{Width: 100, Height: cb}); ok {
+		t.Error("the open calendar fits where only the closed form does")
+	}
+	if got := minHeight(cal); got <= cb {
+		t.Errorf("the calendar needs %d rows, the closed form %d", got, cb)
+	}
+}
+
+func TestFormOverlayNeverShowsAMaskedValue(t *testing.T) {
+	f := newSampleForm(t, i18n.English, withModal)
+	f.Focus("token")
+	typeForm(f, "hunter2")
+	view, _, ok := f.Overlay(looks(t)["noneascii"], sampleScreen(100, 40), 100, 40, Rect{Width: 100, Height: 40})
+	if !ok {
+		t.Fatal("does not fit")
+	}
+	if strings.Contains(view, "hunter2") {
+		t.Errorf("the modal shows the secret:\n%s", view)
+	}
+}
+
+func TestFormOverlayFallsBackToViewAndHints(t *testing.T) {
+	f := newSampleForm(t, i18n.English, withModal)
+	if _, _, ok := f.Overlay(looks(t)["noneascii"], sampleScreen(40, 8), 40, 8, Rect{Width: 40, Height: 8}); ok {
+		t.Fatal("the form fits 40x8")
+	}
+	view, _ := f.View(looks(t)["noneascii"], 40, 8)
+	if len(strings.Split(view, "\n")) != 8 || len(f.Hints()) == 0 {
+		t.Error("View or Hints give nothing for the fallback")
+	}
+}
+
+func TestGoldenFormModal(t *testing.T) {
+	for _, tt := range []struct {
+		name, look string
+		w, h       int
+	}{
+		{"formmodal.narrow.golden", "noneascii", 50, 50},
+		{"formmodal.wide.golden", "noneascii", 120, 30},
+		{"formmodal.wide.dark.golden", "dark", 120, 30},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			f := newSampleForm(t, i18n.English, withModal)
+			out, _, ok := f.Overlay(looks(t)[tt.look], sampleScreen(tt.w, tt.h), tt.w, tt.h, Rect{Y: 2, Width: tt.w, Height: tt.h - 2})
+			if !ok {
+				t.Fatal("does not fit")
+			}
+			checkGolden(t, tt.name, out+"\n")
+		})
 	}
 }

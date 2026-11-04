@@ -1,0 +1,30 @@
+Garden  ok                                                                                                              
+  1 Plants  2 Beds                                                                                                      
+  basil  resting            #= Edit plant =================================================#                            
+  basil  resting            | General                                                      |                            
+  basil  resting            |          #=================================================# |                            
+  basil  resting            | > name   | basil_                                          | |                            
+  basil  resting            |          #=================================================# |                            
+  basil  resting            |          A short name of the plant.                          |                            
+  basil  resting            |          +-------------------------------------------------+ |                            
+  basil  resting            |   kind   | herb                                          v | |                            
+  basil  resting            |          +-------------------------------------------------+ |                            
+  basil  resting            |          +-------------------------------------------------+ |                            
+  basil  resting            |   origin | greenhouse (set by the nursery)                 | |                            
+  basil  resting            |          +-------------------------------------------------+ |                            
+  basil  resting            | Care                                                         |                            
+  basil  resting            |                +-------------------------------------------+ |                            
+  basil  resting            |   watering     |  [ ] Monday  [x] Wednesday  [ ] Friday    | |                            
+  basil  resting            |                +-------------------------------------------+ |                            
+  basil  resting            |                +-------------------------------------------+ |                            
+  basil  resting            |   feeder token | (stored, unchanged)                       | |                            
+  basil  resting            |                +-------------------------------------------+ |                            
+  basil  resting            |                +-------------------------------------------+ |                            
+  basil  resting            |   notes        | 2 notes                                   | |                            
+  basil  resting            |                +-------------------------------------------+ |                            
+  basil  resting            | Extra (closed)                                               |                            
+  basil  resting            |                                                              |                            
+  basil  resting            | [ F2 save ]  [ esc cancel ]  [ ctrl+r reload ]               |                            
+  basil  resting            |                                                              |                            
+  basil  resting            | F2 save             tab next field  shift+tab previous field |                            
+  basil  resting            #==============================================================#                            
