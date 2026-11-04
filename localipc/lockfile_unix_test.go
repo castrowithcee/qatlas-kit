@@ -88,8 +88,10 @@ func TestHandOverKeepsSuccessorFilesUntilItCloses(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// macOS reads the peer's credentials only while the connection is open.
+	err = <-accepted
 	_ = conn.Close()
-	if err := <-accepted; err != nil {
+	if err != nil {
 		t.Fatal(err)
 	}
 	if err := successor.Close(); err != nil {
