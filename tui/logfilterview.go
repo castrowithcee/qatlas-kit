@@ -290,22 +290,6 @@ func (l *LogView) filterHints() []Hint {
 	return out
 }
 
-// formRows is the height the form needs at width with no list or calendar open.
-func (m *logFilterModal) formRows(styles Styles, width int) int {
-	c := *m.form
-	// The buttons keep the bottom rows of the form, so they are measured apart from the fields, and with the
-	// focus on a field, which may add the line of its hint.
-	c.open, c.cal, c.btn = false, false, -1
-	buttons, _ := c.buttonRows(width, styles)
-	c.buttons = nil
-	view, _ := c.View(styles, width, 60)
-	rows := strings.Split(view, "\n")
-	for len(rows) > 1 && strings.TrimSpace(rows[len(rows)-1]) == "" {
-		rows = rows[:len(rows)-1]
-	}
-	return len(rows) + len(buttons) + 1
-}
-
 // ModalOverlay draws the open choice of the period with styles over screen, the drawn screen of width by
 // height cells, in the way of Dialog.Overlay: the screen dimmed, the form with the fields of the chosen kind
 // in its frame, the apply and discard buttons of the form and the key line, centred in room. The targets are the modal's
@@ -316,37 +300,7 @@ func (l *LogView) ModalOverlay(styles Styles, screen string, width, height int, 
 	if m == nil {
 		return "", nil, false
 	}
-	inner := min(dialogMaxInner, room.Width-8)
-	if inner < dialogMinInner {
-		return "", nil, false
-	}
-	rows := m.formRows(styles, inner)
-	extra := 0
-	switch {
-	case m.form.cal:
-		box, _ := m.form.calendar(styles)
-		extra = len(box)
-	case m.form.open:
-		extra = len(m.form.fields[m.form.focus].Choices) + 2
-	}
-	formH := rows + extra
-	// The form with its buttons, a gap and the key line, in the frame.
-	if formH+2+2 > room.Height {
-		return "", nil, false
-	}
-	body, ts := m.form.View(styles, inner, formH)
-	lines := strings.Split(body, "\n")
-	lines = append(lines, "")
-	keyLine, kt := styles.footer(l.keys.Hints(l.filterHints(), m.form.Input(), l.text), "", inner)
-	ts = append(ts, OffsetTargets(kt, 0, len(lines))...)
-	lines = append(lines, keyLine)
-	for i, line := range lines {
-		lines[i] = Pad(Clip(line, inner), inner)
-	}
-	box := styles.Panel(l.text.Lookup(TextLogFilterTitle), "", lines, inner+4, len(lines)+2, true)
-	top := room.Y + (room.Height-len(box))/2
-	left := room.X + (room.Width-inner-4)/2
-	return overlay(screen, box, width, height, top, left, styles), OffsetTargets(ts, left+2, top+1), true
+	return m.form.drawModal(styles, l.text.Lookup(TextLogFilterTitle), l.filterHints(), l.keys, l.text, screen, width, height, room)
 }
 
 // ModalView draws the open choice of the period with styles as the content of a workspace of width by height

@@ -147,6 +147,8 @@ type FormButton struct {
 // FormSpec is the content of a form. The application supplies every text and checks the values when it
 // saves; the form knows no schema. Buttons stand below the fields, and tab reaches them after the last field.
 type FormSpec struct {
+	// Title is the text in the frame of the form drawn by Overlay; without one the frame has no title.
+	Title    TextID
 	Fields   []FormField
 	Sections []FormSection
 	Keys     FormKeys
@@ -188,6 +190,7 @@ type Form struct {
 	fields   []formField
 	sections []FormSection
 	buttons  []FormButton
+	title    TextID
 
 	// focus is the field with the focus, or the one the focus left for a button; btn is the focused button,
 	// -1 while a field has the focus.
@@ -306,7 +309,7 @@ func NewForm(spec FormSpec, keys *Keymap, text Translator) (*Form, error) {
 		return nil, err
 	}
 	f := &Form{keys: k, table: keys, text: text, sections: slices.Clone(spec.Sections),
-		buttons: slices.Clone(spec.Buttons), btn: -1, pinned: map[SectionID]bool{}, problems: map[FieldID][]FormProblem{}, focus: -1}
+		buttons: slices.Clone(spec.Buttons), title: spec.Title, btn: -1, pinned: map[SectionID]bool{}, problems: map[FieldID][]FormProblem{}, focus: -1}
 	fields := slices.Clone(spec.Fields)
 	slices.SortStableFunc(fields, func(a, b FormField) int { return order[a.Section] - order[b.Section] })
 	for _, field := range fields {

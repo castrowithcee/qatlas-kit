@@ -772,3 +772,66 @@ func (f *Form) buttonRows(width int, styles Styles) ([]string, []Target) {
 	}
 	return rows, targets
 }
+
+// fieldRows is the height the form needs at width with no list or calendar open.
+func (f *Form) fieldRows(styles Styles, width int) int {
+	c := *f
+	// The buttons keep the bottom rows of the form, so they are measured apart from the fields, and with the
+	// focus on a field, which may add the line of its hint.
+	c.open, c.cal, c.btn = false, false, -1
+	buttons, _ := c.buttonRows(width, styles)
+	c.buttons = nil
+	view, _ := c.View(styles, width, 60)
+	rows := strings.Split(view, "\n")
+	for len(rows) > 1 && strings.TrimSpace(rows[len(rows)-1]) == "" {
+		rows = rows[:len(rows)-1]
+	}
+	return len(rows) + len(buttons) + 1
+}
+
+// Overlay draws the form with styles over screen, the drawn screen of width by height cells, in the way of
+// Dialog.Overlay: the screen dimmed and without its colours, and the form with its buttons and the key line of
+// Hints in its frame under FormSpec.Title, centred in room, the part of the screen it may cover. The targets are
+// the form's alone, so the screen behind it takes no click. ok is false where room is too small for the
+// form, also where only the open list of values or the calendar no longer fits; the application then draws
+// View in the workspace and Hints in the footer.
+func (f *Form) Overlay(styles Styles, screen string, width, height int, room Rect) (view string, targets []Target, ok bool) {
+	title := ""
+	if f.title != "" {
+		title = f.text.Lookup(f.title)
+	}
+	return f.drawModal(styles, title, f.Hints(), f.table, f.text, screen, width, height, room)
+}
+
+// drawModal is the form in its frame over screen, shared by Form.Overlay and the modal of the log view: the
+// fields with the open list or calendar, the buttons, a gap and the key line made of hints.
+func (f *Form) drawModal(styles Styles, title string, hints []Hint, keys *Keymap, text Translator, screen string, width, height int, room Rect) (string, []Target, bool) {
+	inner := min(dialogMaxInner, room.Width-8)
+	if inner < dialogMinInner {
+		return "", nil, false
+	}
+	extra := 0
+	switch {
+	case f.cal:
+		box, _ := f.calendar(styles)
+		extra = len(box)
+	case f.open:
+		extra = len(f.fields[f.focus].Choices) + 2
+	}
+	formH := f.fieldRows(styles, inner) + extra
+	if formH+2+2 > room.Height {
+		return "", nil, false
+	}
+	body, ts := f.View(styles, inner, formH)
+	lines := append(strings.Split(body, "\n"), "")
+	keyLine, kt := styles.footer(keys.Hints(hints, f.Input(), text), "", inner)
+	ts = append(ts, OffsetTargets(kt, 0, len(lines))...)
+	lines = append(lines, keyLine)
+	for i, line := range lines {
+		lines[i] = Pad(Clip(line, inner), inner)
+	}
+	box := styles.Panel(title, "", lines, inner+4, len(lines)+2, true)
+	top := room.Y + (room.Height-len(box))/2
+	left := room.X + (room.Width-inner-4)/2
+	return overlay(screen, box, width, height, top, left, styles), OffsetTargets(ts, left+2, top+1), true
+}

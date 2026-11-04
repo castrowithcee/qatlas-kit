@@ -141,7 +141,11 @@
 // typing, paste, left, right, up, down and the wheel change nothing; a click on a field takes the focus.
 // A button with the focus is always in view: the fields get the height that is left, or none, and only where
 // not even the buttons fit does the form ask for a larger terminal. With a field focused, the form is drawn
-// without the buttons where they do not fit beside it.
+// without the buttons where they do not fit beside it. Overlay draws the form as a modal in the way of
+// Dialog.Overlay, under FormSpec.Title in its frame, with its buttons and the keys of Hints, and ok is false
+// where room does not hold it, also with a list of values or the calendar open; the application then draws
+// View in the workspace and Hints in the footer. The title is a catalog text, and the modal shows no more of a
+// masked field than View does.
 // A masked field never shows what is typed, not in its row, a target or a problem, and is never handed a
 // stored secret: Stored says one exists, which an empty field keeps. Each problem stands under its field
 // until that field changes, a problem without a field above the form, and a section with a problem carries a
