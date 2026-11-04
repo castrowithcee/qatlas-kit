@@ -1,0 +1,24 @@
+Garden  ok                                                                                          
+  1 Plants  2 Beds                                                                                  
+  basil  resting                                                                                    
+  basil  resting  #= Pick plants ================================================#                  
+  basil  resting  | Type to search                                               |                  
+  basil  resting  |       NAME     STATE     SIZE  NOTE                          |                  
+  basil  resting  |   [ ] basil    blooming    12  on the sill by the kitchen w~ |                  
+  basil  resting  |   [x] mint     resting     30  spreads fast                  |                  
+  basil  resting  |   [ ] oak      resting   1200  planted long ago              |                  
+  basil  resting  | > [x] thyme    blooming     8                                |                  
+  basil  resting  |   [ ] fern     resting     40  shade                         |                  
+  basil  resting  |   [ ] plant05  resting      1  extra                         |                  
+  basil  resting  |   [ ] plant06  resting      1  extra                         |                  
+  basil  resting  |   [ ] plant07  resting      1  extra                         |                  
+  basil  resting  |   [ ] plant08  resting      1  extra                         |                  
+  basil  resting  |   [ ] plant09  resting      1  extra                         |                  
+  basil  resting  |   [ ] plant10  resting      1  extra                         |                  
+  basil  resting  |   [ ] plant11  resting      1  extra                         |                  
+  basil  resting  |                                                              |                  
+  basil  resting  | [ enter take ]  [ ctrl+r reload ]  [ esc drop ]              |                  
+  basil  resting  |                                                              |                  
+  basil  resting  |                                             up up  down down |                  
+  basil  resting  #==============================================================#                  
+  basil  resting                                                                                    

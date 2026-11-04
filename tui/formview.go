@@ -740,9 +740,7 @@ func boolInt(b bool) int {
 // buttonRows draws the buttons in rows of at most width cells, each behind the key now in force, the main one
 // bold, and returns a target per button, counted from the top left of the rows.
 func (f *Form) buttonRows(width int, styles Styles) ([]string, []Target) {
-	var rows []string
-	var targets []Target
-	line, x := "", 0
+	var cells []buttonCell
 	for j, b := range f.buttons {
 		kind := ButtonNormal
 		if b.Primary {
@@ -752,25 +750,10 @@ func (f *Form) buttonRows(width int, styles Styles) ([]string, []Target) {
 		if key := f.table.Label(b.Action); key != "" {
 			label = key + " " + label
 		}
-		drawn := styles.Button(kind, label, f.btn == j)
-		w := lipgloss.Width(drawn)
-		if x > 0 && x+len(buttonGap)+w > width {
-			rows, line, x = append(rows, line), "", 0
-		}
-		if x > 0 {
-			line += buttonGap
-			x += len(buttonGap)
-		}
-		if r, ok := clipRect(Rect{X: x, Y: len(rows), Width: w, Height: 1}, width); ok {
-			targets = append(targets, Target{Rect: r, Zone: ZoneForm, Action: b.Action, Item: formButtonRef + strconv.Itoa(j)})
-		}
-		line += drawn
-		x += w
+		cells = append(cells, buttonCell{styles.Button(kind, label, f.btn == j),
+			Target{Zone: ZoneForm, Action: b.Action, Item: formButtonRef + strconv.Itoa(j)}})
 	}
-	if line != "" {
-		rows = append(rows, line)
-	}
-	return rows, targets
+	return flowButtons(cells, width)
 }
 
 // fieldRows is the height the form needs at width with no list or calendar open.

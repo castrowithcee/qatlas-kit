@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/castrowithcee/qatlas-kit/i18n"
@@ -1250,6 +1251,383 @@ func TestGoldenListGroups(t *testing.T) {
 			st := looks(t)[tt.look]
 			l := goldenGroupedList(t, st)
 			out, _ := l.View(st, tt.w, tt.h)
+			checkGolden(t, tt.name, out+"\n")
+		})
+	}
+}
+
+// modalSpec is a pick list with search, ticks, a title and two buttons: enter takes, back drops, and reload
+// is an action of the application.
+func modalSpec(s *ListSpec) {
+	s.Search, s.Keys.Search = SearchAsTyped, ""
+	s.Ticks = true
+	s.Title = "m.title"
+	s.Buttons = []FormButton{{Action: "enter", Label: "m.take", Primary: true}, {Action: "reload", Label: "m.reload"},
+		{Action: "back", Label: "m.drop"}}
+}
+
+func modalCatalogs() i18n.Catalogs[TextID] {
+	c := listCatalogs()
+	c[i18n.English]["m.title"] = "Pick plants"
+	c[i18n.English]["m.take"] = "take"
+	c[i18n.English]["m.reload"] = "reload"
+	c[i18n.English]["m.drop"] = "drop"
+	return c
+}
+
+func newModalList(t *testing.T, st Styles, n int, edit func(*ListSpec)) *List {
+	t.Helper()
+	keys := sampleKeymap(t, st.Charset())
+	spec := ListSpec{Columns: sampleColumns(), Keys: sampleListKeys(), Empty: "list.empty"}
+	modalSpec(&spec)
+	if edit != nil {
+		edit(&spec)
+	}
+	l, err := NewList(spec, keys, newTranslator(t, i18n.English, modalCatalogs(), keys))
+	if err != nil {
+		t.Fatal(err)
+	}
+	items := samplePlants()
+	for i := len(items); i < n; i++ {
+		id := fmt.Sprintf("plant%02d", i)
+		items = append(items, ListItem{ID: ItemID(id), Cells: []string{id, "resting", "1", "extra"}})
+	}
+	if err := l.SetItems(items); err != nil {
+		t.Fatal(err)
+	}
+	return l
+}
+
+func clickTargets(targets []Target, x, y int) MouseResult {
+	return NewMouseMap(targets, true).Handle(tea.MouseClickMsg{X: x, Y: y, Button: tea.MouseLeft})
+}
+
+// frameRows are the plain rows of view and the rows of the frame in it.
+func frameRows(view string) (rows []string, top, bottom int) {
+	rows = strings.Split(ansi.Strip(view), "\n")
+	top, bottom = -1, -1
+	for i, r := range rows {
+		if strings.Contains(r, "╭") && top < 0 {
+			top = i
+		}
+		if strings.Contains(r, "╰") {
+			bottom = i
+		}
+	}
+	return rows, top, bottom
+}
+
+func TestListModalIsCentredWithTitleAndSearchFirst(t *testing.T) {
+	st := looks(t)["dark"]
+	l := newModalList(t, st, 5, nil)
+	room := Rect{Y: 3, Width: 100, Height: 26}
+	view, _, ok := l.Overlay(st, sampleScreen(100, 30), 100, 30, room)
+	if !ok {
+		t.Fatal("the modal does not fit 100x30")
+	}
+	rows, top, bottom := frameRows(view)
+	if len(rows) != 30 || top < 0 || bottom < 0 {
+		t.Fatalf("%d rows, frame %d-%d", len(rows), top, bottom)
+	}
+	if abs((top-room.Y)-(room.Y+room.Height-1-bottom)) > 1 {
+		t.Errorf("frame rows %d-%d are not centred in %+v", top, bottom, room)
+	}
+	left := strings.Index(rows[top], "╭")
+	if abs(left-(100-left-lipgloss.Width(rows[top][left:strings.Index(rows[top], "╮")+len("╮")]))) > 1 {
+		t.Errorf("not centred in width:\n%s", rows[top])
+	}
+	if !strings.Contains(rows[top], "Pick plants") {
+		t.Errorf("no title in the frame: %q", rows[top])
+	}
+	if !strings.Contains(rows[top+1], "Search") && !strings.Contains(strings.ToLower(rows[top+1]), "search") {
+		t.Errorf("the search field is not the first row: %q", rows[top+1])
+	}
+	if !strings.Contains(rows[top+2], "NAME") {
+		t.Errorf("the titles do not follow the search row: %q", rows[top+2])
+	}
+	if !strings.HasPrefix(rows[0], "Garden") || strings.Contains(view[:strings.Index(view, "\n")], "\x1b[31m") {
+		t.Errorf("the screen is not kept dimmed and without colours")
+	}
+}
+
+func TestListModalTypingFiltersAndTicksWork(t *testing.T) {
+	st := looks(t)["dark"]
+	l := newModalList(t, st, 5, nil)
+	room := Rect{Width: 100, Height: 30}
+	for _, r := range "ba" {
+		l.Update(tea.KeyPressMsg{Code: r, Text: string(r)})
+	}
+	view, targets, _ := l.Overlay(st, sampleScreen(100, 30), 100, 30, room)
+	if !strings.Contains(view, "basil") || strings.Contains(view, "thyme") {
+		t.Errorf("typing does not filter:\n%s", view)
+	}
+	// Toggle ticks the marked entry.
+	if _, handled := l.Act("toggle"); !handled || len(l.Ticked()) != 1 || l.Ticked()[0] != "basil" {
+		t.Fatalf("toggle ticked %v", l.Ticked())
+	}
+	// A click on the box of a row ticks it, found through the targets of the modal.
+	var box Target
+	for _, tg := range targets {
+		if tg.Item == tickRef+"basil" {
+			box = tg
+		}
+	}
+	if box.Item == "" {
+		t.Fatal("no tick box target")
+	}
+	res := clickTargets(targets, box.Rect.X+1, box.Rect.Y)
+	if res.Item != tickRef+"basil" || res.Action != "toggle" {
+		t.Fatalf("click on the box reports %+v", res)
+	}
+	l.Click(res)
+	if len(l.Ticked()) != 0 {
+		t.Errorf("the click on the box left %v ticked", l.Ticked())
+	}
+}
+
+func TestListModalButtonClickActsLikeItsKey(t *testing.T) {
+	st := looks(t)["dark"]
+	l := newModalList(t, st, 5, nil)
+	_, targets, ok := l.Overlay(st, sampleScreen(100, 30), 100, 30, Rect{Width: 100, Height: 30})
+	if !ok {
+		t.Fatal("no modal")
+	}
+	byAction := map[ActionID]Target{}
+	for _, tg := range targets {
+		if strings.HasPrefix(tg.Item, listButtonRef) {
+			byAction[tg.Action] = tg
+		}
+	}
+	if len(byAction) != 3 {
+		t.Fatalf("%d button targets", len(byAction))
+	}
+	press := func(a ActionID) MouseResult {
+		tg := byAction[a]
+		return clickTargets(targets, tg.Rect.X, tg.Rect.Y)
+	}
+	// Enter is a list key: the click opens the marked entry as the key does.
+	res := press("enter")
+	if res.Action != "enter" {
+		t.Fatalf("the click reports %+v", res)
+	}
+	if open, handled := l.Click(res); open != "basil" || !handled {
+		t.Errorf("enter button gave %q, %v", open, handled)
+	}
+	// An action of the application comes back unhandled and the result names it.
+	res = press("reload")
+	if open, handled := l.Click(res); open != "" || handled || res.Action != "reload" {
+		t.Errorf("reload button gave %q, %v, action %q", open, handled, res.Action)
+	}
+	// Back clears a filter first, then is left to the application.
+	l.SetFilter("oak")
+	res = press("back")
+	if _, handled := l.Click(res); !handled || l.Query() != "" {
+		t.Errorf("back button did not clear the filter: %q", l.Query())
+	}
+	if _, handled := l.Click(res); handled {
+		t.Error("back without a filter is left to the application")
+	}
+	if _, handled := l.Click(MouseResult{Handled: true, Item: listButtonRef + "9"}); handled {
+		t.Error("a button that is not there acts")
+	}
+}
+
+func TestListModalTargetsAreTheModalsAndOffset(t *testing.T) {
+	st := looks(t)["dark"]
+	l := newModalList(t, st, 5, nil)
+	room := Rect{X: 10, Y: 3, Width: 80, Height: 26}
+	view, targets, _ := l.Overlay(st, sampleScreen(100, 30), 100, 30, room)
+	rows, top, bottom := frameRows(view)
+	left := strings.Index(rows[top], "╭")
+	for _, tg := range targets {
+		r := tg.Rect
+		if r.X <= left || r.X+r.Width > left+1+dialogMaxInner+2 || r.Y <= top || r.Y+r.Height > bottom {
+			t.Errorf("target %+v lies outside the frame (%d, rows %d-%d)", tg, left, top, bottom)
+		}
+	}
+	// Nothing outside the frame is a target, and the drawn buttons lie under their targets.
+	if res := clickTargets(targets, 0, 0); res.Handled {
+		t.Errorf("the screen behind takes a click: %+v", res)
+	}
+	for _, tg := range targets {
+		if strings.HasPrefix(tg.Item, listButtonRef) {
+			text := ansi.Strip(rows[tg.Rect.Y])
+			if !strings.Contains(text[tg.Rect.X:], "take") && !strings.Contains(text[tg.Rect.X:], "drop") && !strings.Contains(text[tg.Rect.X:], "reload") {
+				t.Errorf("target %+v is not on a button: %q", tg, text)
+			}
+		}
+	}
+}
+
+func TestListModalNamesNoActionTwice(t *testing.T) {
+	st := looks(t)["dark"]
+	l := newModalList(t, st, 5, nil)
+	view, _, _ := l.Overlay(st, sampleScreen(100, 30), 100, 30, Rect{Width: 100, Height: 30})
+	rows, top, bottom := frameRows(view)
+	frame := strings.Join(rows[top:bottom+1], "\n")
+	// The keys of the buttons stand once, in front of their labels; the key line holds the others.
+	for _, label := range []string{"take", "reload", "drop"} {
+		if n := strings.Count(frame, label); n != 1 {
+			t.Errorf("%q stands %d times:\n%s", label, n, frame)
+		}
+	}
+	seen := map[ActionID]bool{}
+	for _, h := range l.Hints() {
+		if seen[h.Action] {
+			t.Errorf("hint %q twice: %+v", h.Action, l.Hints())
+		}
+		seen[h.Action] = true
+	}
+	for _, a := range []ActionID{"enter", "reload", "back"} {
+		if !seen[a] {
+			t.Errorf("hints miss the button action %q", a)
+		}
+	}
+	key := rows[bottom-1]
+	for _, key2 := range []string{"esc", "enter"} {
+		if strings.Contains(key, key2) {
+			t.Errorf("the key line repeats a button key %q: %q", key2, key)
+		}
+	}
+}
+
+func TestListModalScrollsAndKeepsTheMarkedRowInView(t *testing.T) {
+	st := looks(t)["dark"]
+	l := newModalList(t, st, 60, nil)
+	room := Rect{Y: 2, Width: 100, Height: 20}
+	for range 40 {
+		l.Act("down")
+		view, targets, ok := l.Overlay(st, sampleScreen(100, 24), 100, 24, room)
+		if !ok {
+			t.Fatal("no modal")
+		}
+		rows, top, bottom := frameRows(view)
+		if top < room.Y || bottom >= room.Y+room.Height {
+			t.Fatalf("frame %d-%d leaves the room", top, bottom)
+		}
+		id, _ := l.Selected()
+		if !strings.Contains(strings.Join(rows, "\n"), string(id)) {
+			t.Fatalf("the marked row %q is not in view:\n%s", id, view)
+		}
+		_ = targets
+	}
+}
+
+func TestListModalHeightFollowsTheEntriesAndStaysWhileFiltering(t *testing.T) {
+	st := looks(t)["dark"]
+	l := newModalList(t, st, 5, nil)
+	room := Rect{Width: 100, Height: 40}
+	view, _, _ := l.Overlay(st, sampleScreen(100, 40), 100, 40, room)
+	_, top, bottom := frameRows(view)
+	l.Update(tea.KeyPressMsg{Code: 'o', Text: "o"})
+	view, _, _ = l.Overlay(st, sampleScreen(100, 40), 100, 40, room)
+	_, top2, bottom2 := frameRows(view)
+	if top != top2 || bottom != bottom2 {
+		t.Errorf("the frame moves from %d-%d to %d-%d while a filter is typed", top, bottom, top2, bottom2)
+	}
+	if bottom-top+1 >= 40 {
+		t.Errorf("five entries fill the room: %d rows", bottom-top+1)
+	}
+}
+
+func TestListModalNeedsRoomOrFallsBack(t *testing.T) {
+	st := looks(t)["dark"]
+	l := newModalList(t, st, 5, nil)
+	screen := sampleScreen(100, 30)
+	// Search, titles, one row, a gap, the button row, a gap, the key line and the frame: 9 rows.
+	if _, _, ok := l.Overlay(st, screen, 100, 30, Rect{Width: 100, Height: 8}); ok {
+		t.Error("8 rows are enough")
+	}
+	if _, _, ok := l.Overlay(st, screen, 100, 30, Rect{Width: 100, Height: 9}); !ok {
+		t.Error("9 rows are not enough")
+	}
+	if _, _, ok := l.Overlay(st, screen, 100, 30, Rect{Width: 43, Height: 30}); ok {
+		t.Error("a room 43 wide is enough")
+	}
+	if _, _, ok := l.Overlay(st, screen, 100, 30, Rect{Width: 44, Height: 30}); !ok {
+		t.Error("a room 44 wide is not enough")
+	}
+	// The fallback is View in the workspace and Hints in the footer.
+	view, _ := l.View(st, 40, 8)
+	if len(strings.Split(view, "\n")) != 8 || len(l.Hints()) == 0 {
+		t.Error("View and Hints do not serve as the fallback")
+	}
+}
+
+func TestNewListRejectsBrokenButtons(t *testing.T) {
+	for _, tt := range []struct {
+		name    string
+		buttons []FormButton
+		want    string
+	}{
+		{"unknown action", []FormButton{{Action: "nowhere", Label: "m.take"}}, "no action of the key table"},
+		{"no label", []FormButton{{Action: "reload"}}, "no label"},
+		{"twice", []FormButton{{Action: "reload", Label: "m.take"}, {Action: "reload", Label: "m.drop"}}, "another button"},
+	} {
+		keys := sampleKeymap(t, CharsetUnicode)
+		spec := ListSpec{Columns: sampleColumns(), Keys: sampleListKeys(), Empty: "list.empty", Buttons: tt.buttons}
+		_, err := NewList(spec, keys, newTranslator(t, i18n.English, modalCatalogs(), keys))
+		if err == nil || !strings.Contains(err.Error(), tt.want) {
+			t.Errorf("%s: %v", tt.name, err)
+		}
+	}
+}
+
+func TestListModalEscapesTitleAndCells(t *testing.T) {
+	st := looks(t)["dark"]
+	keys := sampleKeymap(t, st.Charset())
+	c := modalCatalogs()
+	c[i18n.English]["m.title"] = "Pick \x1b[31mred\x1b[0m"
+	spec := ListSpec{Columns: sampleColumns(), Keys: sampleListKeys(), Empty: "list.empty"}
+	modalSpec(&spec)
+	l, err := NewList(spec, keys, newTranslator(t, i18n.English, c, keys))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := l.SetItems([]ListItem{{ID: "x", Cells: []string{"a\x1b[31mb", "resting", "1", ""}}}); err != nil {
+		t.Fatal(err)
+	}
+	l.SetFilter("\x1b[32mq")
+	view, _, ok := l.Overlay(st, sampleScreen(100, 30), 100, 30, Rect{Width: 100, Height: 30})
+	if !ok || strings.Contains(view, "\x1b[31mred") || strings.Contains(view, "\x1b[32m") || strings.Contains(view, "a\x1b[31mb") {
+		t.Errorf("a control sequence reached the screen: %q", view)
+	}
+}
+
+func TestListWithoutModalSpecsBehavesAsBefore(t *testing.T) {
+	l := filledList(t, nil)
+	if len(l.Hints()) == 0 {
+		t.Error("no hints")
+	}
+	view, targets := l.View(Styles{}, 60, 8)
+	for _, tg := range targets {
+		if strings.HasPrefix(tg.Item, listButtonRef) {
+			t.Errorf("a list without buttons draws one: %+v", tg)
+		}
+	}
+	_ = view
+}
+
+func TestGoldenListModal(t *testing.T) {
+	for _, tt := range []struct {
+		name, look string
+		w, h       int
+	}{
+		{"listmodal.wide.golden", "noneascii", 100, 24},
+		{"listmodal.narrow.golden", "noneascii", 52, 22},
+		{"listmodal.wide.dark.golden", "dark", 100, 24},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			st := looks(t)[tt.look]
+			l := newModalList(t, st, 12, nil)
+			l.Select("mint")
+			l.Act("toggle")
+			l.Select("thyme")
+			l.Act("toggle")
+			out, _, ok := l.Overlay(st, sampleScreen(tt.w, tt.h), tt.w, tt.h, Rect{Y: 2, Width: tt.w, Height: tt.h - 2})
+			if !ok {
+				t.Fatal("no modal")
+			}
 			checkGolden(t, tt.name, out+"\n")
 		})
 	}

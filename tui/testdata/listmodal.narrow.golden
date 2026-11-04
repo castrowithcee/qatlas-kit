@@ -1,0 +1,22 @@
+Garden  ok                                          
+  1 Plants  2 Beds                                  
+  #= Pick plants ================================#  
+  | Type to search                               |  
+  |       NAME     STATE     SIZE  NOTE          |  
+  |   [ ] basil    blooming    12  on the sill ~ |  
+  |   [x] mint     resting     30  spreads fast  |  
+  |   [ ] oak      resting   1200  planted long~ |  
+  | > [x] thyme    blooming     8                |  
+  |   [ ] fern     resting     40  shade         |  
+  |   [ ] plant05  resting      1  extra         |  
+  |   [ ] plant06  resting      1  extra         |  
+  |   [ ] plant07  resting      1  extra         |  
+  |   [ ] plant08  resting      1  extra         |  
+  |   [ ] plant09  resting      1  extra         |  
+  |   [ ] plant10  resting      1  extra         |  
+  |                                              |  
+  | [ enter take ]  [ ctrl+r reload ]            |  
+  | [ esc drop ]                                 |  
+  |                                              |  
+  |                             up up  down down |  
+  #==============================================#  
