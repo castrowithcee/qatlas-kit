@@ -98,16 +98,15 @@
 // and enter fold them, a filter opens the groups with hits without changing their fold state, and the
 // position counts entries only, "pos/total" or, with a filter, "pos/shown (N total)". SetGroups gives a group,
 // by the key in ListItem.Group, a title and cells; the row then shows the fold glyph, the box, the category
-// mark, the title and the count as the group head in the first column, and the cells from the second column on,
-// flush with the entries and by the rules of their column; the first cell is not shown. The fold state, the
-// partial selection and the marked row follow the key, so a new title or new cells lose none of them, and the
-// filter never reads titles or cells of groups. SelectedGroup names the marked group row, Selected and Current
-// stay empty there. When a row does not fit, the free text column gives way first, then the short labels of a
-// column, then the optional columns from the right, and then the widest values, never below their title, for
-// group rows as for entries; the first column and the group head are never cut, and the widths come from
-// every entry and described group, so they stay while a filter is typed. An empty list shows the
-// application's sentence with the next step, and a filter without match names the key that clears it. Cells,
-// group keys and titles and the typed filter are escaped.
+// mark, the title and the count as the group head in the first column, and the cells from the second column on
+// by the rules of their column; the first cell is not shown. The fold state, the partial selection and the
+// marked row follow the key, so new titles or cells lose none of them, and the filter never reads them.
+// SelectedGroup names the marked group row; Selected and Current stay empty there. When a row does not fit,
+// the free text column gives way first, then the short labels of a column, then the optional columns from the
+// right, and then the widest values, never below their title, for group rows as for entries; the first column
+// and the group head are never cut, and the widths come from every entry and described group, so they stay
+// while a filter is typed. An empty list shows the application's sentence with the next step, and a filter
+// without match names the key that clears it. Cells, group keys, titles and the typed filter are escaped.
 //
 // A List with Ticks picks any number of entries: a tick box before the first column, "[ ]", "[x]" and for a
 // group with some of its entries ticked "[-]", so the three states differ without colour, and Ticked and
@@ -116,8 +115,17 @@
 // none where there was none. A single toggle in the group, SetTicked and SetItems forget the partial
 // selection. The row of all, with AllRow, above all groups does the same for every entry. While a filter is
 // set, the boxes and the toggle count and act on the entries it shows only. Current gives the marked entry
-// with its cells for a panel beside the list. The free text column that is also optional leaves the table on
-// a narrow terminal, and the first column stays whole.
+// with its cells for a panel beside the list.
+//
+// Overlay draws a list as a modal in the way of Dialog.Overlay: under ListSpec.Title the search line, which a
+// list that filters as typed always has, the table, one button per ListSpec.Buttons entry behind the key in
+// force, and the key line. The frame keeps its height while a filter is typed, the table scrolls with the
+// marked row in view, and the targets are the modal's alone. Where the room is too small for the search line,
+// the titles, one row, the buttons and the key line, ok is false; the application then draws View in the
+// workspace and Hints in the footer. Hints lists the buttons first and the list keys after them, no action
+// twice. A click on a button acts as its key does through Act: an action that is no list key comes back with
+// handled false, and the application runs the action of the MouseResult as it runs the key. What enter and
+// back mean, and the state from before the modal opened, are the application's.
 //
 // A click on a row marks it, and only a click on the marked row while the rows have the focus, as SetFocused
 // says, opens it, as enter does; a click on a group row folds it and never changes the ticks, a click on a

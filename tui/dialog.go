@@ -410,12 +410,45 @@ func wrapWords(text string, width int) []string {
 	return out
 }
 
-// buttons draws one button per answer label in rows of width cells, the default focused and the danger in the fail
-// colour, and returns a target per button, counted from the top left of the rows.
-func (d *Dialog) buttons(width int, styles Styles) ([]string, []Target) {
+// buttonCell is a drawn button with the target that stands for it; flowButtons sets the place of the target.
+type buttonCell struct {
+	drawn  string
+	target Target
+}
+
+// flowButtons lays the buttons out in rows of at most width cells and returns a target per button, counted
+// from the top left of the rows.
+func flowButtons(cells []buttonCell, width int) ([]string, []Target) {
 	var rows []string
 	var targets []Target
 	line, x := "", 0
+	for _, c := range cells {
+		w := lipgloss.Width(c.drawn)
+		if x > 0 && x+len(buttonGap)+w > width {
+			rows, line, x = append(rows, line), "", 0
+		}
+		if x > 0 {
+			line += buttonGap
+			x += len(buttonGap)
+		}
+		if r, ok := clipRect(Rect{X: x, Y: len(rows), Width: w, Height: 1}, width); ok {
+			t := c.target
+			t.Rect = r
+			targets = append(targets, t)
+		}
+		line += c.drawn
+		x += w
+	}
+	if line != "" {
+		rows = append(rows, line)
+	}
+	return rows, targets
+}
+
+// buttons draws one button per answer label in rows of width cells, the default focused and the danger in the fail
+// colour, and returns a target per button, counted from the top left of the rows.
+func (d *Dialog) buttons(width int, styles Styles) ([]string, []Target) {
+	var cells []buttonCell
 	seen := map[string]bool{}
 	for _, a := range d.spec.Answers {
 		label := d.text.Lookup(a.Label)
@@ -431,25 +464,9 @@ func (d *Dialog) buttons(width int, styles Styles) ([]string, []Target) {
 		case d.spec.Default:
 			kind = ButtonPrimary
 		}
-		drawn := styles.Button(kind, label, a.Action == d.spec.Default)
-		w := lipgloss.Width(drawn)
-		if x > 0 && x+len(buttonGap)+w > width {
-			rows, line, x = append(rows, line), "", 0
-		}
-		if x > 0 {
-			line += buttonGap
-			x += len(buttonGap)
-		}
-		if r, ok := clipRect(Rect{X: x, Y: len(rows), Width: w, Height: 1}, width); ok {
-			targets = append(targets, Target{Rect: r, Action: a.Action})
-		}
-		line += drawn
-		x += w
+		cells = append(cells, buttonCell{styles.Button(kind, label, a.Action == d.spec.Default), Target{Action: a.Action}})
 	}
-	if line != "" {
-		rows = append(rows, line)
-	}
-	return rows, targets
+	return flowButtons(cells, width)
 }
 
 // content is the whole dialog in width cells: the body, the buttons and the key line.

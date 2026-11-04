@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 	"unicode"
 
@@ -97,6 +98,11 @@ type ListSpec struct {
 	// AllRow adds a row above all groups that ticks and unticks every shown entry; it needs Ticks and takes
 	// its text from TextListAll.
 	AllRow bool
+	// Title is the text in the frame of the modal drawn by Overlay; without one the frame has no title.
+	Title TextID
+	// Buttons stand below the list in the modal, each an action of the key table and a label drawn behind
+	// the key in force. A click on one acts as its key does.
+	Buttons []FormButton
 }
 
 // flexFloor is the narrowest a free text column is cut to before anything else of the row gives way.
@@ -113,6 +119,8 @@ const groupRef = "\x00g"
 const (
 	allRef  = "\x00a"
 	tickRef = "\x00t"
+	// listButtonRef starts the target item of a button, followed by its index.
+	listButtonRef = "\x00B"
 )
 
 // groupIndent is the indent of the entries below their group row.
@@ -179,7 +187,7 @@ type List struct {
 // a first column that is free text or optional, more than one free text column, a list without the text of
 // its empty state, the row of all without tick boxes, and a key that names no action of keys or that two list
 // keys share; only a list that filters as typed may go without the search key, and only a list with tick
-// boxes needs the toggle key.
+// boxes needs the toggle key. A button needs a label and an action of the key table that no other button has.
 func NewList(spec ListSpec, keys *Keymap, text Translator) (*List, error) {
 	if keys == nil || text == nil {
 		return nil, errors.New("the list needs a key table and a translator")
@@ -237,10 +245,24 @@ func NewList(spec ListSpec, keys *Keymap, text Translator) (*List, error) {
 		}
 		used[n.id] = n.name
 	}
+	pressed := map[ActionID]bool{}
+	for i, b := range spec.Buttons {
+		switch {
+		case !keys.known(b.Action):
+			errs = append(errs, fmt.Errorf("button %d: %q is no action of the key table", i, b.Action))
+		case pressed[b.Action]:
+			errs = append(errs, fmt.Errorf("button %d: action %q is on another button", i, b.Action))
+		}
+		pressed[b.Action] = true
+		if b.Label == "" {
+			errs = append(errs, fmt.Errorf("button %d has no label", i))
+		}
+	}
 	if err := errors.Join(errs...); err != nil {
 		return nil, err
 	}
 	spec.Columns = slices.Clone(spec.Columns)
+	spec.Buttons = slices.Clone(spec.Buttons)
 	l := &List{spec: spec, keys: keys, text: text, folded: map[string]bool{},
 		ticked: map[ItemID]bool{}, memory: map[tickScope]tickMemory{}, page: 1}
 	for _, c := range spec.Columns {
@@ -599,10 +621,19 @@ func (l *List) Act(id ActionID) (open ItemID, handled bool) {
 // opens it, as enter does, so a click meant to scroll or to take the focus opens nothing. A click on a group
 // row folds or unfolds it, and one on the search line starts the search. A filter being typed is kept and
 // stops. A click on a tick box ticks or unticks its entry, group or the row of all and opens and folds
-// nothing; a click on the title of a group only folds it.
+// nothing; a click on the title of a group only folds it. A click on a button acts as its key does through
+// Act, so an action that is no list key comes back with handled false, and the application runs the Action of
+// the MouseResult as it runs the key.
 func (l *List) Click(r MouseResult) (open ItemID, handled bool) {
 	if !r.Handled {
 		return "", false
+	}
+	if j, ok := strings.CutPrefix(r.Item, listButtonRef); ok {
+		n, err := strconv.Atoi(j)
+		if err != nil || n < 0 || n >= len(l.spec.Buttons) {
+			return "", false
+		}
+		return l.Act(l.spec.Buttons[n].Action)
 	}
 	if r.Item == "" {
 		if r.Action != "" && r.Action == l.spec.Keys.Search {
@@ -649,13 +680,19 @@ func (l *List) Wheel(steps int) { l.cursor = WheelStep(l.cursor, len(l.rows), st
 // the selection is on the page. It returns a target for the free area of the rows, one per drawn row and one
 // for the search line, counted from the top left of the list.
 func (l *List) View(styles Styles, width, height int) (string, []Target) {
+	return l.view(styles, width, height, false)
+}
+
+// view is View; modal keeps the search line of a list that filters as typed also where the search field
+// stands in a bar, which the modal does not draw.
+func (l *List) view(styles Styles, width, height int, modal bool) (string, []Target) {
 	width, height = max(width, 0), max(height, 0)
 	if height == 0 {
 		return "", nil
 	}
 	targets := []Target{{Rect: Rect{Width: width, Height: height}, Zone: ZoneRows}}
 	var lines []string
-	if l.searchLine() {
+	if l.searchLine() || modal && l.spec.Search == SearchAsTyped {
 		if l.spec.Keys.Search != "" {
 			targets = append(targets, Target{Rect: Rect{Y: len(lines), Width: width, Height: 1}, Zone: ZoneRows, Action: l.spec.Keys.Search})
 		}
@@ -1255,4 +1292,121 @@ func align(text string, width int, right bool) string {
 		return strings.Repeat(" ", max(width-lipgloss.Width(text), 0)) + text
 	}
 	return Pad(text, width)
+}
+
+// Hints are the keys of the list for the footer and the key line of the modal: the buttons first, then enter,
+// toggle on a list with tick boxes, the search key, back and the moves. An action of a button stands once, as
+// the button.
+func (l *List) Hints() []Hint {
+	k := l.spec.Keys
+	var hints []Hint
+	for _, b := range l.spec.Buttons {
+		hints = append(hints, Hint{Action: b.Action, Label: b.Label})
+	}
+	own := []Hint{{Action: k.Enter, Label: TextKeyChoose}}
+	if l.spec.Ticks {
+		own = append(own, Hint{Action: k.Toggle, Label: TextKeyToggle})
+	}
+	if l.spec.Search == SearchByKey {
+		own = append(own, Hint{Action: k.Search, Label: TextKeySearch})
+	}
+	own = append(own, Hint{Action: k.Back, Label: TextKeyBack},
+		Hint{Action: k.Up, Label: TextKeyUp, Kind: HintNavigation}, Hint{Action: k.Down, Label: TextKeyDown, Kind: HintNavigation})
+	for _, h := range own {
+		if !slices.ContainsFunc(l.spec.Buttons, func(b FormButton) bool { return b.Action == h.Action }) {
+			hints = append(hints, h)
+		}
+	}
+	return hints
+}
+
+// buttonRows draws the buttons in rows of at most width cells, each behind the key now in force, the main one
+// bold, with a target per button, counted from the top left of the rows.
+func (l *List) buttonRows(width int, styles Styles) ([]string, []Target) {
+	var cells []buttonCell
+	for j, b := range l.spec.Buttons {
+		kind := ButtonNormal
+		if b.Primary {
+			kind = ButtonPrimary
+		}
+		label := l.text.Lookup(b.Label)
+		if key := l.keys.Label(b.Action); key != "" {
+			label = key + " " + label
+		}
+		cells = append(cells, buttonCell{styles.Button(kind, label, false),
+			Target{Zone: ZoneRows, Action: b.Action, Item: listButtonRef + strconv.Itoa(j)}})
+	}
+	return flowButtons(cells, width)
+}
+
+// wanted is the height the list asks for in the modal: the search line, the titles and every row without a
+// filter, so the frame keeps its size while a filter is typed.
+func (l *List) wanted() int {
+	rows := len(l.items)
+	if l.grouped {
+		groups := map[string]bool{}
+		for _, it := range l.items {
+			groups[it.Group] = true
+		}
+		rows += len(groups)
+	}
+	if l.spec.AllRow {
+		rows++
+	}
+	return 1 + 1 + max(rows, 2)
+}
+
+// Overlay draws the list with styles over screen, the drawn screen of width by height cells, in the way of
+// Dialog.Overlay: the screen dimmed and without its colours, and in its frame under ListSpec.Title the search
+// line, the list, the buttons and the key line of Hints that no button stands for, centred in room, the part
+// of the screen it may cover. The list scrolls in the height that is left and keeps the marked row in view.
+// The targets are the modal's alone, so the screen behind it takes no click. ok is false where room is too
+// small for the search line, the titles, one row, the buttons and the key line; the application then draws
+// View in the workspace and Hints in the footer.
+func (l *List) Overlay(styles Styles, screen string, width, height int, room Rect) (view string, targets []Target, ok bool) {
+	inner := min(dialogMaxInner, room.Width-8)
+	if inner < dialogMinInner {
+		return "", nil, false
+	}
+	var rows []string
+	var bt []Target
+	if len(l.spec.Buttons) > 0 {
+		rows, bt = l.buttonRows(inner, styles)
+	}
+	// The gap above the buttons, the gap above the key line and the key line, or the gap and the key line.
+	fixed := 2
+	if len(rows) > 0 {
+		fixed += len(rows) + 1
+	}
+	avail := room.Height - 2 - fixed
+	listH := min(l.wanted(), avail)
+	if listH < 3 {
+		return "", nil, false
+	}
+	body, ts := l.view(styles, inner, listH, true)
+	lines := append(strings.Split(body, "\n"), "")
+	if len(rows) > 0 {
+		ts = append(ts, OffsetTargets(bt, 0, len(lines))...)
+		lines = append(append(lines, rows...), "")
+	}
+	var hints []Hint
+	for _, h := range l.Hints() {
+		if !slices.ContainsFunc(l.spec.Buttons, func(b FormButton) bool { return b.Action == h.Action }) {
+			hints = append(hints, h)
+		}
+	}
+	keyLine, kt := styles.footer(l.keys.Hints(hints, l.Input(), l.text), "", inner)
+	ts = append(ts, OffsetTargets(kt, 0, len(lines))...)
+	lines = append(lines, keyLine)
+	for i, line := range lines {
+		lines[i] = Pad(Clip(line, inner), inner)
+	}
+	title := ""
+	if l.spec.Title != "" {
+		title = l.text.Lookup(l.spec.Title)
+	}
+	box := styles.Panel(title, "", lines, inner+4, len(lines)+2, true)
+	top := room.Y + (room.Height-len(box))/2
+	left := room.X + (room.Width-inner-4)/2
+	return overlay(screen, box, width, height, top, left, styles), OffsetTargets(ts, left+2, top+1), true
 }
