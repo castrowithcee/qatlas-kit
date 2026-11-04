@@ -91,6 +91,15 @@ const (
 	TextFormMaskedEntered TextID = "tui.form.maskedentered"
 	TextFormMaskedKept    TextID = "tui.form.maskedkept"
 	TextFormKeyPress      TextID = "tui.form.keypress"
+
+	TextFormBlockEmpty       TextID = "tui.form.blockempty"
+	TextFormBlockEntered     TextID = "tui.form.blockentered"
+	TextFormBlockBadChar     TextID = "tui.form.blockbadchar"
+	TextFormBlockBadCharNext TextID = "tui.form.blockbadcharnext"
+	TextFormBlockTooLong     TextID = "tui.form.blocktoolong"
+	TextFormBlockTooLongNext TextID = "tui.form.blocktoolongnext"
+	TextKeyNewLine           TextID = "tui.key.newline"
+
 	TextFormSectionClosed TextID = "tui.form.sectionclosed"
 	TextFormDateFormat    TextID = "tui.form.dateformat"
 	TextFormDateNoSuch    TextID = "tui.form.datenosuch"
@@ -243,16 +252,24 @@ func ModuleCatalog() i18n.Catalogs[TextID] {
 			TextFormEmpty:         "empty",
 			TextFormMaskedEntered: "(entered, hidden)",
 			TextFormMaskedKept:    "(stored, unchanged)",
-			TextFormKeyPress:      "press the new key",
-			TextFormSectionClosed: "(closed)",
-			TextFormDateFormat:    "not a date",
-			TextFormDateNoSuch:    "that date or time does not exist",
-			TextFormDateEarly:     "too early",
-			TextFormDateLate:      "too late",
-			TextFormDateUseDate:   "type it as YYYY-MM-DD",
-			TextFormDateUseTime:   "type it as YYYY-MM-DD HH:MM",
-			TextFormDateFrom:      "type %s or later",
-			TextFormDateUntil:     "type %s or earlier",
+
+			TextFormBlockEmpty:       "(empty; paste the value or type it)",
+			TextFormBlockEntered:     "(hidden; lines: %d)",
+			TextFormBlockBadChar:     "The text holds a character the field cannot take.",
+			TextFormBlockBadCharNext: "Nothing was changed; paste the value again as plain text.",
+			TextFormBlockTooLong:     "The value would be longer than %d KiB.",
+			TextFormBlockTooLongNext: "Nothing was changed; use a shorter value.",
+			TextKeyNewLine:           "new line",
+			TextFormKeyPress:         "press the new key",
+			TextFormSectionClosed:    "(closed)",
+			TextFormDateFormat:       "not a date",
+			TextFormDateNoSuch:       "that date or time does not exist",
+			TextFormDateEarly:        "too early",
+			TextFormDateLate:         "too late",
+			TextFormDateUseDate:      "type it as YYYY-MM-DD",
+			TextFormDateUseTime:      "type it as YYYY-MM-DD HH:MM",
+			TextFormDateFrom:         "type %s or later",
+			TextFormDateUntil:        "type %s or earlier",
 
 			TextLeaveTitle:       "Unsaved changes",
 			TextLeaveConsequence: "Leaving drops them.",
@@ -417,16 +434,24 @@ func ModuleCatalog() i18n.Catalogs[TextID] {
 			TextFormEmpty:         "leer",
 			TextFormMaskedEntered: "(eingegeben, verborgen)",
 			TextFormMaskedKept:    "(gespeichert, unverändert)",
-			TextFormKeyPress:      "neue Taste drücken",
-			TextFormSectionClosed: "(zu)",
-			TextFormDateFormat:    "kein Datum",
-			TextFormDateNoSuch:    "dieses Datum oder diese Uhrzeit gibt es nicht",
-			TextFormDateEarly:     "zu früh",
-			TextFormDateLate:      "zu spät",
-			TextFormDateUseDate:   "als JJJJ-MM-TT eingeben",
-			TextFormDateUseTime:   "als JJJJ-MM-TT HH:MM eingeben",
-			TextFormDateFrom:      "%s oder später eingeben",
-			TextFormDateUntil:     "%s oder früher eingeben",
+
+			TextFormBlockEmpty:       "(leer; Wert einfügen oder tippen)",
+			TextFormBlockEntered:     "(verborgen; Zeilen: %d)",
+			TextFormBlockBadChar:     "Der Text enthält ein Zeichen, das das Feld nicht annimmt.",
+			TextFormBlockBadCharNext: "Nichts wurde geändert; fügen Sie den Wert erneut als reinen Text ein.",
+			TextFormBlockTooLong:     "Der Wert wäre länger als %d KiB.",
+			TextFormBlockTooLongNext: "Nichts wurde geändert; verwenden Sie einen kürzeren Wert.",
+			TextKeyNewLine:           "Neue Zeile",
+			TextFormKeyPress:         "neue Taste drücken",
+			TextFormSectionClosed:    "(zu)",
+			TextFormDateFormat:       "kein Datum",
+			TextFormDateNoSuch:       "dieses Datum oder diese Uhrzeit gibt es nicht",
+			TextFormDateEarly:        "zu früh",
+			TextFormDateLate:         "zu spät",
+			TextFormDateUseDate:      "als JJJJ-MM-TT eingeben",
+			TextFormDateUseTime:      "als JJJJ-MM-TT HH:MM eingeben",
+			TextFormDateFrom:         "%s oder später eingeben",
+			TextFormDateUntil:        "%s oder früher eingeben",
 
 			TextLeaveTitle:       "Ungespeicherte Änderungen",
 			TextLeaveConsequence: "Beim Verlassen gehen sie verloren.",

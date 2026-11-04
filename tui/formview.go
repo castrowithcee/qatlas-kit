@@ -419,8 +419,19 @@ func (f *Form) problemLines(p FormProblem, width int, indent string, styles Styl
 // redact replaces what was typed into a masked field wherever a problem repeats it.
 func (f *Form) redact(text string) string {
 	for i := range f.fields {
-		if field := &f.fields[i]; field.Kind == FieldMasked {
-			text = redactSecret(text, field.line.String())
+		field := &f.fields[i]
+		if !field.Kind.secret() {
+			continue
+		}
+		secret := field.line.String()
+		text = redactSecret(text, secret)
+		if field.Kind == FieldMaskedBlock {
+			// A problem may quote one line of a block, which redactSecret alone would not find.
+			for _, line := range strings.Split(secret, "\n") {
+				if strings.TrimSpace(line) != "" {
+					text = redactSecret(text, line)
+				}
+			}
 		}
 	}
 	return text
@@ -650,6 +661,20 @@ func (f *Form) valueLines(i, width int, styles Styles) ([]string, []Target) {
 			return hint(TextFormMaskedEntered), nil
 		case field.Stored:
 			return hint(TextFormMaskedKept), nil
+		}
+		return hint(TextFormEmpty), nil
+	case FieldMaskedBlock:
+		switch {
+		case text != "":
+			lines := strings.Count(text, "\n")
+			if !strings.HasSuffix(text, "\n") {
+				lines++
+			}
+			return []string{styles.Render(StyleHint, styles.Truncate(Escape(f.text.Lookup(TextFormBlockEntered, lines)), width))}, nil
+		case field.Stored:
+			return hint(TextFormMaskedKept), nil
+		case focused:
+			return hint(TextFormBlockEmpty), nil
 		}
 		return hint(TextFormEmpty), nil
 	case FieldChoice:

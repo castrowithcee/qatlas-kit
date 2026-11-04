@@ -162,7 +162,13 @@
 // View in the workspace and Hints in the footer. The title is a catalog text, and the modal shows no more of a
 // masked field than View does.
 // A masked field never shows what is typed, not in its row, a target or a problem, and is never handed a
-// stored secret: Stored says one exists, which an empty field keeps. Each problem stands under its field
+// stored secret: Stored says one exists, which an empty field keeps. FieldMaskedBlock is the same for a
+// secret of several lines, such as a private key: its value is text with "\n" line breaks of at most 64 KiB,
+// and it shows a placeholder with the number of lines, never the content or its length. Paste replaces the
+// whole value, typed characters are appended, enter adds a line break instead of going on, and backspace or
+// delete clears the field; tab, the save key and a click work as in any field. A paste or key with a
+// character other than line break and tab, or that would pass the limit, is refused whole with a message
+// under the field. Each problem stands under its field
 // until that field changes, a problem without a field above the form, and a section with a problem carries a
 // mark and opens. An advanced section stays closed and dimmed while it holds nothing. On a wide terminal the
 // sections stand as a numbered list beside the fields of the focused one. The fields lose their frames only

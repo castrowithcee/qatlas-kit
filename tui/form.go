@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 	"unicode"
+	"unicode/utf8"
 
 	tea "charm.land/bubbletea/v2"
 )
@@ -27,6 +28,12 @@ const (
 	// FieldMasked is a secret or a passphrase. What is typed is never shown, and an empty field keeps a
 	// stored value.
 	FieldMasked FieldKind = "masked"
+	// FieldMaskedBlock is a multi-line secret such as a private key. It is shown as a placeholder with its
+	// number of lines, never as content, and an empty field keeps a stored value. Paste replaces the whole
+	// value; typed characters are appended, enter adds a line break, and backspace or delete clears the
+	// field. The value is text with "\n" line breaks of at most 64 KiB, and a paste or key that would break
+	// that or bring a character other than line break and tab is refused whole.
+	FieldMaskedBlock FieldKind = "maskedblock"
 	// FieldKey takes the next key pressed after enter.
 	FieldKey FieldKind = "key"
 	// FieldList shows the summary of a list the application edits in an editor of its own, opened by enter.
@@ -40,13 +47,19 @@ const (
 
 func (k FieldKind) known() bool {
 	switch k {
-	case FieldText, FieldChoice, FieldMultiple, FieldMasked, FieldKey, FieldList, FieldReadOnly, FieldDate:
+	case FieldText, FieldChoice, FieldMultiple, FieldMasked, FieldMaskedBlock, FieldKey, FieldList, FieldReadOnly, FieldDate:
 		return true
 	}
 	return false
 }
 
 func (k FieldKind) typed() bool { return k == FieldText || k == FieldMasked || k == FieldDate }
+
+// secret reports whether the kind hides its value and may stand for a stored one.
+func (k FieldKind) secret() bool { return k == FieldMasked || k == FieldMaskedBlock }
+
+// maxBlockBytes is the most a FieldMaskedBlock holds, counted in bytes after line breaks are normalized.
+const maxBlockBytes = 64 << 10
 
 // FieldID is the stable, untranslated ID of a field of a form or a filter bar.
 type FieldID string
@@ -345,10 +358,10 @@ func fieldErrors(f FormField, v FormValue) []error {
 		fail("only a choice field holds one choice")
 	case f.Kind != FieldMultiple && len(v.Selected) > 0:
 		fail("only a multiple choice field holds selected choices")
-	case f.Kind == FieldMasked && v.Text != "":
+	case f.Kind.secret() && v.Text != "":
 		// The form draws the field; a value it holds could reach the screen, so it never holds a stored one.
 		fail("a masked field is handed no value; Stored says it has one")
-	case f.Kind != FieldMasked && f.Stored:
+	case !f.Kind.secret() && f.Stored:
 		fail("only a masked field is stored")
 	case f.Kind != FieldDate && !v.Time.IsZero():
 		fail("only a date field holds a time")
@@ -446,7 +459,7 @@ func (f *formField) hasValue() bool {
 		return f.choice > 0
 	case FieldMultiple:
 		return slices.Contains(f.ticked, true)
-	case FieldMasked:
+	case FieldMasked, FieldMaskedBlock:
 		return f.Stored || len(f.line.runes) > 0
 	}
 	return len(f.line.runes) > 0
@@ -588,7 +601,7 @@ func (f *Form) Input() InputFocus {
 	switch {
 	case f.capture:
 		return InputKeyCapture
-	case !f.open && !f.cal && f.btn < 0 && f.fields[f.focus].Kind.typed():
+	case !f.open && !f.cal && f.btn < 0 && (f.fields[f.focus].Kind.typed() || f.fields[f.focus].Kind == FieldMaskedBlock):
 		return InputText
 	}
 	return InputNavigation
@@ -699,6 +712,9 @@ func (f *Form) Update(msg tea.KeyPressMsg) (act ActionID, handled bool) {
 			return f.Act(b.Action)
 		}
 	}
+	if focus == InputText && f.fields[f.focus].Kind == FieldMaskedBlock {
+		return "", f.editBlock(msg)
+	}
 	if focus == InputText && f.fields[f.focus].line.edit(msg) {
 		f.changed(f.focus)
 		return "", true
@@ -706,10 +722,60 @@ func (f *Form) Update(msg tea.KeyPressMsg) (act ActionID, handled bool) {
 	return "", false
 }
 
+// editBlock applies a key press to the focused block field: backspace and delete clear it, typed text is
+// appended.
+func (f *Form) editBlock(msg tea.KeyPressMsg) bool {
+	field := &f.fields[f.focus]
+	switch {
+	case (msg.Code == tea.KeyBackspace || msg.Code == tea.KeyDelete) && msg.Mod == 0:
+		field.line = newTextLine("")
+		f.changed(f.focus)
+		return true
+	case msg.Text != "" && msg.Mod&^tea.ModShift == 0:
+		f.addToBlock(msg.Text, false)
+		return true
+	}
+	return false
+}
+
+// addToBlock puts text into the focused block field, replacing the value or appending to it. It is refused
+// whole, with the reason under the field, for a character other than line break and tab or a value over
+// the limit; the value then stays as it was. It reports whether the text changed the field.
+func (f *Form) addToBlock(text string, replace bool) bool {
+	field := &f.fields[f.focus]
+	text = strings.ReplaceAll(strings.ReplaceAll(text, "\r\n", "\n"), "\r", "\n")
+	if !utf8.ValidString(text) || strings.IndexFunc(text, func(r rune) bool { return r != '\n' && r != '\t' && unicode.IsControl(r) }) >= 0 {
+		f.problems[field.ID] = []FormProblem{{Cause: f.text.Lookup(TextFormBlockBadChar), NextStep: f.text.Lookup(TextFormBlockBadCharNext)}}
+		return false
+	}
+	if text == "" {
+		return false
+	}
+	value := text
+	if !replace {
+		value = field.line.String() + text
+	}
+	if len(value) > maxBlockBytes {
+		f.problems[field.ID] = []FormProblem{{Cause: f.text.Lookup(TextFormBlockTooLong, maxBlockBytes>>10), NextStep: f.text.Lookup(TextFormBlockTooLongNext)}}
+		return false
+	}
+	field.line = newTextLine(value)
+	f.changed(f.focus)
+	return true
+}
+
 // Paste puts pasted text into the focused text or masked field at its cursor; line breaks and other control
-// characters are dropped.
+// characters are dropped. In a block field it replaces the whole value, or is refused whole, and reports
+// true for both.
 func (f *Form) Paste(text string) bool {
 	field := &f.fields[f.focus]
+	if field.Kind == FieldMaskedBlock {
+		if f.btn >= 0 || f.open || f.cal || f.capture {
+			return false
+		}
+		f.addToBlock(text, true)
+		return true
+	}
 	if f.btn >= 0 || f.open || f.capture || !field.Kind.typed() || !field.line.insert(text) {
 		return false
 	}
@@ -781,6 +847,8 @@ func (f *Form) Act(id ActionID) (act ActionID, handled bool) {
 			return k.Enter, true
 		case FieldDate:
 			f.openCalendar()
+		case FieldMaskedBlock:
+			f.addToBlock("\n", false)
 		default:
 			f.step(1)
 		}
@@ -1029,6 +1097,8 @@ func (f *Form) fieldHints() []Hint {
 		hints = append(hints, Hint{Action: k.Enter, Label: TextKeyEdit})
 	case FieldDate:
 		hints = append(hints, Hint{Action: k.Enter, Label: TextKeyCalendar})
+	case FieldMaskedBlock:
+		hints = append(hints, Hint{Action: k.Enter, Label: TextKeyNewLine})
 	}
 	return hints
 }
