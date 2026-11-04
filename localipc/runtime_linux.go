@@ -27,3 +27,5 @@ func runtimeRoot(fallback string) (string, error) {
 func shortSocketPath(_ Endpoint, path string) (string, error) {
 	return "", &PathTooLongError{Path: path}
 }
+
+func fallbackRuntimeDirs(Endpoint) []string { return nil }

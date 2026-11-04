@@ -39,6 +39,12 @@
 // the lock and then the socket move atomically, so exactly one process serves
 // the channel at any time. Windows does not support a handover.
 //
+// Running lists the SocketBase of every channel of the application, found as
+// private sockets of the user in the runtime directory (on macOS also in the
+// TMPDIR location) or as the user's open pipes with the endpoint's PipePrefix.
+// The list does not prove a channel alive; only Dial does. A crashed Unix
+// process leaves its name until a Listen of the same name takes it over.
+//
 // ServiceEndpoint is the channel of a system service on Linux that runs as its
 // own user: the service admits root and members of one group, the client
 // admits only a server running as the service user or as itself. Both use the

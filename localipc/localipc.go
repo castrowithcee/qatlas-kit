@@ -14,7 +14,7 @@ import (
 // an absolute, existing, private directory of the user. FallbackDir must be
 // absolute, and may be empty only with RuntimeRoot. On Windows, PipePrefix and
 // SocketBase form the pipe name with the user's SID, and RuntimeRoot and
-// FallbackDir are ignored.
+// FallbackDir are ignored. Running needs every field except SocketBase.
 type Endpoint struct {
 	RuntimeDirName string
 	SocketBase     string
@@ -123,6 +123,15 @@ const handoverPoll = 10 * time.Millisecond
 
 // Path returns the platform's channel path without creating it.
 func (e Endpoint) Path() (string, error) { return endpointPath(e) }
+
+// Running returns the SocketBase of every channel of the application that
+// currently has a private socket (Unix) or an open pipe (Windows), sorted and
+// without duplicates. It validates the fields as Path does, except that
+// SocketBase is not needed, and fails with ErrRefused for a runtime directory
+// that is not private. It neither connects nor locks: a listed channel is not
+// proven alive, and a crashed Unix process leaves its name until a Listen of
+// the same name takes it over. Dial checks.
+func (e Endpoint) Running() ([]string, error) { return running(e) }
 
 // Listen owns one endpoint until the returned listener is closed. Accept checks
 // the user and program of every peer and closes rejected connections.

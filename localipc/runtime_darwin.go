@@ -38,3 +38,13 @@ func shortSocketPath(e Endpoint, original string) (string, error) {
 	}
 	return path, nil
 }
+
+// fallbackRuntimeDirs is where shortSocketPath places sockets. A temporary
+// directory that is unset, relative, or not private cannot hold a channel.
+func fallbackRuntimeDirs(e Endpoint) []string {
+	tmp := os.Getenv("TMPDIR")
+	if !filepath.IsAbs(tmp) || privateExistingDir(tmp) != nil {
+		return nil
+	}
+	return []string{filepath.Join(tmp, e.RuntimeDirName)}
+}
