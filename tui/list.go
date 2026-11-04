@@ -42,6 +42,15 @@ type ListItem struct {
 	SearchText string
 }
 
+// ListGroup describes the group whose key is Key: the Title its row shows instead of the key and the Cells
+// it carries in the columns of the list, one per column at most. The first column of a group row holds the
+// group head, so the first cell is not shown; a missing cell is empty.
+type ListGroup struct {
+	Key   string
+	Title string
+	Cells []string
+}
+
 // ListKeys are the actions of the key table a list reads.
 type ListKeys struct {
 	Up, Down, PageUp, PageDown, First, Last ActionID
@@ -106,6 +115,9 @@ const (
 	tickRef = "\x00t"
 )
 
+// groupIndent is the indent of the entries below their group row.
+const groupIndent = "  "
+
 // tickWidth is the room of a tick box and the space after it.
 const tickWidth = 4
 
@@ -149,6 +161,7 @@ type List struct {
 
 	items   []ListItem
 	grouped bool
+	groups  map[string]ListGroup
 	folded  map[string]bool
 	ticked  map[ItemID]bool
 	memory  map[tickScope]tickMemory
@@ -278,6 +291,42 @@ func (l *List) SetItems(items []ListItem) error {
 	return nil
 }
 
+// SetGroups replaces the descriptions of the groups: the title and the cells a group row shows. The fold
+// state, the partial selection of the ticks and the marked row follow the key, so a new title or new cells
+// lose none of them; the filter and the scroll position stay. A group without description shows its key and
+// no cells, and a description of a key without entries draws nothing. It rejects an empty key, a key with a
+// control character, a key listed twice and a group with more cells than the list has columns, and then
+// changes nothing.
+func (l *List) SetGroups(groups []ListGroup) error {
+	var errs []error
+	seen := map[string]bool{}
+	for i, g := range groups {
+		switch {
+		case g.Key == "":
+			errs = append(errs, fmt.Errorf("group %d has no key", i+1))
+		case strings.IndexFunc(g.Key, unicode.IsControl) >= 0:
+			errs = append(errs, fmt.Errorf("group %q holds a control character in its key", Escape(g.Key)))
+		case seen[g.Key]:
+			errs = append(errs, fmt.Errorf("group %q is listed twice", g.Key))
+		}
+		seen[g.Key] = true
+		if len(g.Cells) > len(l.spec.Columns) {
+			errs = append(errs, fmt.Errorf("group %q has %d cells for %d columns", Escape(g.Key), len(g.Cells), len(l.spec.Columns)))
+		}
+	}
+	if err := errors.Join(errs...); err != nil {
+		return err
+	}
+	prev := l.mark()
+	l.groups = make(map[string]ListGroup, len(groups))
+	for _, g := range groups {
+		g.Cells = slices.Clone(g.Cells)
+		l.groups[g.Key] = g
+	}
+	l.rebuild(prev)
+	return nil
+}
+
 // Reset forgets the filter, the selection and the scroll position and marks the first entry; the fold state
 // and the ticks stay.
 func (l *List) Reset() {
@@ -323,6 +372,16 @@ func (l *List) Input() InputFocus {
 func (l *List) Selected() (ItemID, bool) {
 	m := l.mark()
 	return m.id, m.ok && !m.isGroup && !m.all
+}
+
+// SelectedGroup is the key of the marked group row, empty for the group without key; ok is false on an entry,
+// on the row of all and in an empty list.
+func (l *List) SelectedGroup() (key string, ok bool) {
+	m := l.mark()
+	if !m.ok || !m.isGroup {
+		return "", false
+	}
+	return m.group, true
 }
 
 // Current is the marked entry with its cells, for a panel that explains it; a group row, the row of all and
@@ -604,14 +663,14 @@ func (l *List) View(styles Styles, width, height int) (string, []Target) {
 	}
 	indent := ""
 	if l.grouped {
-		indent = "  "
+		indent = groupIndent
 	}
 	tick := 0
 	if l.spec.Ticks {
 		tick = tickWidth
 	}
 	room := max(width-2-len(indent)-tick, 0)
-	layout := l.layout(room)
+	layout := l.layout(room, styles)
 	switch {
 	case len(l.items) == 0:
 		lines = append(lines, l.note(l.text.Lookup(l.spec.Empty), width, styles)...)
@@ -631,7 +690,7 @@ func (l *List) View(styles Styles, width, height int) (string, []Target) {
 			box := l.box(tickScope{all: true}, styles)
 			ref, text, boxAt = allRef, indent+box+" "+l.allRow(styles), len(indent)
 		case r.item < 0:
-			ref, text, boxAt = groupRef+r.group, l.groupRow(r.group, styles), lipgloss.Width(styles.Glyph(GlyphExpanded))+1
+			ref, text, boxAt = groupRef+r.group, l.groupLine(r.group, layout, styles), lipgloss.Width(styles.Glyph(GlyphExpanded))+1
 		default:
 			it := l.items[r.item]
 			ref, text, boxAt = string(it.ID), indent, len(indent)
@@ -737,14 +796,7 @@ func (l *List) groupRow(group string, styles Styles) string {
 	if l.folded[group] && len(l.query) == 0 {
 		glyph = GlyphCollapsed
 	}
-	title := group
-	if group == "" {
-		id := l.spec.NoGroup
-		if id == "" {
-			id = TextListNoGroup
-		}
-		title = l.text.Lookup(id)
-	}
+	title := l.groupTitle(group)
 	count := 0
 	for _, it := range l.items {
 		if it.Group == group {
@@ -757,6 +809,22 @@ func (l *List) groupRow(group string, styles Styles) string {
 	}
 	return styles.Render(StyleHint, styles.Glyph(glyph)) + " " + box + styles.CategoryMark(group) + " " +
 		styles.Render(StyleActive, Escape(title)) + styles.Render(StyleHint, fmt.Sprintf(" (%d)", count))
+}
+
+// groupTitle is what a group row shows as its title: the described title, else the key, and for the group
+// without key the text of the list.
+func (l *List) groupTitle(group string) string {
+	if group == "" {
+		id := l.spec.NoGroup
+		if id == "" {
+			id = TextListNoGroup
+		}
+		return l.text.Lookup(id)
+	}
+	if g, ok := l.groups[group]; ok && g.Title != "" {
+		return g.Title
+	}
+	return group
 }
 
 func (l *List) folds() bool { return l.grouped && len(l.query) == 0 }
@@ -835,13 +903,16 @@ func (l *List) rebuild(prev listMark) {
 			}
 			members[it.Group] = append(members[it.Group], i)
 		}
-		// Groups go in alphabetical order, the group without key last.
+		// Groups go in alphabetical order of their shown title, the group without key last.
 		slices.SortFunc(groups, func(a, b string) int {
 			if (a == "") != (b == "") {
 				if a == "" {
 					return 1
 				}
 				return -1
+			}
+			if c := strings.Compare(l.groupTitle(a), l.groupTitle(b)); c != 0 {
+				return c
 			}
 			return strings.Compare(a, b)
 		})
@@ -989,9 +1060,12 @@ type tableLayout struct {
 	short  []bool
 }
 
-// cell is what column i shows of an entry, escaped.
-func (l *List) cell(it ListItem, i int, short bool) string {
-	v := it.Cells[i]
+// cell is what column i shows of a row's cells, escaped; a missing cell of a group is empty.
+func (l *List) cell(cells []string, i int, short bool) string {
+	v := ""
+	if i < len(cells) {
+		v = cells[i]
+	}
 	if s, ok := l.spec.Columns[i].Short[v]; ok && short {
 		v = s
 	}
@@ -1002,16 +1076,26 @@ func (l *List) cell(it ListItem, i int, short bool) string {
 // so the columns keep their width while a filter is typed. When a row does not fit, the free text gives way
 // first, down to flexFloor; then a column with short labels shows them; then the optional columns are left
 // out from the right; and only then are the remaining values cut, the widest first, never below the width
-// of their title. The first column is never cut. The free text gets whatever room is left.
-func (l *List) layout(width int) tableLayout {
+// of their title. The first column is never cut. The free text gets whatever room is left. A described group
+// with entries counts like an entry: its cells in their columns and its head, beyond the room before the
+// first column, in the first.
+func (l *List) layout(width int, styles Styles) tableLayout {
 	cols := l.spec.Columns
 	n := len(cols)
 	lay := tableLayout{widths: make([]int, n), short: make([]bool, n)}
 	title := func(i int) int { return lipgloss.Width(l.titles[i]) }
+	described := l.describedGroups()
 	natural := func(i int) int {
 		w := title(i)
 		for _, it := range l.items {
-			w = max(w, lipgloss.Width(l.cell(it, i, lay.short[i])))
+			w = max(w, lipgloss.Width(l.cell(it.Cells, i, lay.short[i])))
+		}
+		for _, g := range described {
+			if i == 0 {
+				w = max(w, lipgloss.Width(l.groupRow(g.Key, styles))-l.lead())
+			} else {
+				w = max(w, lipgloss.Width(l.cell(g.Cells, i, lay.short[i])))
+			}
 		}
 		return w
 	}
@@ -1078,19 +1162,75 @@ func (l *List) header(lay tableLayout, styles Styles) string {
 	return strings.TrimRight(strings.Join(parts, columnGap), " ")
 }
 
+// lead is the room before the first column: the indent of a grouped list and the tick box.
+func (l *List) lead() int {
+	n := 0
+	if l.grouped {
+		n = len(groupIndent)
+	}
+	if l.spec.Ticks {
+		n += tickWidth
+	}
+	return n
+}
+
+// describedGroups are the groups with a description that have entries, in no order.
+func (l *List) describedGroups() []ListGroup {
+	if !l.grouped || len(l.groups) == 0 {
+		return nil
+	}
+	has := map[string]bool{}
+	for _, it := range l.items {
+		has[it.Group] = true
+	}
+	var out []ListGroup
+	for k, g := range l.groups {
+		if has[k] {
+			out = append(out, g)
+		}
+	}
+	return out
+}
+
 // line draws the cells of an entry into the columns, each cut to its width and marked where it is cut.
 func (l *List) line(it ListItem, lay tableLayout, styles Styles) string {
+	return strings.TrimRight(strings.Join(l.columns(it.Cells, 0, lay, styles), columnGap), " ")
+}
+
+// groupLine draws a group row: the group head padded to the first column and, flush with the entries, the
+// cells of the group from the second column on. The head is never cut.
+func (l *List) groupLine(group string, lay tableLayout, styles Styles) string {
+	head := l.groupRow(group, styles)
+	g, ok := l.groups[group]
+	if !ok || len(g.Cells) == 0 {
+		return head
+	}
+	rest := l.columns(g.Cells, 1, lay, styles)
+	if len(rest) == 0 {
+		return head
+	}
+	head += strings.Repeat(" ", max(l.lead()+lay.widths[0]-lipgloss.Width(head), 0))
+	return strings.TrimRight(head+columnGap+strings.Join(rest, columnGap), " ")
+}
+
+// columns draws the cells of one row into the shown columns from column from on.
+func (l *List) columns(cells []string, from int, lay tableLayout, styles Styles) []string {
 	var parts []string
-	for i, c := range l.spec.Columns {
+	for i := from; i < len(l.spec.Columns); i++ {
+		c := l.spec.Columns[i]
 		w := lay.widths[i]
 		if w <= 0 {
 			continue
 		}
-		text := styles.Truncate(l.cell(it, i, lay.short[i]), w)
+		text := styles.Truncate(l.cell(cells, i, lay.short[i]), w)
 		style := StyleText
 		switch {
 		case c.Tone != nil:
-			style = c.Tone(it.Cells[i])
+			raw := ""
+			if i < len(cells) {
+				raw = cells[i]
+			}
+			style = c.Tone(raw)
 		case c.Dimmed:
 			style = StyleHint
 		}
@@ -1107,7 +1247,7 @@ func (l *List) line(it ListItem, lay tableLayout, styles Styles) string {
 		}
 		parts = append(parts, text)
 	}
-	return strings.TrimRight(strings.Join(parts, columnGap), " ")
+	return parts
 }
 
 func align(text string, width int, right bool) string {
