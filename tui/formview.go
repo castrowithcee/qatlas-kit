@@ -69,9 +69,41 @@ type formDrawing struct {
 // their fields, those without a field above the form. It returns a target for the free area of the form, one
 // per visible field, tick box, section and value of the open list.
 func (f *Form) View(styles Styles, width, height int) (string, []Target) {
+	view, targets, _ := f.viewLead(styles, width, height)
+	return view, targets
+}
+
+// viewLead is View under the lead; ok is false where the form asks for a larger terminal.
+func (f *Form) viewLead(styles Styles, width, height int) (string, []Target, bool) {
+	lead := f.leadRows(styles, width)
+	if len(lead) > 0 && height > len(lead)+1 {
+		// The lead gives way only where the fields do not fit below it.
+		if view, ts, ok := f.viewFields(styles, width, height-len(lead)-1); ok {
+			n := len(lead) + 1
+			ts[0].Rect.Height = height
+			return strings.Join(lead, "\n") + "\n" + Pad("", width) + "\n" + view, append(ts[:1], OffsetTargets(ts[1:], 0, n)...), true
+		}
+	}
+	return f.viewFields(styles, width, height)
+}
+
+// leadRows are the lines of the lead wrapped to width, empty without one.
+func (f *Form) leadRows(styles Styles, width int) []string {
+	if f.lead == "" || width < 1 {
+		return nil
+	}
+	lines := wrapWords(Escape(f.text.Lookup(f.lead)), width)
+	for i, l := range lines {
+		lines[i] = Pad(styles.Render(StyleHint, l), width)
+	}
+	return lines
+}
+
+// viewFields is View without the lead.
+func (f *Form) viewFields(styles Styles, width, height int) (string, []Target, bool) {
 	width, height = max(width, 0), max(height, 0)
 	if height == 0 {
-		return "", nil
+		return "", nil, true
 	}
 	if rows, targets := f.buttonRows(width, styles); len(rows) > 0 {
 		// The buttons keep the bottom rows. A field with the focus gives way to them only if it cannot be drawn
@@ -91,11 +123,11 @@ func (f *Form) View(styles Styles, width, height int) (string, []Target) {
 			}
 			// The free area of the form is the first target and reaches down to the buttons.
 			ts[0].Rect.Height = height
-			return strings.Join(lines, "\n"), append(ts, OffsetTargets(targets, 0, height-len(rows))...)
+			return strings.Join(lines, "\n"), append(ts, OffsetTargets(targets, 0, height-len(rows))...), true
 		}
 		if f.btn >= 0 {
 			if height < len(rows) {
-				return f.sizeHint(width, height, styles), nil
+				return f.sizeHint(width, height, styles), nil, false
 			}
 			lines := make([]string, height)
 			for i := range lines {
@@ -105,11 +137,10 @@ func (f *Form) View(styles Styles, width, height int) (string, []Target) {
 				lines[height-len(rows)+i] = Pad(Clip(row, width), width)
 			}
 			free := Target{Rect: Rect{Width: width, Height: height}, Zone: ZoneForm}
-			return strings.Join(lines, "\n"), append([]Target{free}, OffsetTargets(targets, 0, height-len(rows))...)
+			return strings.Join(lines, "\n"), append([]Target{free}, OffsetTargets(targets, 0, height-len(rows))...), true
 		}
 	}
-	view, targets, _ := f.fieldsView(styles, width, height)
-	return view, targets
+	return f.fieldsView(styles, width, height)
 }
 
 // fieldsView is View of the fields alone; ok is false where it asks for a larger terminal.

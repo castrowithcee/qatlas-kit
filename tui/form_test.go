@@ -25,6 +25,9 @@ func formCatalogs() i18n.Catalogs[TextID] {
 			"h.name": "A short name of the plant.", "h.origin": "set by the nursery",
 			"c.herb": "herb", "c.tree": "tree", "c.fern": "fern", "c.mon": "Monday", "c.wed": "Wednesday", "c.fri": "Friday",
 			"b.save": "save", "b.cancel": "cancel", "b.reload": "reload", "t.plant": "Edit plant",
+			"lead.form": "Saving replaces the stored plant. Other plants stay as they are.",
+			"lead.long": "This sentence is deliberately long so that it has to wrap onto several lines of a narrow form without losing a single word of it.",
+			"lead.ctrl": "Careful\x1b[31m red\nsecond",
 		},
 		i18n.German: {
 			"sec.general": "Allgemein", "sec.care": "Pflege", "sec.extra": "Erweitert", "lead.care": "Wie die Pflanze gehalten wird.",
@@ -33,6 +36,9 @@ func formCatalogs() i18n.Catalogs[TextID] {
 			"h.name": "Ein kurzer Name der Pflanze.", "h.origin": "von der Gärtnerei gesetzt",
 			"c.herb": "Kraut", "c.tree": "Baum", "c.fern": "Farn", "c.mon": "Montag", "c.wed": "Mittwoch", "c.fri": "Freitag",
 			"b.save": "Speichern", "b.cancel": "Abbrechen", "b.reload": "Neu laden", "t.plant": "Pflanze bearbeiten",
+			"lead.form": "Speichern ersetzt die gespeicherte Pflanze. Andere Pflanzen bleiben unverändert.",
+			"lead.long": "Dieser Satz ist absichtlich lang, damit er in einem schmalen Formular umbrechen muss, ohne ein Wort zu verlieren.",
+			"lead.ctrl": "Vorsicht\x1b[31m rot\nzweite",
 		},
 	}
 }
