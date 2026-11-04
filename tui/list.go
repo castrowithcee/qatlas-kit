@@ -98,6 +98,11 @@ type ListSpec struct {
 	// AllRow adds a row above all groups that ticks and unticks every shown entry; it needs Ticks and takes
 	// its text from TextListAll.
 	AllRow bool
+	// TickWhileTyping makes the toggle key tick in the text focus of a list that filters as typed: every key
+	// bound to Toggle, a text key such as space too, acts before the filter reads it, and the footer and the
+	// key line of the modal name it. The price is that the key no longer types its character into the filter.
+	// It needs Ticks and SearchAsTyped.
+	TickWhileTyping bool
 	// Title is the text in the frame of the modal drawn by Overlay; without one the frame has no title.
 	Title TextID
 	// Buttons stand below the list in the modal, each an action of the key table and a label drawn behind
@@ -219,6 +224,9 @@ func NewList(spec ListSpec, keys *Keymap, text Translator) (*List, error) {
 	}
 	if spec.AllRow && !spec.Ticks {
 		errs = append(errs, errors.New("the row of all needs tick boxes"))
+	}
+	if spec.TickWhileTyping && (!spec.Ticks || spec.Search != SearchAsTyped) {
+		errs = append(errs, errors.New("ticking while typing needs tick boxes and a list that filters as typed"))
 	}
 	k := spec.Keys
 	named := []struct {
@@ -499,7 +507,11 @@ func (l *List) Update(msg tea.KeyPressMsg) (open ItemID, handled bool) {
 	focus := l.Input()
 	k := l.spec.Keys
 	for _, id := range []ActionID{k.Back, k.Enter, k.Search, k.Up, k.Down, k.PageUp, k.PageDown, k.First, k.Last, k.Left, k.Right, k.Toggle} {
-		if id != "" && l.keys.Is(msg, id, focus) {
+		at := focus
+		if id == k.Toggle && l.spec.TickWhileTyping {
+			at = InputNavigation
+		}
+		if id != "" && l.keys.Is(msg, id, at) {
 			return l.Act(id)
 		}
 	}
@@ -1305,7 +1317,7 @@ func (l *List) Hints() []Hint {
 	}
 	own := []Hint{{Action: k.Enter, Label: TextKeyChoose}}
 	if l.spec.Ticks {
-		own = append(own, Hint{Action: k.Toggle, Label: TextKeyToggle})
+		own = append(own, Hint{Action: k.Toggle, Label: TextKeyToggle, WhileTyping: l.spec.TickWhileTyping})
 	}
 	if l.spec.Search == SearchByKey {
 		own = append(own, Hint{Action: k.Search, Label: TextKeySearch})

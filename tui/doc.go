@@ -114,7 +114,10 @@
 // through the partial selection it had, all and none and back to the partial selection, or between all and
 // none where there was none. A single toggle in the group, SetTicked and SetItems forget the partial
 // selection. The row of all, with AllRow, above all groups does the same for every entry. While a filter is
-// set, the boxes and the toggle count and act on the entries it shows only. Current gives the marked entry
+// set, the boxes and the toggle count and act on the entries it shows only. A list that filters as typed
+// reads a text key such as space as filter text, so the toggle key does not tick there; TickWhileTyping lets
+// every key of Toggle tick before the filter reads it, at the price that it types no character, and Hints
+// then names it in the text focus too through Hint.WhileTyping. Current gives the marked entry
 // with its cells for a panel beside the list.
 //
 // Overlay draws a list as a modal in the way of Dialog.Overlay: under ListSpec.Title the search line, which a
