@@ -94,13 +94,20 @@
 // only decides what shows: it removes nothing and keeps the order. A list whose letters are actions starts
 // the filter with its search key; a pure choice list filters with every typed character. Enter keeps a typed
 // filter, the first back clears it, and the next one is left to the application. Groups are presentation
-// only: they stand in alphabetical order with the group without key last, left, right and enter fold them, a
-// filter opens the groups with hits without changing their fold state, and the position counts entries only,
-// "pos/total" or, with a filter, "pos/shown (N total)". When a row does not fit, the free text column gives
-// way first, then the short labels of a column, then the optional columns from the right, and then the widest
-// values, never below their title; the first column is never cut, and the widths come from every entry, so
-// they stay while a filter is typed. An empty list shows the application's sentence with the next step, and a
-// filter without match names the key that clears it. Cells, group keys and the typed filter are escaped.
+// only: they stand in alphabetical order of their shown title with the group without key last, left, right
+// and enter fold them, a filter opens the groups with hits without changing their fold state, and the
+// position counts entries only, "pos/total" or, with a filter, "pos/shown (N total)". SetGroups gives a group,
+// by the key in ListItem.Group, a title and cells; the row then shows the fold glyph, the box, the category
+// mark, the title and the count as the group head in the first column, and the cells from the second column on,
+// flush with the entries and by the rules of their column; the first cell is not shown. The fold state, the
+// partial selection and the marked row follow the key, so a new title or new cells lose none of them, and the
+// filter never reads titles or cells of groups. SelectedGroup names the marked group row, Selected and Current
+// stay empty there. When a row does not fit, the free text column gives way first, then the short labels of a
+// column, then the optional columns from the right, and then the widest values, never below their title, for
+// group rows as for entries; the first column and the group head are never cut, and the widths come from
+// every entry and described group, so they stay while a filter is typed. An empty list shows the
+// application's sentence with the next step, and a filter without match names the key that clears it. Cells,
+// group keys and titles and the typed filter are escaped.
 //
 // A List with Ticks picks any number of entries: a tick box before the first column, "[ ]", "[x]" and for a
 // group with some of its entries ticked "[-]", so the three states differ without colour, and Ticked and

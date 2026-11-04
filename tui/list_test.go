@@ -997,3 +997,260 @@ func TestNarrowTerminalKeepsOnlyTheID(t *testing.T) {
 		t.Errorf("the title of the dropped column stays:\n%s", view)
 	}
 }
+
+// sampleGroups describes the herbs and the trees; the entries without a group stay undescribed.
+func sampleGroups() []ListGroup {
+	return []ListGroup{
+		{Key: "herbs", Title: "Kitchen herbs", Cells: []string{"", "2/3 blooming", "50", "mostly sunny"}},
+		{Key: "trees", Title: "Big trees", Cells: []string{"", "resting", "1200"}},
+	}
+}
+
+func groupedList(t *testing.T, edit func(*ListSpec)) *List {
+	t.Helper()
+	l := filledList(t, edit)
+	if err := l.SetGroups(sampleGroups()); err != nil {
+		t.Fatal(err)
+	}
+	l.SetGrouped(true)
+	return l
+}
+
+func TestGroupRowShowsItsCellsFlushWithTheEntries(t *testing.T) {
+	l := groupedList(t, nil)
+	view, _ := l.View(Styles{}, 90, 12)
+	lines := strings.Split(ansi.Strip(view), "\n")
+	var group, entry string
+	for _, ln := range lines {
+		switch {
+		case strings.Contains(ln, "Kitchen herbs"):
+			group = ln
+		case strings.Contains(ln, "basil"):
+			entry = ln
+		}
+	}
+	if group == "" || entry == "" {
+		t.Fatalf("rows are missing:\n%s", view)
+	}
+	if !strings.Contains(group, "(3)") || !strings.Contains(group, "2/3 blooming") || !strings.Contains(group, "mostly sunny") {
+		t.Errorf("the group row lacks its title, count or cells: %q", group)
+	}
+	for _, pair := range [][2]string{{"2/3 blooming", "blooming"}, {"mostly sunny", "on the sill"}} {
+		if strings.Index(group, pair[0]) != strings.Index(entry, pair[1]) {
+			t.Errorf("%q is not flush with %q:\n%q\n%q", pair[0], pair[1], group, entry)
+		}
+	}
+	if strings.Index(group, "50") < strings.Index(group, "2/3") || !strings.Contains(group, " 50  ") {
+		t.Errorf("the right aligned size is out of place: %q", group)
+	}
+	// The first cell is the group head's column and not shown.
+	l2 := groupedList(t, nil)
+	if err := l2.SetGroups([]ListGroup{{Key: "herbs", Cells: []string{"HIDDEN", "x"}}}); err != nil {
+		t.Fatal(err)
+	}
+	if v, _ := l2.View(Styles{}, 90, 12); strings.Contains(v, "HIDDEN") {
+		t.Error("the first cell of a group is shown")
+	}
+	// An undescribed group looks as before.
+	if !strings.Contains(strings.Join(lines, "\n"), "v # unsorted (1)") {
+		t.Errorf("the group without description changed:\n%s", view)
+	}
+}
+
+func TestSetGroupsKeepsFoldTicksAndMarkByKey(t *testing.T) {
+	l := tickList(t, nil)
+	l.SetGrouped(true)
+	if err := l.SetGroups(sampleGroups()); err != nil {
+		t.Fatal(err)
+	}
+	// Tick basil alone, then step the herbs group to all and none so it remembers the partial selection.
+	l.Select("basil")
+	l.Act("toggle")
+	keysTo(l, "up")
+	if k, ok := l.SelectedGroup(); !ok || k != "herbs" {
+		t.Fatalf("the herbs row is not marked: %q %v", k, ok)
+	}
+	l.Act("toggle")
+	l.Act("toggle")
+	memory := l.memory[tickScope{group: "herbs"}].ids
+	if len(memory) != 1 {
+		t.Fatalf("the partial selection is %v", memory)
+	}
+	keysTo(l, "enter")
+	if !l.folded["herbs"] {
+		t.Fatal("herbs are not folded")
+	}
+	if err := l.SetGroups([]ListGroup{{Key: "herbs", Title: "Zzz last by title", Cells: []string{"", "new"}},
+		{Key: "trees", Title: "Aaa first"}}); err != nil {
+		t.Fatal(err)
+	}
+	if !l.folded["herbs"] || len(l.memory[tickScope{group: "herbs"}].ids) != 1 {
+		t.Error("a new title lost the fold state or the partial selection")
+	}
+	if k, ok := l.SelectedGroup(); !ok || k != "herbs" {
+		t.Errorf("a new title lost the mark: %q %v", k, ok)
+	}
+	if got := shownRows(l); got != "[trees],oak,[herbs],[],fern" {
+		t.Errorf("rows by title = %s", got)
+	}
+	if err := l.SetGroups(nil); err != nil {
+		t.Fatal(err)
+	}
+	if got := shownRows(l); got != "[herbs],[trees],oak,[],fern" {
+		t.Errorf("without descriptions the order follows the keys: %s", got)
+	}
+	if k, ok := l.SelectedGroup(); !ok || k != "herbs" {
+		t.Errorf("dropping the descriptions lost the mark: %q %v", k, ok)
+	}
+}
+
+func TestGroupsStandInTitleOrderWithTheKeylessLast(t *testing.T) {
+	l := groupedList(t, nil)
+	if err := l.SetGroups([]ListGroup{{Key: "herbs", Title: "Zeta"}, {Key: "trees", Title: "Alpha"}, {Key: "unused", Title: "Aaa"}}); err != nil {
+		t.Fatal(err)
+	}
+	if got := shownRows(l); got != "[trees],oak,[herbs],basil,mint,thyme,[],fern" {
+		t.Errorf("rows = %s", got)
+	}
+}
+
+func TestSelectedGroup(t *testing.T) {
+	l := groupedList(t, func(s *ListSpec) { s.Ticks, s.AllRow = true, true })
+	l.Reset()
+	l.Act("first")
+	if k, ok := l.SelectedGroup(); ok || k != "" {
+		t.Errorf("the row of all is a group: %q %v", k, ok)
+	}
+	if _, ok := l.Selected(); ok {
+		t.Error("the row of all is an entry")
+	}
+	l.Act("down")
+	if k, ok := l.SelectedGroup(); !ok || k != "trees" {
+		t.Errorf("group row: %q %v", k, ok)
+	}
+	if _, ok := l.Selected(); ok {
+		t.Error("Selected is not empty on a group row")
+	}
+	if _, ok := l.Current(); ok {
+		t.Error("Current is not empty on a group row")
+	}
+	l.Act("down")
+	if k, ok := l.SelectedGroup(); ok {
+		t.Errorf("an entry is a group: %q", k)
+	}
+	l.Act("last")
+	l.Act("up")
+	if k, ok := l.SelectedGroup(); !ok || k != "" {
+		t.Errorf("the group without key: %q %v", k, ok)
+	}
+	empty := filledList(t, nil)
+	empty.SetItems(nil)
+	if _, ok := empty.SelectedGroup(); ok {
+		t.Error("an empty list marks a group")
+	}
+}
+
+func TestFilterIgnoresGroupTitlesAndCells(t *testing.T) {
+	l := groupedList(t, nil)
+	for _, q := range []string{"Kitchen herbs", "2/3", "mostly sunny", "big trees"} {
+		l.SetFilter(q)
+		if got := shownRows(l); got != "" {
+			t.Errorf("filter %q hit a group: %s", q, got)
+		}
+	}
+}
+
+func TestSetGroupsRejectsBrokenGroupsAndChangesNothing(t *testing.T) {
+	for name, groups := range map[string][]ListGroup{
+		"empty key":      {{Key: ""}},
+		"control key":    {{Key: "a\x1b"}},
+		"duplicate key":  {{Key: "a"}, {Key: "a"}},
+		"too many cells": {{Key: "a", Cells: []string{"", "", "", "", ""}}},
+	} {
+		l := groupedList(t, nil)
+		before, _ := l.View(Styles{}, 90, 12)
+		if err := l.SetGroups(groups); err == nil {
+			t.Errorf("%s: accepted", name)
+		}
+		if after, _ := l.View(Styles{}, 90, 12); after != before {
+			t.Errorf("%s: the rejected call changed the list", name)
+		}
+	}
+	l := groupedList(t, nil)
+	if err := l.SetGroups([]ListGroup{{Key: "nothing here", Title: "Ghost", Cells: []string{"", "x"}}}); err != nil {
+		t.Errorf("a description without entries is rejected: %v", err)
+	}
+	if v, _ := l.View(Styles{}, 90, 12); strings.Contains(v, "Ghost") {
+		t.Error("a group without entries is drawn")
+	}
+}
+
+func TestGroupTitleAndCellsAreEscaped(t *testing.T) {
+	for look, st := range looks(t) {
+		l := groupedList(t, nil)
+		if err := l.SetGroups([]ListGroup{{Key: "herbs", Title: "t\x1b]0;x\x07", Cells: []string{"", "\x07bell", "1", "\x1b[31mred"}}}); err != nil {
+			t.Fatal(err)
+		}
+		view, _ := l.View(st, 90, 12)
+		plain := ansi.Strip(view)
+		if strings.ContainsAny(plain, "\x1b\x07") {
+			t.Errorf("%s: a control character reached the screen: %q", look, plain)
+		}
+		for _, want := range []string{`t\x1b]0;x\a`, `\abell`, `\x1b[31mred`} {
+			if !strings.Contains(plain, want) {
+				t.Errorf("%s: %q is not shown escaped:\n%s", look, want, plain)
+			}
+		}
+		for _, line := range strings.Split(view, "\n") {
+			if w := ansi.StringWidth(line); w != 90 {
+				t.Errorf("%s: a line is %d cells wide", look, w)
+			}
+		}
+	}
+}
+
+func TestGroupCellsStepDownLikeTheEntries(t *testing.T) {
+	l := groupedList(t, nil)
+	view, _ := l.View(Styles{}, 40, 12)
+	plain := ansi.Strip(view)
+	for _, ln := range strings.Split(plain, "\n") {
+		if strings.Contains(ln, "Big trees") && !strings.Contains(ln, "re") {
+			t.Errorf("short label missing: %q", ln)
+		}
+	}
+	if !strings.Contains(plain, "Kitchen herbs (3)") {
+		t.Errorf("the group head was cut:\n%s", plain)
+	}
+}
+
+func goldenGroupedList(t *testing.T, st Styles) *List {
+	t.Helper()
+	l, _ := newSampleList(t, st, i18n.English, func(s *ListSpec) { s.Ticks, s.AllRow = true, true })
+	if err := l.SetItems(samplePlants()); err != nil {
+		t.Fatal(err)
+	}
+	if err := l.SetGroups(sampleGroups()); err != nil {
+		t.Fatal(err)
+	}
+	l.SetGrouped(true)
+	l.Select("mint")
+	return l
+}
+
+func TestGoldenListGroups(t *testing.T) {
+	for _, tt := range []struct {
+		name, look string
+		w, h       int
+	}{
+		{"listgroups.narrow.golden", "noneascii", 44, 12},
+		{"listgroups.wide.golden", "noneascii", 100, 12},
+		{"listgroups.wide.dark.golden", "dark", 100, 12},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			st := looks(t)[tt.look]
+			l := goldenGroupedList(t, st)
+			out, _ := l.View(st, tt.w, tt.h)
+			checkGolden(t, tt.name, out+"\n")
+		})
+	}
+}
