@@ -31,6 +31,8 @@ type socketSpec struct {
 	refused    func(net.Conn, error)
 	// target is the channel path a successor waits for, empty otherwise.
 	target string
+	// beforeLock runs between opening the lock file and locking it. Only tests set it.
+	beforeLock func()
 }
 
 func listen(e Endpoint, opts ListenOptions) (net.Listener, error) {
@@ -62,22 +64,18 @@ func listenSocket(spec socketSpec) (net.Listener, error) {
 	if err := spec.prepareDir(filepath.Dir(path)); err != nil {
 		return nil, err
 	}
-	lock, err := os.OpenFile(path+lockSuffix, os.O_RDWR|os.O_CREATE|syscall.O_NOFOLLOW, lockMode)
+	lock, err := acquireLock(spec)
 	if err != nil {
-		return nil, fmt.Errorf("cannot open socket lock: %w", err)
+		return nil, err
 	}
 	defer func() {
 		if lock != nil {
+			// Removing before closing keeps the name from being taken over
+			// while the file still exists.
+			removeLock(path, lock)
 			_ = lock.Close()
 		}
 	}()
-	info, err := lock.Stat()
-	if err != nil || !info.Mode().IsRegular() || !ownedByMe(info) || info.Mode().Perm() != lockMode {
-		return nil, fmt.Errorf("%w: socket lock is not private", ErrRefused)
-	}
-	if err := lockSocket(lock, path); err != nil {
-		return nil, err
-	}
 	if err := replaceDeadSocket(path, spec.mode); err != nil {
 		return nil, err
 	}
@@ -109,8 +107,58 @@ func listenSocket(spec socketSpec) (net.Listener, error) {
 	return l, nil
 }
 
-func lockSocket(lock *os.File, path string) error {
+// acquireLock returns the exclusive lock of the channel at spec.path. The file
+// is only trusted while it is still the one under the name: a holder removes
+// its lock file before it lets go, so a lock won on a file that is gone or
+// replaced would grant a channel another process may already own.
+func acquireLock(spec socketSpec) (*os.File, error) {
+	path := spec.path
 	deadline := time.Now().Add(releaseWait)
+	for {
+		lock, err := os.OpenFile(path+lockSuffix, os.O_RDWR|os.O_CREATE|syscall.O_NOFOLLOW, lockMode)
+		if err != nil {
+			return nil, fmt.Errorf("cannot open socket lock: %w", err)
+		}
+		info, err := lock.Stat()
+		if err != nil || !info.Mode().IsRegular() || !ownedByMe(info) || info.Mode().Perm() != lockMode {
+			_ = lock.Close()
+			return nil, fmt.Errorf("%w: socket lock is not private", ErrRefused)
+		}
+		if spec.beforeLock != nil {
+			spec.beforeLock()
+		}
+		if err := lockSocket(lock, path, deadline); err != nil {
+			_ = lock.Close()
+			return nil, err
+		}
+		current, err := os.Lstat(path + lockSuffix)
+		switch {
+		case err == nil && os.SameFile(current, info):
+			return lock, nil
+		case err != nil && !errors.Is(err, fs.ErrNotExist):
+			_ = lock.Close()
+			return nil, fmt.Errorf("cannot inspect socket lock: %w", err)
+		}
+		_ = lock.Close()
+		if time.Now().After(deadline) {
+			return nil, ErrRunning
+		}
+	}
+}
+
+// removeLock removes the lock file of the channel at path if it is still the
+// file of lock. The caller holds the lock.
+func removeLock(path string, lock *os.File) {
+	own, err := lock.Stat()
+	if err != nil {
+		return
+	}
+	if now, err := os.Lstat(path + lockSuffix); err == nil && os.SameFile(now, own) {
+		_ = os.Remove(path + lockSuffix)
+	}
+}
+
+func lockSocket(lock *os.File, path string, deadline time.Time) error {
 	for {
 		err := syscall.Flock(int(lock.Fd()), syscall.LOCK_EX|syscall.LOCK_NB)
 		if !errors.Is(err, syscall.EWOULDBLOCK) {
@@ -174,6 +222,10 @@ func (l *checkedListener) Close() error {
 	if now, err := os.Lstat(l.path); !l.handedOver && err == nil && os.SameFile(now, l.own) {
 		_ = os.Remove(l.path)
 	}
+	// Removing the lock file while still holding the lock keeps a concurrent
+	// listener from locking a file that is gone; after a handover the name
+	// belongs to the successor's lock and stays.
+	removeLock(l.path, l.lock)
 	l.err = l.UnixListener.Close()
 	_ = l.lock.Close()
 	return l.err
