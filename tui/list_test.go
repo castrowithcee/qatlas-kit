@@ -1632,3 +1632,114 @@ func TestGoldenListModal(t *testing.T) {
 		})
 	}
 }
+
+func tickTypingList(t *testing.T, on bool) (*List, *Keymap) {
+	t.Helper()
+	l, keys := newSampleList(t, Styles{}, i18n.English, func(s *ListSpec) {
+		s.Ticks, s.AllRow, s.Search, s.Keys.Search = true, true, SearchAsTyped, ""
+		s.TickWhileTyping = on
+	})
+	if err := l.SetItems(samplePlants()); err != nil {
+		t.Fatal(err)
+	}
+	return l, keys
+}
+
+func TestTickWhileTypingTicksBeforeTheFilter(t *testing.T) {
+	l, _ := tickTypingList(t, true)
+	l.SetGrouped(true)
+	l.Reset()
+	// The marked entry, a group row and the row of all tick by space; the filter stays empty.
+	keysTo(l, "space")
+	if ticks(l) != "basil" || l.Query() != "" {
+		t.Fatalf("space on an entry: ticked %q, query %q", ticks(l), l.Query())
+	}
+	l.Update(tea.KeyPressMsg{Code: tea.KeyUp})
+	if l.mark().group != "herbs" || l.mark().isGroup != true {
+		t.Fatalf("up did not reach the group row: %+v", l.mark())
+	}
+	keysTo(l, "space")
+	if got := ticks(l); got == "basil" || l.Query() != "" {
+		t.Errorf("space on a group row: ticked %q, query %q", got, l.Query())
+	}
+	for i := 0; i < 5 && !l.mark().all; i++ {
+		l.Update(tea.KeyPressMsg{Code: tea.KeyUp})
+	}
+	if !l.mark().all {
+		t.Fatal("the row of all was not reached")
+	}
+	keysTo(l, "space")
+	if len(l.Ticked()) != len(samplePlants()) || l.Query() != "" {
+		t.Errorf("space on all: ticked %v, query %q", l.Ticked(), l.Query())
+	}
+	// Other text keys still filter and backspace still deletes.
+	typeList(l, "th")
+	if l.Query() != "th" {
+		t.Fatalf("query %q after typing th", l.Query())
+	}
+	keysTo(l, "backspace")
+	if l.Query() != "t" {
+		t.Errorf("query %q after backspace", l.Query())
+	}
+}
+
+func TestTickWhileTypingNamesTheKey(t *testing.T) {
+	l, keys := tickTypingList(t, true)
+	text := newTranslator(t, i18n.English, listCatalogs(), keys)
+	has := func(groups []HintGroup) bool {
+		for _, g := range groups {
+			for _, k := range g.Keys {
+				if k.Action == "toggle" && k.Keys == "space" {
+					return true
+				}
+			}
+		}
+		return false
+	}
+	if !has(keys.Hints(l.Hints(), l.Input(), text)) {
+		t.Error("the footer does not name the toggle key")
+	}
+	// A hint without the field keeps the old behaviour.
+	if has(keys.Hints([]Hint{{Action: "toggle"}}, InputText, text)) {
+		t.Error("a plain hint names a text key in the text focus")
+	}
+	st := looks(t)["dark"]
+	m := newModalList(t, st, 5, func(s *ListSpec) { s.TickWhileTyping = true })
+	view, _, ok := m.Overlay(st, sampleScreen(100, 30), 100, 30, Rect{Width: 100, Height: 30})
+	if !ok || !strings.Contains(ansi.Strip(view), "space") {
+		t.Errorf("the key line of the modal does not name the toggle key:\n%s", view)
+	}
+}
+
+func TestWithoutTickWhileTypingSpaceFilters(t *testing.T) {
+	l, keys := tickTypingList(t, false)
+	text := newTranslator(t, i18n.English, listCatalogs(), keys)
+	keysTo(l, "space")
+	if l.Query() != " " || len(l.Ticked()) != 0 {
+		t.Errorf("space: query %q, ticked %v", l.Query(), l.Ticked())
+	}
+	for _, g := range keys.Hints(l.Hints(), l.Input(), text) {
+		for _, k := range g.Keys {
+			if k.Action == "toggle" {
+				t.Errorf("a toggle hint %q stands in the text focus", k.Keys)
+			}
+		}
+	}
+}
+
+func TestTickWhileTypingNeedsTicksAndTypedSearch(t *testing.T) {
+	keys := sampleKeymap(t, CharsetUnicode)
+	text := newTranslator(t, i18n.English, listCatalogs(), keys)
+	for name, edit := range map[string]func(*ListSpec){
+		"no ticks":      func(s *ListSpec) { s.Ticks = false },
+		"search by key": func(s *ListSpec) { s.Search, s.Keys.Search = SearchByKey, "search" },
+	} {
+		spec := ListSpec{Columns: sampleColumns(), Keys: sampleListKeys(), Empty: "list.empty", Ticks: true,
+			Search: SearchAsTyped, TickWhileTyping: true}
+		spec.Keys.Search = ""
+		edit(&spec)
+		if _, err := NewList(spec, keys, text); err == nil {
+			t.Errorf("%s: accepted", name)
+		}
+	}
+}

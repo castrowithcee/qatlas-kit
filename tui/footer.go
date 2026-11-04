@@ -24,12 +24,16 @@ const (
 // Hint is one group of a key line: the keys of Action, then the text Label. Priority orders the normal
 // hints when the line runs short: a lower priority stays longer, and of equal ones the later goes first.
 // A hint without an action is text alone; a hint whose action has no key that acts in the input focus of
-// the screen is left out, so a line never names a key that does nothing.
+// the screen is left out, so a line never names a key that does nothing. With WhileTyping the keys are those
+// the screen acts on in a text focus too, text keys included, so the hint names them there.
 type Hint struct {
 	Action   ActionID
 	Label    TextID
 	Priority int
 	Kind     HintKind
+	// WhileTyping names every key of Action, also the keys that type a character, for a screen that acts on
+	// them before it reads text. Only a screen that does so sets it.
+	WhileTyping bool
 }
 
 // HintKey is one action of a drawn hint and the keys that trigger it now.
@@ -87,7 +91,11 @@ func (k *Keymap) Hints(hints []Hint, focus InputFocus, text Translator) []HintGr
 		}
 		var key *HintKey
 		if h.Action != "" {
-			keys, ok := k.hintKeys(h.Action, focus)
+			at := focus
+			if h.WhileTyping && focus == InputText {
+				at = InputNavigation
+			}
+			keys, ok := k.hintKeys(h.Action, at)
 			if ok && keys == "" {
 				continue
 			}
