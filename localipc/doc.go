@@ -28,13 +28,16 @@
 // memory access through the process DACL; debug privilege and existing
 // handles bypass it.
 //
-// Unix uses a private runtime directory, socket permissions, and a lock; Close
-// removes the socket and the lock file. Windows uses a protected named pipe
-// that rejects network clients and another first instance. On Unix a running
-// listener can hand its channel to a successor that listens beside it
-// (ListenOptions.Successor, HandOver, AwaitHandover): the lock and then the
-// socket move atomically, so exactly one process serves the channel at any
-// time. Windows does not support a handover.
+// Unix places the socket at <root>/<RuntimeDirName>/<SocketBase>.sock. The
+// root is Endpoint.RuntimeRoot when set; otherwise it is XDG_RUNTIME_DIR, then
+// /run/user/<uid> on Linux, then FallbackDir, and on macOS a path too long for
+// a socket moves to TMPDIR. Unix also uses a private runtime directory, socket
+// permissions, and a lock; Close removes the socket and the lock file. Windows
+// uses a protected named pipe that rejects network clients and another first
+// instance. On Unix a running listener can hand its channel to a successor
+// that listens beside it (ListenOptions.Successor, HandOver, AwaitHandover):
+// the lock and then the socket move atomically, so exactly one process serves
+// the channel at any time. Windows does not support a handover.
 //
 // ServiceEndpoint is the channel of a system service on Linux that runs as its
 // own user: the service admits root and members of one group, the client
