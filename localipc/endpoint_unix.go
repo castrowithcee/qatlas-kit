@@ -10,6 +10,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"syscall"
 )
@@ -21,24 +22,12 @@ const (
 )
 
 func endpointPath(e Endpoint) (string, error) {
-	fallbackOK := filepath.IsAbs(e.FallbackDir) || (e.RuntimeRoot != "" && e.FallbackDir == "")
-	if !component(e.RuntimeDirName) || !component(e.SocketBase) || !fallbackOK ||
-		(e.RuntimeRoot != "" && !filepath.IsAbs(e.RuntimeRoot)) {
-		return "", fmt.Errorf("%s: runtime directory name, socket base, absolute fallback directory, or absolute runtime root is invalid", e.label())
+	if !component(e.SocketBase) {
+		return "", errInvalidEndpoint(e)
 	}
-	var root string
-	if e.RuntimeRoot != "" {
-		// An explicit root replaces the search and never falls back to a
-		// shorter location.
-		if err := privateExistingDir(e.RuntimeRoot); err != nil {
-			return "", fmt.Errorf("%s: runtime root: %w", e.label(), err)
-		}
-		root = e.RuntimeRoot
-	} else {
-		var err error
-		if root, err = runtimeRoot(e.FallbackDir); err != nil {
-			return "", fmt.Errorf("%s: %w", e.label(), err)
-		}
+	root, err := endpointRoot(e)
+	if err != nil {
+		return "", err
 	}
 	dir := filepath.Join(root, e.RuntimeDirName)
 	if err := privateExistingDir(dir); err != nil && !errors.Is(err, fs.ErrNotExist) {
@@ -52,6 +41,32 @@ func endpointPath(e Endpoint) (string, error) {
 		return shortSocketPath(e, path)
 	}
 	return path, nil
+}
+
+func errInvalidEndpoint(e Endpoint) error {
+	return fmt.Errorf("%s: runtime directory name, socket base, absolute fallback directory, or absolute runtime root is invalid", e.label())
+}
+
+// endpointRoot validates the fields shared by every operation and returns the
+// directory that holds the runtime directory.
+func endpointRoot(e Endpoint) (string, error) {
+	fallbackOK := filepath.IsAbs(e.FallbackDir) || (e.RuntimeRoot != "" && e.FallbackDir == "")
+	if !component(e.RuntimeDirName) || !fallbackOK || (e.RuntimeRoot != "" && !filepath.IsAbs(e.RuntimeRoot)) {
+		return "", errInvalidEndpoint(e)
+	}
+	if e.RuntimeRoot != "" {
+		// An explicit root replaces the search and never falls back to a
+		// shorter location.
+		if err := privateExistingDir(e.RuntimeRoot); err != nil {
+			return "", fmt.Errorf("%s: runtime root: %w", e.label(), err)
+		}
+		return e.RuntimeRoot, nil
+	}
+	root, err := runtimeRoot(e.FallbackDir)
+	if err != nil {
+		return "", fmt.Errorf("%s: %w", e.label(), err)
+	}
+	return root, nil
 }
 
 func component(s string) bool {
@@ -124,4 +139,56 @@ func dial(ctx context.Context, e Endpoint) (net.Conn, error) {
 		return nil, fmt.Errorf("%s: %w", e.label(), err)
 	}
 	return conn, nil
+}
+
+func running(e Endpoint) ([]string, error) {
+	root, err := endpointRoot(e)
+	if err != nil {
+		return nil, err
+	}
+	dirs := []string{filepath.Join(root, e.RuntimeDirName)}
+	if e.RuntimeRoot == "" {
+		dirs = append(dirs, fallbackRuntimeDirs(e)...)
+	}
+	bases := []string{}
+	for _, dir := range dirs {
+		found, err := socketBases(dir)
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", e.label(), err)
+		}
+		bases = append(bases, found...)
+	}
+	slices.Sort(bases)
+	return slices.Compact(bases), nil
+}
+
+// socketBases lists the private sockets of this user in dir. Successor
+// sockets, lock files, links and foreign files are not channels.
+func socketBases(dir string) ([]string, error) {
+	if err := privateExistingDir(dir); err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	var bases []string
+	for _, entry := range entries {
+		base, ok := strings.CutSuffix(entry.Name(), ".sock")
+		if !ok || !component(base) {
+			continue
+		}
+		info, err := os.Lstat(filepath.Join(dir, entry.Name()))
+		if err != nil || info.Mode().Type() != fs.ModeSocket || !ownedByMe(info) || info.Mode().Perm() != socketMode {
+			continue
+		}
+		bases = append(bases, base)
+	}
+	return bases, nil
 }

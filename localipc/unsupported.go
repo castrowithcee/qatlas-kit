@@ -10,6 +10,7 @@ import (
 const hardenedProgramCheck = true
 
 func endpointPath(Endpoint) (string, error)                { return "", ErrUnsupported }
+func running(Endpoint) ([]string, error)                   { return nil, ErrUnsupported }
 func listen(Endpoint, ListenOptions) (net.Listener, error) { return nil, ErrUnsupported }
 func dial(context.Context, Endpoint) (net.Conn, error)     { return nil, ErrUnsupported }
 func checkPeer(net.Conn, bool) (int, error)                { return 0, ErrUnsupported }
