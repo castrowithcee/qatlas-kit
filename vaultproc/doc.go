@@ -21,7 +21,10 @@
 // and then challenges it: it sends a fresh nonce encrypted to the vault's recipient, and the process
 // answers with a hash of what it decrypted, never the plaintext. Nothing else is sent before both checks
 // passed. A process that fails them, or stays silent, is refused with a *localipc.PeerError that names its
-// process id. Answers carry fixed codes only, never anything a request sent.
+// process id. The application supplies the proof label that prefixes the hash (Config.ProofLabel and
+// Client.ProofLabel, equal on both sides, never empty); it separates the proof from any other use of the
+// nonce's hash, two applications never share one, and the kit has no default. Answers carry fixed codes
+// only, never anything a request sent.
 //
 // The kit answers OpStatus and OpLock itself. Every other operation is the application's: Config.Handlers
 // maps its names to HandlerFunc, which runs alone, reads the held document through Held and may replace it.

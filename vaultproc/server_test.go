@@ -59,8 +59,10 @@ func testHandlers() map[string]HandlerFunc {
 
 func testConfig(t *testing.T) Config {
 	t.Helper()
-	return Config{Endpoint: testEndpoint(t), Version: 1, IdleTimeout: time.Hour, Handlers: testHandlers()}
+	return Config{Endpoint: testEndpoint(t), Version: 1, ProofLabel: testLabel, IdleTimeout: time.Hour, Handlers: testHandlers()}
 }
+
+const testLabel = "example vault proof v1\x00"
 
 type running struct {
 	server *Server
@@ -91,7 +93,7 @@ func serveWith(t *testing.T, server *Server, cfg Config, id *age.X25519Identity,
 		<-done
 	})
 	return running{server: server, done: done,
-		client: &Client{Endpoint: cfg.Endpoint, Recipient: id.Recipient().String(), Version: cfg.Version}}
+		client: &Client{Endpoint: cfg.Endpoint, Recipient: id.Recipient().String(), Version: cfg.Version, ProofLabel: cfg.ProofLabel}}
 }
 
 func awaitStopped(t *testing.T, r running) {
@@ -271,7 +273,7 @@ func TestClientRefusesFakeServers(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			e := testEndpoint(t)
 			fakeServer(t, e, answer)
-			client := &Client{Endpoint: e, Recipient: id.Recipient().String(), Version: 1, Timeout: 300 * time.Millisecond}
+			client := &Client{Endpoint: e, Recipient: id.Recipient().String(), Version: 1, ProofLabel: testLabel, Timeout: 300 * time.Millisecond}
 			start := time.Now()
 			_, err := client.Status(context.Background())
 			var peer *localipc.PeerError
@@ -285,8 +287,45 @@ func TestClientRefusesFakeServers(t *testing.T) {
 	}
 }
 
+func TestEmptyProofLabelIsRefused(t *testing.T) {
+	cfg := testConfig(t)
+	cfg.ProofLabel = ""
+	if err := cfg.validate(); err == nil {
+		t.Fatal("a config without a proof label was accepted")
+	}
+	if _, err := NewServer(cfg, State{Identity: newIdentity(t)}, false); err == nil {
+		t.Fatal("NewServer accepted a config without a proof label")
+	}
+}
+
+func TestClientWithoutProofLabelDoesNotConnect(t *testing.T) {
+	r := serve(t, testConfig(t), State{Identity: newIdentity(t)})
+	client := *r.client
+	client.ProofLabel = ""
+	if _, err := client.Status(context.Background()); !errors.Is(err, ErrNoProofLabel) {
+		t.Fatalf("status without a label = %v, want ErrNoProofLabel", err)
+	}
+	// The same fail-closed path applies to the process-start dial.
+	if _, err := client.dial(context.Background()); !errors.Is(err, ErrNoProofLabel) {
+		t.Fatalf("dial without a label = %v", err)
+	}
+	if _, err := r.client.Status(context.Background()); err != nil {
+		t.Fatalf("status with the label = %v", err)
+	}
+}
+
+func TestOtherProofLabelIsNotTrusted(t *testing.T) {
+	id := newIdentity(t)
+	r := serve(t, testConfig(t), State{Identity: id})
+	client := *r.client
+	client.ProofLabel = "example other proof v1\x00"
+	if _, err := client.Status(context.Background()); !errors.Is(err, ErrUnproven) {
+		t.Fatalf("status with another label = %v, want ErrUnproven", err)
+	}
+}
+
 func TestNotRunning(t *testing.T) {
-	client := &Client{Endpoint: testEndpoint(t), Recipient: newIdentity(t).Recipient().String(), Version: 1}
+	client := &Client{Endpoint: testEndpoint(t), Recipient: newIdentity(t).Recipient().String(), Version: 1, ProofLabel: testLabel}
 	if _, err := client.Status(context.Background()); !errors.Is(err, ErrNotRunning) {
 		t.Fatalf("status without a process = %v", err)
 	}
@@ -432,24 +471,24 @@ func TestChallengeIsSolvedOnlyWithTheKey(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	proof, ok := solveChallenge(id, challenge)
-	if !ok || !checkProof(nonce, proof) || bytes.Contains(proof, nonce) {
+	proof, ok := solveChallenge(testLabel, id, challenge)
+	if !ok || !checkProof(testLabel, nonce, proof) || bytes.Contains(proof, nonce) {
 		t.Fatal("the key holder cannot prove itself")
 	}
-	if _, ok := solveChallenge(newIdentity(t), challenge); ok {
+	if _, ok := solveChallenge(testLabel, newIdentity(t), challenge); ok {
 		t.Fatal("another key solved the challenge")
 	}
-	if _, ok := solveChallenge(id, nil); ok {
+	if _, ok := solveChallenge(testLabel, id, nil); ok {
 		t.Fatal("an empty challenge was solved")
 	}
 	var long bytes.Buffer
 	w, _ := age.Encrypt(&long, id.Recipient())
 	_, _ = w.Write(make([]byte, nonceSize+1))
 	_ = w.Close()
-	if _, ok := solveChallenge(id, long.Bytes()); ok {
+	if _, ok := solveChallenge(testLabel, id, long.Bytes()); ok {
 		t.Fatal("a challenge of the wrong size was solved, which would decrypt any message")
 	}
-	if checkProof(nonce, proofOf(make([]byte, nonceSize))) {
+	if checkProof(testLabel, nonce, proofOf(testLabel, make([]byte, nonceSize))) {
 		t.Fatal("a proof of another nonce passed")
 	}
 }
