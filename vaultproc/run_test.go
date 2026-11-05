@@ -39,7 +39,7 @@ func TestVaultProcessHelper(t *testing.T) {
 	e := localipc.Endpoint{RuntimeDirName: "session", PipePrefix: "example-", ErrorName: "example",
 		SocketBase: args[1], FallbackDir: args[2]}
 	err := Run(context.Background(), RunOptions{Successor: args[0] == "successor",
-		Config: Config{Endpoint: e, Version: 1, IdleTimeout: time.Hour, Handlers: testHandlers()}})
+		Config: Config{Endpoint: e, Version: 1, ProofLabel: testLabel, IdleTimeout: time.Hour, Handlers: testHandlers()}})
 	if err != nil && !errors.Is(err, ErrRunning) {
 		os.Exit(1)
 	}
@@ -49,7 +49,7 @@ func TestVaultProcessHelper(t *testing.T) {
 func TestStartRunAndLock(t *testing.T) {
 	e := testEndpoint(t)
 	id := newIdentity(t)
-	client := &Client{Endpoint: e, Recipient: id.Recipient().String(), Version: 1}
+	client := &Client{Endpoint: e, Recipient: id.Recipient().String(), Version: 1, ProofLabel: testLabel}
 	ctx := context.Background()
 	snap := vault.Snapshot{Identity: id, Document: []byte(testDocument)}
 
@@ -76,7 +76,7 @@ func TestStartRunAndLock(t *testing.T) {
 	}
 
 	// A process of another vault does not pass the challenge.
-	other := &Client{Endpoint: e, Recipient: newIdentity(t).Recipient().String(), Version: 1}
+	other := &Client{Endpoint: e, Recipient: newIdentity(t).Recipient().String(), Version: 1, ProofLabel: testLabel}
 	if _, err := Start(ctx, other, helperCommand("serve", e), vault.Snapshot{Identity: newIdentity(t)},
 		background.Options{}); !errors.Is(err, ErrUnproven) {
 		t.Fatalf("Start for another vault = %v, want ErrUnproven", err)
