@@ -37,6 +37,9 @@ type Client struct {
 	Recipient string
 	// Version is the application's protocol version, as in Config.Version.
 	Version int
+	// ProofLabel is the proof prefix as in Config.ProofLabel; it must equal the process's. An empty label
+	// fails every call before anything is dialed.
+	ProofLabel string
 	// Timeout bounds one call; zero means DefaultRequestTimeout. The context of a call bounds it too.
 	Timeout time.Duration
 }
@@ -153,6 +156,9 @@ func (c *Client) deadline(ctx context.Context, timeout time.Duration) time.Time 
 
 // dial connects and runs the kernel checks and the challenge.
 func (c *Client) dial(ctx context.Context) (net.Conn, error) {
+	if c.ProofLabel == "" {
+		return nil, ErrNoProofLabel
+	}
 	recipient, err := c.recipient()
 	if err != nil {
 		return nil, err
@@ -198,7 +204,7 @@ func (c *Client) challenge(ctx context.Context, conn net.Conn, recipient age.Rec
 	switch {
 	case err != nil:
 		return err
-	case !checkProof(nonce, resp.Proof):
+	case !checkProof(c.ProofLabel, nonce, resp.Proof):
 		return ErrUnproven
 	}
 	return nil

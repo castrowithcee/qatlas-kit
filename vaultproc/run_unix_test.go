@@ -50,7 +50,7 @@ func TestSuccessorProcessTakesOver(t *testing.T) {
 	if err := localipc.HandOver(l); err != nil {
 		t.Fatal(err)
 	}
-	client := &Client{Endpoint: cfg.Endpoint, Recipient: id.Recipient().String(), Version: 1}
+	client := &Client{Endpoint: cfg.Endpoint, Recipient: id.Recipient().String(), Version: 1, ProofLabel: testLabel}
 	var status Status
 	for deadline := time.Now().Add(5 * time.Second); ; {
 		if status, err = client.Status(ctx); err == nil || time.Now().After(deadline) {

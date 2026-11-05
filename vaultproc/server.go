@@ -31,6 +31,10 @@ type Config struct {
 	Endpoint localipc.Endpoint
 	// Version is the application's protocol version, at least 1. Clients of another version are refused.
 	Version int
+	// ProofLabel is the prefix of the challenge proof, sha256(ProofLabel || nonce), used verbatim. It must
+	// be non-empty and equal Client.ProofLabel; the kit sets no default. It separates the proof from any
+	// other use of the nonce's hash, so no two applications share one.
+	ProofLabel string
 	// IdleTimeout is how long the process stays unlocked without a request that calls Held.Touch. It must
 	// be positive; the user chooses it, the kit sets no default.
 	IdleTimeout time.Duration
@@ -48,6 +52,9 @@ type Config struct {
 }
 
 func (c Config) validate() error {
+	if c.ProofLabel == "" {
+		return errors.New("vaultproc: the proof label must not be empty")
+	}
 	if c.Version < 1 {
 		return errors.New("vaultproc: the application protocol version must be at least 1")
 	}
@@ -412,7 +419,7 @@ func (s *Server) solve(challenge []byte) response {
 	case locked || key == nil:
 		return s.answer(codeLocked, nil)
 	}
-	proof, ok := solveChallenge(key, challenge)
+	proof, ok := solveChallenge(s.cfg.ProofLabel, key, challenge)
 	if !ok {
 		return s.answer(codeChallenge, nil)
 	}
