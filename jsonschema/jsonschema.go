@@ -44,77 +44,210 @@ func ValidateJSON(schema, raw json.RawMessage) error {
 
 // Validate checks a decoded value against schema in the given mode. The value must be decoded the way
 // encoding/json does with UseNumber: numbers are json.Number, so a float64 never matches number or
-// integer.
+// integer. It runs CheckSchema first, so a malformed schema is refused whether or not the value reaches the
+// malformed part.
 func Validate(schema json.RawMessage, value any, mode Mode) error {
+	if err := CheckSchema(schema); err != nil {
+		return err
+	}
 	var node map[string]json.RawMessage
 	if err := json.Unmarshal(schema, &node); err != nil {
 		return fmt.Errorf("schema is invalid")
 	}
-	if err := checkKeywords(node, "$"); err != nil {
-		return err
-	}
 	return validateAt(node, value, "$", mode != Lenient)
 }
 
-// checkKeywords refuses a keyword this package does not check anywhere in the schema, including members
-// no value reaches, so a constraint is never skipped in silence.
-func checkKeywords(node map[string]json.RawMessage, path string) error {
-	names := make([]string, 0, len(node))
-	for name := range node {
+// CheckSchema checks a schema without a value. It reports every keyword this package does not check and
+// every malformed checked keyword anywhere in the schema, including members no value reaches, so a
+// constraint is never skipped in silence. The errors are joined in a fixed order, depth first, each naming
+// its schema path.
+func CheckSchema(schema json.RawMessage) error {
+	var node map[string]json.RawMessage
+	if json.Unmarshal(schema, &node) != nil || node == nil {
+		return fmt.Errorf("schema is invalid")
+	}
+	return errors.Join(checkNode(node, "$")...)
+}
+
+// asSchema reads raw as a schema object; null and anything but an object is not one.
+func asSchema(raw json.RawMessage) (map[string]json.RawMessage, bool) {
+	var child map[string]json.RawMessage
+	if json.Unmarshal(raw, &child) != nil || child == nil {
+		return nil, false
+	}
+	return child, true
+}
+
+func sortedKeys(m map[string]json.RawMessage) []string {
+	names := make([]string, 0, len(m))
+	for name := range m {
 		names = append(names, name)
 	}
 	sort.Strings(names)
-	for _, name := range names {
+	return names
+}
+
+// nullMessages lists the checked keywords with the error a literal null value earns.
+var nullMessages = map[string]string{
+	"type": "has an invalid type", "enum": "has an invalid enum", "properties": "has invalid properties",
+	"required": "has invalid required fields", "additionalProperties": "has invalid additionalProperties",
+	"minProperties": "has an invalid minProperties", "maxProperties": "has an invalid maxProperties",
+	"minItems": "has an invalid minItems", "maxItems": "has an invalid maxItems",
+	"minLength": "has an invalid minLength", "maxLength": "has an invalid maxLength",
+	"items": "has invalid items", "uniqueItems": "has an invalid uniqueItems", "pattern": "has an invalid pattern",
+	"minimum": "has an invalid minimum", "maximum": "has an invalid maximum", "anyOf": "has an invalid anyOf",
+	"format": "has an invalid format", "propertyNames": "has invalid propertyNames",
+}
+
+func checkNode(node map[string]json.RawMessage, path string) []error {
+	var errs []error
+	bad := func(format string, args ...any) {
+		errs = append(errs, fmt.Errorf("schema at %s %s", path, fmt.Sprintf(format, args...)))
+	}
+	for _, name := range sortedKeys(node) {
 		if !knownKeyword(name) {
-			return fmt.Errorf("schema at %s uses the unsupported keyword %s", path, name)
+			bad("uses the unsupported keyword %s", name)
 		}
 	}
-	sub := func(raw json.RawMessage, at string, invalid error) error {
-		var child map[string]json.RawMessage
-		if json.Unmarshal(raw, &child) != nil || child == nil {
-			return invalid
-		}
-		return checkKeywords(child, at)
+
+	// A literal null is malformed for every checked keyword, though encoding/json decodes it into a bool or
+	// a string without error. Past this point node holds no null checked keyword.
+	trimmed := make(map[string]json.RawMessage, len(node))
+	for name, raw := range node {
+		trimmed[name] = raw
 	}
+	for _, name := range sortedKeys(node) {
+		if message, checked := nullMessages[name]; checked && string(node[name]) == "null" {
+			bad("%s", message)
+			delete(trimmed, name)
+		}
+	}
+	node = trimmed
+
+	if raw := node["type"]; len(raw) > 0 {
+		var kind string
+		if json.Unmarshal(raw, &kind) != nil || !knownType(kind) {
+			bad("has an invalid type")
+		}
+	}
+	if raw := node["enum"]; len(raw) > 0 {
+		var allowed []any
+		if json.Unmarshal(raw, &allowed) != nil || len(allowed) == 0 {
+			bad("has an invalid enum")
+		}
+	}
+	if raw := node["required"]; len(raw) > 0 {
+		var required []string
+		if json.Unmarshal(raw, &required) != nil || required == nil {
+			bad("has invalid required fields")
+		}
+	}
+	for _, pair := range [][2]string{
+		{"minProperties", "maxProperties"}, {"minItems", "maxItems"}, {"minLength", "maxLength"},
+	} {
+		valid := true
+		for _, name := range pair {
+			if len(node[name]) > 0 {
+				if _, ok := countBound(node[name]); !ok {
+					bad("has an invalid %s", name)
+					valid = false
+				}
+			}
+		}
+		if valid && len(node[pair[0]]) > 0 && len(node[pair[1]]) > 0 {
+			lower, _ := countBound(node[pair[0]])
+			upper, _ := countBound(node[pair[1]])
+			if lower > upper {
+				bad("has %s greater than %s", pair[0], pair[1])
+			}
+		}
+	}
+	if raw := node["pattern"]; len(raw) > 0 {
+		var pattern string
+		if json.Unmarshal(raw, &pattern) != nil {
+			bad("has an invalid pattern")
+		} else if _, err := regexp.Compile(pattern); err != nil {
+			bad("has an invalid pattern")
+		}
+	}
+	for _, name := range []string{"minimum", "maximum"} {
+		if raw := node[name]; len(raw) > 0 {
+			if _, err := strconv.ParseFloat(string(raw), 64); err != nil {
+				bad("has an invalid %s", name)
+			}
+		}
+	}
+	if raw := node["uniqueItems"]; len(raw) > 0 && json.Unmarshal(raw, new(bool)) != nil {
+		bad("has an invalid uniqueItems")
+	}
+	if raw := node["format"]; len(raw) > 0 {
+		var format string
+		switch {
+		case json.Unmarshal(raw, &format) != nil:
+			bad("has an invalid format")
+		case format != "uuid" && format != "date-time":
+			bad("uses the unsupported format %s", format)
+		}
+	}
+
 	if raw := node["properties"]; len(raw) > 0 {
 		var properties map[string]json.RawMessage
-		if json.Unmarshal(raw, &properties) != nil {
-			return fmt.Errorf("schema at %s has invalid properties", path)
+		if json.Unmarshal(raw, &properties) != nil || properties == nil {
+			bad("has invalid properties")
 		}
-		members := make([]string, 0, len(properties))
-		for name := range properties {
-			members = append(members, name)
-		}
-		sort.Strings(members)
-		for _, name := range members {
+		for _, name := range sortedKeys(properties) {
 			at := path + "." + name
-			if err := sub(properties[name], at, fmt.Errorf("schema at %s is invalid", at)); err != nil {
-				return err
+			if child, ok := asSchema(properties[name]); ok {
+				errs = append(errs, checkNode(child, at)...)
+			} else {
+				errs = append(errs, fmt.Errorf("schema at %s is invalid", at))
 			}
 		}
 	}
 	if raw := node["additionalProperties"]; len(raw) > 0 && json.Unmarshal(raw, new(bool)) != nil {
-		if err := sub(raw, path+".*", fmt.Errorf("schema at %s has invalid additionalProperties", path)); err != nil {
-			return err
+		if child, ok := asSchema(raw); ok {
+			errs = append(errs, checkNode(child, path+".*")...)
+		} else {
+			bad("has invalid additionalProperties")
 		}
 	}
 	if raw := node["items"]; len(raw) > 0 {
-		if err := sub(raw, path+"[]", fmt.Errorf("schema at %s has invalid items", path)); err != nil {
-			return err
+		if child, ok := asSchema(raw); ok {
+			errs = append(errs, checkNode(child, path+"[]")...)
+		} else {
+			bad("has invalid items")
+		}
+	}
+	if raw := node["propertyNames"]; len(raw) > 0 {
+		if child, ok := asSchema(raw); ok {
+			errs = append(errs, checkNode(child, path+"{}")...)
+		} else {
+			bad("has invalid propertyNames")
 		}
 	}
 	if raw := node["anyOf"]; len(raw) > 0 {
 		var branches []json.RawMessage
 		if json.Unmarshal(raw, &branches) != nil || len(branches) == 0 {
-			return fmt.Errorf("schema at %s has an invalid anyOf", path)
+			bad("has an invalid anyOf")
 		}
 		for _, branch := range branches {
-			if err := sub(branch, path, fmt.Errorf("schema at %s has an invalid anyOf", path)); err != nil {
-				return err
+			if child, ok := asSchema(branch); ok {
+				errs = append(errs, checkNode(child, path)...)
+			} else {
+				bad("has an invalid anyOf")
 			}
 		}
 	}
-	return nil
+	return errs
+}
+
+// countBound reads a count bound: a non-negative whole number.
+func countBound(raw json.RawMessage) (int, bool) {
+	var n int
+	if string(raw) == "null" || json.Unmarshal(raw, &n) != nil || n < 0 {
+		return 0, false
+	}
+	return n, true
 }
 
 // knownKeyword reports whether this package checks a keyword or the keyword only annotates a schema. An
@@ -123,12 +256,50 @@ func knownKeyword(name string) bool {
 	switch name {
 	case "type", "enum", "properties", "required", "additionalProperties", "minProperties", "maxProperties",
 		"items", "minItems", "maxItems", "uniqueItems", "minLength", "maxLength", "pattern", "minimum",
-		"maximum", "anyOf",
+		"maximum", "anyOf", "propertyNames", "format",
 		"title", "description", "default", "examples", "deprecated", "readOnly", "writeOnly", "$comment",
 		"$schema", "$id":
 		return true
 	}
 	return strings.HasPrefix(name, "x-")
+}
+
+func knownType(kind string) bool {
+	switch kind {
+	case "object", "array", "string", "integer", "number", "boolean", "null":
+		return true
+	}
+	return false
+}
+
+var (
+	uuidForm = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
+	// RFC 3339 section 5.6: a four-digit year, T or t, and Z, z or a numeric offset are required.
+	dateTimeForm = regexp.MustCompile(
+		`^(\d{4})-(\d{2})-(\d{2})[Tt](\d{2}):(\d{2}):(\d{2})(?:\.\d+)?(?:[Zz]|[+-](\d{2}):(\d{2}))$`)
+)
+
+// validDateTime checks the RFC 3339 form and the ranges of its parts. time.Parse is not used: it accepts
+// only an uppercase T and Z, and its range checks on offsets differ from the RFC. A leap second (:60) is
+// refused, the narrower reading.
+func validDateTime(s string) bool {
+	m := dateTimeForm.FindStringSubmatch(s)
+	if m == nil {
+		return false
+	}
+	num := func(i int) int { n, _ := strconv.Atoi(m[i]); return n }
+	year, month, day := num(1), num(2), num(3)
+	if month < 1 || month > 12 || day < 1 {
+		return false
+	}
+	days := [...]int{31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31}[month-1]
+	if month == 2 && (year%4 == 0 && year%100 != 0 || year%400 == 0) {
+		days = 29
+	}
+	if day > days || num(4) > 23 || num(5) > 59 || num(6) > 59 {
+		return false
+	}
+	return m[7] == "" || num(7) <= 23 && num(8) <= 59
 }
 
 func validateAt(schema map[string]json.RawMessage, value any, path string, strict bool) error {
@@ -202,6 +373,18 @@ func validateAt(schema map[string]json.RawMessage, value any, path string, stric
 			names = append(names, name)
 		}
 		sort.Strings(names)
+		if raw := schema["propertyNames"]; len(raw) > 0 {
+			var nameSchema map[string]json.RawMessage
+			if err := json.Unmarshal(raw, &nameSchema); err != nil {
+				return fmt.Errorf("schema at %s has invalid propertyNames", path)
+			}
+			// Held to in both modes, so a schema's own anyOf inside it applies in both as well.
+			for _, name := range names {
+				if err := validateAt(nameSchema, name, path+"{"+name+"}", true); err != nil {
+					return err
+				}
+			}
+		}
 		for _, name := range names {
 			if _, ok := properties[name]; !ok && !additional {
 				return fmt.Errorf("%s.%s is not allowed", path, name)
@@ -299,6 +482,24 @@ func validateAt(schema map[string]json.RawMessage, value any, path string, stric
 					return fmt.Errorf("%s does not have the required form %s", path, form)
 				}
 				return fmt.Errorf("%s does not have the required form", path)
+			}
+		}
+		if raw := schema["format"]; len(raw) > 0 {
+			var format string
+			if err := json.Unmarshal(raw, &format); err != nil {
+				return fmt.Errorf("schema at %s has an invalid format", path)
+			}
+			switch format {
+			case "uuid":
+				if !uuidForm.MatchString(value) {
+					return fmt.Errorf("%s is not a valid uuid", path)
+				}
+			case "date-time":
+				if !validDateTime(value) {
+					return fmt.Errorf("%s is not a valid date-time", path)
+				}
+			default:
+				return fmt.Errorf("schema at %s uses the unsupported format %s", path, format)
 			}
 		}
 	case json.Number:
