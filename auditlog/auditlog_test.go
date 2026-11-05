@@ -205,6 +205,7 @@ func TestAppendRefusesInvalidEntries(t *testing.T) {
 		"reserved in other case":  `{"Prev_Hash":"x"}`,
 		"reserved mac":            `{"a":1,"MAC":"x"}`,
 		"reserved kind":           `{"kind":"retention-cut"}`,
+		"reserved key ID":         `{"a":1,"mac_key":2}`,
 		"duplicate member":        `{"a":1,"a":2}`,
 		"duplicate in other case": `{"a":1,"A":2}`,
 		"array":                   `[1,2]`,
