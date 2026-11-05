@@ -80,9 +80,6 @@ const (
 // nonceSize is the number of random bytes a challenge holds.
 const nonceSize = 32
 
-// proofLabel separates the proof from any other use of the nonce's hash.
-const proofLabel = "vault process proof v1\x00"
-
 // hello is the first line of every connection: a fresh nonce encrypted to the vault's recipient.
 type hello struct {
 	V         int    `json:"v"`
@@ -199,7 +196,7 @@ func newChallenge(recipient age.Recipient) (nonce, challenge []byte, err error) 
 // solveChallenge decrypts a challenge with key and returns its proof. It refuses anything that does not
 // decrypt to exactly one nonce, and returns only a hash: a server that answered with the plaintext would
 // decrypt any message encrypted to the vault for whoever asked.
-func solveChallenge(key age.Identity, challenge []byte) ([]byte, bool) {
+func solveChallenge(label string, key age.Identity, challenge []byte) ([]byte, bool) {
 	if key == nil || len(challenge) == 0 {
 		return nil, false
 	}
@@ -212,16 +209,16 @@ func solveChallenge(key age.Identity, challenge []byte) ([]byte, bool) {
 	if err != nil || len(nonce) != nonceSize {
 		return nil, false
 	}
-	return proofOf(nonce), true
+	return proofOf(label, nonce), true
 }
 
-func proofOf(nonce []byte) []byte {
+func proofOf(label string, nonce []byte) []byte {
 	h := sha256.New()
-	h.Write([]byte(proofLabel))
+	h.Write([]byte(label))
 	h.Write(nonce)
 	return h.Sum(nil)
 }
 
-func checkProof(nonce, proof []byte) bool {
-	return subtle.ConstantTimeCompare(proofOf(nonce), proof) == 1
+func checkProof(label string, nonce, proof []byte) bool {
+	return subtle.ConstantTimeCompare(proofOf(label, nonce), proof) == 1
 }

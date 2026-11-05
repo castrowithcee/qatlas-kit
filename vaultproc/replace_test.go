@@ -24,7 +24,7 @@ func TestReplacementLocksOnRollback(t *testing.T) {
 }
 
 func TestReplacementWithoutProcess(t *testing.T) {
-	client := &Client{Endpoint: testEndpoint(t), Recipient: newIdentity(t).Recipient().String(), Version: 1}
+	client := &Client{Endpoint: testEndpoint(t), Recipient: newIdentity(t).Recipient().String(), Version: 1, ProofLabel: testLabel}
 	replacement := NewReplacement(client)
 	if err := replacement.BeforeReplace(context.Background(), selfupdate.ReleaseFiles{}); err != nil {
 		t.Fatal(err)
