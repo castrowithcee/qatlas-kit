@@ -38,9 +38,9 @@ type Prepared struct {
 }
 
 type trustBinding struct {
-	repository, namespace, archive, program string
-	companions                              []string
-	keys                                    [][]byte
+	repository, namespace, signature, archive, program string
+	companions                                         []string
+	keys                                               [][]byte
 }
 
 // Version is the tag of the prepared release.
@@ -62,7 +62,7 @@ func (c *Client) binding(version string) (trustBinding, error) {
 	if c.Namespace == "" || len(c.TrustedKeys) == 0 || !validPayloadName(c.ProgramName) {
 		return trustBinding{}, errors.New("namespace, trusted keys and program name are required")
 	}
-	b := trustBinding{repository: c.RepositoryAPI, namespace: c.Namespace, archive: c.ArchiveName(version), program: c.ProgramName}
+	b := trustBinding{repository: c.RepositoryAPI, namespace: c.Namespace, signature: c.SignatureAsset, archive: c.ArchiveName(version), program: c.ProgramName}
 	program := programEntry(b.archive, b.program)
 	for _, companion := range c.Companions {
 		if name, ok := entryPath(companion.Entry); !ok || name == "" || name != companion.Entry {
@@ -83,7 +83,7 @@ func (c *Client) binding(version string) (trustBinding, error) {
 }
 
 func (b trustBinding) matches(other trustBinding) bool {
-	if b.repository != other.repository || b.namespace != other.namespace || b.archive != other.archive || b.program != other.program ||
+	if b.repository != other.repository || b.namespace != other.namespace || b.signature != other.signature || b.archive != other.archive || b.program != other.program ||
 		!slices.Equal(b.companions, other.companions) || len(b.keys) != len(other.keys) {
 		return false
 	}
@@ -122,7 +122,7 @@ func (c *Client) Prepare(ctx context.Context, target Target) (*Prepared, error) 
 	if err != nil {
 		return nil, fmt.Errorf("download checksums: %w", err)
 	}
-	signature, err := c.download(ctx, policy, urls[signatureAsset], maxMetadataBytes, nil)
+	signature, err := c.download(ctx, policy, urls[trust.signature], maxMetadataBytes, nil)
 	if err != nil {
 		return nil, fmt.Errorf("download signature: %w", err)
 	}

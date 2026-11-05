@@ -147,13 +147,14 @@ func Checksums(assets map[string][]byte) []byte {
 }
 
 // Release returns the assets of a signed release: the given archives, checksums.txt listing them, and
-// checksums.txt.sig signed by signer for namespace with sha512.
-func Release(t testing.TB, signer ssh.Signer, namespace string, archives map[string][]byte) map[string][]byte {
+// the asset named signatureAsset, which holds the signature over checksums.txt by signer for namespace
+// with sha512.
+func Release(t testing.TB, signer ssh.Signer, namespace, signatureAsset string, archives map[string][]byte) map[string][]byte {
 	t.Helper()
 	checksums := Checksums(archives)
 	assets := make(map[string][]byte, len(archives)+2)
 	maps.Copy(assets, archives)
 	assets["checksums.txt"] = checksums
-	assets["checksums.txt.sig"] = Sign(t, signer, namespace, "sha512", checksums)
+	assets[signatureAsset] = Sign(t, signer, namespace, "sha512", checksums)
 	return assets
 }

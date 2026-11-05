@@ -21,6 +21,7 @@ import (
 const (
 	testProgram   = "sample-tool"
 	testNamespace = "sample-tool-release"
+	testSignature = "checksums.txt.example.sig"
 	testEnv       = "SAMPLE_TOOL"
 	testNextStep  = `Next: run 'sample-tool' and $(not a command) or "quoted" text.`
 )
@@ -28,13 +29,14 @@ const (
 func testParams(t *testing.T, signer ssh.Signer, targets ...string) installer.Params {
 	t.Helper()
 	return installer.Params{
-		Program:     testProgram,
-		DisplayName: "Sample Tool",
-		ReleasesURL: "https://example.invalid/owner/sample-tool/releases",
-		Namespace:   testNamespace,
-		TrustedKeys: []ssh.PublicKey{signer.PublicKey()},
-		Targets:     targets,
-		NextStep:    testNextStep,
+		Program:        testProgram,
+		DisplayName:    "Sample Tool",
+		ReleasesURL:    "https://example.invalid/owner/sample-tool/releases",
+		Namespace:      testNamespace,
+		SignatureAsset: testSignature,
+		TrustedKeys:    []ssh.PublicKey{signer.PublicKey()},
+		Targets:        targets,
+		NextStep:       testNextStep,
 	}
 }
 
@@ -61,6 +63,12 @@ func TestRenderRejectsInvalidParams(t *testing.T) {
 		"releases URL with user":  func(p *installer.Params) { p.ReleasesURL = "https://user@example.invalid/releases" },
 		"empty namespace":         func(p *installer.Params) { p.Namespace = "" },
 		"namespace with space":    func(p *installer.Params) { p.Namespace = "a b" },
+		"empty signature asset":   func(p *installer.Params) { p.SignatureAsset = "" },
+		"signature asset slash":   func(p *installer.Params) { p.SignatureAsset = "a/b.sig" },
+		"signature asset quote":   func(p *installer.Params) { p.SignatureAsset = "a'b.sig" },
+		"signature asset sums":    func(p *installer.Params) { p.SignatureAsset = "checksums.txt" },
+		"signature asset signers": func(p *installer.Params) { p.SignatureAsset = "allowed-signers" },
+		"signature asset archive": func(p *installer.Params) { p.SignatureAsset = testProgram + "_v1.0.0_linux_amd64.tar.gz" },
 		"no trusted key":          func(p *installer.Params) { p.TrustedKeys = nil },
 		"nil trusted key":         func(p *installer.Params) { p.TrustedKeys = []ssh.PublicKey{nil} },
 		"non-Ed25519 key":         func(p *installer.Params) { p.TrustedKeys = []ssh.PublicKey{ecdsaPublic} },
@@ -213,6 +221,7 @@ type release struct {
 	checksums string
 	signer    ssh.Signer
 	namespace string
+	signature string // asset name of the signature
 }
 
 // publish adds tag to server with an archive holding program, a manpage, a license and extra, signed by
@@ -227,16 +236,16 @@ func publish(t *testing.T, server *releasetest.Server, signer ssh.Signer, tag, a
 	}
 	files = append(files, releasetest.File{Name: "share/doc/" + testProgram + "/LICENSE", Body: []byte("license " + tag + "\n")})
 	files = append(files, extra...)
-	r := &release{archive: releasetest.Archive(t, archiveName, files...), signer: signer, namespace: testNamespace}
+	r := &release{archive: releasetest.Archive(t, archiveName, files...), signer: signer, namespace: testNamespace, signature: testSignature}
 	sum := sha256.Sum256(r.archive)
 	r.checksums = hex.EncodeToString(sum[:]) + "  " + archiveName + "\n" + strings.Repeat("1", 64) + "  install.sh\n"
 	if mutate != nil {
 		mutate(r)
 	}
 	server.Publish(tag, map[string][]byte{
-		archiveName:         r.archive,
-		"checksums.txt":     []byte(r.checksums),
-		"checksums.txt.sig": releasetest.Sign(t, r.signer, r.namespace, "sha512", []byte(r.checksums)),
+		archiveName:     r.archive,
+		"checksums.txt": []byte(r.checksums),
+		r.signature:     releasetest.Sign(t, r.signer, r.namespace, "sha512", []byte(r.checksums)),
 	})
 }
 

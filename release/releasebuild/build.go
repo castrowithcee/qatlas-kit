@@ -29,6 +29,9 @@ type Options struct {
 	Program string
 	// Namespace is the signature namespace; it must be Program + "-release".
 	Namespace string
+	// SignatureAsset is the name of the release file that holds the signature over checksums.txt. It is
+	// required, has no default, and must not name an asset of the build.
+	SignatureAsset string
 	// AllowedSigners is the allowed signers file, relative to Dir, whose keys the installers trust.
 	AllowedSigners string
 	// ReleasesURL is the https release page the installers download from.
@@ -127,6 +130,9 @@ func prepare(c Config, o Options) (*plan, error) {
 	if !versionPattern.MatchString(o.Version) {
 		return nil, fmt.Errorf("version %q must be a SemVer tag such as v1.2.3 or v1.2.3-rc.1", o.Version)
 	}
+	if !assetPattern.MatchString(o.SignatureAsset) {
+		return nil, fmt.Errorf("invalid signature asset name %q", o.SignatureAsset)
+	}
 	if o.Output == "" {
 		return nil, errors.New("output directory is required")
 	}
@@ -143,6 +149,13 @@ func prepare(c Config, o Options) (*plan, error) {
 	}
 	if p.targets, err = c.targets(); err != nil {
 		return nil, err
+	}
+	reserved := []string{"checksums.txt", "install.sh", "install.ps1"}
+	for _, t := range p.targets {
+		reserved = append(reserved, ArchiveName(o.Program, o.Version, t.goos, t.goarch))
+	}
+	if slices.Contains(reserved, o.SignatureAsset) {
+		return nil, fmt.Errorf("signature asset name %q collides with an asset of the build", o.SignatureAsset)
 	}
 	if len(c.ManpageCommand) == 0 || c.ManpageCommand[0] == "" || !slices.Contains(c.ManpageCommand, "{dir}") {
 		return nil, errors.New(`manpage command is required and must take the output directory "{dir}"`)
@@ -192,7 +205,7 @@ func prepare(c Config, o Options) (*plan, error) {
 	}
 	params := installer.Params{
 		Program: o.Program, DisplayName: c.Installer.DisplayName, ReleasesURL: o.ReleasesURL,
-		Namespace: o.Namespace, TrustedKeys: keys, Targets: c.Targets, NextStep: c.Installer.NextStep,
+		Namespace: o.Namespace, SignatureAsset: o.SignatureAsset, TrustedKeys: keys, Targets: c.Targets, NextStep: c.Installer.NextStep,
 	}
 	if s := c.Service; s != nil {
 		params.Service = &installer.Service{Groups: slices.Clone(s.Groups), AddInstallingUser: s.AddInstallingUser, WritableConfig: s.WritableConfig}
