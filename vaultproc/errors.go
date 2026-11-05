@@ -51,6 +51,9 @@ var (
 	// ErrNoRecipient means a client has no recipient to challenge the process with: the vault is not
 	// encrypted, so it has no process.
 	ErrNoRecipient = errors.New("the vault has no recipient to check the vault process with")
+
+	// ErrNoProofLabel means a client has no proof label: it cannot check the process and sends nothing.
+	ErrNoProofLabel = errors.New("the client has no proof label to check the vault process with")
 )
 
 // Error is an application's error code in an answer. A handler returns it to answer with Code; a client
