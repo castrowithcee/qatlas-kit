@@ -7,7 +7,9 @@
 // the application's label followed by the JSON encoding of that state. A state that differs in any value
 // has another fingerprint and needs a new approval, since the configuration it comes from is not trusted.
 // An application whose approvals predate this package keeps them valid by handing over the same label and
-// the same state it hashed before.
+// the same state it hashed before. An application that changes a label lists the old one among the previous
+// labels (see Options): approvals and the approvals file made under it keep holding, and the next change of
+// the store rewrites them under the current label. A previous label only verifies, never writes.
 //
 // # Store
 //
