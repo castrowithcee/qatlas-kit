@@ -41,7 +41,7 @@ func servicePath(e ServiceEndpoint) (string, error) {
 }
 
 func listenService(e ServiceEndpoint, opts ListenOptions) (net.Listener, error) {
-	if opts.Successor {
+	if opts.Successor || opts.Earlier != nil {
 		return nil, fmt.Errorf("%s: %w", e.label(), errHandoverUnsupported)
 	}
 	if opts.CrossVersion != nil {

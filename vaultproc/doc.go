@@ -47,8 +47,11 @@
 // it checks that the program at its own path is the one of the release, starts it with
 // HandoverConfig.SuccessorArgs, hands it its state through a pipe and then moves the channel to it with
 // localipc.HandOver. The successor keeps the unlock time and the lock time of its predecessor and the
-// shorter maximum, so a handover never extends an unlock. Every failure locks, and so do a rollback, a
-// user's setting that asks for it, a process without HandoverConfig, and Windows, which has no handover.
+// shorter maximum, so a handover never extends an unlock. Where the application changed its endpoint, a
+// successor takes the vault over from a process that serves the earlier one and runs its own handover
+// (RunOptions.Earlier, with the checks and limits of localipc.ListenOptions.Earlier); it serves nothing
+// before that process handed over. Every failure locks, and so do a rollback, a user's setting that asks
+// for it, a process without HandoverConfig, and Windows, which has no handover.
 //
 // # Boundary
 //

@@ -79,6 +79,9 @@ type RunOptions struct {
 	// Successor starts the process as the successor of a running vault process, as HandoverConfig's
 	// SuccessorArgs ask: it listens beside the channel until the running process hands it over.
 	Successor bool
+	// Earlier, with Successor, is the channel of a vault process of an earlier version of the application
+	// that served the vault under another endpoint; see localipc.ListenOptions.Earlier.
+	Earlier *localipc.Endpoint
 }
 
 // Run is the vault process: the hidden subcommand Start runs. It hardens the process before it reads
@@ -115,7 +118,8 @@ func Run(ctx context.Context, opts RunOptions) error {
 	if err != nil {
 		return fail(err)
 	}
-	listener, err := opts.Endpoint.ListenWith(localipc.ListenOptions{Successor: opts.Successor, Refused: server.Refused})
+	listener, err := opts.Endpoint.ListenWith(localipc.ListenOptions{Successor: opts.Successor, Earlier: opts.Earlier,
+		Refused: server.Refused})
 	if err != nil {
 		server.wipe()
 		if errors.Is(err, localipc.ErrRunning) && !opts.Successor {
