@@ -5,16 +5,18 @@
 //
 // A day file is DIR/YYYY-MM-DD.jsonl, named by its UTC date, with one JSON object per line. A line holds
 // seq, time, kind (markers only), the members of the application's entry, cut or damage (markers only),
-// prev_hash and mac, in that order; mac is always last. seq counts every line, markers included, from 1.
-// prev_hash is the hex SHA-256 of the exact bytes of the previous line, or of zero bytes for the first line,
-// so the first line of a day chains from the last line of the last day that has one. mac is empty for an
-// unsigned line; a signed line carries the hex HMAC-SHA256 of the line as written with an empty mac. See
-// Key for the derivation.
+// prev_hash, mac_key (signed lines with a key ID only) and mac, in that order; mac is always last. seq
+// counts every line, markers included, from 1. prev_hash is the hex SHA-256 of the exact bytes of the
+// previous line, or of zero bytes for the first line, so the first line of a day chains from the last line
+// of the last day that has one. mac is empty for an unsigned line, which carries no mac_key; a signed line
+// carries the hex HMAC-SHA256 of the line as written with an empty mac, under the label its mac_key names,
+// and a line without mac_key names key ID zero. See KeyLabel and Key for the derivation.
 //
 // # Contract
 //
 // The application supplies the directory, the name of the lock file, the entry type T with its JSON
-// members and a validation function, and, for signing, the secret and the label the key is derived from.
+// members and a validation function, and, for signing, the secret, the label the key is derived from with
+// its key ID and, after a change of label, the previous labels with theirs.
 // An entry must encode as a JSON object without the members the log owns. Append holds an exclusive lock on
 // the lock file for its whole read, compute and write, so writers in goroutines and processes never race
 // the chain. Directories are created 0700 and day files 0600. A failed Append is returned; the caller
@@ -28,8 +30,10 @@
 //
 // Verify reports a changed, deleted, inserted or reordered line, a day file removed from the middle or the
 // start without a retention cut, a first line that does not chain from the genesis hash, and, given a
-// Checker, a check value that is malformed or does not match. An unsigned line counts as unverified and
-// does not break the chain by itself. A check that cannot be made fails Verify instead of passing a line.
+// Checker, a check value that is malformed or does not match. A line signed under a previous label after
+// the first line signed under the current one breaks the chain as well, with or without a Checker; a
+// previous label only checks and never signs. An unsigned line counts as unverified and does not break the
+// chain by itself. A check that cannot be made fails Verify instead of passing a line.
 // A line that does not parse breaks the chain, unless Options.TornLine documents torn lines and a
 // damaged-line marker that holds follows it.
 //

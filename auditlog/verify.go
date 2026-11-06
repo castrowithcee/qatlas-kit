@@ -35,8 +35,9 @@ type DayReport struct {
 	// Damaged counts the lines of the day that do not parse but are documented by the damaged-line marker
 	// right after them. Such a line does not break the chain.
 	Damaged int
-	// Changed counts the lines of the day whose check value is malformed or does not match. Each one breaks
-	// the chain.
+	// Changed counts the lines of the day whose check value is malformed or does not match, or that are
+	// signed under a key ID other than Options.KeyID after a line signed under it. Each one breaks the
+	// chain.
 	Changed int
 	// Missing counts the sequence numbers skipped right before a line of this day that no retention cut
 	// documents.
@@ -91,7 +92,8 @@ const (
 	MACUnchecked
 	// MACValid is a line whose check value matches it.
 	MACValid
-	// MACInvalid is a line whose check value is malformed or does not match it.
+	// MACInvalid is a line whose check value is malformed or does not match it, or a line signed under a key
+	// ID other than Options.KeyID after a line signed under it.
 	MACInvalid
 )
 
@@ -138,8 +140,10 @@ type DayLines[T any] struct {
 // that are still there. A missing directory is an intact, empty chain.
 //
 // Every well-formed check value is checked with checker when there is one; a malformed one, or one that
-// does not match, breaks the chain, while an empty one counts as unverified. A check that cannot be made
-// at all fails Verify. The files are read under the lock, which is released before the first check.
+// does not match, breaks the chain, while an empty one counts as unverified. So does, with or without a
+// checker, a line signed under a key ID other than Options.KeyID after the first line signed under it. A
+// check that cannot be made at all fails Verify. The files are read under the lock, which is released
+// before the first check.
 func (l *Log[T]) Verify(checker Checker) (Report, error) {
 	report, _, err := l.verify(checker, nil)
 	return report, err
@@ -239,6 +243,8 @@ func (l *Log[T]) verify(checker Checker, inRange func(date string) bool) (Report
 		previousLine *LineResult[T]
 		// pending is the damaged line that the marker on the next line documents, if that marker holds.
 		pending *damagedLine
+		// relabeled is true once a line signed under Options.KeyID was walked.
+		relabeled bool
 	)
 	setProblem := func(day *DayReport, problem Problem, seq uint64, number int) {
 		if day.Problem == ProblemNone {
@@ -316,7 +322,7 @@ func (l *Log[T]) verify(checker Checker, inRange func(date string) bool) (Report
 				}
 				found = append(found, finding{ProblemChain, entry.Seq})
 			}
-			state := countMAC(day, checks(d.date), &results, entry.MAC, raw)
+			state := countMAC(day, checks(d.date), &results, l.opts.KeyID, &relabeled, entry.MAC, raw)
 			if state == MACInvalid {
 				found = append(found, finding{ProblemMAC, entry.Seq})
 			}
@@ -374,24 +380,39 @@ func documents[T any](next parsedLine[T], damaged []byte) bool {
 }
 
 // countMAC counts the check value of one line into its day and returns its state. results holds the
-// answers of the checker for the well-formed check values not counted yet, in order.
-func countMAC(day *DayReport, checked bool, results *[]bool, mac string, raw []byte) MACState {
-	switch {
-	case mac == "":
+// answers of the checker for the well-formed check values not counted yet, in order. relabeled records
+// whether a line signed under the current key ID came before: from there on a line signed under another
+// one is invalid, checked or not.
+func countMAC(day *DayReport, checked bool, results *[]bool, current uint, relabeled *bool, mac string, raw []byte) MACState {
+	if mac == "" {
 		day.Unverified++
 		return MACNone
-	case wellFormed(raw) && !checked:
-		day.Unchecked++
-		return MACUnchecked
-	case wellFormed(raw):
-		valid := (*results)[0]
-		*results = (*results)[1:]
-		if valid {
-			return MACValid
-		}
 	}
-	day.Changed++
-	return MACInvalid
+	_, _, id, err := unsignedOf(raw)
+	if err != nil {
+		day.Changed++
+		return MACInvalid
+	}
+	state := MACUnchecked
+	if checked {
+		state = MACInvalid
+		if (*results)[0] {
+			state = MACValid
+		}
+		*results = (*results)[1:]
+	}
+	if id == current {
+		*relabeled = true
+	} else if *relabeled {
+		state = MACInvalid
+	}
+	switch state {
+	case MACUnchecked:
+		day.Unchecked++
+	case MACInvalid:
+		day.Changed++
+	}
+	return state
 }
 
 // readDays reads and parses every day file under the lock, which it releases before it returns.
