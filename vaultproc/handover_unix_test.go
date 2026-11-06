@@ -21,9 +21,10 @@ import (
 )
 
 const (
-	testNamespace  = "example-release"
-	testArchive    = "tool-test.tar.gz"
-	newProgramBody = "new program"
+	testNamespace      = "example-release"
+	testSignatureAsset = "checksums.txt.example.sig"
+	testArchive        = "tool-test.tar.gz"
+	newProgramBody     = "new program"
 )
 
 // testRelease writes a signed release whose program is body and returns its files and signing key.
@@ -31,7 +32,7 @@ func testRelease(t *testing.T, body string) (selfupdate.ReleaseFiles, ssh.Public
 	t.Helper()
 	signer := releasetest.NewSigner(t)
 	archive := releasetest.Archive(t, testArchive, releasetest.File{Name: "bin/tool", Body: []byte(body)})
-	assets := releasetest.Release(t, signer, testNamespace, map[string][]byte{testArchive: archive})
+	assets := releasetest.Release(t, signer, testNamespace, testSignatureAsset, map[string][]byte{testArchive: archive})
 	dir := t.TempDir()
 	for name, data := range assets {
 		if err := os.WriteFile(filepath.Join(dir, name), data, 0o600); err != nil {
@@ -39,7 +40,7 @@ func testRelease(t *testing.T, body string) (selfupdate.ReleaseFiles, ssh.Public
 		}
 	}
 	return selfupdate.ReleaseFiles{Checksums: filepath.Join(dir, "checksums.txt"),
-		Signature: filepath.Join(dir, "checksums.txt.sig"), Archive: filepath.Join(dir, testArchive),
+		Signature: filepath.Join(dir, testSignatureAsset), Archive: filepath.Join(dir, testArchive),
 		ArchiveName: testArchive}, signer.PublicKey()
 }
 

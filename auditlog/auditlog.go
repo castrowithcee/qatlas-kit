@@ -67,7 +67,7 @@ const (
 )
 
 // reservedKeys are the members of a line that the log owns; an entry may not carry any of them.
-var reservedKeys = []string{"seq", "time", "kind", "cut", "damage", "prev_hash", "mac"}
+var reservedKeys = []string{"seq", "time", "kind", "cut", "damage", "prev_hash", "mac_key", "mac"}
 
 // Options configures a Log. Dir, LockName and Validate are required.
 type Options[T any] struct {
@@ -81,6 +81,11 @@ type Options[T any] struct {
 	RetentionDays int
 	// TornLine selects how a line that does not parse is handled; the zero value refuses it.
 	TornLine TornLine
+	// KeyID is the key ID of the current label of the log key (see KeyLabel). Append writes it as mac_key
+	// into every line it signs and fails when the key signs under another key ID. Verify needs no key for
+	// it: from the first line signed under KeyID on, a line signed under any other key ID is a mismatch, so
+	// a chain changes labels at most once and never back. Zero writes no mac_key.
+	KeyID uint
 	// Now is the clock of Append; nil means time.Now.
 	Now func() time.Time
 }
@@ -272,10 +277,12 @@ type header struct {
 	cut      *Cut
 	damage   *Damage
 	prevHash string
+	// keyID is written as mac_key unless it is zero.
+	keyID uint
 }
 
 // encodeLine returns a line with an empty check value. The members come in the order seq, time, kind, the
-// entry's members, cut, damage, prev_hash and mac, so mac is always last.
+// entry's members, cut, damage, prev_hash, mac_key and mac, so mac is always last.
 func encodeLine(h header, members []byte) ([]byte, error) {
 	at, err := json.Marshal(h.time)
 	if err != nil {
@@ -300,15 +307,24 @@ func encodeLine(h header, members []byte) ([]byte, error) {
 		b.WriteString(`,"damage":{"line_hash":"` + h.damage.LineHash + `"}`)
 	}
 	b.WriteString(`,"prev_hash":"` + h.prevHash + `"`)
+	if h.keyID != 0 {
+		b.Write(keyIDField)
+		b.WriteString(strconv.FormatUint(uint64(h.keyID), 10))
+	}
 	b.Write(emptyMACSuffix)
 	return b.Bytes(), nil
 }
 
-// encode is the line stored for h and members: signed when l has a key.
+// encode is the line stored for h and members: signed under Options.KeyID when l has a key. An unsigned
+// line carries no mac_key.
 func (l *Log[T]) encode(h header, members []byte) ([]byte, error) {
+	if !l.key.usable() {
+		return encodeLine(h, members)
+	}
+	h.keyID = l.opts.KeyID
 	raw, err := encodeLine(h, members)
-	if err != nil || !l.key.usable() {
-		return raw, err
+	if err != nil {
+		return nil, err
 	}
 	return l.key.sign(raw)
 }

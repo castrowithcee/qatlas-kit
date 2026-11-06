@@ -2,6 +2,7 @@ package approval
 
 import (
 	"bytes"
+	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -9,8 +10,11 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
+
+	"filippo.io/age"
 
 	"github.com/castrowithcee/qatlas-kit/filelock"
 	"github.com/castrowithcee/qatlas-kit/vault"
@@ -28,7 +32,7 @@ var (
 // fileSchema is the version of the approvals file.
 const fileSchema = 1
 
-// Options configure a Store. Every field is required.
+// Options configure a Store. Every field but the previous labels is required.
 type Options struct {
 	// Vault is the encrypted vault that holds the approvals.
 	Vault *vault.Vault
@@ -39,6 +43,16 @@ type Options struct {
 	// MACLabel is the label the check value of the approvals file is keyed with (see vault.MAC). It is the
 	// application's own and differs from every other label it derives a key with.
 	MACLabel string
+	// PreviousFingerprintLabels are the labels FingerprintLabel replaced, for the transition after a change of
+	// label. An approval whose fingerprint is that of its state under one of them keeps holding, and a
+	// current state matches it under any of them. They only verify and never write: the next change of the
+	// store gives every such approval the fingerprint under FingerprintLabel. Remove them with the next
+	// major release of the application, once its approvals have been rewritten.
+	PreviousFingerprintLabels []string
+	// PreviousMACLabels are the labels MACLabel replaced. An approvals file whose check value fails under
+	// MACLabel is accepted when it verifies under one of them; it is only ever written under MACLabel.
+	// Remove them with the next major release of the application.
+	PreviousMACLabels []string
 	// LockName is the file in the vault directory that every change of the approvals locks, so changes of
 	// several processes follow one another. It holds no data and is not one of the vault's files.
 	LockName string
@@ -103,7 +117,30 @@ func New(opts Options) (*Store, error) {
 		opts.LockName == ".." || strings.ContainsAny(opts.LockName, `/\:`):
 		return nil, fmt.Errorf("approval: %q is not a single file name", opts.LockName)
 	}
+	if err := previousLabels("fingerprint", opts.FingerprintLabel, opts.PreviousFingerprintLabels); err != nil {
+		return nil, err
+	}
+	if err := previousLabels("check value", opts.MACLabel, opts.PreviousMACLabels); err != nil {
+		return nil, err
+	}
+	opts.PreviousFingerprintLabels = slices.Clone(opts.PreviousFingerprintLabels)
+	opts.PreviousMACLabels = slices.Clone(opts.PreviousMACLabels)
 	return &Store{opts: opts}, nil
+}
+
+// previousLabels refuses previous labels that are empty, repeated or equal to the current label.
+func previousLabels(kind, current string, previous []string) error {
+	seen := map[string]bool{current: true}
+	for _, label := range previous {
+		switch {
+		case label == "":
+			return fmt.Errorf("approval: a previous %s label is empty", kind)
+		case seen[label]:
+			return fmt.Errorf("approval: a previous %s label repeats another label", kind)
+		}
+		seen[label] = true
+	}
+	return nil
 }
 
 // Approvals returns every approval by name. A vault without an approvals file holds none. It fails with
@@ -137,7 +174,7 @@ func (s *Store) Approvals() (map[string]Approval, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := vault.VerifyMAC(key, s.opts.MACLabel, macData(file.Schema, file.Approvals), file.MAC); err != nil {
+	if err := s.verifyMAC(key, macData(file.Schema, file.Approvals), file.MAC); err != nil {
 		return nil, fmt.Errorf("approval: the approvals file: %w", err)
 	}
 	approvals := map[string]Approval{}
@@ -155,7 +192,7 @@ func (s *Store) Approvals() (map[string]Approval, error) {
 // Check reports whether state is approved under name exactly as it is: nil when it is, ErrNotApproved
 // when nothing is approved under name, and ErrDeviates when the approved state differs.
 func (s *Store) Check(name string, state any) error {
-	_, fingerprint, err := encode(s.opts.FingerprintLabel, state)
+	data, _, err := encode(s.opts.FingerprintLabel, state)
 	if err != nil {
 		return err
 	}
@@ -167,7 +204,7 @@ func (s *Store) Check(name string, state any) error {
 	switch {
 	case !ok:
 		return fmt.Errorf("%s: %w", name, ErrNotApproved)
-	case approved.Fingerprint != fingerprint:
+	case !s.holds(approved.Fingerprint, data):
 		return fmt.Errorf("%s: %w", name, ErrDeviates)
 	}
 	return nil
@@ -185,7 +222,7 @@ func (s *Store) Compare(name string, state any) (*Deviation, error) {
 		return nil, err
 	}
 	approved, ok := approvals[name]
-	if ok && approved.Fingerprint == fingerprint {
+	if ok && s.holds(approved.Fingerprint, current) {
 		return nil, nil
 	}
 	changes, err := Diff(approved.State, current)
@@ -288,10 +325,39 @@ func (s *Store) authorized(admin Admin) error {
 	return nil
 }
 
-// consistent refuses an approval whose fingerprint is not that of its state.
+// verifyMAC verifies mac under the current label and, only when that reports a mismatch, under each
+// previous one. Any other error is final.
+func (s *Store) verifyMAC(key *age.X25519Identity, data []byte, mac string) error {
+	err := vault.VerifyMAC(key, s.opts.MACLabel, data, mac)
+	for _, label := range s.opts.PreviousMACLabels {
+		if !errors.Is(err, vault.ErrMACMismatch) {
+			break
+		}
+		err = vault.VerifyMAC(key, label, data, mac)
+	}
+	return err
+}
+
+// holds reports whether fingerprint is that of state under the current or a previous label. It compares
+// in constant time and with every label, whichever matches first.
+func (s *Store) holds(fingerprint string, state []byte) bool {
+	labels := append([]string{s.opts.FingerprintLabel}, s.opts.PreviousFingerprintLabels...)
+	match := 0
+	for _, label := range labels {
+		_, candidate, err := encode(label, json.RawMessage(state))
+		if err != nil {
+			return false
+		}
+		match |= subtle.ConstantTimeCompare([]byte(candidate), []byte(fingerprint))
+	}
+	return match == 1
+}
+
+// consistent refuses an approval whose fingerprint is not that of its own state under the current or a
+// previous label. The state is the approval's own, never the one being checked, so a previous label cannot
+// vouch for a state it was not computed from.
 func (s *Store) consistent(name string, a Approval) error {
-	_, fingerprint, err := encode(s.opts.FingerprintLabel, a.State)
-	if err != nil || fingerprint != a.Fingerprint {
+	if !s.holds(a.Fingerprint, a.State) {
 		return fmt.Errorf("approval: the fingerprint of %s does not match its state: %w", name, vault.ErrDamaged)
 	}
 	return nil
@@ -318,6 +384,18 @@ func (s *Store) update(change func(map[string]Approval) bool) error {
 	}
 	if !change(approvals) {
 		return nil
+	}
+	// Only the current label writes: an approval that holds under a previous label is renewed from its own
+	// state, which consistent has verified.
+	for name, a := range approvals {
+		_, fingerprint, err := encode(s.opts.FingerprintLabel, a.State)
+		if err != nil {
+			return err
+		}
+		if fingerprint != a.Fingerprint {
+			a.Fingerprint = fingerprint
+			approvals[name] = a
+		}
 	}
 	body, err := json.Marshal(approvals)
 	if err != nil {

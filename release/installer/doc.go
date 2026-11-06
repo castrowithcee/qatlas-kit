@@ -3,7 +3,7 @@
 //
 // By default the scripts install without administrator rights: install.sh into ~/.local, install.ps1 into
 // %LOCALAPPDATA%\Programs\<program>. They download the archive of the running platform with checksums.txt
-// and checksums.txt.sig from the release, verify the signature with ssh-keygen against the trusted keys
+// and the signature file from the release, verify the signature with ssh-keygen against the trusted keys
 // embedded at render time, require the archive to be listed exactly once in checksums.txt with a matching
 // SHA-256, and only then extract it next to the target. The program is moved into place last. They
 // install bin/<program> (bin\<program>.exe on Windows), the section 1 manpages under share/man/man1 and
@@ -16,9 +16,9 @@
 // prefix; none of them changes which key is trusted. install.ps1 also reads
 // <PREFIX>_INSTALL_USER_PATH_FILE, a file that stands in for the user PATH in the registry, for tests.
 //
-// The caller supplies the program name, the releases URL, the signature namespace, the trusted Ed25519
-// keys and the built targets. The installers are release assets themselves, so checksums.txt has to list
-// them and its signature covers them.
+// The caller supplies the program name, the releases URL, the signature namespace, the name of the
+// signature file, the trusted Ed25519 keys and the built targets. The installers are release assets
+// themselves, so checksums.txt has to list them and its signature covers them.
 //
 // # System service variant
 //

@@ -32,9 +32,10 @@ import (
 )
 
 const (
-	program   = "sample-tool"
-	namespace = "sample-tool-release"
-	version   = "v1.2.3"
+	program        = "sample-tool"
+	namespace      = "sample-tool-release"
+	signatureAsset = "checksums.txt.example.sig"
+	version        = "v1.2.3"
 	// manpageMode makes the test binary act as the manpage command of the test module.
 	manpageMode = "SAMPLE_MANPAGE_MODE"
 )
@@ -119,6 +120,7 @@ func (m *module) options(t *testing.T) releasebuild.Options {
 		Dir:            m.dir,
 		Program:        program,
 		Namespace:      namespace,
+		SignatureAsset: signatureAsset,
 		AllowedSigners: "allowed-signers",
 		ReleasesURL:    "https://example.invalid/owner/sample-tool/releases",
 		Version:        version,
@@ -307,7 +309,7 @@ func TestBuildWritesVerifiableArchives(t *testing.T) {
 
 // verifySelfupdate prepares each archive through selfupdate from a local stand-in of the release API.
 func verifySelfupdate(t *testing.T, m *module, assets map[string][]byte, signature []byte) {
-	files := map[string][]byte{"checksums.txt.sig": signature}
+	files := map[string][]byte{signatureAsset: signature}
 	maps.Copy(files, assets)
 	names := slices.Sorted(maps.Keys(files))
 	var server *httptest.Server
@@ -352,6 +354,7 @@ func verifySelfupdate(t *testing.T, m *module, assets map[string][]byte, signatu
 			ArchiveName:    func(string) string { return name },
 			UserAgent:      "sample/1",
 			Namespace:      namespace,
+			SignatureAsset: signatureAsset,
 			TrustedKeys:    []ssh.PublicKey{m.signer.PublicKey()},
 			ProgramName:    program,
 			Companions:     companions,
@@ -399,7 +402,7 @@ func runShellInstaller(t *testing.T, assets map[string][]byte, signature []byte)
 		}
 	}
 	server := releasetest.NewServer(t)
-	files := map[string][]byte{"checksums.txt.sig": signature}
+	files := map[string][]byte{signatureAsset: signature}
 	maps.Copy(files, assets)
 	server.Publish(version, files)
 	root := t.TempDir()

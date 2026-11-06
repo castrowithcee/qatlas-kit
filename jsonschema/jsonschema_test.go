@@ -240,12 +240,12 @@ func TestInvalidSchemas(t *testing.T) {
 // so it makes the schema invalid wherever it stands, even below a member the value does not have.
 func TestUnsupportedKeywordsAreRefused(t *testing.T) {
 	for schema, want := range map[string]string{
-		`{"oneOf":[{"required":["a"]},{"required":["b"]}]}`:            "schema at $ uses the unsupported keyword oneOf",
-		`{"properties":{"absent":{"type":"string","format":"email"}}}`: "schema at $.absent uses the unsupported keyword format",
-		`{"properties":{"d":{"items":{"$ref":"#/x"}}}}`:                "schema at $.d[] uses the unsupported keyword $ref",
-		`{"additionalProperties":{"not":{"type":"null"}}}`:             "schema at $.* uses the unsupported keyword not",
-		`{"anyOf":[{"type":"object"},{"const":1}]}`:                    "schema at $ uses the unsupported keyword const",
-		`{"type":"object","exclusiveMinimum":1}`:                       "schema at $ uses the unsupported keyword exclusiveMinimum",
+		`{"oneOf":[{"required":["a"]},{"required":["b"]}]}`:                 "schema at $ uses the unsupported keyword oneOf",
+		`{"properties":{"absent":{"type":"string","contentEncoding":"x"}}}`: "schema at $.absent uses the unsupported keyword contentEncoding",
+		`{"properties":{"d":{"items":{"$ref":"#/x"}}}}`:                     "schema at $.d[] uses the unsupported keyword $ref",
+		`{"additionalProperties":{"not":{"type":"null"}}}`:                  "schema at $.* uses the unsupported keyword not",
+		`{"anyOf":[{"type":"object"},{"const":1}]}`:                         "schema at $ uses the unsupported keyword const",
+		`{"type":"object","exclusiveMinimum":1}`:                            "schema at $ uses the unsupported keyword exclusiveMinimum",
 	} {
 		for _, mode := range []jsonschema.Mode{jsonschema.Strict, jsonschema.Lenient} {
 			err := jsonschema.Validate(json.RawMessage(schema), map[string]any{}, mode)
@@ -260,5 +260,138 @@ func TestUnsupportedKeywordsAreRefused(t *testing.T) {
 		`"examples":["x"],"deprecated":true,"readOnly":true,"writeOnly":false,"x-form":"word","x-note":"n"}}}`
 	if err := jsonschema.ValidateJSON(json.RawMessage(annotated), json.RawMessage(`{"a":"x"}`)); err != nil {
 		t.Errorf("annotations: ValidateJSON() = %v", err)
+	}
+}
+
+func TestPropertyNames(t *testing.T) {
+	schema := `{"type":"object","propertyNames":{"pattern":"^[a-z]+$","maxLength":3,"x-form":"short lowercase"}}`
+	for _, mode := range []jsonschema.Mode{jsonschema.Strict, jsonschema.Lenient} {
+		for raw, want := range map[string]string{
+			`{}`:               "",
+			`{"ab":1,"c":2}`:   "",
+			`{"ab":1,"Bad":2}`: "${Bad} does not have the required form short lowercase",
+			`{"abcd":1}`:       "${abcd} is longer than 3 characters",
+		} {
+			err := jsonschema.Validate(json.RawMessage(schema), decode(t, raw), mode)
+			if (want == "") != (err == nil) || err != nil && err.Error() != want {
+				t.Errorf("%s (mode %d): Validate() = %v, want %q", raw, mode, err, want)
+			}
+		}
+	}
+}
+
+func TestFormats(t *testing.T) {
+	uuid := `{"type":"string","format":"uuid"}`
+	check(t, uuid, []testCase{
+		{"lower", `"123e4567-e89b-12d3-a456-426614174000"`, ""},
+		{"upper", `"123E4567-E89B-12D3-A456-426614174000"`, ""},
+		{"no dashes", `"123e4567e89b12d3a456426614174000"`, "$ is not a valid uuid"},
+		{"braces", `"{123e4567-e89b-12d3-a456-426614174000}"`, "$ is not a valid uuid"},
+		{"non hex", `"123e4567-e89b-12d3-a456-42661417400g"`, "$ is not a valid uuid"},
+		{"trailing newline", `"123e4567-e89b-12d3-a456-426614174000\n"`, "$ is not a valid uuid"},
+	})
+	check(t, `{"format":"uuid"}`, []testCase{{"number ignored", `5`, ""}})
+	dt := `{"format":"date-time"}`
+	check(t, dt, []testCase{
+		{"zulu", `"2024-02-29T10:20:30Z"`, ""},
+		{"lower separators", `"2024-02-29t10:20:30z"`, ""},
+		{"fraction and offset", `"2024-02-29T10:20:30.123+05:30"`, ""},
+		{"date only", `"2024-02-29"`, "$ is not a valid date-time"},
+		{"space", `"2024-02-29 10:20:30Z"`, "$ is not a valid date-time"},
+		{"no zone", `"2024-02-29T10:20:30"`, "$ is not a valid date-time"},
+		{"not leap", `"2023-02-29T10:20:30Z"`, "$ is not a valid date-time"},
+		{"hour 24", `"2024-01-01T24:00:00Z"`, "$ is not a valid date-time"},
+		{"leap second", `"2024-01-01T23:59:60Z"`, "$ is not a valid date-time"},
+		{"offset hour", `"2024-01-01T10:00:00+24:00"`, "$ is not a valid date-time"},
+		{"offset without colon", `"2024-01-01T10:00:00+0100"`, "$ is not a valid date-time"},
+		{"bare fraction", `"2024-01-01T10:00:00.Z"`, "$ is not a valid date-time"},
+	})
+	for _, mode := range []jsonschema.Mode{jsonschema.Strict, jsonschema.Lenient} {
+		if err := jsonschema.Validate(json.RawMessage(uuid), "x", mode); err == nil {
+			t.Errorf("mode %d: bad uuid accepted", mode)
+		}
+	}
+	for schema, want := range map[string]string{
+		`{"format":"email"}`: "schema at $ uses the unsupported format email",
+		`{"format":1}`:       "schema at $ has an invalid format",
+	} {
+		err := jsonschema.CheckSchema(json.RawMessage(schema))
+		if err == nil || err.Error() != want {
+			t.Errorf("%s: CheckSchema() = %v, want %q", schema, err, want)
+		}
+	}
+}
+
+func TestCheckSchema(t *testing.T) {
+	for schema, want := range map[string]string{
+		`{"type":"string"}`:                     "",
+		`[]`:                                    "schema is invalid",
+		`null`:                                  "schema is invalid",
+		`{"type":["string","null"]}`:            "schema at $ has an invalid type",
+		`{"type":"text"}`:                       "schema at $ has an invalid type",
+		`{"pattern":"("}`:                       "schema at $ has an invalid pattern",
+		`{"minItems":-1}`:                       "schema at $ has an invalid minItems",
+		`{"maxLength":1.5}`:                     "schema at $ has an invalid maxLength",
+		`{"minProperties":3,"maxProperties":2}`: "schema at $ has minProperties greater than maxProperties",
+		`{"minLength":3,"maxLength":2}`:         "schema at $ has minLength greater than maxLength",
+		`{"items":[]}`:                          "schema at $ has invalid items",
+		`{"required":[1]}`:                      "schema at $ has invalid required fields",
+		`{"enum":[]}`:                           "schema at $ has an invalid enum",
+		`{"anyOf":[]}`:                          "schema at $ has an invalid anyOf",
+		`{"anyOf":[1]}`:                         "schema at $ has an invalid anyOf",
+		`{"minimum":"1"}`:                       "schema at $ has an invalid minimum",
+		`{"uniqueItems":"yes"}`:                 "schema at $ has an invalid uniqueItems",
+		`{"propertyNames":true}`:                "schema at $ has invalid propertyNames",
+		`{"propertyNames":{"pattern":"("}}`:     "schema at ${} has an invalid pattern",
+		`{"anyOf":[{"type":"null"},{"format":"x"}]}`:         "schema at $ uses the unsupported format x",
+		`{"additionalProperties":{"items":{"pattern":"("}}}`: "schema at $.*[] has an invalid pattern",
+		`{"properties":{"a":{"anyOf":[{"items":[]}]}}}`:      "schema at $.a has invalid items",
+	} {
+		err := jsonschema.CheckSchema(json.RawMessage(schema))
+		if (want == "") != (err == nil) || err != nil && err.Error() != want {
+			t.Errorf("%s: CheckSchema() = %v, want %q", schema, err, want)
+		}
+	}
+
+	for name, message := range map[string]string{
+		"type": "has an invalid type", "enum": "has an invalid enum", "properties": "has invalid properties",
+		"required": "has invalid required fields", "additionalProperties": "has invalid additionalProperties",
+		"minProperties": "has an invalid minProperties", "maxProperties": "has an invalid maxProperties",
+		"minItems": "has an invalid minItems", "maxItems": "has an invalid maxItems",
+		"minLength": "has an invalid minLength", "maxLength": "has an invalid maxLength",
+		"items": "has invalid items", "uniqueItems": "has an invalid uniqueItems", "pattern": "has an invalid pattern",
+		"minimum": "has an invalid minimum", "maximum": "has an invalid maximum", "anyOf": "has an invalid anyOf",
+		"format": "has an invalid format", "propertyNames": "has invalid propertyNames",
+	} {
+		err := jsonschema.CheckSchema(json.RawMessage(`{"` + name + `":null}`))
+		if err == nil || err.Error() != "schema at $ "+message {
+			t.Errorf("%s null: CheckSchema() = %v, want %q", name, err, message)
+		}
+	}
+	if err := jsonschema.CheckSchema(json.RawMessage(`{"default":null,"properties":{"a":{"default":null}}}`)); err != nil {
+		t.Errorf("annotation null: CheckSchema() = %v", err)
+	}
+
+	err := jsonschema.CheckSchema(json.RawMessage(`{"oneOf":[],"properties":{"b":{"type":"x"},"a":{"pattern":"("}},` +
+		`"anyOf":[{"enum":[]}]}`))
+	want := "schema at $ uses the unsupported keyword oneOf\n" +
+		"schema at $.a has an invalid pattern\n" +
+		"schema at $.b has an invalid type\n" +
+		"schema at $ has an invalid enum"
+	if err == nil || err.Error() != want {
+		t.Errorf("CheckSchema() = %v, want %q", err, want)
+	}
+
+	// Validate refuses a malformed part no value reaches.
+	if err := jsonschema.Validate(json.RawMessage(`{"properties":{"absent":{"pattern":"("}}}`), map[string]any{}, jsonschema.Lenient); err == nil {
+		t.Error("Validate accepted an unreached malformed pattern")
+	}
+}
+
+func TestPropertyNamesNestedPath(t *testing.T) {
+	schema := `{"properties":{"labels":{"propertyNames":{"maxLength":2}}}}`
+	err := jsonschema.ValidateJSON(json.RawMessage(schema), json.RawMessage(`{"labels":{"abc":1}}`))
+	if want := "$.labels{abc} is longer than 2 characters"; err == nil || err.Error() != want {
+		t.Errorf("ValidateJSON() = %v, want %q", err, want)
 	}
 }

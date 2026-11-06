@@ -529,3 +529,192 @@ func TestDiff(t *testing.T) {
 		}
 	}
 }
+
+const (
+	previousFingerprintLabel = "example fingerprint v0\x00"
+	previousMACLabel         = "example approvals v0"
+)
+
+func storeWith(t *testing.T, v *vault.Vault, mutate func(*Options)) *Store {
+	t.Helper()
+	opts := Options{Vault: v, File: testFile, FingerprintLabel: testFingerprintLabel, MACLabel: testMACLabel,
+		LockName: "approvals.lock"}
+	mutate(&opts)
+	s, err := New(opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return s
+}
+
+func withPrevious(o *Options) {
+	o.PreviousFingerprintLabels = []string{previousFingerprintLabel}
+	o.PreviousMACLabels = []string{previousMACLabel}
+}
+
+func labelFingerprint(t *testing.T, label string, state any) string {
+	t.Helper()
+	fp, err := Fingerprint(label, state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return fp
+}
+
+// legacyBody is an approvals body for state under label with the given fingerprint label.
+func legacyBody(t *testing.T, label string, state any, name string) string {
+	t.Helper()
+	data, err := json.Marshal(state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return fmt.Sprintf(`{%q:{"fingerprint":%q,"state":%s,"approved":"2030-01-02T03:04:05Z"}}`, name,
+		labelFingerprint(t, label, state), data)
+}
+
+func TestPreviousFingerprintLabelHoldsAndIsRenewedOnWrite(t *testing.T) {
+	v, _ := encryptedVault(t)
+	body := legacyBody(t, previousFingerprintLabel, exampleState, "old")
+	writeFile(t, v, signed(t, v, testMACLabel, fileSchema, body))
+	s := storeWith(t, v, withPrevious)
+	if err := s.Check("old", exampleState); err != nil {
+		t.Fatalf("Check() under a previous label error = %v", err)
+	}
+	if dev, err := s.Compare("old", exampleState); err != nil || dev != nil {
+		t.Fatalf("Compare() = %v, %v, want nil, nil", dev, err)
+	}
+	changed := exampleState
+	changed.Endpoint = "https://other.example.test"
+	if err := s.Check("old", changed); !errors.Is(err, ErrDeviates) {
+		t.Fatalf("Check() of a changed state error = %v, want ErrDeviates", err)
+	}
+	// Without the option the approval does not hold.
+	if err := newStore(t, v).Check("old", exampleState); !errors.Is(err, vault.ErrDamaged) {
+		t.Fatalf("Check() without previous labels error = %v, want ErrDamaged", err)
+	}
+	// Nothing was written yet.
+	if got, _ := s.Approvals(); got["old"].Fingerprint != labelFingerprint(t, previousFingerprintLabel, exampleState) {
+		t.Fatal("reading rewrote the approvals")
+	}
+	a := admin(t, v)
+	approve(t, s, a, "new", testState{Endpoint: "https://new.example.test", Secret: "id-2"})
+	got, err := s.Approvals()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := fingerprint(t, exampleState); got["old"].Fingerprint != want {
+		t.Fatalf("stored fingerprint = %q, want %q", got["old"].Fingerprint, want)
+	}
+	// The renewed file holds without the previous labels.
+	plain := newStore(t, v)
+	if err := plain.Check("old", exampleState); err != nil {
+		t.Fatalf("Check() after renewal without previous labels error = %v", err)
+	}
+}
+
+func TestPreviousFingerprintLabelRenewedByRevoke(t *testing.T) {
+	v, _ := encryptedVault(t)
+	body := legacyBody(t, previousFingerprintLabel, exampleState, "old")
+	body = body[:len(body)-1] + "," + legacyBody(t, previousFingerprintLabel, exampleState, "gone")[1:]
+	writeFile(t, v, signed(t, v, testMACLabel, fileSchema, body))
+	s := storeWith(t, v, withPrevious)
+	if n, err := s.Revoke(admin(t, v), "gone"); err != nil || n != 1 {
+		t.Fatalf("Revoke() = %d, %v", n, err)
+	}
+	if err := newStore(t, v).Check("old", exampleState); err != nil {
+		t.Fatalf("Check() after Revoke error = %v", err)
+	}
+}
+
+func TestUnknownFingerprintLabelDoesNotHold(t *testing.T) {
+	v, _ := encryptedVault(t)
+	body := legacyBody(t, "example fingerprint unknown\x00", exampleState, "old")
+	writeFile(t, v, signed(t, v, testMACLabel, fileSchema, body))
+	s := storeWith(t, v, withPrevious)
+	if err := s.Check("old", exampleState); !errors.Is(err, vault.ErrDamaged) {
+		t.Fatalf("Check() under an unknown label error = %v, want ErrDamaged", err)
+	}
+}
+
+func TestPreviousLabelCannotVouchForAnotherState(t *testing.T) {
+	v, _ := encryptedVault(t)
+	other := testState{Endpoint: "https://evil.example.test", Secret: "id-9"}
+	// The fingerprint fits the current state under the previous label, the stored state is another.
+	data, err := json.Marshal(other)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := fmt.Sprintf(`{"old":{"fingerprint":%q,"state":%s,"approved":"2030-01-02T03:04:05Z"}}`,
+		labelFingerprint(t, previousFingerprintLabel, exampleState), data)
+	writeFile(t, v, signed(t, v, testMACLabel, fileSchema, body))
+	s := storeWith(t, v, withPrevious)
+	if err := s.Check("old", exampleState); !errors.Is(err, vault.ErrDamaged) {
+		t.Fatalf("Check() of a forged approval error = %v, want ErrDamaged", err)
+	}
+	if _, err := s.Approvals(); !errors.Is(err, vault.ErrDamaged) {
+		t.Fatalf("Approvals() of a forged approval error = %v, want ErrDamaged", err)
+	}
+	forged := map[string]Approval{"old": {Fingerprint: labelFingerprint(t, previousFingerprintLabel, exampleState),
+		State: data, Approved: time.Now()}}
+	if err := s.Adopt(admin(t, v), forged); !errors.Is(err, vault.ErrDamaged) {
+		t.Fatalf("Adopt() of a forged approval error = %v, want ErrDamaged", err)
+	}
+}
+
+func TestAdoptTakesPreviousLabelAndRenews(t *testing.T) {
+	v, _ := encryptedVault(t)
+	s := storeWith(t, v, withPrevious)
+	data, _ := json.Marshal(exampleState)
+	err := s.Adopt(admin(t, v), map[string]Approval{"old": {
+		Fingerprint: labelFingerprint(t, previousFingerprintLabel, exampleState), State: data, Approved: time.Now()}})
+	if err != nil {
+		t.Fatalf("Adopt() error = %v", err)
+	}
+	if err := newStore(t, v).Check("old", exampleState); err != nil {
+		t.Fatalf("Check() after Adopt without previous labels error = %v", err)
+	}
+}
+
+func TestPreviousMACLabel(t *testing.T) {
+	v, _ := encryptedVault(t)
+	body := legacyBody(t, testFingerprintLabel, exampleState, "old")
+	s := storeWith(t, v, withPrevious)
+
+	writeFile(t, v, signed(t, v, previousMACLabel, fileSchema, body))
+	if err := s.Check("old", exampleState); err != nil {
+		t.Fatalf("Check() under a previous check value label error = %v", err)
+	}
+	if err := newStore(t, v).Check("old", exampleState); !errors.Is(err, vault.ErrMACMismatch) {
+		t.Fatalf("Check() without previous labels error = %v, want ErrMACMismatch", err)
+	}
+
+	writeFile(t, v, signed(t, v, "example approvals foreign", fileSchema, body))
+	if err := s.Check("old", exampleState); !errors.Is(err, vault.ErrMACMismatch) {
+		t.Fatalf("Check() under a foreign label error = %v, want ErrMACMismatch", err)
+	}
+
+	writeFile(t, v, signed(t, v, previousMACLabel, fileSchema, body))
+	approve(t, s, admin(t, v), "new", testState{Endpoint: "https://new.example.test", Secret: "id-2"})
+	if err := newStore(t, v).Check("old", exampleState); err != nil {
+		t.Fatalf("Check() after the write, under the current label only, error = %v", err)
+	}
+}
+
+func TestNewRefusesBadPreviousLabels(t *testing.T) {
+	v, _ := encryptedVault(t)
+	for name, change := range map[string]func(*Options){
+		"empty fingerprint":    func(o *Options) { o.PreviousFingerprintLabels = []string{""} },
+		"current fingerprint":  func(o *Options) { o.PreviousFingerprintLabels = []string{testFingerprintLabel} },
+		"repeated fingerprint": func(o *Options) { o.PreviousFingerprintLabels = []string{"a", "a"} },
+		"empty check value":    func(o *Options) { o.PreviousMACLabels = []string{""} },
+		"current check value":  func(o *Options) { o.PreviousMACLabels = []string{testMACLabel} },
+		"repeated check value": func(o *Options) { o.PreviousMACLabels = []string{"a", "a"} },
+	} {
+		opts := Options{Vault: v, File: testFile, FingerprintLabel: testFingerprintLabel, MACLabel: testMACLabel,
+			LockName: "approvals.lock"}
+		change(&opts)
+		if _, err := New(opts); err == nil {
+			t.Fatalf("New() with %s previous label succeeded", name)
+		}
+	}
+}

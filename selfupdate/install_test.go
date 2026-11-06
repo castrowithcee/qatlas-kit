@@ -24,7 +24,10 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
-const testNamespace = "sample-release"
+const (
+	testNamespace      = "sample-release"
+	testSignatureAsset = "checksums.txt.example.sig"
+)
 
 // programFile is the file name InstallPrepared expects for the configured program on this platform.
 func programFile(name string) string {
@@ -100,7 +103,7 @@ func (s *releaseAPI) serve(w http.ResponseWriter, r *http.Request) {
 
 func (s *releaseAPI) client(signer ssh.Signer, executable string) *Client {
 	return &Client{RepositoryAPI: s.base, CurrentVersion: "v1.0.0", MinimumVersion: "v1.0.0", ArchiveName: tarName,
-		UserAgent: "sample/1", HTTPClient: s.Client(), Namespace: testNamespace, TrustedKeys: []ssh.PublicKey{signer.PublicKey()},
+		UserAgent: "sample/1", HTTPClient: s.Client(), Namespace: testNamespace, SignatureAsset: testSignatureAsset, TrustedKeys: []ssh.PublicKey{signer.PublicKey()},
 		ProgramName: "sample", Executable: executable}
 }
 
@@ -213,7 +216,7 @@ func TestUpdateInstallsReleaseBuiltFromDirectory(t *testing.T) {
 	signer := releasetest.NewSigner(t)
 	api := newReleaseAPI(t)
 	archive := cliArchive(t, "new program", "new manpage")
-	api.publish("v1.1.0", releasetest.Release(t, signer, testNamespace, map[string][]byte{tarName("v1.1.0"): archive}))
+	api.publish("v1.1.0", releasetest.Release(t, signer, testNamespace, testSignatureAsset, map[string][]byte{tarName("v1.1.0"): archive}))
 	prefix, executable := installation(t)
 	manpage := filepath.Join(prefix, "share", "man", "man1", "sample.1")
 	c := api.client(signer, executable)
@@ -277,7 +280,7 @@ func TestUpdateFromZipArchiveLeavesUnchangedCompanion(t *testing.T) {
 	archive := releasetest.Archive(t, name("v1.2.0"),
 		releasetest.File{Name: "bin/sample.exe", Body: []byte("new program")},
 		releasetest.File{Name: "share/doc/sample/LICENSE", Body: []byte("license")})
-	api.publish("v1.2.0", releasetest.Release(t, signer, testNamespace, map[string][]byte{name("v1.2.0"): archive}))
+	api.publish("v1.2.0", releasetest.Release(t, signer, testNamespace, testSignatureAsset, map[string][]byte{name("v1.2.0"): archive}))
 	prefix, executable := installation(t)
 	license := filepath.Join(prefix, "LICENSE")
 	writeFile(t, license, "license")
@@ -308,7 +311,7 @@ func TestPrepareRejectsUnverifiedRelease(t *testing.T) {
 	archive := cliArchive(t, "new program", "new manpage")
 	checksums := releasetest.Checksums(map[string][]byte{name: archive})
 	signed := func(s ssh.Signer, namespace, hash string, sums []byte, body []byte) map[string][]byte {
-		return map[string][]byte{name: body, checksumsAsset: sums, signatureAsset: releasetest.Sign(t, s, namespace, hash, sums)}
+		return map[string][]byte{name: body, checksumsAsset: sums, testSignatureAsset: releasetest.Sign(t, s, namespace, hash, sums)}
 	}
 	cases := []struct {
 		name   string
@@ -325,13 +328,13 @@ func TestPrepareRejectsUnverifiedRelease(t *testing.T) {
 		{"corrupt archive", signed(signer, testNamespace, "sha512", checksums, []byte("corrupt"))},
 		{"archive not listed", signed(signer, testNamespace, "sha512", releasetest.Checksums(map[string][]byte{"other.tar.gz": archive}), archive)},
 		{"duplicate checksum", signed(signer, testNamespace, "sha512", append(bytes.Clone(checksums), checksums...), archive)},
-		{"unsafe entry", releasetest.Release(t, signer, testNamespace, map[string][]byte{name: directoryArchive(t,
+		{"unsafe entry", releasetest.Release(t, signer, testNamespace, testSignatureAsset, map[string][]byte{name: directoryArchive(t,
 			tarEntry{name: "./bin/sample", body: "new program"}, tarEntry{name: "./share/man/man1/sample.1", body: "man"},
 			tarEntry{name: "../escape", body: "x"})})},
-		{"duplicate program", releasetest.Release(t, signer, testNamespace, map[string][]byte{name: directoryArchive(t,
+		{"duplicate program", releasetest.Release(t, signer, testNamespace, testSignatureAsset, map[string][]byte{name: directoryArchive(t,
 			tarEntry{name: "./bin/sample", body: "new program"}, tarEntry{name: "bin/sample", body: "other program"},
 			tarEntry{name: "./share/man/man1/sample.1", body: "man"})})},
-		{"missing manpage", releasetest.Release(t, signer, testNamespace, map[string][]byte{name: directoryArchive(t,
+		{"missing manpage", releasetest.Release(t, signer, testNamespace, testSignatureAsset, map[string][]byte{name: directoryArchive(t,
 			tarEntry{name: "./bin/sample", body: "new program"})})},
 	}
 	for _, tc := range cases {
@@ -360,10 +363,10 @@ func TestPrepareRejectsUnverifiedRelease(t *testing.T) {
 func TestPrepareRefusesIneligibleTargets(t *testing.T) {
 	signer := releasetest.NewSigner(t)
 	api := newReleaseAPI(t)
-	assets := releasetest.Release(t, signer, testNamespace, map[string][]byte{tarName("v1.0.0"): cliArchive(t, "same", "man")})
+	assets := releasetest.Release(t, signer, testNamespace, testSignatureAsset, map[string][]byte{tarName("v1.0.0"): cliArchive(t, "same", "man")})
 	api.publish("v1.0.0", assets)
 	unsigned := maps.Clone(assets)
-	delete(unsigned, signatureAsset)
+	delete(unsigned, testSignatureAsset)
 	api.publish("v1.1.0", unsigned)
 	_, executable := installation(t)
 	c := api.client(signer, executable)
@@ -443,7 +446,7 @@ func prepared(t *testing.T, c *Client, version string, program string, companion
 
 func offlineClient(t *testing.T, executable string, companions ...Companion) *Client {
 	return &Client{RepositoryAPI: "https://api.github.com/repos/example/sample", CurrentVersion: "v2.0.0", MinimumVersion: "v1.0.0",
-		ArchiveName: tarName, UserAgent: "sample/1", Namespace: testNamespace, TrustedKeys: []ssh.PublicKey{releasetest.NewSigner(t).PublicKey()},
+		ArchiveName: tarName, UserAgent: "sample/1", Namespace: testNamespace, SignatureAsset: testSignatureAsset, TrustedKeys: []ssh.PublicKey{releasetest.NewSigner(t).PublicKey()},
 		ProgramName: "sample", Executable: executable, Companions: companions}
 }
 
@@ -616,7 +619,7 @@ func TestCompanionEntriesMustBeCanonicalAndUnique(t *testing.T) {
 func TestPreparedArtifactBoundToTrustPolicy(t *testing.T) {
 	signerA, signerB := releasetest.NewSigner(t), releasetest.NewSigner(t)
 	api := newReleaseAPI(t)
-	api.publish("v1.1.0", releasetest.Release(t, signerA, testNamespace, map[string][]byte{tarName("v1.1.0"): cliArchive(t, "new program", "new man")}))
+	api.publish("v1.1.0", releasetest.Release(t, signerA, testNamespace, testSignatureAsset, map[string][]byte{tarName("v1.1.0"): cliArchive(t, "new program", "new man")}))
 	prefix, executable := installation(t)
 	a := api.client(signerA, executable)
 	a.Companions = []Companion{{"share/man/man1/sample.1", filepath.Join(prefix, "sample.1")}}

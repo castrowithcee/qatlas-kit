@@ -2,6 +2,7 @@
 // see the releasebuild package for the archive layout and the checks.
 //
 //	releasebuild -config release.json -program tool -namespace tool-release \
+//		-signature-asset checksums.txt.example.sig \
 //		-allowed-signers .github/release-allowed-signers \
 //		-releases-url https://github.com/owner/tool/releases -version v1.2.3 -out dist
 //

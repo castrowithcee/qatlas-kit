@@ -24,6 +24,7 @@ function Install-{{.Env}} {
     $display = {{ps .DisplayName}}
     $repoUrl = {{ps .ReleasesURL}}
     $namespace = {{ps .Namespace}}
+    $signature = {{ps .SignatureAsset}}
     $signers = {{ps .Signers}}
     $archs = @({{range $i, $a := .Windows}}{{if $i}}, {{end}}{{ps $a}}{{end}})
     $nextStep = {{ps .NextStep}}
@@ -82,7 +83,7 @@ function Install-{{.Env}} {
         [void](New-Item -ItemType Directory -Path $tmp)
 
         Write-Host "Downloading $display $version for windows/$arch"
-        foreach ($name in @($archive, 'checksums.txt', 'checksums.txt.sig')) {
+        foreach ($name in @($archive, 'checksums.txt', $signature)) {
             try {
                 Invoke-WebRequest -UseBasicParsing -Uri "$base/download/$version/$name" -OutFile (Join-Path $tmp $name)
             } catch {
@@ -92,7 +93,7 @@ function Install-{{.Env}} {
 
         $signersFile = Join-Path $tmp 'allowed-signers'
         [IO.File]::WriteAllText($signersFile, $signers + "`n", (New-Object Text.UTF8Encoding($false)))
-        $verifyArgs = '-Y verify -f "{0}" -I {1} -n {1} -s "{2}"' -f $signersFile, $namespace, (Join-Path $tmp 'checksums.txt.sig')
+        $verifyArgs = '-Y verify -f "{0}" -I {1} -n {1} -s "{2}"' -f $signersFile, $namespace, (Join-Path $tmp $signature)
         $verify = Start-Process -FilePath $sshKeygen.Source -ArgumentList $verifyArgs -NoNewWindow -Wait -PassThru `
             -RedirectStandardInput (Join-Path $tmp 'checksums.txt') `
             -RedirectStandardOutput (Join-Path $tmp 'verify.out') -RedirectStandardError (Join-Path $tmp 'verify.err')
