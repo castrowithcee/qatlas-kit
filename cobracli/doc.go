@@ -21,10 +21,14 @@
 // together with everything New refuses, and leaves the tree unchanged. Neither registers a flag or installs
 // a hook. A subcommand named "help" is a violation, because the help command takes that name.
 //
-// AddFields registers --fields, whose selection output.Project checks centrally. AddGate registers --yes
-// for a command that asks and --confirm for one that changes data; Gate.Run passes both to
-// cli.ConfirmAction, so a request that changes data needs --confirm in addition to the answer to its
-// question, and in agent mode a question needs --yes.
+// AddFields registers --fields, whose selection output.Project checks centrally. Fields.Names returns the
+// selection (nil without the flag, the single empty name for an explicitly empty one). Fields.ProjectJSON
+// applies the same check to a JSON array of objects that an application has unwrapped from its own envelope:
+// it validates the names against the fields the command declares, keeps the selected members of each entry in
+// selection order as raw JSON, and returns the list unchanged without --fields. AddGate registers --yes for a
+// command that asks and --confirm for one that changes data; Gate.Run passes both to cli.ConfirmAction, so a
+// request that changes data needs --confirm in addition to the answer to its question, and in agent mode a
+// question needs --yes.
 //
 // Manpage generates the pages of the same tree through the application's generator and adds the help
 // topics, so help command and manpage show one text.
