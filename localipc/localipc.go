@@ -35,6 +35,10 @@ var ErrRefused = errors.New("local channel refused")
 // selected CrossVersion.
 var ErrProgramReplaced = errors.New("this program was removed or replaced since it started")
 
+// ErrNotServed means that no process of this user serves the endpoint's
+// channel in a way Holder accepts.
+var ErrNotServed = errors.New("local channel is not served")
+
 // ErrNoChallenge means CheckHardened was chosen without a Challenge.
 var ErrNoChallenge = errors.New("a hardened server check needs a challenge")
 
@@ -140,6 +144,20 @@ func (e Endpoint) Path() (string, error) { return endpointPath(e) }
 // proven alive, and a crashed Unix process leaves its name until a Listen of
 // the same name takes it over. Dial checks.
 func (e Endpoint) Running() ([]string, error) { return running(e) }
+
+// Holder returns the process id of the process of this user that serves the
+// endpoint's channel, such as an earlier endpoint's; see the package
+// documentation. It validates the fields as Path does and connects without
+// sending or reading anything, so the process may see a connection it
+// refuses. It fails with ErrNotServed when nothing serves the channel and with
+// ErrRefused when the channel or its process fails a check or is this process.
+func (e Endpoint) Holder(ctx context.Context) (int, error) { return holder(ctx, e) }
+
+// EndHolder checks as Holder does, checks again just before the signal, and
+// asks the verified process to end: SIGTERM on Unix, TerminateProcess with
+// exit code 1 on Windows. It returns the process id it signalled and does not
+// wait for the end.
+func (e Endpoint) EndHolder(ctx context.Context) (int, error) { return endHolder(ctx, e) }
 
 // Listen owns one endpoint until the returned listener is closed. Accept checks
 // the user and program of every peer and closes rejected connections.

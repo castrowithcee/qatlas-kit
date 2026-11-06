@@ -50,8 +50,10 @@
 // shorter maximum, so a handover never extends an unlock. Where the application changed its endpoint, a
 // successor takes the vault over from a process that serves the earlier one and runs its own handover
 // (RunOptions.Earlier, with the checks and limits of localipc.ListenOptions.Earlier); it serves nothing
-// before that process handed over. Every failure locks, and so do a rollback, a user's setting that asks
-// for it, a process without HandoverConfig, and Windows, which has no handover.
+// before that process handed over. After an install without a handover, the application can find and end
+// a process that still serves the earlier endpoint with localipc's Endpoint.Holder and EndHolder. Every
+// failure locks, and so do a rollback, a user's setting that asks for it, a process without
+// HandoverConfig, and Windows, which has no handover.
 //
 // # Boundary
 //
