@@ -18,7 +18,10 @@ import (
 	"golang.org/x/crypto/ssh"
 )
 
-const testNamespace = "sample-release"
+const (
+	testNamespace      = "sample-release"
+	testSignatureAsset = "checksums.txt.example.sig"
+)
 
 // sigParts are the fields of an SSH signature; the signature itself is always valid over them, so a
 // rejection can only come from a parameter check.
@@ -164,8 +167,8 @@ func TestVerifyArchive(t *testing.T) {
 	keys := []ssh.PublicKey{signer.PublicKey()}
 	name := "sample_v1_linux_amd64.tar.gz"
 	archive := []byte("example archive")
-	assets := releasetest.Release(t, signer, testNamespace, map[string][]byte{name: archive})
-	checksums, signature := assets["checksums.txt"], assets["checksums.txt.sig"]
+	assets := releasetest.Release(t, signer, testNamespace, testSignatureAsset, map[string][]byte{name: archive})
+	checksums, signature := assets["checksums.txt"], assets[testSignatureAsset]
 	if err := VerifyArchive(checksums, signature, archive, testNamespace, name, keys); err != nil {
 		t.Fatal(err)
 	}

@@ -1,7 +1,8 @@
 // Package releasebuild builds the assets of a signed release reproducibly: one archive per target,
 // install.sh and install.ps1, and checksums.txt over all of them. Signing checksums.txt is left to a
 // separate step that sees nothing else, such as the reusable workflow .github/workflows/release.yml of
-// this module.
+// this module. The application names the release file of that signature in Options.SignatureAsset; the
+// installers download it, and it must not collide with an asset of the build.
 //
 // # Archives
 //
@@ -49,6 +50,7 @@
 //	    with:
 //	      program: tool
 //	      namespace: tool-release
+//	      signature-asset: checksums.txt.example.sig
 //	    secrets:
 //	      RELEASE_SIGNING_KEY: ${{ secrets.RELEASE_SIGNING_KEY }}
 //
@@ -56,8 +58,9 @@
 // the kit version that the application's go.mod requires. The sign job runs in the protected environment
 // named by the input environment (default release), checks out nothing, receives only checksums.txt and
 // the allowed signers file, signs with the private key from the secret RELEASE_SIGNING_KEY of the calling
-// repository (passed by the caller or set in that environment), and verifies the signature. The publish
-// job creates the GitHub release; a tag with a pre-release suffix becomes a pre-release. The inputs config
+// repository (passed by the caller or set in that environment), verifies the signature and uploads it as
+// the release file named by the input signature-asset. The publish job creates the GitHub release; a tag
+// with a pre-release suffix becomes a pre-release. The inputs config
 // (default release.json) and allowed-signers (default .github/release-allowed-signers) name the files in
 // the application repository.
 package releasebuild

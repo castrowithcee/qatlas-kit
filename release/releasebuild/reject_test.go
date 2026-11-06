@@ -33,6 +33,24 @@ func TestBuildRejectsInvalidInputWithoutOutput(t *testing.T) {
 		"source date before 1980": func(t *testing.T, m *module, c *releasebuild.Config, o *releasebuild.Options) {
 			o.SourceDate = sourceDate.AddDate(-50, 0, 0)
 		},
+		"no signature asset": func(t *testing.T, m *module, c *releasebuild.Config, o *releasebuild.Options) {
+			o.SignatureAsset = ""
+		},
+		"signature asset with slash": func(t *testing.T, m *module, c *releasebuild.Config, o *releasebuild.Options) {
+			o.SignatureAsset = "a/b.sig"
+		},
+		"signature asset with backslash": func(t *testing.T, m *module, c *releasebuild.Config, o *releasebuild.Options) {
+			o.SignatureAsset = `a\b.sig`
+		},
+		"signature asset is checksums.txt": func(t *testing.T, m *module, c *releasebuild.Config, o *releasebuild.Options) {
+			o.SignatureAsset = "checksums.txt"
+		},
+		"signature asset is an installer": func(t *testing.T, m *module, c *releasebuild.Config, o *releasebuild.Options) {
+			o.SignatureAsset = "install.sh"
+		},
+		"signature asset is an archive": func(t *testing.T, m *module, c *releasebuild.Config, o *releasebuild.Options) {
+			o.SignatureAsset = releasebuild.ArchiveName(program, version, "linux", "amd64")
+		},
 		"no output": func(t *testing.T, m *module, c *releasebuild.Config, o *releasebuild.Options) { o.Output = "" },
 		"package outside module": func(t *testing.T, m *module, c *releasebuild.Config, o *releasebuild.Options) {
 			c.Package = "./../other"

@@ -13,6 +13,10 @@ on:
         description: SSH signature namespace, <program>-release.
         type: string
         required: true
+      signature-asset:
+        description: Release file of the signature over checksums.txt.
+        type: string
+        required: true
       config:
         description: Release configuration file of the application.
         type: string
@@ -42,12 +46,15 @@ jobs:
         env:
           PROGRAM: ${{ inputs.program }}
           NAMESPACE: ${{ inputs.namespace }}
+          SIGNATURE_ASSET: ${{ inputs.signature-asset }}
           ENVIRONMENT: ${{ inputs.environment }}
         run: |
           set -euo pipefail
           [ "$GITHUB_REF_TYPE" = tag ] || { echo "a release runs on a tag, not on $GITHUB_REF_TYPE $GITHUB_REF_NAME"; exit 1; }
           printf '%s\n' "$PROGRAM" | grep -Eqx '[a-z][a-z0-9-]{0,63}' || { echo "invalid program name"; exit 1; }
           [ "$NAMESPACE" = "$PROGRAM-release" ] || { echo "namespace must be $PROGRAM-release"; exit 1; }
+          printf '%s\n' "$SIGNATURE_ASSET" | grep -Eqx '[A-Za-z0-9][A-Za-z0-9._-]{0,127}' || { echo "invalid signature asset name"; exit 1; }
+          case "$SIGNATURE_ASSET" in checksums.txt|allowed-signers|install.sh|install.ps1) echo "signature asset name is reserved"; exit 1 ;; esac
           [ -n "$ENVIRONMENT" ] || { echo "the signing job needs a protected environment"; exit 1; }
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -71,6 +78,7 @@ jobs:
         env:
           PROGRAM: ${{ inputs.program }}
           NAMESPACE: ${{ inputs.namespace }}
+          SIGNATURE_ASSET: ${{ inputs.signature-asset }}
           CONFIG: ${{ inputs.config }}
           ALLOWED_SIGNERS: ${{ inputs.allowed-signers }}
         run: |
@@ -78,7 +86,7 @@ jobs:
           SOURCE_DATE_EPOCH=$(git show -s --format=%ct "refs/tags/$GITHUB_REF_NAME^{commit}")
           export SOURCE_DATE_EPOCH
           go run github.com/castrowithcee/qatlas-kit/cmd/releasebuild \
-            -config "$CONFIG" -program "$PROGRAM" -namespace "$NAMESPACE" -allowed-signers "$ALLOWED_SIGNERS" \
+            -config "$CONFIG" -program "$PROGRAM" -namespace "$NAMESPACE" -signature-asset "$SIGNATURE_ASSET" -allowed-signers "$ALLOWED_SIGNERS" \
             -releases-url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases" -version "$GITHUB_REF_NAME" -out dist
       - name: Collect signing input
         env:
@@ -114,10 +122,14 @@ jobs:
       - name: Sign checksums.txt
         env:
           NAMESPACE: ${{ inputs.namespace }}
+          SIGNATURE_ASSET: ${{ inputs.signature-asset }}
           RELEASE_SIGNING_KEY: ${{ secrets.RELEASE_SIGNING_KEY }}
         run: |
           set -euo pipefail
           [ -n "$RELEASE_SIGNING_KEY" ] || { echo "the secret RELEASE_SIGNING_KEY is not set"; exit 1; }
+          # The name comes from the workflow input, never from the build job.
+          printf '%s\n' "$SIGNATURE_ASSET" | grep -Eqx '[A-Za-z0-9][A-Za-z0-9._-]{0,127}' || { echo "invalid signature asset name"; exit 1; }
+          case "$SIGNATURE_ASSET" in checksums.txt|allowed-signers|install.sh|install.ps1) echo "signature asset name is reserved"; exit 1 ;; esac
           cd signing-input
           [ -s checksums.txt ] || { echo "checksums.txt is empty"; exit 1; }
           if grep -Evqx '[0-9a-f]{64}  [A-Za-z0-9._-]+' checksums.txt; then
@@ -132,12 +144,15 @@ jobs:
           trap 'rm -f "$key"' EXIT
           (umask 077 && printf '%s\n' "$RELEASE_SIGNING_KEY" > "$key")
           ssh-keygen -Y sign -f "$key" -n "$NAMESPACE" checksums.txt
+          if [ "$SIGNATURE_ASSET" != checksums.txt.sig ]; then
+            mv checksums.txt.sig "$SIGNATURE_ASSET"
+          fi
           ssh-keygen -Y verify -f allowed-signers -I "$NAMESPACE" -n "$NAMESPACE" \
-            -s checksums.txt.sig < checksums.txt
+            -s "$SIGNATURE_ASSET" < checksums.txt
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: release-signature
-          path: signing-input/checksums.txt.sig
+          path: signing-input/${{ inputs.signature-asset }}
           if-no-files-found: error
 
   publish:

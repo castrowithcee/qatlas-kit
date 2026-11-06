@@ -21,7 +21,6 @@ const (
 	maxPages         = 20
 	maxMetadataBytes = 1 << 20
 	checksumsAsset   = "checksums.txt"
-	signatureAsset   = "checksums.txt.sig"
 )
 
 // ErrDevelopmentBuild reports a running build without a release version.
@@ -84,10 +83,14 @@ type Client struct {
 	UserAgent      string
 	HTTPClient     *http.Client
 	// Token, when set, is sent as a bearer token to the host of RepositoryAPI and to no other host.
-	Token       string
-	Namespace   string
-	TrustedKeys []ssh.PublicKey
-	ProgramName string
+	Token     string
+	Namespace string
+	// SignatureAsset is the name of the release asset that holds the SSH signature over checksums.txt,
+	// verified under Namespace. It is required and has no default: a plain file name that is neither
+	// checksums.txt nor the archive name.
+	SignatureAsset string
+	TrustedKeys    []ssh.PublicKey
+	ProgramName    string
 	// Companions are installed together with the program and restored if the program cannot be replaced.
 	Companions []Companion
 	Executable string
@@ -166,6 +169,9 @@ func (c *Client) validate() (policy, error) {
 	if c == nil || c.ArchiveName == nil || c.UserAgent == "" || strings.ContainsAny(c.UserAgent, "\r\n") {
 		return policy{}, errors.New("archive name and user agent are required")
 	}
+	if !validAssetName(c.SignatureAsset) || c.SignatureAsset == checksumsAsset {
+		return policy{}, errors.New("a valid signature asset name is required")
+	}
 	if strings.ContainsAny(c.Token, "\r\n") {
 		return policy{}, errors.New("invalid token")
 	}
@@ -190,6 +196,19 @@ func (c *Client) validate() (policy, error) {
 		return policy{}, errors.New("minimum version must be a stable release version")
 	}
 	return policy{base, current, minimum}, nil
+}
+
+// validAssetName reports whether name is a plain release file name without separators or control bytes.
+func validAssetName(name string) bool {
+	if name == "" || name == "." || name == ".." || strings.ContainsAny(name, "/\\") {
+		return false
+	}
+	for _, r := range name {
+		if r <= ' ' || r == 0x7f {
+			return false
+		}
+	}
+	return true
 }
 
 // Check reports the newest eligible stable release without downloading artifacts.
@@ -323,7 +342,7 @@ func (c *Client) eligible(r githubRelease, p policy) (semver, bool) {
 	if err != nil || r.Draft || r.Prerelease != (len(v.pre) > 0) || v.compare(p.minimum) < 0 {
 		return semver{}, false
 	}
-	names := []string{c.ArchiveName(r.TagName), checksumsAsset, signatureAsset}
+	names := []string{c.ArchiveName(r.TagName), checksumsAsset, c.SignatureAsset}
 	if names[0] == "" || names[0] == names[1] || names[0] == names[2] || strings.ContainsAny(names[0], "/\\") {
 		return semver{}, false
 	}

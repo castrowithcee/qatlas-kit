@@ -88,6 +88,7 @@ var (
 	programPattern     = regexp.MustCompile(`^[a-z][a-z0-9-]{0,63}$`)
 	variablePattern    = regexp.MustCompile(`^[A-Za-z0-9_.~/-]+\.[A-Za-z_][A-Za-z0-9_]*$`)
 	archivePathPattern = regexp.MustCompile(`^[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)*$`)
+	assetPattern       = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`)
 	manpagePattern     = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*\.1$`)
 )
 

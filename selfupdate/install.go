@@ -212,7 +212,7 @@ func restoreCompanions(plans []companionPlan, replaced []int, cause error) error
 func writeReleaseFiles(dir string, p *Prepared) (ReleaseFiles, error) {
 	files := ReleaseFiles{
 		Checksums:   filepath.Join(dir, checksumsAsset),
-		Signature:   filepath.Join(dir, signatureAsset),
+		Signature:   filepath.Join(dir, p.trust.signature),
 		Archive:     filepath.Join(dir, p.archiveName),
 		ArchiveName: p.archiveName,
 	}

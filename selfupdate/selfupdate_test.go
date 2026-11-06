@@ -13,7 +13,7 @@ import (
 
 func testRelease(base, tag string, signed bool) githubRelease {
 	r := githubRelease{TagName: tag, Prerelease: strings.Contains(tag, "-")}
-	for i, name := range []string{"sample_" + tag + ".zip", "checksums.txt", "checksums.txt.sig"} {
+	for i, name := range []string{"sample_" + tag + ".zip", "checksums.txt", "checksums.txt.example.sig"} {
 		if i == 2 && !signed {
 			break
 		}
@@ -65,7 +65,7 @@ func testClient(t *testing.T, releases []githubRelease) (*Client, *int) {
 			releases[i].Assets[j].APIURL = fmt.Sprintf("%s/releases/assets/%d", base, j+1)
 		}
 	}
-	return &Client{RepositoryAPI: base, CurrentVersion: "v1.0.0", MinimumVersion: "v1.0.0", ArchiveName: func(v string) string { return "sample_" + v + ".zip" }, UserAgent: "sample/1"}, requests
+	return &Client{RepositoryAPI: base, CurrentVersion: "v1.0.0", MinimumVersion: "v1.0.0", ArchiveName: func(v string) string { return "sample_" + v + ".zip" }, UserAgent: "sample/1", SignatureAsset: "checksums.txt.example.sig"}, requests
 }
 
 func TestCheckAndList(t *testing.T) {
@@ -187,7 +187,7 @@ func TestDevelopmentBuildCannotUpdate(t *testing.T) {
 
 func TestTokenGoesOnlyToRepositoryHost(t *testing.T) {
 	c := &Client{RepositoryAPI: "https://api.github.com/repos/example/sample", CurrentVersion: "v1.0.0", MinimumVersion: "v1.0.0",
-		ArchiveName: func(string) string { return "sample.zip" }, UserAgent: "sample/1", Token: "test-token"}
+		ArchiveName: func(string) string { return "sample.zip" }, UserAgent: "sample/1", Token: "test-token", SignatureAsset: "checksums.txt.example.sig"}
 	p, err := c.validate()
 	if err != nil {
 		t.Fatal(err)
@@ -206,5 +206,51 @@ func TestTokenGoesOnlyToRepositoryHost(t *testing.T) {
 	c.Token = "test-token\r\nX-Injected: 1"
 	if _, err := c.validate(); err == nil {
 		t.Fatal("token with line break accepted")
+	}
+}
+
+func TestSignatureAssetIsRequiredAndPlain(t *testing.T) {
+	c, _ := testClient(t, nil)
+	for _, name := range []string{"", "a/b.sig", `a\b.sig`, "checksums.txt", ".", "..", "with space.sig", "tab\t.sig"} {
+		c.SignatureAsset = name
+		if _, err := c.validate(); err == nil {
+			t.Errorf("accepted signature asset %q", name)
+		}
+	}
+	c.SignatureAsset = "checksums.txt.example.sig"
+	if _, err := c.validate(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestEligibilityFollowsConfiguredSignatureAsset(t *testing.T) {
+	c, _ := testClient(t, nil)
+	p, err := c.validate()
+	if err != nil {
+		t.Fatal(err)
+	}
+	build := func(names ...string) githubRelease {
+		r := githubRelease{TagName: "v1.1.0"}
+		for i, name := range names {
+			r.Assets = append(r.Assets, asset{Name: name, APIURL: fmt.Sprintf("%s/releases/assets/%d", c.RepositoryAPI, i+1)})
+		}
+		return r
+	}
+	archive, sums, sig := "sample_v1.1.0.zip", "checksums.txt", "checksums.txt.example.sig"
+	if _, ok := c.eligible(build(archive, sums, sig), p); !ok {
+		t.Fatal("complete release rejected")
+	}
+	for title, names := range map[string][]string{
+		"missing":    {archive, sums},
+		"duplicate":  {archive, sums, sig, sig},
+		"other name": {archive, sums, "checksums.txt.sig"},
+	} {
+		if _, ok := c.eligible(build(names...), p); ok {
+			t.Errorf("%s: accepted", title)
+		}
+	}
+	c.SignatureAsset = archive
+	if _, ok := c.eligible(build(archive, sums), p); ok {
+		t.Error("signature asset equal to archive accepted")
 	}
 }
