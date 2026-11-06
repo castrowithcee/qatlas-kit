@@ -17,7 +17,7 @@ func TestSignedReleaseVerifies(t *testing.T) {
 		"sample_v1_linux_amd64.tar.gz": releasetest.Archive(t, "sample_v1_linux_amd64.tar.gz", releasetest.File{Name: "bin/sample", Body: program}),
 		"sample_v1_windows_amd64.zip":  releasetest.Archive(t, "sample_v1_windows_amd64.zip", releasetest.File{Name: "bin/sample.exe", Body: program}),
 	}
-	assets := releasetest.Release(t, signer, "sample-release", archives)
+	assets := releasetest.Release(t, signer, "sample-release", "checksums.txt.example.sig", archives)
 	server := releasetest.NewServer(t)
 	server.Publish("v1.0.0", assets)
 	get := func(path string) []byte {
@@ -37,7 +37,7 @@ func TestSignedReleaseVerifies(t *testing.T) {
 		return body
 	}
 	get("/latest")
-	checksums, signature := get("/download/v1.0.0/checksums.txt"), get("/download/v1.0.0/checksums.txt.sig")
+	checksums, signature := get("/download/v1.0.0/checksums.txt"), get("/download/v1.0.0/checksums.txt.example.sig")
 	keys := []ssh.PublicKey{signer.PublicKey()}
 	var sums []string
 	for name, program := range map[string]string{"sample_v1_linux_amd64.tar.gz": "bin/sample", "sample_v1_windows_amd64.zip": "bin/sample.exe"} {

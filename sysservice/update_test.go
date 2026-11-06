@@ -184,7 +184,7 @@ func TestUpdateWithUnitThenRestart(t *testing.T) {
 	archive := releasetest.Archive(t, archiveName("v1.1.0"),
 		releasetest.File{Name: "bin/tool", Body: []byte("new program")},
 		releasetest.File{Name: UnitEntry("tool"), Body: []byte(validUnit)})
-	assets := releasetest.Release(t, signer, namespace, map[string][]byte{archiveName("v1.1.0"): archive})
+	assets := releasetest.Release(t, signer, namespace, "checksums.txt.example.sig", map[string][]byte{archiveName("v1.1.0"): archive})
 	api := releaseAPI(t, "v1.1.0", assets)
 
 	executable := filepath.Join(root, "usr", "local", "bin", "tool")
@@ -198,7 +198,7 @@ func TestUpdateWithUnitThenRestart(t *testing.T) {
 		t.Fatal(err)
 	}
 	c := &selfupdate.Client{RepositoryAPI: api, CurrentVersion: "v1.0.0", MinimumVersion: "v1.0.0", ArchiveName: archiveName,
-		UserAgent: "tool/1", HTTPClient: http.DefaultClient, Namespace: namespace, TrustedKeys: []ssh.PublicKey{signer.PublicKey()},
+		UserAgent: "tool/1", HTTPClient: http.DefaultClient, Namespace: namespace, SignatureAsset: "checksums.txt.example.sig", TrustedKeys: []ssh.PublicKey{signer.PublicKey()},
 		ProgramName: "tool", Executable: executable,
 		Companions: []selfupdate.Companion{Companion("tool", WithRoot(root))}}
 	result, err := c.Update(context.Background())
