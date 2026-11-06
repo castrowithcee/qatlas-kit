@@ -59,4 +59,16 @@ func TestReleaseWorkflowIsolatesSigning(t *testing.T) {
 	if !strings.Contains(jobs["publish"], "contents: write") || strings.Contains(jobs["build"], "contents: write") {
 		t.Error("only the publish job may write contents")
 	}
+	if !regexp.MustCompile(`(?m)^      signature-asset:\n(        .*\n)*?        required: true\n`).MatchString(text) {
+		t.Error("the signature file name must be a required input")
+	}
+	if !strings.Contains(jobs["build"], `-signature-asset "$SIGNATURE_ASSET"`) {
+		t.Error("the build job must pass the signature file name to releasebuild")
+	}
+	if !strings.Contains(sign, "SIGNATURE_ASSET: ${{ inputs.signature-asset }}") || strings.Contains(sign, "needs.build") {
+		t.Error("the sign job must take the signature file name from the workflow input")
+	}
+	if !strings.Contains(sign, `-s "$SIGNATURE_ASSET"`) || !strings.Contains(sign, "path: signing-input/${{ inputs.signature-asset }}") {
+		t.Error("the sign job must verify and upload the file named by the input")
+	}
 }

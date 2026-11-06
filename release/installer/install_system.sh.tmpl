@@ -27,6 +27,7 @@ program={{sh .Program}}
 display={{sh .DisplayName}}
 repo_url={{sh .ReleasesURL}}
 namespace={{sh .Namespace}}
+signature={{sh .SignatureAsset}}
 signers={{sh .Signers}}
 targets={{sh (join .Unix " ")}}
 groups={{sh (join .Groups " ")}}
@@ -194,13 +195,13 @@ fetch_release() {
 	tmp=$(mktemp -d "${TMPDIR:-/tmp}/$program-install.XXXXXX")
 
 	printf 'Downloading %s %s for linux/%s\n' "$display" "$version" "$arch"
-	for name in "$archive" checksums.txt checksums.txt.sig; do
+	for name in "$archive" checksums.txt "$signature"; do
 		curl -fsSL -o "$tmp/$name" "$base/download/$version/$name" || fail "download of $name failed"
 	done
 
 	printf '%s\n' "$signers" >"$tmp/allowed-signers"
 	ssh-keygen -Y verify -f "$tmp/allowed-signers" -I "$namespace" -n "$namespace" \
-		-s "$tmp/checksums.txt.sig" <"$tmp/checksums.txt" >/dev/null 2>&1 ||
+		-s "$tmp/$signature" <"$tmp/checksums.txt" >/dev/null 2>&1 ||
 		fail 'signature of checksums.txt is invalid; nothing was installed'
 
 	want=$(awk -v n="$archive" 'NF == 2 { f = $2; sub(/^\*/, "", f) } NF == 2 && f == n { c++; h = tolower($1) } END { if (c == 1) print h }' "$tmp/checksums.txt")

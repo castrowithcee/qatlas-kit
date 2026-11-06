@@ -26,6 +26,9 @@ type Params struct {
 	ReleasesURL string
 	// Namespace is the SSH signature namespace of checksums.txt; it is also the principal of the keys.
 	Namespace string
+	// SignatureAsset is the name of the release file that holds the signature over checksums.txt. It is
+	// required and has no default.
+	SignatureAsset string
 	// TrustedKeys are the Ed25519 keys whose signature over checksums.txt is accepted.
 	TrustedKeys []ssh.PublicKey
 	// Targets are the built platforms as "goos/goarch", such as "linux/amd64".
@@ -65,11 +68,12 @@ var (
 	programPattern   = regexp.MustCompile(`^[a-z][a-z0-9-]{0,63}$`)
 	displayPattern   = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9 ._-]{0,63}$`)
 	namespacePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,127}$`)
+	assetPattern     = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`)
 )
 
 type values struct {
-	Program, DisplayName, ReleasesURL, Namespace, Signers, NextStep, Env string
-	Unix, Windows                                                        []string
+	Program, DisplayName, ReleasesURL, Namespace, SignatureAsset, Signers, NextStep, Env string
+	Unix, Windows                                                                        []string
 
 	// System service variant only.
 	Groups                            []string
@@ -138,6 +142,12 @@ func (p Params) values() (values, error) {
 	if !namespacePattern.MatchString(p.Namespace) {
 		return values{}, fmt.Errorf("invalid signature namespace %q", p.Namespace)
 	}
+	// The name must not collide with a file the scripts write next to the downloads.
+	if !assetPattern.MatchString(p.SignatureAsset) || p.SignatureAsset == "checksums.txt" || p.SignatureAsset == "allowed-signers" ||
+		p.SignatureAsset == "verify.out" || p.SignatureAsset == "verify.err" || strings.HasPrefix(p.SignatureAsset, p.Program+"_") {
+		return values{}, fmt.Errorf("invalid signature asset name %q", p.SignatureAsset)
+	}
+	v.SignatureAsset = p.SignatureAsset
 	if len(p.TrustedKeys) == 0 {
 		return values{}, errors.New("at least one trusted key is required")
 	}

@@ -197,6 +197,18 @@ func TestShellRejectsBadReleaseWithoutChange(t *testing.T) {
 	}
 }
 
+func TestShellDownloadsOnlyTheConfiguredSignature(t *testing.T) {
+	e := newShEnv(t)
+	e.publish("v1.0.0", "program", func(r *release) { r.signature = "checksums.txt.sig" })
+	out, err := e.run(false, nil)
+	if err == nil || !strings.Contains(out, "download of "+testSignature+" failed") {
+		t.Fatalf("install with another signature name: %v\n%s", err, out)
+	}
+	if _, statErr := os.Stat(e.binary()); statErr == nil {
+		t.Error("program installed")
+	}
+}
+
 func TestShellFailureOnFreshPrefixCreatesNothing(t *testing.T) {
 	e := newShEnv(t)
 	e.publish("v1.0.0", "program", rejections(t)["wrong checksum"].mutate)

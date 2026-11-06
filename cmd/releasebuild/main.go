@@ -33,6 +33,7 @@ func run() error {
 	var o releasebuild.Options
 	flags.StringVar(&o.Program, "program", "", "program file name without .exe")
 	flags.StringVar(&o.Namespace, "namespace", "", "signature namespace, <program>-release")
+	flags.StringVar(&o.SignatureAsset, "signature-asset", "", "release file name of the signature over checksums.txt")
 	flags.StringVar(&o.AllowedSigners, "allowed-signers", "", "allowed signers file with the release keys")
 	flags.StringVar(&o.ReleasesURL, "releases-url", "", "https URL of the release page")
 	flags.StringVar(&o.Version, "version", "", "SemVer tag of the release")
@@ -43,7 +44,7 @@ func run() error {
 	if flags.NArg() != 0 {
 		return usageError{errors.New("no arguments are accepted")}
 	}
-	for name, value := range map[string]string{"config": *config, "program": o.Program, "namespace": o.Namespace,
+	for name, value := range map[string]string{"config": *config, "program": o.Program, "namespace": o.Namespace, "signature-asset": o.SignatureAsset,
 		"allowed-signers": o.AllowedSigners, "releases-url": o.ReleasesURL, "version": o.Version, "out": o.Output} {
 		if value == "" {
 			return usageError{fmt.Errorf("-%s is required", name)}
