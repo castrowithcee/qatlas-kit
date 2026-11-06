@@ -51,6 +51,33 @@ func TestBuildRejectsInvalidInputWithoutOutput(t *testing.T) {
 		"signature asset is an archive": func(t *testing.T, m *module, c *releasebuild.Config, o *releasebuild.Options) {
 			o.SignatureAsset = releasebuild.ArchiveName(program, version, "linux", "amd64")
 		},
+		"previous namespace empty": func(t *testing.T, m *module, c *releasebuild.Config, o *releasebuild.Options) {
+			o.PreviousSignature = &releasebuild.PreviousSignature{SignatureAsset: "old.sig"}
+		},
+		"previous namespace outside pattern": func(t *testing.T, m *module, c *releasebuild.Config, o *releasebuild.Options) {
+			o.PreviousSignature = &releasebuild.PreviousSignature{Namespace: "Old Space", SignatureAsset: "old.sig"}
+		},
+		"previous namespace is the namespace": func(t *testing.T, m *module, c *releasebuild.Config, o *releasebuild.Options) {
+			o.PreviousSignature = &releasebuild.PreviousSignature{Namespace: o.Namespace, SignatureAsset: "old.sig"}
+		},
+		"previous asset empty": func(t *testing.T, m *module, c *releasebuild.Config, o *releasebuild.Options) {
+			o.PreviousSignature = &releasebuild.PreviousSignature{Namespace: "olddemo-release"}
+		},
+		"previous asset invalid": func(t *testing.T, m *module, c *releasebuild.Config, o *releasebuild.Options) {
+			o.PreviousSignature = &releasebuild.PreviousSignature{Namespace: "olddemo-release", SignatureAsset: "a/b.sig"}
+		},
+		"previous asset is the signature asset": func(t *testing.T, m *module, c *releasebuild.Config, o *releasebuild.Options) {
+			o.PreviousSignature = &releasebuild.PreviousSignature{Namespace: "olddemo-release", SignatureAsset: o.SignatureAsset}
+		},
+		"previous asset is checksums.txt": func(t *testing.T, m *module, c *releasebuild.Config, o *releasebuild.Options) {
+			o.PreviousSignature = &releasebuild.PreviousSignature{Namespace: "olddemo-release", SignatureAsset: "checksums.txt"}
+		},
+		"previous asset is an installer": func(t *testing.T, m *module, c *releasebuild.Config, o *releasebuild.Options) {
+			o.PreviousSignature = &releasebuild.PreviousSignature{Namespace: "olddemo-release", SignatureAsset: "install.sh"}
+		},
+		"previous asset is an archive": func(t *testing.T, m *module, c *releasebuild.Config, o *releasebuild.Options) {
+			o.PreviousSignature = &releasebuild.PreviousSignature{Namespace: "olddemo-release", SignatureAsset: releasebuild.ArchiveName(program, version, "linux", "amd64")}
+		},
 		"no output": func(t *testing.T, m *module, c *releasebuild.Config, o *releasebuild.Options) { o.Output = "" },
 		"package outside module": func(t *testing.T, m *module, c *releasebuild.Config, o *releasebuild.Options) {
 			c.Package = "./../other"

@@ -34,6 +34,9 @@ func run() error {
 	flags.StringVar(&o.Program, "program", "", "program file name without .exe")
 	flags.StringVar(&o.Namespace, "namespace", "", "signature namespace, <program>-release")
 	flags.StringVar(&o.SignatureAsset, "signature-asset", "", "release file name of the signature over checksums.txt")
+	var previous releasebuild.PreviousSignature
+	flags.StringVar(&previous.Namespace, "previous-namespace", "", "former signature namespace for an additional signature (optional)")
+	flags.StringVar(&previous.SignatureAsset, "previous-signature-asset", "", "former release file name of the additional signature (optional)")
 	flags.StringVar(&o.AllowedSigners, "allowed-signers", "", "allowed signers file with the release keys")
 	flags.StringVar(&o.ReleasesURL, "releases-url", "", "https URL of the release page")
 	flags.StringVar(&o.Version, "version", "", "SemVer tag of the release")
@@ -49,6 +52,12 @@ func run() error {
 		if value == "" {
 			return usageError{fmt.Errorf("-%s is required", name)}
 		}
+	}
+	if (previous.Namespace == "") != (previous.SignatureAsset == "") {
+		return usageError{errors.New("-previous-namespace and -previous-signature-asset must be set together")}
+	}
+	if previous.Namespace != "" {
+		o.PreviousSignature = &previous
 	}
 	c, err := releasebuild.LoadConfig(*config)
 	if err != nil {

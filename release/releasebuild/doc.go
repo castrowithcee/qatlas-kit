@@ -63,4 +63,13 @@
 // with a pre-release suffix becomes a pre-release. The inputs config
 // (default release.json) and allowed-signers (default .github/release-allowed-signers) name the files in
 // the application repository.
+//
+// # Previous signature
+//
+// An application that renamed its signature namespace and signature file keeps the updaters of earlier
+// releases working by setting the inputs previous-namespace and previous-signature-asset together (or
+// Options.PreviousSignature). The sign job then signs checksums.txt a second time with the same key under
+// the former namespace and publishes that signature as the former file; the allowed signers file keeps
+// listing the key under the current namespace only. The installers verify the current signature only. The
+// former namespace is not bound to <program>-release.
 package releasebuild
