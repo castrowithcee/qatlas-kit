@@ -429,3 +429,25 @@ func runShellInstaller(t *testing.T, assets map[string][]byte, signature []byte)
 		}
 	}
 }
+
+func TestBuildWithPreviousSignatureWritesTheSameAssets(t *testing.T) {
+	m := newModule(t)
+	plain := m.options(t)
+	if _, err := releasebuild.Build(context.Background(), m.config(), plain); err != nil {
+		t.Fatal(err)
+	}
+	withPrevious := m.options(t)
+	withPrevious.PreviousSignature = &releasebuild.PreviousSignature{Namespace: "olddemo-release", SignatureAsset: "olddemo.sig"}
+	if _, err := releasebuild.Build(context.Background(), m.config(), withPrevious); err != nil {
+		t.Fatal(err)
+	}
+	want, got := readAssets(t, plain.Output), readAssets(t, withPrevious.Output)
+	if len(got) != len(want) {
+		t.Fatalf("assets = %d, want %d", len(got), len(want))
+	}
+	for name, data := range want {
+		if !bytes.Equal(got[name], data) {
+			t.Errorf("%s differs", name)
+		}
+	}
+}

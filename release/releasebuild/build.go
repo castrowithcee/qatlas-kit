@@ -32,6 +32,9 @@ type Options struct {
 	// SignatureAsset is the name of the release file that holds the signature over checksums.txt. It is
 	// required, has no default, and must not name an asset of the build.
 	SignatureAsset string
+	// PreviousSignature, when set, names the signature under the former namespace and file name that the
+	// release workflow publishes in addition; see PreviousSignature. Build itself writes the same assets.
+	PreviousSignature *PreviousSignature
 	// AllowedSigners is the allowed signers file, relative to Dir, whose keys the installers trust.
 	AllowedSigners string
 	// ReleasesURL is the https release page the installers download from.
@@ -44,6 +47,19 @@ type Options struct {
 	SourceDate time.Time
 	// Log receives the output of the manpage command and of go build. Nil discards it.
 	Log io.Writer
+}
+
+// PreviousSignature describes the additional signature over checksums.txt that a release carries after an
+// application renamed its signature namespace and signature file. It is made with the same key for the
+// updaters of earlier releases, which still verify the former namespace and download the former file. The
+// installers of the build verify the current namespace and file only.
+type PreviousSignature struct {
+	// Namespace is the former signature namespace. It must differ from Options.Namespace and is not bound
+	// to the <program>-release form of the current one.
+	Namespace string
+	// SignatureAsset is the former release file name. It must differ from Options.SignatureAsset and must
+	// not name an asset of the build.
+	SignatureAsset string
 }
 
 var minimumSourceDate = time.Date(1980, 1, 1, 0, 0, 0, 0, time.UTC)
@@ -156,6 +172,23 @@ func prepare(c Config, o Options) (*plan, error) {
 	}
 	if slices.Contains(reserved, o.SignatureAsset) {
 		return nil, fmt.Errorf("signature asset name %q collides with an asset of the build", o.SignatureAsset)
+	}
+	if prev := o.PreviousSignature; prev != nil {
+		if !previousNamespacePattern.MatchString(prev.Namespace) {
+			return nil, fmt.Errorf("invalid previous signature namespace %q", prev.Namespace)
+		}
+		if prev.Namespace == o.Namespace {
+			return nil, errors.New("previous signature namespace must differ from the namespace")
+		}
+		if !assetPattern.MatchString(prev.SignatureAsset) {
+			return nil, fmt.Errorf("invalid previous signature asset name %q", prev.SignatureAsset)
+		}
+		if prev.SignatureAsset == o.SignatureAsset {
+			return nil, errors.New("previous signature asset name must differ from the signature asset name")
+		}
+		if slices.Contains(reserved, prev.SignatureAsset) {
+			return nil, fmt.Errorf("previous signature asset name %q collides with an asset of the build", prev.SignatureAsset)
+		}
 	}
 	if len(c.ManpageCommand) == 0 || c.ManpageCommand[0] == "" || !slices.Contains(c.ManpageCommand, "{dir}") {
 		return nil, errors.New(`manpage command is required and must take the output directory "{dir}"`)
