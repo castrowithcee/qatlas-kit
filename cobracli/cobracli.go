@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"regexp"
+	"slices"
 	"strings"
 	"unicode"
 
@@ -62,36 +63,22 @@ type Program struct {
 	agent  bool
 	format output.Format
 
+	help     *cobra.Command
 	owned    map[*pflag.Flag]bool
 	prepared map[*cobra.Command]bool
 }
 
 // New applies the conventions to root. Commands may be added to root afterwards; Execute checks the
-// complete tree.
+// complete tree. A root that breaks several conventions is refused with all of them.
 func New(root *cobra.Command, opts Options) (*Program, error) {
 	if root == nil || root.HasParent() {
-		return nil, errors.New("a root command is required")
+		return nil, errRootRequired
+	}
+	errs := append(checkRoot(root, opts), reservedFlagViolations(root, nil, map[*pflag.Flag]bool{}, outputFlag, agentFlag)...)
+	if len(errs) > 0 {
+		return nil, errors.Join(errs...)
 	}
 	name := root.Name()
-	if !namePattern.MatchString(name) {
-		return nil, fmt.Errorf("invalid program name %q", name)
-	}
-	if !validVersion(opts.Version) {
-		return nil, fmt.Errorf("invalid version %q", opts.Version)
-	}
-	for _, flag := range []string{outputFlag, agentFlag} {
-		if root.Flags().Lookup(flag) != nil || root.PersistentFlags().Lookup(flag) != nil {
-			return nil, fmt.Errorf("flag --%s is reserved", flag)
-		}
-	}
-	for _, topic := range opts.Topics {
-		if !namePattern.MatchString(topic.Name) {
-			return nil, fmt.Errorf("invalid help topic name %q", topic.Name)
-		}
-		if topic.Short == "" || strings.ContainsAny(topic.Short, "\r\n") {
-			return nil, fmt.Errorf("help topic %q needs a short help of one line", topic.Name)
-		}
-	}
 
 	p := &Program{
 		root: root, name: name, topics: append([]helptopics.Topic(nil), opts.Topics...), redactor: opts.Redactor,
@@ -116,8 +103,61 @@ func New(root *cobra.Command, opts Options) (*Program, error) {
 	for _, topic := range p.topics {
 		root.AddCommand(&cobra.Command{Use: topic.Name, Short: topic.Short, Long: helptopics.CLIText(topic)})
 	}
-	root.SetHelpCommand(p.helpCommand())
+	p.help = p.helpCommand()
+	root.SetHelpCommand(p.help)
 	return p, nil
+}
+
+// Check reports every convention that the command tree of opts breaks, without a Program and without
+// changing root: the violations New refuses, and those of the whole tree that Execute refuses. No flag
+// counts as registered by this package, so a tree whose flags were registered by hand is reported in full.
+// The violations are joined in the order of the tree.
+func Check(root *cobra.Command, opts Options) error {
+	if root == nil || root.HasParent() {
+		return errRootRequired
+	}
+	errs := checkRoot(root, opts)
+	names := map[string]bool{}
+	for _, topic := range opts.Topics {
+		names[topic.Name] = true
+	}
+	// The help command is added when Execute runs and the topics when New runs.
+	if len(opts.Topics) > 0 || root.HasSubCommands() {
+		names["help"] = true
+	}
+	return errors.Join(append(errs, checkTree(root, nil, nil, names, map[*pflag.Flag]bool{})...)...)
+}
+
+// Check reports every convention that the command tree of this program breaks, without running anything.
+// Execute and Manpage apply the same check and refuse a tree it reports on.
+func (p *Program) Check() error {
+	extra := map[string]bool{}
+	if p.root.HasSubCommands() {
+		extra["help"] = true
+	}
+	return errors.Join(checkTree(p.root, p.owned, p.help, extra, map[*pflag.Flag]bool{})...)
+}
+
+var errRootRequired = errors.New("a root command is required")
+
+// checkRoot reports what stops a root command from becoming a program; root is neither nil nor a child.
+func checkRoot(root *cobra.Command, opts Options) []error {
+	var errs []error
+	if name := root.Name(); !namePattern.MatchString(name) {
+		errs = append(errs, fmt.Errorf("invalid program name %q", name))
+	}
+	if !validVersion(opts.Version) {
+		errs = append(errs, fmt.Errorf("invalid version %q", opts.Version))
+	}
+	for _, topic := range opts.Topics {
+		if !namePattern.MatchString(topic.Name) {
+			errs = append(errs, fmt.Errorf("invalid help topic name %q", topic.Name))
+		}
+		if topic.Short == "" || strings.ContainsAny(topic.Short, "\r\n") {
+			errs = append(errs, fmt.Errorf("help topic %q needs a short help of one line", topic.Name))
+		}
+	}
+	return errs
 }
 
 // validVersion keeps the version line to "<program> <version>".
@@ -236,45 +276,78 @@ func (p *Program) own(flags *pflag.FlagSet, names ...string) {
 	}
 }
 
-// prepare checks the conventions on c and its subcommands and installs the checks that run before any
-// hook of a command. It may run again for commands added later.
+// prepare refuses a tree that breaks a convention and installs the checks of the run on every command.
+// It may run again for commands added later.
 func (p *Program) prepare(c *cobra.Command) error {
-	if strings.ContainsAny(c.Short, "\r\n") {
-		return fmt.Errorf("command %q: the short help must be one line", c.CommandPath())
+	if err := p.Check(); err != nil {
+		return err
 	}
-	var reserved error
-	check := func(flag *pflag.Flag) {
-		switch flag.Name {
-		case outputFlag, agentFlag, fieldsFlag, yesFlag, confirmFlag:
-			if !p.owned[flag] && reserved == nil {
-				reserved = fmt.Errorf("command %q: flag --%s is reserved", c.CommandPath(), flag.Name)
-			}
-		}
-	}
-	c.Flags().VisitAll(check)
-	c.PersistentFlags().VisitAll(check)
-	if reserved != nil {
-		return reserved
-	}
-	names := map[string]bool{}
-	for _, sub := range c.Commands() {
-		for _, name := range append([]string{sub.Name()}, sub.Aliases...) {
-			if names[name] {
-				return fmt.Errorf("command %q: subcommand name %q is used twice", c.CommandPath(), name)
-			}
-			names[name] = true
-		}
-	}
+	p.installTree(c)
+	return nil
+}
+
+func (p *Program) installTree(c *cobra.Command) {
 	if !p.prepared[c] {
 		p.prepared[c] = true
 		p.install(c)
 	}
 	for _, sub := range c.Commands() {
-		if err := p.prepare(sub); err != nil {
-			return err
+		p.installTree(sub)
+	}
+}
+
+// checkTree collects the violations of c and its subcommands depth first in command order. owned holds
+// the flags the kit registered; skip is a command the kit added itself; reservedNames are subcommand
+// names of c that the kit will add or has added elsewhere. seen keeps a flag shared by several flag sets
+// from being reported twice.
+func checkTree(c *cobra.Command, owned map[*pflag.Flag]bool, skip *cobra.Command, reservedNames map[string]bool, seen map[*pflag.Flag]bool) []error {
+	var errs []error
+	if strings.ContainsAny(c.Short, "\r\n") {
+		errs = append(errs, fmt.Errorf("command %q: the short help must be one line", c.CommandPath()))
+	}
+	errs = append(errs, reservedFlagViolations(c, owned, seen, outputFlag, agentFlag, fieldsFlag, yesFlag, confirmFlag)...)
+	names := map[string]bool{}
+	for name := range reservedNames {
+		names[name] = true
+	}
+	var subs []*cobra.Command
+	for _, sub := range c.Commands() {
+		if sub == skip {
+			continue
+		}
+		subs = append(subs, sub)
+		for _, name := range append([]string{sub.Name()}, sub.Aliases...) {
+			if names[name] {
+				errs = append(errs, fmt.Errorf("command %q: subcommand name %q is used twice", c.CommandPath(), name))
+			}
+			names[name] = true
 		}
 	}
-	return nil
+	for _, sub := range subs {
+		errs = append(errs, checkTree(sub, owned, skip, nil, seen)...)
+	}
+	return errs
+}
+
+// reservedFlagViolations reports the flags of c with a reserved name that the kit did not register, sorted
+// by name.
+func reservedFlagViolations(c *cobra.Command, owned map[*pflag.Flag]bool, seen map[*pflag.Flag]bool, reserved ...string) []error {
+	var found []*pflag.Flag
+	visit := func(flag *pflag.Flag) {
+		if owned[flag] || seen[flag] || !slices.Contains(reserved, flag.Name) {
+			return
+		}
+		seen[flag] = true
+		found = append(found, flag)
+	}
+	c.Flags().VisitAll(visit)
+	c.PersistentFlags().VisitAll(visit)
+	slices.SortStableFunc(found, func(a, b *pflag.Flag) int { return strings.Compare(a.Name, b.Name) })
+	var errs []error
+	for _, flag := range found {
+		errs = append(errs, fmt.Errorf("command %q: flag --%s is reserved", c.CommandPath(), flag.Name))
+	}
+	return errs
 }
 
 // install puts the run's checks into the argument check, because Cobra calls it for every runnable

@@ -478,3 +478,157 @@ func TestManpage(t *testing.T) {
 		t.Fatal("nil generator accepted")
 	}
 }
+
+// brokenTree breaks several conventions at once below a root that is still acceptable to New.
+func brokenTree(f *fixture) {
+	a := &cobra.Command{Use: "alpha", Short: "one\ntwo"}
+	a.Flags().Bool("fields", false, "")
+	b := &cobra.Command{Use: "beta", Aliases: []string{"show"}}
+	b.PersistentFlags().String("output", "", "")
+	f.program.root.AddCommand(a, b)
+}
+
+func TestProgramCheckReportsAllViolations(t *testing.T) {
+	f := newFixture(t, Options{})
+	if err := f.program.Check(); err != nil {
+		t.Fatalf("clean tree: %v", err)
+	}
+	brokenTree(f)
+	err := f.program.Check()
+	if err == nil {
+		t.Fatal("broken tree accepted")
+	}
+	want := []string{
+		`command "tool": subcommand name "show" is used twice`,
+		`command "tool alpha": the short help must be one line`,
+		`command "tool alpha": flag --fields is reserved`,
+		`command "tool beta": flag --output is reserved`,
+	}
+	got := err.Error()
+	last := -1
+	for _, w := range want {
+		i := strings.Index(got, w)
+		if i < 0 || i < last {
+			t.Fatalf("missing or misordered %q in:\n%s", w, got)
+		}
+		last = i
+	}
+	// Flags registered through the Program are not reported.
+	if strings.Contains(got, `"tool show"`) || strings.Contains(got, `"tool drop"`) || strings.Contains(got, `"tool": flag`) {
+		t.Fatalf("owned flags reported:\n%s", got)
+	}
+}
+
+func TestExecuteReportsWhatCheckReports(t *testing.T) {
+	f := newFixture(t, Options{})
+	brokenTree(f)
+	check := f.program.Check().Error()
+	code, stdout, stderr := f.run("show")
+	if code != cli.ExitRuntime || f.ran || stdout != "" {
+		t.Fatalf("exit %d, ran %v, stdout %q", code, f.ran, stdout)
+	}
+	for _, line := range strings.Split(check, "\n") {
+		if !strings.Contains(stderr, line) {
+			t.Errorf("Execute does not name %q:\n%s", line, stderr)
+		}
+	}
+
+	clean := newFixture(t, Options{})
+	if err := clean.program.Check(); err != nil {
+		t.Fatal(err)
+	}
+	if code, _, _ := clean.run("show"); code != cli.ExitSuccess || !clean.ran {
+		t.Fatalf("clean tree: exit %d, ran %v", code, clean.ran)
+	}
+	// A run does not make its own help command a violation.
+	if err := clean.program.Check(); err != nil {
+		t.Fatalf("after Execute: %v", err)
+	}
+}
+
+func TestManpageRefusesBrokenTree(t *testing.T) {
+	f := newFixture(t, Options{})
+	brokenTree(f)
+	err := f.program.Manpage(t.TempDir(), "intro", func(*cobra.Command, string) error { return nil })
+	if err == nil || !strings.Contains(err.Error(), "flag --fields is reserved") {
+		t.Fatalf("Manpage: %v", err)
+	}
+}
+
+func TestPackageCheckOnRawTree(t *testing.T) {
+	root := &cobra.Command{Use: "tool"}
+	root.PersistentFlags().String("output", "", "")
+	root.PersistentFlags().Bool("agent", false, "")
+	sub := &cobra.Command{Use: "sub", Short: "a\nb", Aliases: []string{"basics"}}
+	sub.Flags().Bool("yes", false, "")
+	sub.Flags().Bool("confirm", false, "")
+	root.AddCommand(sub)
+	opts := Options{Version: "1", Topics: []helptopics.Topic{{Name: "basics", Short: "x"}}}
+
+	err := Check(root, opts)
+	if err == nil {
+		t.Fatal("broken tree accepted")
+	}
+	for _, w := range []string{
+		`command "tool": flag --agent is reserved`,
+		`command "tool": flag --output is reserved`,
+		`command "tool sub": the short help must be one line`,
+		`command "tool sub": flag --confirm is reserved`,
+		`command "tool sub": flag --yes is reserved`,
+		`command "tool": subcommand name "basics" is used twice`,
+	} {
+		if strings.Count(err.Error(), w) != 1 {
+			t.Errorf("want %q exactly once in:\n%s", w, err)
+		}
+	}
+	if len(root.Commands()) != 1 || root.Version != "" || sub.Args != nil || root.Flags().Lookup("version") != nil {
+		t.Fatal("Check changed the tree")
+	}
+	if _, err := New(root, opts); err == nil {
+		t.Fatal("New accepted the root")
+	}
+}
+
+func TestPackageCheckRootViolationsAndCleanTree(t *testing.T) {
+	err := Check(&cobra.Command{Use: "Tool"}, Options{Version: "1 2", Topics: []helptopics.Topic{{Name: "Bad"}}})
+	if err == nil {
+		t.Fatal("accepted")
+	}
+	for _, w := range []string{"invalid program name", "invalid version", "invalid help topic name", "needs a short help"} {
+		if !strings.Contains(err.Error(), w) {
+			t.Errorf("missing %q in %v", w, err)
+		}
+	}
+	if Check(nil, Options{Version: "1"}) == nil {
+		t.Error("nil root accepted")
+	}
+	clean := &cobra.Command{Use: "tool"}
+	clean.AddCommand(&cobra.Command{Use: "sub", Short: "ok"})
+	if err := Check(clean, Options{Version: "1"}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestChecksDoNotStopAtRootViolations(t *testing.T) {
+	root := &cobra.Command{Use: "tool"}
+	sub := &cobra.Command{Use: "sub"}
+	sub.Flags().Bool("fields", false, "")
+	root.AddCommand(sub)
+	err := Check(root, Options{Version: "1 2"})
+	if err == nil || !strings.Contains(err.Error(), "invalid version") || !strings.Contains(err.Error(), `command "tool sub": flag --fields is reserved`) {
+		t.Fatalf("Check: %v", err)
+	}
+
+	withOutput := &cobra.Command{Use: "tool"}
+	withOutput.PersistentFlags().String("output", "", "")
+	_, err = New(withOutput, Options{Version: "1 2"})
+	if err == nil || !strings.Contains(err.Error(), "invalid version") || !strings.Contains(err.Error(), `command "tool": flag --output is reserved`) {
+		t.Fatalf("New: %v", err)
+	}
+
+	for _, err := range []error{Check(nil, Options{Version: "1 2"}), func() error { _, err := New(nil, Options{Version: "1 2"}); return err }()} {
+		if err == nil || err.Error() != "a root command is required" {
+			t.Errorf("nil root: %v", err)
+		}
+	}
+}

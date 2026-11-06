@@ -13,7 +13,13 @@
 // formed request that is refused is not. Execute checks the whole tree first: a command without an
 // argument check accepts no arguments, a command with subcommands but nothing to run shows its help, a
 // short help is one line, and the flags --output, --agent, --fields, --yes and --confirm exist only as
-// this package registers them. A tree that breaks a convention does not run.
+// this package registers them. A tree that breaks a convention does not run, and the failure names every
+// violation with its command path.
+//
+// Program.Check applies that tree check without running anything and reports all violations joined;
+// Manpage applies it too. Check, the package function, does the same for a tree that has no Program yet,
+// together with everything New refuses, and leaves the tree unchanged. Neither registers a flag or installs
+// a hook. A subcommand named "help" is a violation, because the help command takes that name.
 //
 // AddFields registers --fields, whose selection output.Project checks centrally. AddGate registers --yes
 // for a command that asks and --confirm for one that changes data; Gate.Run passes both to
