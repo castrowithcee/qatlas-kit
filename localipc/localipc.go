@@ -104,6 +104,14 @@ type ListenOptions struct {
 	// reach it until the running listener calls HandOver and AwaitHandover
 	// returns. Windows does not support it.
 	Successor bool
+	// Earlier, valid only with Successor, is an endpoint the application used
+	// before, such as one with another RuntimeDirName or SocketBase. Where a
+	// listener serves Earlier and none serves the endpoint itself, the
+	// successor listens at the endpoint's channel at once and places beside
+	// the earlier socket what that listener moves in its handover; Accept fails
+	// until AwaitHandover returns. Otherwise it listens as Successor alone
+	// does. Windows does not support it.
+	Earlier *Endpoint
 	// Refused, if set, receives each connection Accept refuses before Accept
 	// closes it, with the *PeerError. The peer is unverified: the function may
 	// send one short refusal and must treat anything read as untrusted. It
@@ -179,8 +187,10 @@ func (e Endpoint) DialWith(ctx context.Context, opts DialOptions) (net.Conn, err
 func HandOver(l net.Listener) error { return handOver(l) }
 
 // AwaitHandover waits until the running listener moved l, a listener from
-// ListenWith with Successor, onto the endpoint's channel. ctx bounds the wait;
-// without a handover l keeps its place beside the channel.
+// ListenWith with Successor, onto the endpoint's channel. With Earlier, it
+// waits until the earlier listener moved what l placed beside its socket onto
+// that socket, then removes it, and l owns the endpoint's channel. ctx bounds
+// the wait; without a handover l keeps its place.
 func AwaitHandover(ctx context.Context, l net.Listener) error { return awaitHandover(ctx, l) }
 
 // ProgramReplaced returns the path this process's program had at its start and

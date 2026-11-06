@@ -80,6 +80,9 @@ func TestWindowsRefusedCallbackAndHandoverUnsupported(t *testing.T) {
 	if _, err := e.ListenWith(ListenOptions{Successor: true}); !errors.Is(err, errors.ErrUnsupported) {
 		t.Fatalf("successor = %v", err)
 	}
+	if _, err := e.ListenWith(ListenOptions{Successor: true, Earlier: &e}); !errors.Is(err, errors.ErrUnsupported) {
+		t.Fatalf("successor of an earlier endpoint = %v", err)
+	}
 	refused := make(chan error, 1)
 	l, err := e.ListenWith(ListenOptions{Refused: func(_ net.Conn, err error) { refused <- err }})
 	if err != nil {
