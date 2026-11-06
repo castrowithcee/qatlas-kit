@@ -30,6 +30,22 @@
 // request that changes data needs --confirm in addition to the answer to its question, and in agent mode a
 // question needs --yes.
 //
+// Options.AgentHelp replaces the help text of --agent. Options.Notice is written to stderr as
+// "<program>: <notice>" once before the command runs, on both routes and also for --help and --version, but
+// not when the tree is refused; the Redactor applies to it. Both must be one line without control
+// characters, which New refuses otherwise.
+//
+// An application chooses its exit code by returning an Exit, built with NewExit, from a command. Codes 3
+// through 125 are allowed; 0, 1 and 2 belong to the kit and 126 and above have shell meanings. With an Err the
+// diagnostic of Err is written and Code is returned; without one the run exits silently with Code. An Exit
+// with another code, also one built as a literal, is refused with a runtime diagnostic and exit code 1.
+// Syntax errors and failures of the kit keep their exit codes.
+//
+// Options.Diagnosed is called once after every failing run, with the command path, the error as returned
+// (an Exit included, not redacted) and the exit code Execute returns, after the diagnostic was written or
+// left out by a silent Exit. It sees no writer and changes neither output nor result, and it must not panic.
+// A refused tree reports the name of the root as the command.
+//
 // Manpage generates the pages of the same tree through the application's generator and adds the help
 // topics, so help command and manpage show one text.
 package cobracli

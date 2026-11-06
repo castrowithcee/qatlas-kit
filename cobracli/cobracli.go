@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 	"unicode"
+	"unicode/utf8"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -50,6 +51,82 @@ type Options struct {
 	Redactor *redact.Redactor
 	// OutputHelp replaces OutputFlagHelp, for example to name the formats of commands with another default.
 	OutputHelp string
+	// AgentHelp replaces cli.AgentFlagHelp as the help of --agent. It must be one line without control
+	// characters.
+	AgentHelp string
+	// Notice is written to stderr as "<program>: <notice>" once, before a run executes the command, also
+	// for --help and --version. It is not written when the command tree is refused. It must be one line
+	// without control characters; the Redactor applies to it.
+	Notice string
+	// Diagnosed is called once after every failing Execute, once the diagnostic is written or deliberately
+	// left out by a silent Exit, and never after a success. It must not panic: Execute does not recover.
+	Diagnosed func(Diagnosis)
+}
+
+// Diagnosis describes a failed run to Options.Diagnosed, for example for the application's audit.
+type Diagnosis struct {
+	// Command is the path of the resolved command, or the name of the root when none was resolved.
+	Command string
+	// Err is the error as the command or Execute produced it, including an Exit wrapper. The Redactor is not
+	// applied to it, so redact before writing it anywhere.
+	Err error
+	// Code is the exit code Execute returns.
+	Code int
+}
+
+// The exit codes an application may choose with Exit; 0, 1 and 2 belong to the kit and the codes from 126
+// on have meanings of their own in a shell.
+const (
+	minExitCode = 3
+	maxExitCode = 125
+)
+
+// Exit is an error that chooses the process exit code of the run. Execute writes the diagnostic of Err and
+// returns Code; with a nil Err it exits silently. A Code outside 3 through 125 is refused: Execute writes a
+// runtime diagnostic and returns the runtime exit code instead.
+type Exit struct {
+	Code int
+	Err  error
+}
+
+// NewExit checks code, which must be in 3 through 125.
+func NewExit(code int, err error) (*Exit, error) {
+	if !validExitCode(code) {
+		return nil, fmt.Errorf("exit code %d is not allowed: use %d through %d", code, minExitCode, maxExitCode)
+	}
+	return &Exit{Code: code, Err: err}, nil
+}
+
+func (e *Exit) Error() string {
+	if e == nil {
+		return "invalid exit"
+	}
+	if e.Err == nil {
+		return fmt.Sprintf("exit code %d", e.Code)
+	}
+	return e.Err.Error()
+}
+
+func (e *Exit) Unwrap() error {
+	if e == nil {
+		return nil
+	}
+	return e.Err
+}
+
+func validExitCode(code int) bool { return code >= minExitCode && code <= maxExitCode }
+
+// singleLine reports whether s is valid text of one line without control characters.
+func singleLine(s string) bool {
+	if !utf8.ValidString(s) {
+		return false
+	}
+	for _, r := range s {
+		if unicode.IsControl(r) || r == '\u2028' || r == '\u2029' {
+			return false
+		}
+	}
+	return true
 }
 
 // Program is an application's command tree with the shared conventions applied. It serves one run.
@@ -58,6 +135,8 @@ type Program struct {
 	name     string
 	topics   []helptopics.Topic
 	redactor *redact.Redactor
+	notice   string
+	diagnose func(Diagnosis)
 
 	output string
 	agent  bool
@@ -82,6 +161,7 @@ func New(root *cobra.Command, opts Options) (*Program, error) {
 
 	p := &Program{
 		root: root, name: name, topics: append([]helptopics.Topic(nil), opts.Topics...), redactor: opts.Redactor,
+		notice: opts.Notice, diagnose: opts.Diagnosed,
 		owned: map[*pflag.Flag]bool{}, prepared: map[*cobra.Command]bool{},
 	}
 	root.Version = opts.Version
@@ -95,7 +175,11 @@ func New(root *cobra.Command, opts Options) (*Program, error) {
 	}
 	flags := root.PersistentFlags()
 	flags.StringVar(&p.output, outputFlag, "", help)
-	flags.BoolVar(&p.agent, agentFlag, false, cli.AgentFlagHelp)
+	agentHelp := opts.AgentHelp
+	if agentHelp == "" {
+		agentHelp = cli.AgentFlagHelp
+	}
+	flags.BoolVar(&p.agent, agentFlag, false, agentHelp)
 	p.own(flags, outputFlag, agentFlag)
 
 	// A command without a run function is a help topic: 'help <topic>' prints its text, and the root help
@@ -157,6 +241,12 @@ func checkRoot(root *cobra.Command, opts Options) []error {
 			errs = append(errs, fmt.Errorf("help topic %q needs a short help of one line", topic.Name))
 		}
 	}
+	if !singleLine(opts.AgentHelp) {
+		errs = append(errs, errors.New("the agent help must be one line without control characters"))
+	}
+	if !singleLine(opts.Notice) {
+		errs = append(errs, errors.New("the notice must be one line without control characters"))
+	}
 	return errs
 }
 
@@ -193,7 +283,8 @@ func (p *Program) OutputExplicit() bool {
 }
 
 // Execute runs the command tree with args and returns the process exit code. A failure is written to
-// stderr; only help, version and the command's own payload reach stdout.
+// stderr; only help, version and the command's own payload reach stdout. An Exit error chooses the exit
+// code; Options.Notice is written before the command runs; Options.Diagnosed is called after a failure.
 func (p *Program) Execute(args []string, stdout, stderr io.Writer) int {
 	if args == nil {
 		// Cobra reads the process arguments for nil.
@@ -207,6 +298,14 @@ func (p *Program) Execute(args []string, stdout, stderr io.Writer) int {
 	if err := p.prepare(p.root); err != nil {
 		return p.fail(stderr, nil, &cli.Failure{Code: output.CodeRuntime, Message: err.Error(), NextStep: brokenNextStep})
 	}
+	if p.notice != "" {
+		notice := p.notice
+		if p.redactor != nil {
+			notice = p.redactor.Apply(notice)
+		}
+		// A notice that cannot be written must not stop the run; stderr is the only place to report it.
+		_, _ = fmt.Fprintf(stderr, "%s: %s\n", p.name, notice)
+	}
 	executed, err := p.root.ExecuteC()
 	if err == nil {
 		return cli.ExitSuccess
@@ -219,16 +318,45 @@ func (p *Program) fail(stderr io.Writer, executed *cobra.Command, err error) int
 	if p.redactor != nil {
 		opts.Redact = p.redactor.Apply
 	}
-	if executed != nil && isSyntax(err) {
-		opts.Usage = executed.UsageString()
+	shown, silent, code := err, false, 0
+	var exit *Exit
+	if errors.As(err, &exit) {
+		switch {
+		case exit == nil || !validExitCode(exit.Code):
+			message := "the program chose a missing exit"
+			if exit != nil {
+				message = fmt.Sprintf("the program chose exit code %d, which is reserved or invalid; only %d through %d are allowed",
+					exit.Code, minExitCode, maxExitCode)
+			}
+			shown = &cli.Failure{Code: output.CodeRuntime, Message: message, NextStep: brokenNextStep, Cause: err}
+		case exit.Err == nil:
+			silent, code = true, exit.Code
+		default:
+			shown, code = exit.Err, exit.Code
+		}
 	}
-	if werr := cli.WriteError(stderr, p.name, err, opts); werr != nil {
-		_ = cli.WriteError(stderr, p.name, &cli.Failure{
-			Code: output.CodeRuntime, Message: "the diagnostic could not be written: " + werr.Error(),
-			NextStep: brokenNextStep,
-		}, opts)
+	if code == 0 && !silent {
+		code = cli.ExitCode(shown)
 	}
-	return cli.ExitCode(err)
+	if !silent {
+		if executed != nil && isSyntax(shown) {
+			opts.Usage = executed.UsageString()
+		}
+		if werr := cli.WriteError(stderr, p.name, shown, opts); werr != nil {
+			_ = cli.WriteError(stderr, p.name, &cli.Failure{
+				Code: output.CodeRuntime, Message: "the diagnostic could not be written: " + werr.Error(),
+				NextStep: brokenNextStep,
+			}, opts)
+		}
+	}
+	if p.diagnose != nil {
+		command := p.name
+		if executed != nil {
+			command = executed.CommandPath()
+		}
+		p.diagnose(Diagnosis{Command: command, Err: err, Code: code})
+	}
+	return code
 }
 
 // Manpage writes the manpage of the command tree into dir and adds the help topics to the root page.
