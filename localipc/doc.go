@@ -49,6 +49,19 @@
 // the successor never speaks the earlier process's protocol. Windows does not
 // support a handover.
 //
+// After an install without a handover, a process may still serve an earlier
+// endpoint. Holder finds it and EndHolder, only when called, asks it to end;
+// nothing else in the package signals a process. Both accept only another
+// process of this user: on Unix behind a channel that passes the checks above
+// with its lock held, on Windows behind a pipe owned by the user or by the
+// default owner of this process's token. They never replace or remove
+// anything at the endpoint. EndHolder checks again just before the signal.
+// Linux (with pidfd, from kernel 5.3) and Windows hold the checked process
+// open across that check; macOS signals by process id, so a process id reused
+// in that moment by another process of the user would receive the signal.
+// EndHolder does not wait; the application can call Holder until it reports
+// ErrNotServed.
+//
 // Running lists the SocketBase of every channel of the application, found as
 // private sockets of the user in the runtime directory (on macOS also in the
 // TMPDIR location) or as the user's open pipes with the endpoint's PipePrefix.

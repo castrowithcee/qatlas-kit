@@ -14,6 +14,8 @@ func running(Endpoint) ([]string, error)                   { return nil, ErrUnsu
 func listen(Endpoint, ListenOptions) (net.Listener, error) { return nil, ErrUnsupported }
 func dial(context.Context, Endpoint) (net.Conn, error)     { return nil, ErrUnsupported }
 func checkPeer(net.Conn, bool) (int, error)                { return 0, ErrUnsupported }
+func holder(context.Context, Endpoint) (int, error)        { return 0, ErrUnsupported }
+func endHolder(context.Context, Endpoint) (int, error)     { return 0, ErrUnsupported }
 func handOver(net.Listener) error                          { return ErrUnsupported }
 func awaitHandover(context.Context, net.Listener) error    { return ErrUnsupported }
 func programReplaced() (string, bool, error)               { return "", false, ErrUnsupported }
