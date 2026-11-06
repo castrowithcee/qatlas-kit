@@ -62,7 +62,12 @@ func (c *Client) binding(version string) (trustBinding, error) {
 	if c.Namespace == "" || len(c.TrustedKeys) == 0 || !validPayloadName(c.ProgramName) {
 		return trustBinding{}, errors.New("namespace, trusted keys and program name are required")
 	}
-	b := trustBinding{repository: c.RepositoryAPI, namespace: c.Namespace, signature: c.SignatureAsset, archive: c.ArchiveName(version), program: c.ProgramName}
+	v, err := parseSemver(version)
+	if err != nil {
+		return trustBinding{}, fmt.Errorf("invalid release version: %w", err)
+	}
+	namespace, signatureAsset := c.signatureSet(v)
+	b := trustBinding{repository: c.RepositoryAPI, namespace: namespace, signature: signatureAsset, archive: c.ArchiveName(version), program: c.ProgramName}
 	program := programEntry(b.archive, b.program)
 	for _, companion := range c.Companions {
 		if name, ok := entryPath(companion.Entry); !ok || name == "" || name != companion.Entry {
@@ -126,7 +131,7 @@ func (c *Client) Prepare(ctx context.Context, target Target) (*Prepared, error) 
 	if err != nil {
 		return nil, fmt.Errorf("download signature: %w", err)
 	}
-	if err := releaseverify.VerifyChecksums(checksums, signature, c.Namespace, c.TrustedKeys); err != nil {
+	if err := releaseverify.VerifyChecksums(checksums, signature, trust.namespace, c.TrustedKeys); err != nil {
 		return nil, fmt.Errorf("verify release: %w", err)
 	}
 	want, err := releaseverify.ChecksumFor(checksums, name)

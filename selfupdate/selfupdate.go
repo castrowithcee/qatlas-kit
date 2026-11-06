@@ -90,7 +90,10 @@ type Client struct {
 	// checksums.txt nor the archive name.
 	SignatureAsset string
 	TrustedKeys    []ssh.PublicKey
-	ProgramName    string
+	// PreviousSignature, when set, makes releases up to and including its LastVersion verify only under
+	// the previous signature set instead of Namespace and SignatureAsset.
+	PreviousSignature *PreviousSignature
+	ProgramName       string
 	// Companions are installed together with the program and restored if the program cannot be replaced.
 	Companions []Companion
 	Executable string
@@ -105,6 +108,22 @@ type Client struct {
 	// Progress is called while the archive downloads, with the bytes received and the announced size, or -1
 	// when the server does not announce it.
 	Progress func(done, total int64)
+}
+
+// PreviousSignature describes the signature set of the oldest releases after an application renamed its
+// signature namespace and signature file. A release up to and including LastVersion is verified only with
+// this namespace and signature file, every later release only with the current Client.Namespace and
+// Client.SignatureAsset; a later release that still carries the previous file is not verified with it. The
+// same Client.TrustedKeys apply to both sets, and the installers of the release package always use the
+// current set.
+type PreviousSignature struct {
+	// LastVersion is the newest release signed only with the previous set, such as "v1.4.0".
+	LastVersion string
+	// Namespace is the signature namespace of those releases.
+	Namespace string
+	// SignatureAsset is the name of the release asset that holds their signature over checksums.txt, with
+	// the same rules as Client.SignatureAsset.
+	SignatureAsset string
 }
 
 // Companion is a file that the release archive carries next to the program, such as a manpage.
@@ -171,6 +190,17 @@ func (c *Client) validate() (policy, error) {
 	}
 	if !validAssetName(c.SignatureAsset) || c.SignatureAsset == checksumsAsset {
 		return policy{}, errors.New("a valid signature asset name is required")
+	}
+	if prev := c.PreviousSignature; prev != nil {
+		if _, err := parseSemver(prev.LastVersion); err != nil {
+			return policy{}, errors.New("previous signature needs a valid last version")
+		}
+		if prev.Namespace == "" || prev.Namespace == c.Namespace {
+			return policy{}, errors.New("previous signature needs a namespace that differs from the current one")
+		}
+		if !validAssetName(prev.SignatureAsset) || prev.SignatureAsset == checksumsAsset || prev.SignatureAsset == c.SignatureAsset {
+			return policy{}, errors.New("previous signature needs a valid signature asset name that differs from the current one")
+		}
 	}
 	if strings.ContainsAny(c.Token, "\r\n") {
 		return policy{}, errors.New("invalid token")
@@ -337,12 +367,25 @@ func (c *Client) stable(releases []githubRelease, p policy) *githubRelease {
 	return best
 }
 
+// signatureSet returns the signature namespace and asset name that verify the release with the given
+// version: the previous set up to and including PreviousSignature.LastVersion, the current set otherwise.
+// The version is always the release tag, never inferred from the files a release offers.
+func (c *Client) signatureSet(v semver) (namespace, assetName string) {
+	if prev := c.PreviousSignature; prev != nil {
+		if last, err := parseSemver(prev.LastVersion); err == nil && v.compare(last) <= 0 {
+			return prev.Namespace, prev.SignatureAsset
+		}
+	}
+	return c.Namespace, c.SignatureAsset
+}
+
 func (c *Client) eligible(r githubRelease, p policy) (semver, bool) {
 	v, err := parseSemver(r.TagName)
 	if err != nil || r.Draft || r.Prerelease != (len(v.pre) > 0) || v.compare(p.minimum) < 0 {
 		return semver{}, false
 	}
-	names := []string{c.ArchiveName(r.TagName), checksumsAsset, c.SignatureAsset}
+	_, signatureAsset := c.signatureSet(v)
+	names := []string{c.ArchiveName(r.TagName), checksumsAsset, signatureAsset}
 	if names[0] == "" || names[0] == names[1] || names[0] == names[2] || strings.ContainsAny(names[0], "/\\") {
 		return semver{}, false
 	}
