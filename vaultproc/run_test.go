@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -17,6 +18,12 @@ import (
 // helperArgs run this test binary as the vault process of e in mode.
 func helperArgs(mode string, e localipc.Endpoint) []string {
 	return []string{"-test.run=^TestVaultProcessHelper$", "--", mode, e.SocketBase, e.FallbackDir}
+}
+
+// earlierEndpoint is e as an earlier version of the application named it.
+func earlierEndpoint(e localipc.Endpoint) localipc.Endpoint {
+	e.RuntimeDirName = "earlier-session"
+	return e
 }
 
 func helperCommand(mode string, e localipc.Endpoint) background.Command {
@@ -38,8 +45,13 @@ func TestVaultProcessHelper(t *testing.T) {
 	}
 	e := localipc.Endpoint{RuntimeDirName: "session", PipePrefix: "example-", ErrorName: "example",
 		SocketBase: args[1], FallbackDir: args[2]}
-	err := Run(context.Background(), RunOptions{Successor: args[0] == "successor",
-		Config: Config{Endpoint: e, Version: 1, ProofLabel: testLabel, IdleTimeout: time.Hour, Handlers: testHandlers()}})
+	opts := RunOptions{Successor: strings.HasPrefix(args[0], "successor"),
+		Config: Config{Endpoint: e, Version: 1, ProofLabel: testLabel, IdleTimeout: time.Hour, Handlers: testHandlers()}}
+	if args[0] == "successor-earlier" {
+		earlier := earlierEndpoint(e)
+		opts.Earlier = &earlier
+	}
+	err := Run(context.Background(), opts)
 	if err != nil && !errors.Is(err, ErrRunning) {
 		os.Exit(1)
 	}

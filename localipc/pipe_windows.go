@@ -59,7 +59,7 @@ func createPipe(path string, first bool, sa *windows.SecurityAttributes) (window
 }
 
 func listen(e Endpoint, opts ListenOptions) (net.Listener, error) {
-	if opts.Successor {
+	if opts.Successor || opts.Earlier != nil {
 		return nil, fmt.Errorf("%s: %w", e.label(), errHandoverUnsupported)
 	}
 	verify, err := opts.peerCheck()

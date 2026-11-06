@@ -37,7 +37,17 @@
 // instance. On Unix a running listener can hand its channel to a successor
 // that listens beside it (ListenOptions.Successor, HandOver, AwaitHandover):
 // the lock and then the socket move atomically, so exactly one process serves
-// the channel at any time. Windows does not support a handover.
+// the channel at any time. A successor can also take over from a process that
+// serves an earlier endpoint of the application (ListenOptions.Earlier), such
+// as one under a former name, and that runs its own handover. It does so only
+// where the earlier channel passes the checks a listener makes of its own (a
+// private socket in a private directory of the user, its lock held) and no
+// process serves the endpoint itself. It then listens at the endpoint's
+// channel but accepts nothing before the handover, and places beside the
+// earlier socket a lock it holds and a socket nothing listens on, which the
+// earlier process moves onto its own. Nothing already there is replaced, and
+// the successor never speaks the earlier process's protocol. Windows does not
+// support a handover.
 //
 // Running lists the SocketBase of every channel of the application, found as
 // private sockets of the user in the runtime directory (on macOS also in the
