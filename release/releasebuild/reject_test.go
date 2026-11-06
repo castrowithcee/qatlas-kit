@@ -49,7 +49,8 @@ func TestBuildRejectsInvalidInputWithoutOutput(t *testing.T) {
 			o.SignatureAsset = "install.sh"
 		},
 		"signature asset is an archive": func(t *testing.T, m *module, c *releasebuild.Config, o *releasebuild.Options) {
-			o.SignatureAsset = releasebuild.ArchiveName(program, version, "linux", "amd64")
+			goos, goarch, _ := strings.Cut(c.Targets[0], "/")
+			o.SignatureAsset = releasebuild.ArchiveName(program, version, goos, goarch)
 		},
 		"previous namespace empty": func(t *testing.T, m *module, c *releasebuild.Config, o *releasebuild.Options) {
 			o.PreviousSignature = &releasebuild.PreviousSignature{SignatureAsset: "old.sig"}
@@ -76,7 +77,8 @@ func TestBuildRejectsInvalidInputWithoutOutput(t *testing.T) {
 			o.PreviousSignature = &releasebuild.PreviousSignature{Namespace: "olddemo-release", SignatureAsset: "install.sh"}
 		},
 		"previous asset is an archive": func(t *testing.T, m *module, c *releasebuild.Config, o *releasebuild.Options) {
-			o.PreviousSignature = &releasebuild.PreviousSignature{Namespace: "olddemo-release", SignatureAsset: releasebuild.ArchiveName(program, version, "linux", "amd64")}
+			goos, goarch, _ := strings.Cut(c.Targets[0], "/")
+			o.PreviousSignature = &releasebuild.PreviousSignature{Namespace: "olddemo-release", SignatureAsset: releasebuild.ArchiveName(program, version, goos, goarch)}
 		},
 		"no output": func(t *testing.T, m *module, c *releasebuild.Config, o *releasebuild.Options) { o.Output = "" },
 		"package outside module": func(t *testing.T, m *module, c *releasebuild.Config, o *releasebuild.Options) {
