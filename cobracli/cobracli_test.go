@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -747,5 +748,218 @@ func TestProjectJSONRefusals(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+func TestZeroOptionsOutputIsUnchanged(t *testing.T) {
+	f := newFixture(t, Options{})
+	f.err = errors.New("backend failed")
+	code, stdout, stderr := f.run("show")
+	if code != cli.ExitRuntime || stdout != "" || stderr != "tool: runtime: backend failed\nCheck the cause and try again.\n" {
+		t.Fatalf("failure: exit %d, stdout %q, stderr %q", code, stdout, stderr)
+	}
+	f = newFixture(t, Options{})
+	code, stdout, stderr = f.run("show", "--output", "json")
+	if code != cli.ExitSuccess || stdout == "" || stderr != "" {
+		t.Fatalf("success: exit %d, stdout %q, stderr %q", code, stdout, stderr)
+	}
+}
+
+func TestAgentHelp(t *testing.T) {
+	f := newFixture(t, Options{AgentHelp: "machine mode of this tool"})
+	_, stdout, _ := f.run("--help")
+	if !strings.Contains(stdout, "machine mode of this tool") || strings.Contains(stdout, cli.AgentFlagHelp) {
+		t.Fatalf("help %q", stdout)
+	}
+	f = newFixture(t, Options{})
+	if _, stdout, _ = f.run("--help"); !strings.Contains(stdout, cli.AgentFlagHelp) {
+		t.Fatalf("default help %q", stdout)
+	}
+	for _, value := range []string{"a\nb", "a\rb", "a\x1b[2Jb", "a\tb", "a b"} {
+		if _, err := New(&cobra.Command{Use: "tool"}, Options{Version: "1", AgentHelp: value}); err == nil {
+			t.Errorf("agent help %q accepted", value)
+		}
+		if err := Check(&cobra.Command{Use: "tool"}, Options{Version: "1", AgentHelp: value}); err == nil {
+			t.Errorf("Check accepted agent help %q", value)
+		}
+	}
+}
+
+func TestOptionTextsAreJoinedWithOtherViolations(t *testing.T) {
+	_, err := New(&cobra.Command{Use: "Tool"}, Options{Version: "1", AgentHelp: "a\nb", Notice: "c\nd"})
+	if err == nil {
+		t.Fatal("accepted")
+	}
+	for _, want := range []string{"invalid program name", "agent help", "notice"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("%q missing from %q", want, err)
+		}
+	}
+}
+
+func TestNewExit(t *testing.T) {
+	for _, code := range []int{0, 1, 2, 126, 127, 255, -1} {
+		if exit, err := NewExit(code, errors.New("x")); err == nil || exit != nil {
+			t.Errorf("code %d accepted", code)
+		}
+	}
+	for _, code := range []int{3, 64, 125} {
+		exit, err := NewExit(code, nil)
+		if err != nil || exit.Code != code {
+			t.Errorf("code %d: %v", code, err)
+		}
+	}
+	cause := errors.New("cause")
+	exit, _ := NewExit(3, cause)
+	if !errors.Is(exit, cause) || exit.Error() != "cause" {
+		t.Fatalf("unwrap: %v", exit)
+	}
+}
+
+func TestExitCodes(t *testing.T) {
+	cause := &cli.Failure{Code: output.CodeAuth, Message: "token expired", NextStep: "Log in."}
+	exit3, _ := NewExit(3, cause)
+	exit4, _ := NewExit(4, nil)
+	wrapped := fmt.Errorf("context: %w", exit3)
+	cases := []struct {
+		name   string
+		err    error
+		code   int
+		stderr string
+	}{
+		{"code with error", exit3, 3, "tool: auth: token expired\nLog in.\n"},
+		{"wrapped", wrapped, 3, "tool: auth: token expired\nLog in.\n"},
+		{"silent", exit4, 4, ""},
+	}
+	for _, tc := range cases {
+		f := newFixture(t, Options{})
+		f.err = tc.err
+		code, stdout, stderr := f.run("show")
+		if code != tc.code || stdout != "" || stderr != tc.stderr {
+			t.Errorf("%s: exit %d, stdout %q, stderr %q", tc.name, code, stdout, stderr)
+		}
+	}
+	for _, code := range []int{0, 1, 2, 126, -1} {
+		f := newFixture(t, Options{})
+		f.err = &Exit{Code: code, Err: errors.New("x")}
+		got, stdout, stderr := f.run("show")
+		want := fmt.Sprintf("tool: runtime: the program chose exit code %d, which is reserved or invalid; only 3 through 125 are allowed\n", code)
+		if got != cli.ExitRuntime || stdout != "" || !strings.HasPrefix(stderr, want) {
+			t.Errorf("literal %d: exit %d, stdout %q, stderr %q", code, got, stdout, stderr)
+		}
+		f = newFixture(t, Options{})
+		f.err = &Exit{Code: code}
+		if got, _, stderr = f.run("show"); got != cli.ExitRuntime || !strings.HasPrefix(stderr, "tool: runtime: ") {
+			t.Errorf("silent literal %d: exit %d, stderr %q", code, got, stderr)
+		}
+	}
+	f := newFixture(t, Options{})
+	f.err = (*Exit)(nil)
+	if code, _, stderr := f.run("show"); code != cli.ExitRuntime || !strings.HasPrefix(stderr, "tool: runtime: ") {
+		t.Errorf("nil exit: exit %d, stderr %q", code, stderr)
+	}
+}
+
+func TestSyntaxErrorKeepsItsCode(t *testing.T) {
+	f := newFixture(t, Options{})
+	if code, _, _ := f.run("show", "--nope"); code != cli.ExitUsage {
+		t.Fatalf("exit %d", code)
+	}
+}
+
+func TestDiagnosed(t *testing.T) {
+	exit4, _ := NewExit(4, nil)
+	boom := errors.New("boom")
+	cases := []struct {
+		name    string
+		args    []string
+		err     error
+		broken  bool
+		command string
+		code    int
+		check   func(error) bool
+	}{
+		{"runtime", []string{"show"}, boom, false, "tool show", 1, func(e error) bool { return e == boom }},
+		{"syntax", []string{"show", "--nope"}, nil, false, "tool show", 2, func(e error) bool { return isSyntax(e) }},
+		{"unknown command", []string{"nope"}, nil, false, "tool", 2, func(e error) bool { return isSyntax(e) }},
+		{"silent exit", []string{"show"}, exit4, false, "tool show", 4, func(e error) bool { return e == error(exit4) }},
+		{"invalid exit", []string{"show"}, &Exit{Code: 1}, false, "tool show", 1, func(e error) bool { return e != nil }},
+		{"tree check", []string{"show"}, nil, true, "tool", 1, func(e error) bool { return e != nil }},
+	}
+	for _, tc := range cases {
+		var got []Diagnosis
+		plain := newFixture(t, Options{})
+		f := newFixture(t, Options{Diagnosed: func(d Diagnosis) { got = append(got, d) }})
+		for _, fx := range []*fixture{plain, f} {
+			fx.err = tc.err
+			if tc.broken {
+				fx.program.root.AddCommand(&cobra.Command{Use: "other", Short: "a\nb"})
+			}
+		}
+		pc, po, pe := plain.run(tc.args...)
+		code, stdout, stderr := f.run(tc.args...)
+		if code != pc || stdout != po || stderr != pe {
+			t.Errorf("%s: output changed: %d %q %q vs %d %q %q", tc.name, code, stdout, stderr, pc, po, pe)
+		}
+		if len(got) != 1 {
+			t.Errorf("%s: called %d times", tc.name, len(got))
+			continue
+		}
+		if got[0].Command != tc.command || got[0].Code != tc.code || code != tc.code || !tc.check(got[0].Err) {
+			t.Errorf("%s: %+v, exit %d", tc.name, got[0], code)
+		}
+	}
+	calls := 0
+	f := newFixture(t, Options{Diagnosed: func(Diagnosis) { calls++ }})
+	for _, args := range [][]string{{"show"}, {"--help"}, {"--version"}, {"item", "list", "x"}} {
+		if code, _, _ := f.run(args...); code != 0 {
+			t.Fatalf("%v: exit %d", args, code)
+		}
+	}
+	if calls != 0 {
+		t.Fatalf("called %d times on success", calls)
+	}
+}
+
+func TestNotice(t *testing.T) {
+	f := newFixture(t, Options{Notice: "audit is active"})
+	show, _, _ := f.program.root.Find([]string{"show"})
+	show.RunE = func(c *cobra.Command, _ []string) error {
+		_, _ = c.ErrOrStderr().Write([]byte("command output\n"))
+		return nil
+	}
+	for _, args := range [][]string{{"show"}, {"show", "--agent"}} {
+		code, stdout, stderr := f.run(args...)
+		if code != 0 || stdout != "" || stderr != "tool: audit is active\ncommand output\n" {
+			t.Errorf("%v: exit %d, stdout %q, stderr %q", args, code, stdout, stderr)
+		}
+	}
+	for _, args := range [][]string{{"--help"}, {"--version"}} {
+		code, stdout, stderr := f.run(args...)
+		if code != 0 || stderr != "tool: audit is active\n" || strings.Contains(stdout, "audit is active") {
+			t.Errorf("%v: exit %d, stdout %q, stderr %q", args, code, stdout, stderr)
+		}
+	}
+	if _, _, stderr := f.run("show", "--nope"); strings.Count(stderr, "audit is active") != 1 || !strings.HasPrefix(stderr, "tool: audit is active\ntool: usage: ") {
+		t.Errorf("syntax error: %q", stderr)
+	}
+
+	f = newFixture(t, Options{Notice: "audit is active"})
+	f.program.root.AddCommand(&cobra.Command{Use: "other", Short: "a\nb"})
+	if code, _, stderr := f.run("show"); code != cli.ExitRuntime || strings.Contains(stderr, "audit is active") {
+		t.Errorf("tree check: exit %d, stderr %q", code, stderr)
+	}
+
+	for _, value := range []string{"a\nb", "a\rb", "a\x1b[2Jb", "a b"} {
+		if _, err := New(&cobra.Command{Use: "tool"}, Options{Version: "1", Notice: value}); err == nil {
+			t.Errorf("notice %q accepted", value)
+		}
+	}
+
+	redactor := &redact.Redactor{}
+	redactor.Add("s3cret-value")
+	f = newFixture(t, Options{Notice: "token s3cret-value in use", Redactor: redactor})
+	if _, _, stderr := f.run("show"); strings.Contains(stderr, "s3cret-value") || !strings.Contains(stderr, redact.Marker) {
+		t.Errorf("notice not redacted: %q", stderr)
 	}
 }
