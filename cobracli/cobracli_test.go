@@ -2,9 +2,11 @@ package cobracli
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -629,6 +631,121 @@ func TestChecksDoNotStopAtRootViolations(t *testing.T) {
 	for _, err := range []error{Check(nil, Options{Version: "1 2"}), func() error { _, err := New(nil, Options{Version: "1 2"}); return err }()} {
 		if err == nil || err.Error() != "a root command is required" {
 			t.Errorf("nil root: %v", err)
+		}
+	}
+}
+
+func TestFieldsNames(t *testing.T) {
+	for _, tc := range []struct {
+		args []string
+		want []string
+	}{
+		{[]string{"show"}, nil},
+		{[]string{"show", "--fields", "b,a"}, []string{"b", "a"}},
+		{[]string{"show", "--fields="}, []string{""}},
+	} {
+		f := newFixture(t, Options{})
+		var got []string
+		cmd, _, _ := f.program.root.Find([]string{"show"})
+		cmd.RunE = func(*cobra.Command, []string) error { got = f.fields.Names(); return nil }
+		f.run(tc.args...)
+		if !slices.Equal(got, tc.want) || (tc.want == nil) != (got == nil) {
+			t.Fatalf("%v: %#v, want %#v", tc.args, got, tc.want)
+		}
+		if len(got) > 0 {
+			got[0] = "changed"
+			if f.fields.Names()[0] == "changed" {
+				t.Fatal("Names exposes the internal slice")
+			}
+		}
+	}
+}
+
+// runProjectJSON runs a command that projects list with available through the real flag path.
+func runProjectJSON(t *testing.T, list string, available []string, args ...string) (int, string, string, error) {
+	t.Helper()
+	f := newFixture(t, Options{})
+	cmd, _, _ := f.program.root.Find([]string{"show"})
+	var projErr error
+	cmd.RunE = func(c *cobra.Command, _ []string) error {
+		out, err := f.fields.ProjectJSON(json.RawMessage(list), available)
+		if err != nil {
+			projErr = err
+			return err
+		}
+		_, err = c.OutOrStdout().Write(append(out, '\n'))
+		return err
+	}
+	code, stdout, stderr := f.run(append([]string{"show"}, args...)...)
+	return code, stdout, stderr, projErr
+}
+
+func TestProjectJSON(t *testing.T) {
+	avail := []string{"id", "name", "size"}
+	list := `[ {"size": 1.50, "name":"a\u00e9", "id": 7, "extra": true}, {"id": 8} ]`
+	want := `[{"size":1.50,"id":7},{"id":8}]` + "\n"
+	for i := 0; i < 2; i++ {
+		code, stdout, stderr, _ := runProjectJSON(t, list, avail, "--fields", "size,id")
+		if code != 0 || stdout != want {
+			t.Fatalf("exit %d, stdout %q: %s", code, stdout, stderr)
+		}
+	}
+	// Without --fields the input comes back unchanged.
+	code, stdout, _, _ := runProjectJSON(t, list, avail)
+	if code != 0 || stdout != list+"\n" {
+		t.Fatalf("exit %d, stdout %q", code, stdout)
+	}
+	// An empty list is still checked against the declared fields.
+	code, stdout, _, _ = runProjectJSON(t, `[]`, avail, "--fields", "name")
+	if code != 0 || stdout != "[]\n" {
+		t.Fatalf("exit %d, stdout %q", code, stdout)
+	}
+}
+
+func TestProjectJSONRefusals(t *testing.T) {
+	avail := []string{"id", "name"}
+	for _, tc := range []struct {
+		name  string
+		list  string
+		avail []string
+		args  []string
+		msg   string
+	}{
+		{"unknown", `[{"id":1}]`, avail, []string{"--fields", "zzz"}, `unknown field "zzz", available fields are id, name`},
+		{"unknown in empty list", `[]`, avail, []string{"--fields", "zzz"}, `unknown field "zzz", available fields are id, name`},
+		{"repeated", `[{"id":1}]`, avail, []string{"--fields", "id,id"}, `field "id" is requested more than once`},
+		{"explicitly empty", `[{"id":1}]`, avail, []string{"--fields="}, `unknown field ""`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			code, stdout, stderr, err := runProjectJSON(t, tc.list, tc.avail, tc.args...)
+			var pe *output.ProjectionError
+			if !errors.As(err, &pe) || code != cli.ExitUsage || stdout != "" || !strings.Contains(stderr, tc.msg) {
+				t.Fatalf("exit %d, stdout %q, stderr %q, err %v", code, stdout, stderr, err)
+			}
+		})
+	}
+	for _, tc := range []struct {
+		name  string
+		list  string
+		avail []string
+	}{
+		{"object", `{"id":1}`, avail},
+		{"null", `null`, avail},
+		{"scalar entry", `[1]`, avail},
+		{"null entry", `[null]`, avail},
+		{"invalid", `[{`, avail},
+		{"trailing data", `[] x`, avail},
+		{"nil available", `[]`, nil},
+		{"empty available", `[]`, []string{}},
+	} {
+		for _, args := range [][]string{{"--fields", "id"}, nil} {
+			t.Run(tc.name, func(t *testing.T) {
+				code, stdout, _, err := runProjectJSON(t, tc.list, tc.avail, args...)
+				var pe *output.ProjectionError
+				if err == nil || errors.As(err, &pe) || code == 0 || stdout != "" {
+					t.Fatalf("exit %d, stdout %q, err %v", code, stdout, err)
+				}
+			})
 		}
 	}
 }

@@ -17,6 +17,14 @@ on:
         description: Release file of the signature over checksums.txt.
         type: string
         required: true
+      previous-namespace:
+        description: Former signature namespace; with previous-signature-asset, adds a signature with the same key for updaters of earlier releases.
+        type: string
+        default: ''
+      previous-signature-asset:
+        description: Former release file of the signature under previous-namespace; set together with previous-namespace.
+        type: string
+        default: ''
       config:
         description: Release configuration file of the application.
         type: string
@@ -47,6 +55,8 @@ jobs:
           PROGRAM: ${{ inputs.program }}
           NAMESPACE: ${{ inputs.namespace }}
           SIGNATURE_ASSET: ${{ inputs.signature-asset }}
+          PREVIOUS_NAMESPACE: ${{ inputs.previous-namespace }}
+          PREVIOUS_SIGNATURE_ASSET: ${{ inputs.previous-signature-asset }}
           ENVIRONMENT: ${{ inputs.environment }}
         run: |
           set -euo pipefail
@@ -55,6 +65,14 @@ jobs:
           [ "$NAMESPACE" = "$PROGRAM-release" ] || { echo "namespace must be $PROGRAM-release"; exit 1; }
           printf '%s\n' "$SIGNATURE_ASSET" | grep -Eqx '[A-Za-z0-9][A-Za-z0-9._-]{0,127}' || { echo "invalid signature asset name"; exit 1; }
           case "$SIGNATURE_ASSET" in checksums.txt|allowed-signers|install.sh|install.ps1) echo "signature asset name is reserved"; exit 1 ;; esac
+          if [ -n "$PREVIOUS_NAMESPACE$PREVIOUS_SIGNATURE_ASSET" ]; then
+            [ -n "$PREVIOUS_NAMESPACE" ] && [ -n "$PREVIOUS_SIGNATURE_ASSET" ] || { echo "previous-namespace and previous-signature-asset are set together"; exit 1; }
+            printf '%s\n' "$PREVIOUS_NAMESPACE" | grep -Eqx '[a-z0-9][a-z0-9._-]{0,127}' || { echo "invalid previous namespace"; exit 1; }
+            [ "$PREVIOUS_NAMESPACE" != "$NAMESPACE" ] || { echo "previous namespace must differ from the namespace"; exit 1; }
+            printf '%s\n' "$PREVIOUS_SIGNATURE_ASSET" | grep -Eqx '[A-Za-z0-9][A-Za-z0-9._-]{0,127}' || { echo "invalid previous signature asset name"; exit 1; }
+            [ "$PREVIOUS_SIGNATURE_ASSET" != "$SIGNATURE_ASSET" ] || { echo "previous signature asset name must differ from signature-asset"; exit 1; }
+            case "$PREVIOUS_SIGNATURE_ASSET" in checksums.txt|allowed-signers|install.sh|install.ps1) echo "previous signature asset name is reserved"; exit 1 ;; esac
+          fi
           [ -n "$ENVIRONMENT" ] || { echo "the signing job needs a protected environment"; exit 1; }
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -79,14 +97,20 @@ jobs:
           PROGRAM: ${{ inputs.program }}
           NAMESPACE: ${{ inputs.namespace }}
           SIGNATURE_ASSET: ${{ inputs.signature-asset }}
+          PREVIOUS_NAMESPACE: ${{ inputs.previous-namespace }}
+          PREVIOUS_SIGNATURE_ASSET: ${{ inputs.previous-signature-asset }}
           CONFIG: ${{ inputs.config }}
           ALLOWED_SIGNERS: ${{ inputs.allowed-signers }}
         run: |
           set -euo pipefail
           SOURCE_DATE_EPOCH=$(git show -s --format=%ct "refs/tags/$GITHUB_REF_NAME^{commit}")
           export SOURCE_DATE_EPOCH
+          previous=()
+          if [ -n "$PREVIOUS_NAMESPACE" ]; then
+            previous=(-previous-namespace "$PREVIOUS_NAMESPACE" -previous-signature-asset "$PREVIOUS_SIGNATURE_ASSET")
+          fi
           go run github.com/castrowithcee/qatlas-kit/cmd/releasebuild \
-            -config "$CONFIG" -program "$PROGRAM" -namespace "$NAMESPACE" -signature-asset "$SIGNATURE_ASSET" -allowed-signers "$ALLOWED_SIGNERS" \
+            "${previous[@]}" -config "$CONFIG" -program "$PROGRAM" -namespace "$NAMESPACE" -signature-asset "$SIGNATURE_ASSET" -allowed-signers "$ALLOWED_SIGNERS" \
             -releases-url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases" -version "$GITHUB_REF_NAME" -out dist
       - name: Collect signing input
         env:
@@ -123,13 +147,26 @@ jobs:
         env:
           NAMESPACE: ${{ inputs.namespace }}
           SIGNATURE_ASSET: ${{ inputs.signature-asset }}
+          PREVIOUS_NAMESPACE: ${{ inputs.previous-namespace }}
+          PREVIOUS_SIGNATURE_ASSET: ${{ inputs.previous-signature-asset }}
           RELEASE_SIGNING_KEY: ${{ secrets.RELEASE_SIGNING_KEY }}
         run: |
           set -euo pipefail
           [ -n "$RELEASE_SIGNING_KEY" ] || { echo "the secret RELEASE_SIGNING_KEY is not set"; exit 1; }
-          # The name comes from the workflow input, never from the build job.
+          # The names come from the workflow inputs, never from the build job.
           printf '%s\n' "$SIGNATURE_ASSET" | grep -Eqx '[A-Za-z0-9][A-Za-z0-9._-]{0,127}' || { echo "invalid signature asset name"; exit 1; }
           case "$SIGNATURE_ASSET" in checksums.txt|allowed-signers|install.sh|install.ps1) echo "signature asset name is reserved"; exit 1 ;; esac
+          if [ -n "$PREVIOUS_NAMESPACE$PREVIOUS_SIGNATURE_ASSET" ]; then
+            [ -n "$PREVIOUS_NAMESPACE" ] && [ -n "$PREVIOUS_SIGNATURE_ASSET" ] || { echo "previous namespace and signature asset are set together"; exit 1; }
+            printf '%s\n' "$PREVIOUS_NAMESPACE" | grep -Eqx '[a-z0-9][a-z0-9._-]{0,127}' || { echo "invalid previous namespace"; exit 1; }
+            [ "$PREVIOUS_NAMESPACE" != "$NAMESPACE" ] || { echo "previous namespace must differ from the namespace"; exit 1; }
+            printf '%s\n' "$PREVIOUS_SIGNATURE_ASSET" | grep -Eqx '[A-Za-z0-9][A-Za-z0-9._-]{0,127}' || { echo "invalid previous signature asset name"; exit 1; }
+            [ "$PREVIOUS_SIGNATURE_ASSET" != "$SIGNATURE_ASSET" ] || { echo "previous signature asset name must differ from the signature asset name"; exit 1; }
+            case "$PREVIOUS_SIGNATURE_ASSET" in checksums.txt|allowed-signers|install.sh|install.ps1) echo "previous signature asset name is reserved"; exit 1 ;; esac
+          fi
+          # ssh-keygen always writes checksums.txt.sig; each signature is moved to signatures/ before the next
+          # one is made, so no name can overwrite another, not even checksums.txt.sig.
+          mkdir signatures
           cd signing-input
           [ -s checksums.txt ] || { echo "checksums.txt is empty"; exit 1; }
           if grep -Evqx '[0-9a-f]{64}  [A-Za-z0-9._-]+' checksums.txt; then
@@ -144,15 +181,20 @@ jobs:
           trap 'rm -f "$key"' EXIT
           (umask 077 && printf '%s\n' "$RELEASE_SIGNING_KEY" > "$key")
           ssh-keygen -Y sign -f "$key" -n "$NAMESPACE" checksums.txt
-          if [ "$SIGNATURE_ASSET" != checksums.txt.sig ]; then
-            mv checksums.txt.sig "$SIGNATURE_ASSET"
-          fi
+          mv checksums.txt.sig "../signatures/$SIGNATURE_ASSET"
           ssh-keygen -Y verify -f allowed-signers -I "$NAMESPACE" -n "$NAMESPACE" \
-            -s "$SIGNATURE_ASSET" < checksums.txt
+            -s "../signatures/$SIGNATURE_ASSET" < checksums.txt
+          if [ -n "$PREVIOUS_NAMESPACE" ]; then
+            # Same key; its allowed-signers entries stay under the current namespace as principal.
+            ssh-keygen -Y sign -f "$key" -n "$PREVIOUS_NAMESPACE" checksums.txt
+            mv checksums.txt.sig "../signatures/$PREVIOUS_SIGNATURE_ASSET"
+            ssh-keygen -Y verify -f allowed-signers -I "$NAMESPACE" -n "$PREVIOUS_NAMESPACE" \
+              -s "../signatures/$PREVIOUS_SIGNATURE_ASSET" < checksums.txt
+          fi
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: release-signature
-          path: signing-input/${{ inputs.signature-asset }}
+          path: signatures
           if-no-files-found: error
 
   publish:
