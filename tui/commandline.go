@@ -75,7 +75,7 @@ type CommandLine struct {
 	keys     *Keymap
 	text     Translator
 
-	input  []rune
+	line   textLine
 	cursor int
 	msg    string
 	ctx    Context
@@ -182,21 +182,34 @@ func normalizeCommand(text string) string {
 }
 
 // Reset empties the line, for a command line closed by other means than its keys.
-func (c *CommandLine) Reset() { c.input, c.cursor, c.msg = nil, 0, "" }
+func (c *CommandLine) Reset() {
+	c.line.clear()
+	c.cursor, c.msg = 0, ""
+}
 
 // SetContext sets the place the command line is opened from, which decides where a command acts. The
 // application sets it when it opens the line.
 func (c *CommandLine) SetContext(ctx Context) { c.ctx = ctx }
 
 // Query is the typed text.
-func (c *CommandLine) Query() string { return string(c.input) }
+func (c *CommandLine) Query() string { return c.line.String() }
+
+// Paste puts pasted text into the line at its cursor, cleaned as a text line cleans it, and reports whether
+// any of it was taken. The matches follow the text and the choice starts over.
+func (c *CommandLine) Paste(text string) bool {
+	if !c.line.insert(text) {
+		return false
+	}
+	c.cursor, c.msg = 0, ""
+	return true
+}
 
 // Matches are the commands that match the typed text in their order: those whose name or an alias is the text
 // first, then those that begin with it, then those with a word that begins with it, then those that hold it
 // inside a word; each group keeps the order of the commands. Case does not count. The empty line lists the
 // commands that are not hidden.
 func (c *CommandLine) Matches() []Command {
-	query := normalizeCommand(string(c.input))
+	query := normalizeCommand(c.line.String())
 	if query == "" {
 		var shown []Command
 		for _, cmd := range c.commands {
@@ -230,8 +243,8 @@ func (c *CommandLine) Matches() []Command {
 
 // Update handles a key of the open command line. done reports that the line closes: with the zero Command for
 // the back key, and with the chosen command for the enter key where it is available. An unknown or
-// unavailable command keeps the line open with the typed text and says why. Every other key that types text
-// edits the line.
+// unavailable command keeps the line open with the typed text and says why. Every other key of a text line
+// edits the typed text.
 func (c *CommandLine) Update(msg tea.KeyPressMsg) (cmd Command, done bool) {
 	matches := c.Matches()
 	is := func(id ActionID) bool { return c.keys.Is(msg, id, InputText) }
@@ -248,18 +261,7 @@ func (c *CommandLine) Update(msg tea.KeyPressMsg) (cmd Command, done bool) {
 	case is(c.nav.Enter):
 		return c.run(matches)
 	}
-	before := len(c.input)
-	switch {
-	case msg.Code == tea.KeyBackspace && msg.Mod == 0 && len(c.input) > 0:
-		c.input = c.input[:len(c.input)-1]
-	case msg.Text != "" && msg.Mod&^tea.ModShift == 0:
-		for _, r := range msg.Text {
-			if unicode.IsPrint(r) {
-				c.input = append(c.input, r)
-			}
-		}
-	}
-	if len(c.input) != before {
+	if _, changed := c.line.edit(msg, false); changed {
 		c.cursor, c.msg = 0, ""
 	}
 	return Command{}, false
@@ -283,7 +285,7 @@ func (c *CommandLine) Click(r MouseResult) (cmd Command, done bool) {
 
 func (c *CommandLine) run(matches []Command) (Command, bool) {
 	if len(matches) == 0 {
-		c.msg = c.text.Lookup(TextCommandUnknown, normalizeCommand(string(c.input)))
+		c.msg = c.text.Lookup(TextCommandUnknown, normalizeCommand(c.line.String()))
 		return Command{}, false
 	}
 	cmd := matches[min(c.cursor, len(matches)-1)]
@@ -358,13 +360,14 @@ func (c *CommandLine) View(styles Styles, width, height int) (string, []Target) 
 	return strings.Join(styles.Panel(title, "", lines, width, height, true), "\n"), kept
 }
 
-// inputLine is the prompt and the typed text, the end in view where it is long, or the dimmed placeholder.
+// inputLine is the prompt and the typed text with its cursor, scrolled where it is long, or the dimmed
+// placeholder.
 func (c *CommandLine) inputLine(styles Styles, width int) string {
 	room := max(width-len(commandPrompt), 0)
-	if len(c.input) == 0 {
+	if len(c.line.runes) == 0 {
 		return commandPrompt + styles.Render(StyleHint, styles.Truncate(Escape(c.text.Lookup(TextCommandPrompt)), room))
 	}
-	return commandPrompt + styles.TruncateLeft(Escape(string(c.input)), room)
+	return commandPrompt + c.line.view(room, styles, true, "")
 }
 
 // keyLabel is the key column of a command: the keys of its action in force, or the one key it names.
