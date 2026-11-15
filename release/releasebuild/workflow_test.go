@@ -367,7 +367,8 @@ func TestCheckInputsStepChecksDryRun(t *testing.T) {
 // TestBuildStepVersionAndSourceDate runs the build script with a stand-in for the go command and checks the
 // version and source date it passes on.
 func TestBuildStepVersionAndSourceDate(t *testing.T) {
-	if runtime.GOOS == "windows" {
+	// The script relies on bash 4 or later for an empty array under set -u, as on the Linux runner.
+	if runtime.GOOS != "linux" {
 		t.Skip("the build job runs on Linux")
 	}
 	for _, tool := range []string{"bash", "git"} {
