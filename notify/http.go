@@ -247,9 +247,23 @@ func (s *Sender) post(ctx context.Context, target string, body []byte, headers m
 // postRead is post that also returns the successful answer, read up to maxAnswer.
 func (s *Sender) postRead(ctx context.Context, target string, body []byte, headers map[string]string,
 	subject string, fields httpx.OriginalFields) ([]byte, error) {
+	answer, _, err := s.exchange(ctx, target, body, headers, httpx.StatusTexts{
+		Subject:    subject,
+		Auth:       subject + " refused the credential",
+		Permission: subject + " does not allow this message",
+		NotFound:   subject + " does not know the address or the chat",
+	}, fields, maxAnswer)
+	return answer, err
+}
+
+// exchange posts one JSON request and returns the successful answer, read up to limit. A failure is an
+// *Error, returned with the first bytes of the failed answer for a caller that reads more of it.
+func (s *Sender) exchange(ctx context.Context, target string, body []byte, headers map[string]string,
+	texts httpx.StatusTexts, fields httpx.OriginalFields, limit int) (answer, failed []byte, err error) {
+	subject := texts.Subject
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, target, bytes.NewReader(body))
 	if err != nil {
-		return nil, configError("the " + subject + " address is not a valid URL")
+		return nil, nil, configError("the " + subject + " address is not a valid URL")
 	}
 	req.Header.Set("Content-Type", "application/json")
 	if s.opts.UserAgent != "" {
@@ -260,25 +274,21 @@ func (s *Sender) postRead(ctx context.Context, target string, body []byte, heade
 	}
 	resp, err := s.client.Do(req)
 	if err != nil {
-		return nil, transportError(err, subject)
+		return nil, nil, transportError(err, subject)
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
-		answer, err := io.ReadAll(io.LimitReader(resp.Body, maxAnswer+1))
+		answer, err := io.ReadAll(io.LimitReader(resp.Body, int64(limit)+1))
 		if err != nil {
-			return nil, transportError(err, subject)
+			return nil, nil, transportError(err, subject)
 		}
-		if len(answer) > maxAnswer {
-			return nil, &Error{Code: output.CodeRuntime, Message: subject + " answered with more than the size limit"}
+		if len(answer) > limit {
+			return nil, nil, &Error{Code: output.CodeRuntime, Message: subject + " answered with more than the size limit"}
 		}
-		return answer, nil
+		return answer, nil, nil
 	}
-	failure := httpx.ClassifyStatusBody("send", resp.StatusCode, httpx.StatusTexts{
-		Subject:    subject,
-		Auth:       subject + " refused the credential",
-		Permission: subject + " does not allow this message",
-		NotFound:   subject + " does not know the address or the chat",
-	}, resp.Body, fields)
+	failed = httpx.ReadErrorBody(resp.Body)
+	failure := httpx.ClassifyStatusBody("send", resp.StatusCode, texts, bytes.NewReader(failed), fields)
 	out := &Error{Code: codeOf(failure.Class), Message: failure.Message, Original: failure.Original}
 	switch resp.StatusCode {
 	case http.StatusTooManyRequests:
@@ -288,7 +298,7 @@ func (s *Sender) postRead(ctx context.Context, target string, body []byte, heade
 	default:
 		out.retry = resp.StatusCode >= 500
 	}
-	return nil, out
+	return nil, failed, out
 }
 
 func codeOf(class httpx.Class) output.Code {

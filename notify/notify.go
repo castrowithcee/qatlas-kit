@@ -54,7 +54,8 @@ type Message struct {
 type Options struct {
 	// Attempts is the number of tries per Send; zero is three. Only a failure that may pass is repeated.
 	Attempts int
-	// Backoff is the wait before the second try, doubled for each further one; zero is two seconds.
+	// Backoff is the wait before the second try, doubled for each further one; zero is two seconds. A
+	// Receiver starts its waits after failed polls with it as well.
 	Backoff time.Duration
 	// Timeout bounds one try; zero is 15 seconds.
 	Timeout time.Duration
