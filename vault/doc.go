@@ -25,6 +25,17 @@
 // between the modes. Decrypt verifies the passphrase, merges every pending entry and removes the sealed
 // files with the key. Without Files.Plain these operations fail with ErrUnencryptedDisabled.
 //
+// Options.SwitchFilter lets the application carry over only what it allows: Encrypt passes the plain
+// document through it before encrypting, Decrypt the merged document before writing it as plain JSON. The
+// result must pass the schema check. If the filter fails or its result does not, nothing is written: Encrypt
+// leaves no key file and keeps the plain document, Decrypt keeps the encrypted files and the pending entries
+// as they were, because it merges them in memory and removes them only after the plain document is written.
+// Without a filter the document is carried over unchanged.
+//
+// A document file of 0 bytes, plain or decrypted, is ErrDamaged, unless Options.EmptyDocument names the
+// document it reads as; New refuses an EmptyDocument that fails the schema check. Blanks alone stay damaged,
+// and no write accepts 0 bytes.
+//
 // # Checks
 //
 // Every file is read only if nobody but the user can reach it: on Unix its mode grants nothing to group
@@ -36,9 +47,11 @@
 // only after the merged document is written.
 //
 // A wrong passphrase reports ErrWrongPassphrase, a key file that does not match the recipient file
-// ErrKeyMismatch, and a file that does not decrypt or decode ErrDamaged. The library's own messages and
-// file contents never appear in an error. The scrypt work factor is DefaultWorkFactor unless
-// Options.WorkFactor raises it; a lower one is accepted only in test binaries.
+// ErrKeyMismatch, and a file that does not decrypt or decode ErrDamaged. A problem with the document, on
+// read or write, is a *DocumentError that names the file and tells Kind (DocumentDecrypt, DocumentDecode or
+// DocumentSchema) and, for DocumentSchema, the Version found; it wraps ErrDamaged or ErrUnsupportedSchema.
+// The library's own messages and file contents never appear in an error. The scrypt work factor is
+// DefaultWorkFactor unless Options.WorkFactor raises it; a lower one is accepted only in test binaries.
 //
 // Anyone who can write the directory can encrypt to the public recipient, so a sealed file whose content
 // must come from the vault itself carries a check value: MAC and VerifyMAC compute it with a key derived

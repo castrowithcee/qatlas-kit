@@ -82,8 +82,8 @@ func (v *Vault) Update(change UpdateFunc) (undo func() error, err error) {
 	done = slices.Clone(done)
 	slices.Sort(done)
 	done = slices.Compact(done)
-	if err := checkSchema(updated, v.opts.Schemas); err != nil {
-		return nil, fmt.Errorf("the updated document: %w", err)
+	if err := checkSchema(v.documentPath(), updated, v.opts.Schemas); err != nil {
+		return nil, err
 	}
 	updated = slices.Clone(updated)
 	if err := v.writeDocument(v.identity, updated); err != nil {
@@ -114,9 +114,6 @@ func (v *Vault) Update(change UpdateFunc) (undo func() error, err error) {
 // and touches no other file. It needs no passphrase and restores the file after Forget too; while the value
 // is unlocked it holds the restored document again. It takes effect once.
 func (v *Vault) WriteWithUndo(document []byte) (undo func() error, err error) {
-	if err := checkSchema(document, v.opts.Schemas); err != nil {
-		return nil, err
-	}
 	v.mu.Lock()
 	defer v.mu.Unlock()
 	state, err := v.state()
@@ -129,6 +126,9 @@ func (v *Vault) WriteWithUndo(document []byte) (undo func() error, err error) {
 	case StateLocked:
 		return nil, ErrLocked
 	case StateUnencrypted:
+		if err := checkSchema(v.plainPath(), document, v.opts.Schemas); err != nil {
+			return nil, err
+		}
 		saved, err := saveFile(v.plainPath())
 		if err != nil {
 			return nil, err
@@ -138,6 +138,9 @@ func (v *Vault) WriteWithUndo(document []byte) (undo func() error, err error) {
 			return nil, err
 		}
 		return v.undo([]savedFile{saved}, false), nil
+	}
+	if err := checkSchema(v.documentPath(), document, v.opts.Schemas); err != nil {
+		return nil, err
 	}
 	saved, err := saveFile(v.documentPath())
 	if err != nil {

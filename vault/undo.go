@@ -77,14 +77,13 @@ func (v *Vault) reloadHeld(f savedFile) error {
 		plain, err := decryptFrom(f.data, v.identity.key)
 		if err != nil {
 			v.forget()
-			return fmt.Errorf("cannot decrypt %s: %w", f.path, ErrDamaged)
+			return &DocumentError{Path: f.path, Kind: DocumentDecrypt}
 		}
-		if err := checkSchema(plain, v.opts.Schemas); err != nil {
-			clear(plain)
+		doc, err = v.readDocument(f.path, plain)
+		if err != nil {
 			v.forget()
-			return fmt.Errorf("%s: %w", f.path, err)
+			return err
 		}
-		doc = plain
 	}
 	clear(v.doc)
 	v.doc = doc
