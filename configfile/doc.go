@@ -8,8 +8,9 @@
 // file byte-identical.
 //
 // A symlinked file is replaced at its target, and a dangling final link is an error. New files are
-// private to the current user (0600, directories 0700, a user-only ACL on Windows), existing permissions
-// are kept, and a lock file that is not private is rejected without being changed.
+// private to the current user (0600, directories 0700, a user-only ACL on Windows), and existing
+// permissions are kept. A lock file that is not private is rejected without being changed; on Windows, a
+// regular lock file owned by the current user is first given the user-only ACL and then checked again.
 //
 // Backups lie in a backups directory beside the configured path and are never overwritten. The ten newest
 // regular backups and the first hand-edited version are kept. RestoreBackup returns a Restored that
