@@ -83,8 +83,9 @@ type Options[T any] struct {
 	TornLine TornLine
 	// KeyID is the key ID of the current label of the log key (see KeyLabel). Append writes it as mac_key
 	// into every line it signs and fails when the key signs under another key ID. Verify needs no key for
-	// it: from the first line signed under KeyID on, a line signed under any other key ID is a mismatch, so
-	// a chain changes labels at most once and never back. Zero writes no mac_key.
+	// it: from the first line signed under KeyID on, a line signed under any other key ID is a mismatch
+	// named ProblemKeyIDChange, so a chain changes labels at most once and never back. Zero writes no
+	// mac_key.
 	KeyID uint
 	// Now is the clock of Append; nil means time.Now.
 	Now func() time.Time

@@ -27,7 +27,9 @@ type Options struct {
 	Dir string
 	// Program is the program file name without ".exe".
 	Program string
-	// Namespace is the signature namespace; it must be Program + "-release".
+	// Namespace is the signature namespace, <name>-release with a name that starts with a lowercase letter
+	// and has at most 64 lowercase letters, digits and hyphens. It is the application's own and need not
+	// derive from Program.
 	Namespace string
 	// SignatureAsset is the name of the release file that holds the signature over checksums.txt. It is
 	// required, has no default, and must not name an asset of the build.
@@ -55,7 +57,7 @@ type Options struct {
 // installers of the build verify the current namespace and file only.
 type PreviousSignature struct {
 	// Namespace is the former signature namespace. It must differ from Options.Namespace and is not bound
-	// to the <program>-release form of the current one.
+	// to the <name>-release form of the current one.
 	Namespace string
 	// SignatureAsset is the former release file name. It must differ from Options.SignatureAsset and must
 	// not name an asset of the build.
@@ -156,8 +158,8 @@ func prepare(c Config, o Options) (*plan, error) {
 	if !programPattern.MatchString(o.Program) {
 		return nil, fmt.Errorf("invalid program name %q", o.Program)
 	}
-	if o.Namespace != o.Program+"-release" {
-		return nil, fmt.Errorf("signature namespace must be %q", o.Program+"-release")
+	if !namespacePattern.MatchString(o.Namespace) {
+		return nil, fmt.Errorf("signature namespace %q must be <name>-release with a lowercase name of at most 64 letters, digits and hyphens", o.Namespace)
 	}
 	if !versionPattern.MatchString(o.Version) {
 		return nil, fmt.Errorf("version %q must be a SemVer tag such as v1.2.3 or v1.2.3-rc.1", o.Version)
