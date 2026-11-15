@@ -17,14 +17,14 @@ func frameCatalogs() i18n.Catalogs[TextID] {
 	return i18n.Catalogs[TextID]{
 		i18n.English: {
 			"ex.overview": "Overview", "ex.items": "Items", "ex.settings": "Settings",
-			"ex.general": "General", "ex.advanced": "Advanced",
+			"ex.general": "General", "ex.advanced": "Advanced", "ex.tools": "Tools", "ex.setup": "Guided setup",
 			"ex.help": "help", "ex.cmd": "cmd", "ex.back": "back", "ex.quit": "quit", "ex.save": "save",
 			"ex.move": "move", "ex.open": "open", "ex.openarea": "areas", "ex.yes": "yes, remove it",
 			"ex.no": "no, keep it", "ex.info": "info", "ex.type": "type to filter",
 		},
 		i18n.German: {
 			"ex.overview": "Übersicht", "ex.items": "Einträge", "ex.settings": "Einstellungen",
-			"ex.general": "Allgemein", "ex.advanced": "Erweitert",
+			"ex.general": "Allgemein", "ex.advanced": "Erweitert", "ex.tools": "Werkzeuge", "ex.setup": "Einrichtung",
 			"ex.help": "Hilfe", "ex.cmd": "Befehle", "ex.back": "zurück", "ex.quit": "Ende", "ex.save": "speichern",
 			"ex.move": "bewegen", "ex.open": "öffnen", "ex.openarea": "öffnen", "ex.yes": "ja, entfernen",
 			"ex.no": "nein, behalten", "ex.info": "Info", "ex.type": "tippen zum Filtern",
@@ -727,5 +727,161 @@ func TestGoldenFrameIcons(t *testing.T) {
 			f, _ := sampleFrame(t, looks(t)[tt.look], i18n.English)
 			checkGolden(t, tt.name, first(f.Render(iconSpec(tt.width)))+"\n")
 		})
+	}
+}
+
+// groupedAreas is sampleAreas with an area of four sub-tabs, the last two set apart as a group.
+func groupedAreas() []Area {
+	return []Area{
+		{ID: "overview", Title: "ex.overview"},
+		{ID: "settings", Title: "ex.settings", Tabs: []Tab{
+			{ID: "general", Title: "ex.general", GroupStart: true},
+			{ID: "items", Title: "ex.items"},
+			{ID: "advanced", Title: "ex.advanced", GroupStart: true},
+			{ID: "tools", Title: "ex.tools"},
+		}},
+	}
+}
+
+func subTargets(targets []Target) []Target {
+	var out []Target
+	for _, tg := range targets {
+		if tg.Zone == ZoneSubtabs {
+			out = append(out, tg)
+		}
+	}
+	return out
+}
+
+// A group start sets a separator before its sub-tab that is no target and no tab; the targets of the
+// neighbours lie on their text. Where only the active sub-tab fits, the separator goes. On the first
+// sub-tab the flag does nothing.
+func TestSubTabGroupsSetASeparator(t *testing.T) {
+	for look, st := range looks(t) {
+		f, _ := sampleFrame(t, st, i18n.English)
+		spec := FrameSpec{Width: 60, Height: 10, Areas: groupedAreas(), ActiveArea: "settings", ActiveTab: "items"}
+		out, targets := f.Render(spec)
+		line := plainRows(out)[2]
+		if got := strings.Index(line, "|"); got < 0 || strings.Count(line, "|") != 1 {
+			t.Fatalf("%s: want one separator in %q", look, line)
+		}
+		if strings.Index(line, "|") < strings.Index(line, "Items") || strings.Index(line, "|") > strings.Index(line, "Advanced") {
+			t.Errorf("%s: separator misplaced in %q", look, line)
+		}
+		if strings.Index(line, "General") > strings.Index(line, "|") {
+			t.Errorf("%s: a separator stands before the first sub-tab in %q", look, line)
+		}
+		cells := []rune(line)
+		subs := subTargets(targets)
+		if len(subs) != 4 {
+			t.Fatalf("%s: %d sub-tab targets, want 4", look, len(subs))
+		}
+		titles := map[TabID]string{"general": "General", "items": "Items", "advanced": "Advanced", "tools": "Tools"}
+		for _, tg := range subs {
+			r := tg.Rect
+			if got := strings.TrimSpace(strings.Trim(string(cells[r.X:r.X+r.Width]), "[]")); got != titles[tg.Tab] {
+				t.Errorf("%s: target %s covers %q", look, tg.Tab, got)
+			}
+		}
+		// A narrow line shows the active sub-tab alone, with no separator and one target.
+		spec.Width = 14
+		out, targets = f.Render(spec)
+		line = plainRows(out)[2]
+		if strings.Contains(line, "|") || !strings.Contains(line, "Items") || len(subTargets(targets)) != 1 {
+			t.Errorf("%s: narrow line %q with %d targets", look, line, len(subTargets(targets)))
+		}
+		// The flag on the first sub-tab changes nothing.
+		plainAreas := groupedAreas()
+		plainAreas[1].Tabs[0].GroupStart = false
+		spec.Width = 60
+		a, _ := f.Render(spec)
+		spec.Areas = plainAreas
+		b, _ := f.Render(spec)
+		if a != b {
+			t.Errorf("%s: GroupStart on the first sub-tab changed the line", look)
+		}
+	}
+	area := groupedAreas()[1]
+	if got := StepTab(area, "items", 1); got != "advanced" {
+		t.Errorf("StepTab skips to %q, want advanced", got)
+	}
+	if got := StepTab(area, "general", -1); got != "tools" {
+		t.Errorf("StepTab wraps to %q, want tools", got)
+	}
+	if err := CheckAreas(groupedAreas()); err != nil {
+		t.Errorf("CheckAreas: %v", err)
+	}
+}
+
+// The mode tab stands after the areas as the active tab: no digit, whole at every level, no target. All area
+// tabs stay targets and none is active. The workspace keeps its height, with the sub-tab line empty.
+func TestModeTabStandsAfterTheAreas(t *testing.T) {
+	for look, st := range looks(t) {
+		f, _ := sampleFrame(t, st, i18n.English)
+		for _, area := range []AreaID{"overview", "settings"} {
+			base := FrameSpec{Width: 80, Height: 12, Areas: groupedAreas(), ActiveArea: area, ActiveTab: "items", Workspace: "body"}
+			mode := base
+			mode.ModeTab = "ex.setup"
+			if a, b := f.Workspace(base), f.Workspace(mode); a != b {
+				t.Errorf("%s %s: workspace %+v with the mode tab, %+v without", look, area, b, a)
+			}
+			for _, width := range []int{80, 40, 30, 24, 20} {
+				mode.Width = width
+				out, targets := f.Render(mode)
+				rows := plainRows(out)
+				if len(rows) != mode.Height {
+					t.Fatalf("%s %s %d: %d rows", look, area, width, len(rows))
+				}
+				if !strings.Contains(rows[1], "Guided setup") || strings.Contains(rows[1], "3 Guided") {
+					t.Errorf("%s %s %d: tab line %q", look, area, width, rows[1])
+				}
+				if area == "settings" && strings.TrimSpace(rows[2]) != "" {
+					t.Errorf("%s %s %d: sub-tab line %q", look, area, width, rows[2])
+				}
+				if len(subTargets(targets)) != 0 {
+					t.Errorf("%s %s %d: sub-tab targets stay", look, area, width)
+				}
+				seen := map[AreaID]bool{}
+				for _, tg := range targets {
+					if tg.Zone != ZoneTabs {
+						continue
+					}
+					seen[tg.Area] = true
+					cells := string([]rune(rows[tg.Rect.Y])[tg.Rect.X : tg.Rect.X+tg.Rect.Width])
+					if strings.Contains(cells, "Guided") || strings.Contains(cells, "setup") {
+						t.Errorf("%s %s %d: the mode tab is a target: %q", look, area, width, cells)
+					}
+				}
+				if !seen["overview"] || !seen["settings"] {
+					t.Errorf("%s %s %d: area targets %v", look, area, width, seen)
+				}
+				if width == 80 {
+					for _, want := range []string{" 1 Overview ", " 2 Settings "} {
+						if st.Charset() == CharsetUnicode && !strings.Contains(rows[1], want) {
+							t.Errorf("%s %s: %q lacks %q", look, area, rows[1], want)
+						}
+					}
+					if st.profile.Colorless() && !strings.Contains(rows[1], "[Guided setup]") {
+						t.Errorf("%s %s: no brackets in %q", look, area, rows[1])
+					}
+					if !st.profile.Colorless() && strings.Contains(rows[1], "[") {
+						t.Errorf("%s %s: brackets with colour in %q", look, area, rows[1])
+					}
+				}
+			}
+		}
+	}
+}
+
+// The mode text is escaped like every text of the frame.
+func TestModeTabEscapesControlCharacters(t *testing.T) {
+	st := looks(t)["dark"]
+	keys := sampleKeymap(t, st.Charset())
+	cat := frameCatalogs()
+	cat[i18n.English]["ex.hostile"] = "set\x1b[31mup\x07"
+	f := styledFrame{NewFrame(keys, newTranslator(t, i18n.English, cat, keys)), st}
+	out, _ := f.Render(FrameSpec{Width: 60, Height: 8, Areas: sampleAreas(), ActiveArea: "items", ModeTab: "ex.hostile"})
+	if strings.Contains(ansi.Strip(out), "\x1b") || strings.Contains(ansi.Strip(out), "\x07") {
+		t.Errorf("control characters reach the terminal: %q", out)
 	}
 }

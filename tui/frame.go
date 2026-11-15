@@ -29,6 +29,9 @@ type Area struct {
 type Tab struct {
 	ID    TabID
 	Title TextID
+	// GroupStart sets a group separator before this sub-tab. The separator is no tab and no click target;
+	// it has no effect on the first sub-tab and goes where only the active sub-tab fits.
+	GroupStart bool
 }
 
 // Rect is a rectangle of terminal cells, the origin at the top left.
@@ -78,7 +81,12 @@ type FrameSpec struct {
 	Areas      []Area
 	ActiveArea AreaID
 	ActiveTab  TabID
-	Focus      FocusZone
+	// ModeTab, when set, shows the application working outside every area, such as a guided setup: no area
+	// is active, and the text stands after the areas as the active tab, without a digit and whole at every
+	// level of the tab line. It is no click target. The sub-tab line of ActiveArea stays, empty and without
+	// targets, so the workspace keeps its height.
+	ModeTab TextID
+	Focus   FocusZone
 	// Input is the input focus of the screen; hints show only the keys that act in it.
 	Input     InputFocus
 	Workspace string
@@ -377,13 +385,18 @@ func (f *frameRun) focusMark(focused bool) string {
 }
 
 // tabLine is the tab line: every area as "digit title", the active one as an accent fill, in brackets
-// without colour, and the others dimmed. Where the line does not fit, the gaps around the inactive tabs
-// close, then the inactive tabs shrink to their digit; the active tab stays whole.
+// without colour, and the others dimmed; the mode tab follows them as the active one. Where the line does
+// not fit, the gaps around the inactive tabs close, then the inactive tabs shrink to their digit; the active
+// tab stays whole.
 func (f *frameRun) tabLine(spec FrameSpec, width int) (string, []Target) {
 	focused := spec.Focus == ZoneTabs
 	mark := f.focusMark(focused)
 	plain := f.styles.profile.Colorless()
 	active := -1
+	mode := ""
+	if spec.ModeTab != "" {
+		mode = Escape(lookup(f.text, spec.ModeTab))
+	}
 	names := make([]string, len(spec.Areas))
 	iconNames := make([]string, len(spec.Areas))
 	anyIcon := false
@@ -395,12 +408,12 @@ func (f *frameRun) tabLine(spec FrameSpec, width int) (string, []Target) {
 			iconNames[i] = strconv.Itoa(i+1) + " " + icon + " " + title
 			anyIcon = true
 		}
-		if a.ID == spec.ActiveArea {
+		if a.ID == spec.ActiveArea && mode == "" {
 			active = i
 		}
 	}
 	variant := func(level int, icons bool) []string {
-		words := make([]string, len(names))
+		words := make([]string, len(names), len(names)+1)
 		for i, name := range names {
 			if icons {
 				name = iconNames[i]
@@ -415,6 +428,13 @@ func (f *frameRun) tabLine(spec FrameSpec, width int) (string, []Target) {
 			default:
 				words[i] = strconv.Itoa(i + 1)
 			}
+		}
+		if mode != "" {
+			// The mode tab is the active one and is never shortened.
+			if plain {
+				return append(words, "["+mode+"]")
+			}
+			return append(words, " "+mode+" ")
 		}
 		return words
 	}
@@ -437,12 +457,13 @@ func (f *frameRun) tabLine(spec FrameSpec, width int) (string, []Target) {
 			x++
 		}
 		style := f.styles.Style(StyleHint)
-		if i == active {
+		if i == active || i == len(spec.Areas) {
 			style = f.activeTab(plain)
 		}
 		b.WriteString(style.Render(w))
 		cells := lipgloss.Width(w)
-		if r, ok := clipRect(Rect{X: x, Width: cells, Height: 1}, width); ok {
+		// The mode tab, after the areas, is no target.
+		if r, ok := clipRect(Rect{X: x, Width: cells, Height: 1}, width); ok && i < len(spec.Areas) {
 			targets = append(targets, Target{Rect: r, Zone: ZoneTabs, Area: spec.Areas[i].ID})
 		}
 		x += cells
@@ -474,18 +495,25 @@ func subTabs(spec FrameSpec) (Area, bool) {
 }
 
 // subTabLine is the sub-tab line of area: its tabs as a tab strip, the active one as a selection fill and an
-// accent fill while the line has the focus. A line too narrow for every tab shows the active one alone.
+// accent fill while the line has the focus, with a separator before each tab that starts a group. A line too
+// narrow for every tab shows the active one alone, without a separator. With a mode tab the line stays empty.
 func (f *frameRun) subTabLine(spec FrameSpec, area Area, width int) (string, []Target) {
+	if spec.ModeTab != "" {
+		return "", nil
+	}
 	focused := spec.Focus == ZoneSubtabs
-	words := make([]string, len(area.Tabs))
-	ids := make([]TabID, len(area.Tabs))
+	var words []string
+	var ids []TabID
 	active := -1
 	for i, t := range area.Tabs {
-		words[i] = lookup(f.text, t.Title)
-		ids[i] = t.ID
-		if t.ID == spec.ActiveTab {
-			active = i
+		if i > 0 && t.GroupStart {
+			// A separator has no ID and no target.
+			words, ids = append(words, f.styles.Glyph(GlyphTabSeparator)), append(ids, "")
 		}
+		if t.ID == spec.ActiveTab {
+			active = len(words)
+		}
+		words, ids = append(words, lookup(f.text, t.Title)), append(ids, t.ID)
 	}
 	strip, spans := f.styles.TabStrip(words, active, focused)
 	if 2+lipgloss.Width(strip) > width && active >= 0 {
@@ -494,7 +522,7 @@ func (f *frameRun) subTabLine(spec FrameSpec, area Area, width int) (string, []T
 	}
 	var targets []Target
 	for i, sp := range spans {
-		if r, ok := clipRect(Rect{X: 2 + sp.Start, Width: sp.End - sp.Start, Height: 1}, width); ok {
+		if r, ok := clipRect(Rect{X: 2 + sp.Start, Width: sp.End - sp.Start, Height: 1}, width); ok && ids[i] != "" {
 			targets = append(targets, Target{Rect: r, Zone: ZoneSubtabs, Area: area.ID, Tab: ids[i]})
 		}
 	}
