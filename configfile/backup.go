@@ -7,8 +7,6 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strconv"
-	"strings"
 	"time"
 )
 
@@ -16,8 +14,6 @@ const (
 	backupDirName = "backups"
 	keepBackups   = 10
 	stampLayout   = "20060102T150405Z"
-	// copyMarker keeps copies out of the regular backup set even when the source has the store's file name.
-	copyMarker = "copy-"
 )
 
 // Backup identifies a byte-for-byte copy of a replaced configuration.
@@ -25,35 +21,14 @@ type Backup struct {
 	Name      string
 	Time      time.Time
 	FirstHand bool
-	seq       int
+	// Hand is set for a hand-edited version after the first one, when the naming marks them.
+	Hand bool
+	seq  int
 }
 
 func (s *Store[T]) backupDir() string { return filepath.Join(filepath.Dir(s.path), backupDirName) }
 
-func (s *Store[T]) backupParts(name string) (Backup, bool) {
-	base := filepath.Base(s.path) + "-"
-	if !strings.HasPrefix(name, base) || !strings.HasSuffix(name, ".bak") {
-		return Backup{}, false
-	}
-	part := strings.TrimSuffix(strings.TrimPrefix(name, base), ".bak")
-	firstHand := strings.HasPrefix(part, "first-hand-")
-	if firstHand {
-		part = strings.TrimPrefix(part, "first-hand-")
-	}
-	stamp, seqText, ok := strings.Cut(part, "-")
-	if !ok || len(seqText) != 6 {
-		return Backup{}, false
-	}
-	when, err := time.Parse(stampLayout, stamp)
-	if err != nil || when.UTC().Format(stampLayout) != stamp {
-		return Backup{}, false
-	}
-	seq, err := strconv.Atoi(seqText)
-	if err != nil || fmt.Sprintf("%06d", seq) != seqText {
-		return Backup{}, false
-	}
-	return Backup{Name: name, Time: when, FirstHand: firstHand, seq: seq}, true
-}
+func (s *Store[T]) backupParts(name string) (Backup, bool) { return s.naming.parse(name) }
 
 // Backups lists regular backups of this store, newest first.
 func (s *Store[T]) Backups() ([]Backup, error) {
@@ -111,6 +86,10 @@ func (s *Store[T]) ReadBackup(name string) ([]byte, error) {
 }
 
 func (s *Store[T]) isHandVersion(data []byte) bool {
+	if s.codec.Canonicalize != nil {
+		canonical, err := s.codec.Canonicalize(data)
+		return err != nil || !bytes.Equal(data, canonical)
+	}
 	value, err := s.codec.Decode(data)
 	if err != nil {
 		return true
@@ -131,9 +110,9 @@ func (s *Store[T]) backupCurrent(data []byte) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	firstHand := false
-	if s.isHandVersion(data) {
-		firstHand = true
+	hand := s.isHandVersion(data)
+	firstHand := hand
+	if hand {
 		for _, backup := range backups {
 			if backup.FirstHand {
 				firstHand = false
@@ -148,11 +127,14 @@ func (s *Store[T]) backupCurrent(data []byte) (string, error) {
 			seq = backup.seq + 1
 		}
 	}
-	prefix := filepath.Base(s.path) + "-"
-	if firstHand {
-		prefix += "first-hand-"
+	prefix, marker := s.naming.prefix, ""
+	switch {
+	case firstHand:
+		prefix = s.naming.firstHandPrefix
+	case hand:
+		marker = s.naming.handMarker
 	}
-	name, err := s.writeBackupFile(prefix+stamp+"-", seq, data)
+	name, err := s.writeBackupFile(prefix+stamp+"-", marker, seq, data)
 	if err != nil {
 		return "", err
 	}
@@ -178,12 +160,12 @@ func (s *Store[T]) ensureBackupDir() error {
 	return nil
 }
 
-// writeBackupFile creates <prefix><six-digit sequence>.bak exclusively from seq upwards, so a backup never
+// writeBackupFile creates <prefix><sequence><marker><suffix> exclusively from seq upwards, so a backup never
 // overwrites another one, and returns its name.
-func (s *Store[T]) writeBackupFile(prefix string, seq int, data []byte) (string, error) {
+func (s *Store[T]) writeBackupFile(prefix, marker string, seq int, data []byte) (string, error) {
 	dir := s.backupDir()
-	for ; seq < 1000000; seq++ {
-		name := fmt.Sprintf("%s%06d.bak", prefix, seq)
+	for ; seq < s.naming.limit(); seq++ {
+		name := fmt.Sprintf("%s%0*d%s%s", prefix, s.naming.width, seq, marker, s.naming.suffix)
 		path := filepath.Join(dir, name)
 		f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, fileMode)
 		if errors.Is(err, os.ErrExist) {
@@ -226,7 +208,11 @@ func (s *Store[T]) BackupCopy(src string) (string, error) {
 	if err := s.ensureBackupDir(); err != nil {
 		return "", err
 	}
-	name, err := s.writeBackupFile(filepath.Base(src)+"-"+copyMarker+s.now().UTC().Format(stampLayout)+"-", 0, data)
+	base := filepath.Base(src)
+	if err := s.naming.checkCopy(base); err != nil {
+		return "", fmt.Errorf("back up %s: %w", src, err)
+	}
+	name, err := s.writeBackupFile(base+s.naming.copyMarker+s.now().UTC().Format(stampLayout)+"-", "", 0, data)
 	if err != nil {
 		return "", err
 	}
