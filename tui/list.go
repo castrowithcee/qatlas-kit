@@ -187,7 +187,7 @@ type List struct {
 	cursor    int
 	offset    int
 	page      int
-	query     []rune
+	query     textLine
 	searching bool
 	focused   bool
 }
@@ -364,7 +364,8 @@ func (l *List) SetGroups(groups []ListGroup) error {
 // Reset forgets the filter, the selection and the scroll position and marks the first entry; the fold state
 // and the ticks stay.
 func (l *List) Reset() {
-	l.query, l.searching, l.offset = nil, false, 0
+	l.query.clear()
+	l.searching, l.offset = false, 0
 	l.rebuild(listMark{})
 	l.cursor = l.firstEntry()
 }
@@ -385,12 +386,22 @@ func (l *List) SetGrouped(on bool) {
 // SetFilter sets the filter text without typing it.
 func (l *List) SetFilter(query string) {
 	prev := l.mark()
-	l.query = []rune(query)
+	l.query = newTextLine(query)
 	l.rebuild(prev)
 }
 
+// Paste puts pasted text into the filter at its cursor, cleaned as a text line cleans it, and rebuilds the
+// rows. Nothing is taken unless the filter takes text.
+func (l *List) Paste(text string) bool {
+	if l.Input() != InputText || !l.query.insert(text) {
+		return false
+	}
+	l.rebuild(l.mark())
+	return true
+}
+
 // Query is the filter text.
-func (l *List) Query() string { return string(l.query) }
+func (l *List) Query() string { return l.query.String() }
 
 // Searching reports whether a filter is being typed after the search key.
 func (l *List) Searching() bool { return l.searching }
@@ -474,7 +485,7 @@ func (l *List) SetTicked(ids []ItemID) error {
 // Select marks the entry id, unfolding its group where it is folded, and reports whether it shows.
 func (l *List) Select(id ItemID) bool {
 	for _, it := range l.items {
-		if it.ID == id && l.grouped && l.folded[it.Group] && len(l.query) == 0 {
+		if it.ID == id && l.grouped && l.folded[it.Group] && len(l.query.runes) == 0 {
 			delete(l.folded, it.Group)
 			l.rebuild(l.mark())
 		}
@@ -498,7 +509,7 @@ func (l *List) Position() string {
 	// A group row counts as the entry above it, at least the first.
 	pos = max(pos, min(shown, 1))
 	switch {
-	case l.searching || len(l.query) > 0:
+	case l.searching || len(l.query.runes) > 0:
 		return l.text.Lookup(TextListFiltered, pos, shown, len(l.items))
 	case len(l.items) > 0:
 		return fmt.Sprintf("%d/%d", pos, len(l.items))
@@ -517,32 +528,24 @@ func (l *List) Update(msg tea.KeyPressMsg) (open ItemID, handled bool) {
 		if id == k.Toggle && l.spec.TickWhileTyping {
 			at = InputNavigation
 		}
-		if id != "" && l.keys.Is(msg, id, at) {
-			return l.Act(id)
+		if id == "" || !l.keys.Is(msg, id, at) {
+			continue
 		}
+		open, handled = l.Act(id)
+		// Where no group is left to fold, left and right move the cursor in the filter text.
+		if handled || focus != InputText || id != k.Left && id != k.Right {
+			return open, handled
+		}
+		break
 	}
 	if focus != InputText {
 		return "", false
 	}
-	before := len(l.query)
-	switch {
-	case msg.Code == tea.KeyBackspace && msg.Mod == 0:
-		if len(l.query) > 0 {
-			l.query = l.query[:len(l.query)-1]
-		}
-	case msg.Text != "" && msg.Mod&^tea.ModShift == 0:
-		for _, r := range msg.Text {
-			if unicode.IsPrint(r) {
-				l.query = append(l.query, r)
-			}
-		}
-	default:
-		return "", false
-	}
-	if len(l.query) != before {
+	handled, changed := l.query.edit(msg, false)
+	if changed {
 		l.rebuild(l.mark())
 	}
-	return "", true
+	return "", handled
 }
 
 // Act runs one of the list keys as its key does, for a click or a command that stands for the key.
@@ -554,7 +557,7 @@ func (l *List) Act(id ActionID) (open ItemID, handled bool) {
 	}
 	switch id {
 	case k.Back:
-		if !l.searching && len(l.query) == 0 {
+		if !l.searching && len(l.query.runes) == 0 {
 			return "", false
 		}
 		l.searching = false
@@ -576,6 +579,9 @@ func (l *List) Act(id ActionID) (open ItemID, handled bool) {
 		}
 	case k.Search:
 		if l.spec.Search == SearchByKey {
+			if !l.searching {
+				l.query.move(len(l.query.runes))
+			}
 			l.searching = true
 		}
 	case k.Up:
@@ -732,7 +738,7 @@ func (l *List) view(styles Styles, width, height int, modal bool) (string, []Tar
 	default:
 		lines = append(lines, "  "+indent+strings.Repeat(" ", tick)+styles.Render(StyleHint, l.header(layout, styles)))
 		if len(l.rows) == 0 {
-			lines = append(lines, l.note(l.text.Lookup(TextListNoMatch, string(l.query), l.keys.Label(l.spec.Keys.Back)), width, styles)...)
+			lines = append(lines, l.note(l.text.Lookup(TextListNoMatch, l.query.String(), l.keys.Label(l.spec.Keys.Back)), width, styles)...)
 		}
 	}
 	start, end := l.window(height - len(lines))
@@ -781,7 +787,7 @@ func (l *List) view(styles Styles, width, height int, modal bool) (string, []Tar
 }
 
 func (l *List) searchLine() bool {
-	return !l.spec.SearchInBar && (l.spec.Search == SearchAsTyped || l.searching || len(l.query) > 0)
+	return !l.spec.SearchInBar && (l.spec.Search == SearchAsTyped || l.searching || len(l.query.runes) > 0)
 }
 
 // searchField draws the filter in width cells: after the search key while it is typed or kept, with a
@@ -792,22 +798,15 @@ func (l *List) searchField(width int, styles Styles) string {
 	if l.spec.Search == SearchByKey {
 		lead = Escape(l.keys.Label(l.spec.Keys.Search)) + " "
 	}
-	if len(l.query) == 0 && !l.searching {
+	if len(l.query.runes) == 0 && !l.searching {
 		hint := l.text.Lookup(TextSearchPrompt)
 		if l.spec.Search == SearchByKey {
 			hint = l.text.Lookup(TextSearchKey, l.keys.Label(l.spec.Keys.Search))
 		}
 		return Pad(styles.Render(StyleHint, styles.Truncate(Escape(hint), width)), width)
 	}
-	cursor := ""
-	if typing {
-		cursor = "_"
-		if !styles.profile.Colorless() || styles.profile == ProfileMono {
-			cursor = styles.Render(StyleActiveRow, " ")
-		}
-	}
-	room := max(width-lipgloss.Width(lead)-lipgloss.Width(cursor), 0)
-	return Pad(Clip(lead+styles.TruncateLeft(Escape(string(l.query)), room)+cursor, width), width)
+	room := max(width-lipgloss.Width(lead), 0)
+	return Pad(Clip(lead+l.query.view(room, styles, typing, ""), width), width)
 }
 
 // note is a dimmed sentence wrapped into width cells.
@@ -849,7 +848,7 @@ func (l *List) box(s tickScope, styles Styles) string {
 func (l *List) groupRow(group string, styles Styles) string {
 	glyph := GlyphExpanded
 	count := l.count(group)
-	if l.folded[group] && len(l.query) == 0 && count > 0 {
+	if l.folded[group] && len(l.query.runes) == 0 && count > 0 {
 		glyph = GlyphCollapsed
 	}
 	title := l.groupTitle(group)
@@ -888,7 +887,7 @@ func (l *List) count(group string) int {
 	return n
 }
 
-func (l *List) folds() bool { return l.grouped && len(l.query) == 0 }
+func (l *List) folds() bool { return l.grouped && len(l.query.runes) == 0 }
 
 func (l *List) setFolded(group string, folded bool) {
 	if l.count(group) == 0 {
@@ -1004,7 +1003,7 @@ func (l *List) rebuild(prev listMark) {
 }
 
 // queryKey is the filter as the entries are matched against it.
-func (l *List) queryKey() string { return strings.ToLower(strings.TrimSpace(string(l.query))) }
+func (l *List) queryKey() string { return strings.ToLower(strings.TrimSpace(l.query.String())) }
 
 // matcher reports whether an entry passes the filter.
 func (l *List) matcher() func(ListItem) bool {
