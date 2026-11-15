@@ -29,16 +29,17 @@
 // name the reason of every refusal. A Keymap satisfies KeyLabels, so labels and the key placeholders of
 // every text follow a binding at once; Keys and KeyNameLabel give a tool the keys in force and their labels.
 //
-// A one-line text field, the input of a Dialog, the text, masked and date fields of a Form and the search of a
-// LogView, edits with fixed keys that no action may hold: the arrows, home, end, ctrl+a, ctrl+e, ctrl+b and
-// ctrl+f move by a character and to the ends; ctrl or alt with an arrow, alt+b and alt+f by a word; backspace,
-// delete, ctrl+h, ctrl+d, ctrl+w, alt+d, alt+backspace and alt+delete delete a character or a word; ctrl+u and
-// ctrl+k delete to the start or end. A word ends at white space; in a masked field a word jump goes to an end
-// and a word deletion takes everything on that side, so no boundary shows. A screen asks its own actions first,
-// so a Form and a LogView keep theirs for left, right, home and end, and a second way of an action wins over an
-// edit. Dialog.Paste, Form.Paste and LogView.Paste insert whole at the cursor, never as keys: line breaks at
-// the end go, those and tabs inside become one space, and other control characters, invalid UTF-8 and
-// direction marks such as U+202E are dropped, in a masked field too.
+// A one-line text field, the input of a Dialog, the text, masked and date fields of a Form, the search of a
+// LogView, the filter of a List and the input of a CommandLine edits with fixed keys that no action may hold:
+// the arrows, home, end, ctrl+a, ctrl+e, ctrl+b and ctrl+f move by a character and to the ends; ctrl or alt
+// with an arrow, alt+b and alt+f by a word; backspace, delete, ctrl+h, ctrl+d, ctrl+w, alt+d, alt+backspace
+// and alt+delete delete a character or a word; ctrl+u and ctrl+k delete to the start or end. A word ends at
+// white space; in a masked field a word jump goes to an end and a word deletion takes everything on that
+// side, so no boundary shows. A screen asks its own actions first, so a Form, a LogView and a List keep
+// theirs for left, right, home and end, and a second way of an action wins over an edit. Dialog.Paste,
+// Form.Paste, LogView.Paste, List.Paste and CommandLine.Paste insert whole at the cursor, never as keys: line
+// breaks at the end go, those and tabs inside become one space, and other control characters, invalid UTF-8
+// and direction marks such as U+202E are dropped, in a masked field too.
 //
 // The parts with state share one shape. NewX checks an XSpec, which holds the content and, in Keys, the
 // actions of the key table the part reads, against the Keymap and the Translator and refuses what cannot
@@ -53,9 +54,13 @@
 // rule; the workspace, cut or padded to its rows, with the message under it; and the footer in the last
 // row, or the last two. Workspace gives the room the content has, less the rows the footer takes, and
 // Render returns the click targets of the drawn keys and tabs for that frame only. The header stays one
-// line: the status marks take their short words and go before the header keys, and the header keys go
+// line within the width: each status mark gives way in the order of its MarkRank, and the header keys go
 // before the back button. A tab line that runs short closes its gaps and then shrinks the inactive tabs to
-// their digit; the active tab stays whole. CheckAreas holds areas to what the tab line can draw. FrameSpec.Icon
+// their digit; the active tab stays whole. A Tab with GroupStart has a separator before it on the sub-tab
+// line, which is no tab and no target and goes where only the active sub-tab fits. FrameSpec.ModeTab shows
+// the application outside every area, such as a guided setup: no area is active, the text stands after the
+// areas as the active tab, whole at every level and no target, and the sub-tab line stays empty so the
+// workspace keeps its height. CheckAreas holds areas to what the tab line can draw. FrameSpec.Icon
 // stands before the product name and Area.Icon before the title of its tab, each as "icon name"; CheckFrame
 // and CheckAreas reject an icon that fails CheckIcon, and the frame draws no icon that fails it. The tab line gives
 // up its icons before it closes any gap, and the digit-only level holds none; no icon is drawn in an ASCII
@@ -92,22 +97,26 @@
 //
 // A CommandLine runs commands by name: lower-case words without arguments, with aliases that keep older names
 // valid. Typing filters, an exact name first, then names that begin with the text, then a word that does,
-// then the text inside a word; the empty line lists the commands that are not hidden. A command names the
-// action, and where it opens one, the area and tab that its key or tab click already triggers, so Update and
-// Click yield what the dispatcher of the application runs for that key. It acts only where Available says its
-// key acts, in the Context the application sets when it opens the line; anywhere else the line stays open
-// with the typed text and the reason. The line reads keys where text is typed, so a letter is always text,
-// and moves with the actions of CommandLineKeys. View draws a panel with the key in force beside each
-// command, at most twelve rows that scroll with the choice and one target per row; the application places it
-// over the workspace, or on it where the terminal is too small.
+// then the text inside a word; the empty line lists the commands that are not hidden. A command names an
+// action the application already has, which a key, a tab click or a row of its screen triggers, and where it
+// opens one, the area and tab, so Update and Click yield what the dispatcher of the application runs for that
+// trigger: the line is a register of existing actions, never a second way to operate, and a key is optional.
+// It acts only where Available says its trigger acts, in the Context the application sets when it opens the
+// line; anywhere else the line stays open with the typed text and the reason. The line reads keys where text
+// is typed, so a letter is always text; it edits its text as a text line does and moves the choice with the
+// actions of CommandLineKeys. View draws a panel with an optional icon before each name, in a Unicode
+// terminal only, and the key in force beside it, at most twelve rows that scroll with the choice and one
+// target per row; the application places it over the workspace, or on it where the terminal is too small.
 //
 // A List shows the entries an application hands it, each with a stable ItemID, its cells and a group key, as
 // a table under dimmed upper-case column titles. The selection follows the ID, never the position, when the
 // entries, the filter or the grouping change; it is always on screen, and the scroll position stays while the
 // selection is on the page. The filter reads the cells and the search text of an entry, ignores case, and
 // only decides what shows: it removes nothing and keeps the order. A list whose letters are actions starts
-// the filter with its search key; a pure choice list filters with every typed character. Enter keeps a typed
-// filter, the first back clears it, and the next one is left to the application. Groups are presentation
+// the filter with its search key; a pure choice list filters with every typed character. The filter is a text
+// line: the actions of the list move the rows, and left and right its cursor where no group is left to fold.
+// Enter keeps a typed filter, the first back clears it, and the next one is left to the application. Groups
+// are presentation
 // only: they stand in alphabetical order of their shown title with the group without key last, left, right
 // and enter fold them, a filter opens the groups with hits without changing their fold state, and the
 // position counts entries only, "pos/total" or, with a filter, "pos/shown (N total)". SetGroups gives a group,
@@ -256,12 +265,12 @@
 // text, a helptopics.Term and the address of the documentation, which is shown in full and, where the terminal
 // takes escapes, also linked; it accepts only an absolute http or https address of printable ASCII, so the
 // address cannot end the link sequence.
-// Back and the info key close it, and the copy key hands Text to the application, which holds nothing that is
-// not shown and no control character. Both stand over the screen like a dialog, or fill the workspace with
-// View where room is too small; an explanation also stands in a Pane beside a form or a list. Every topic
-// tab, key, line of the key list and address is a target that does what its key does, and a click anywhere
-// else on an explanation over the screen closes it. Only their own keys act; every other key goes back to the
-// application.
+// Back and the info key close it, its scroll keys may page and jump to the ends, and the copy key hands Text
+// to the application, which holds nothing that is not shown and no control character. Both stand over the
+// screen like a dialog, or fill the workspace with View where room is too small; an explanation also stands
+// in a Pane beside a form or a list. Every topic tab, key, line of the key list and address is a target that
+// does what its key does, and a click anywhere else on an explanation over the screen closes it. Only their
+// own keys act; every other key goes back to the application.
 //
 // A LogView shows lines that arrive over time. The application supplies them with Append, one text or
 // several, each with an optional time and source; where they come from, saving them and any structure in them

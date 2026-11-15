@@ -536,7 +536,7 @@ func (b *FilterBar) View(styles Styles, width int) (string, []Target) {
 	}
 	targets := []Target{{Rect: Rect{Width: width, Height: 1}, Zone: ZoneFilters}}
 	search := list != nil && list.spec.SearchInBar
-	idle := !search || (!list.searching && len(list.query) == 0)
+	idle := !search || (!list.searching && len(list.query.runes) == 0)
 	const gap = 2
 	natural := func(i int) int { return lipgloss.Width(fieldText(styles, labels[i], values[i], 1<<20)) }
 	least := func(i int) int { return fieldLeast(styles, labels[i]) }
