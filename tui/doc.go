@@ -27,7 +27,7 @@
 // captured as a new binding only ctrl+c and esc act; in an embedded terminal no key does. Bind applies the
 // user's keys as a whole or not at all, and CheckBinding and Resolve apply the same rules of a binding and
 // name the reason of every refusal. A Keymap satisfies KeyLabels, so labels and the key placeholders of
-// every text follow a binding at once.
+// every text follow a binding at once; Keys and KeyNameLabel give a tool the keys in force and their labels.
 //
 // The parts with state share one shape. NewX checks an XSpec, which holds the content and, in Keys, the
 // actions of the key table the part reads, against the Keymap and the Translator and refuses what cannot

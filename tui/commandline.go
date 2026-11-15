@@ -361,7 +361,7 @@ func (c *CommandLine) keyLabel(cmd Command) string {
 	}
 	// A replaced key takes the place of the single default key, and an extra key goes after the defaults, so
 	// the position of a default key holds under every binding.
-	return Escape(c.keys.keyLabel(c.keys.bound[c.keys.index[cmd.Action]][cmd.Key-1]))
+	return Escape(c.keys.KeyNameLabel(c.keys.bound[c.keys.index[cmd.Action]][cmd.Key-1]))
 }
 
 func (c *CommandLine) row(styles Styles, cmd Command, chosen bool, nameW, keyW, width int) string {
