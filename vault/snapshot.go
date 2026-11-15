@@ -90,7 +90,7 @@ func ReadSealedWithIdentity(opts Options, key *age.X25519Identity, name string) 
 	}
 	plain, err := decryptFrom(data, id.key)
 	if err != nil {
-		return nil, fmt.Errorf("cannot decrypt %s: %w", path, ErrDamaged)
+		return nil, decryptFailure(path, data, err)
 	}
 	return plain, nil
 }
