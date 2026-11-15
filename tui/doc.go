@@ -28,6 +28,17 @@
 // name the reason of every refusal. A Keymap satisfies KeyLabels, so labels and the key placeholders of
 // every text follow a binding at once.
 //
+// A one-line text field, the input of a Dialog, the text, masked and date fields of a Form and the search of a
+// LogView, edits with fixed keys that no action may hold: the arrows, home, end, ctrl+a, ctrl+e, ctrl+b and
+// ctrl+f move by a character and to the ends; ctrl or alt with an arrow, alt+b and alt+f by a word; backspace,
+// delete, ctrl+h, ctrl+d, ctrl+w, alt+d, alt+backspace and alt+delete delete a character or a word; ctrl+u and
+// ctrl+k delete to the start or end. A word ends at white space; in a masked field a word jump goes to an end
+// and a word deletion takes everything on that side, so no boundary shows. A screen asks its own actions first,
+// so a Form and a LogView keep theirs for left, right, home and end, and a second way of an action wins over an
+// edit. Dialog.Paste, Form.Paste and LogView.Paste insert whole at the cursor, never as keys: line breaks at
+// the end go, those and tabs inside become one space, and other control characters, invalid UTF-8 and
+// direction marks such as U+202E are dropped, in a masked field too.
+//
 // The parts with state share one shape. NewX checks an XSpec, which holds the content and, in Keys, the
 // actions of the key table the part reads, against the Keymap and the Translator and refuses what cannot
 // work. Update reads a key press and Click the MouseResult of a target the part drew; both return what the
@@ -163,7 +174,7 @@
 // without the buttons where they do not fit beside it. Overlay draws the form as a modal in the way of
 // Dialog.Overlay, under FormSpec.Title in its frame, with its buttons and the keys of Hints, and ok is false
 // where room does not hold it, also with a list of values or the calendar open; the application then draws
-// View in the workspace and Hints in the footer. The modal shows no more of a masked field than View does.
+// View in the workspace and Hints in the footer.
 // FormSpec.Lead is one or two dimmed sentences under the title, wrapped and never cut. It stays in view at
 // every focus, in View as in the modal, counts for ok, and SetLead changes it and keeps values, focus and
 // open list. A masked field never shows what is typed, not in its row, a target or a problem, and is never
@@ -215,9 +226,10 @@
 // decide, so a plain success without details belongs in the message line. Only the answers act; every other key
 // goes back to the application, so a stray key neither saves nor destroys. The answer to enter is the default
 // and shows focused, and the destroying answer of a destructive question is drawn in the fail colour and can
-// never be the default. A dialog with an input reads typed text, shows what runs and the last error inside
-// itself and never shows a masked input. Overlay dims the screen behind it and returns the targets of the dialog
-// alone; where it does not fit, View fills the workspace and Hints go into the footer, whose targets answer it.
+// never be the default. A dialog with an input is a text field, shows what runs and the last error inside
+// itself, drops the error when the text changes and never shows a masked input. Overlay dims the screen behind
+// it and returns the targets of the dialog alone; where it does not fit, View fills the workspace and Hints go
+// into the footer, whose targets answer it.
 //
 // Help explains in three stages: the one-line hint under the focused field, the explanation of the focused
 // element, and the help with its topics. The Help shows the application's helptopics.Topic values, the same

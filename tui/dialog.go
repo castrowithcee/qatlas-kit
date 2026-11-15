@@ -219,14 +219,17 @@ func (d *Dialog) Update(msg tea.KeyPressMsg) (answer ActionID, handled bool) {
 	if d.spec.Default != "" && d.keys.Is(msg, d.spec.Keys.Enter, focus) {
 		return d.spec.Default, true
 	}
-	if d.spec.Input != nil && d.input.edit(msg) {
-		d.clearError()
-		return "", true
+	if d.spec.Input != nil {
+		handled, changed := d.input.edit(msg, d.spec.Input.Masked)
+		if changed {
+			d.clearError()
+		}
+		return "", handled
 	}
 	return "", false
 }
 
-// Paste puts pasted text into the input at its cursor; line breaks and other control characters are dropped.
+// Paste puts pasted text into the input at its cursor, cleaned as a text line cleans it.
 func (d *Dialog) Paste(text string) bool {
 	if d.spec.Input == nil || !d.input.insert(text) {
 		return false

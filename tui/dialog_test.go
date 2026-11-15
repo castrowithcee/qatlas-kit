@@ -377,7 +377,7 @@ func TestInputDialogNeverShowsTheSecret(t *testing.T) {
 	}
 	d := newSampleDialog(t, unlockSpec(), i18n.English)
 	d.Paste("pass\nword\x1b")
-	if d.Value() != "password" {
+	if d.Value() != "pass word" {
 		t.Errorf("a paste gives %q", d.Value())
 	}
 	d.SetMessage(&Message{Kind: MessageBusy, Text: "checking"})
@@ -526,5 +526,150 @@ func TestNoticeAcceptsFailDetail(t *testing.T) {
 	keys := sampleKeymap(t, CharsetUnicode)
 	if _, err := NewDialog(spec, keys, newTranslator(t, i18n.English, dialogCatalogs(), keys)); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func plainInputSpec() DialogSpec {
+	spec := unlockSpec()
+	spec.Input = &DialogInput{Value: "one two"}
+	return spec
+}
+
+func TestInputDialogEditsWithTheLineKeys(t *testing.T) {
+	d := newSampleDialog(t, plainInputSpec(), i18n.English)
+	keys := func(names ...string) {
+		t.Helper()
+		for _, n := range names {
+			if answer, handled := d.Update(lineKey(n)); answer != "" || !handled {
+				t.Fatalf("%s gives answer %q handled %v", n, answer, handled)
+			}
+		}
+	}
+	keys("ctrl+a", "delete", "alt+d")
+	if d.Value() != " two" {
+		t.Fatalf("the start edits give %q", d.Value())
+	}
+	keys("end", "ctrl+w", "ctrl+left", "ctrl+right", "left", "left", "backspace", "ctrl+f", "ctrl+b", "ctrl+d")
+	if d.Value() != "" {
+		t.Fatalf("the end edits give %q", d.Value())
+	}
+	d.Paste("one two")
+	keys("home", "alt+right", "alt+f", "ctrl+k")
+	if d.Value() != "one two" {
+		t.Fatalf("a jump to the end and ctrl+k give %q", d.Value())
+	}
+	keys("alt+left", "ctrl+u")
+	if d.Value() != "two" {
+		t.Fatalf("ctrl+u gives %q", d.Value())
+	}
+	if _, handled := d.Update(press("ctrl+z")); handled {
+		t.Error("a key that edits nothing is taken")
+	}
+	if !d.Paste("\x1b[0m x\r\n") || d.Value() != "[0m xtwo" {
+		t.Errorf("a paste at the start gives %q", d.Value())
+	}
+}
+
+func TestInputDialogErrorGoesOnEditingOnly(t *testing.T) {
+	d := newSampleDialog(t, plainInputSpec(), i18n.English)
+	st := looks(t)["dark"]
+	shows := func() bool {
+		view, _, _ := d.Overlay(st, sampleScreen(90, 30), 90, 30, Rect{Y: 2, Width: 90, Height: 27})
+		return strings.Contains(view, "wrong name")
+	}
+	fail := func() { d.SetMessage(&Message{Kind: MessageError, Text: "wrong name"}) }
+	fail()
+	for _, n := range []string{"left", "home", "ctrl+e", "alt+b", "right", "ctrl+left"} {
+		d.Update(lineKey(n))
+		if !shows() {
+			t.Fatalf("%s removes the error", n)
+		}
+	}
+	for _, n := range []string{"backspace", "ctrl+w", "ctrl+u", "ctrl+k"} {
+		d = newSampleDialog(t, plainInputSpec(), i18n.English)
+		fail()
+		d.Update(lineKey("home"))
+		if n != "ctrl+k" {
+			d.Update(lineKey("end"))
+		}
+		d.Update(lineKey(n))
+		if shows() {
+			t.Errorf("%s keeps the error", n)
+		}
+	}
+	d = newSampleDialog(t, plainInputSpec(), i18n.English)
+	fail()
+	d.Paste("x")
+	if shows() {
+		t.Error("a paste keeps the error")
+	}
+}
+
+func TestMaskedInputDialogEditsWithoutShowingText(t *testing.T) {
+	const secret = "ab cd canary"
+	for name, st := range looks(t) {
+		d := newSampleDialog(t, unlockSpec(), i18n.English)
+		d.Paste(secret + "\n")
+		if d.Value() != secret {
+			t.Fatalf("a paste with a line break at the end gives %q", d.Value())
+		}
+		check := func(step string) {
+			t.Helper()
+			view, targets, _ := d.Overlay(st, sampleScreen(90, 30), 90, 30, Rect{Y: 2, Width: 90, Height: 27})
+			page, pageTargets := d.View(st, 50, 10)
+			for _, out := range []string{view, page} {
+				plain := ansi.Strip(out)
+				if strings.Contains(plain, "canary") || strings.Contains(plain, "ab cd") {
+					t.Fatalf("%s: %s shows the secret:\n%s", name, step, plain)
+				}
+			}
+			for _, tg := range append(targets, pageTargets...) {
+				if strings.Contains(tg.Item, "canary") || strings.Contains(tg.Item, "ab") {
+					t.Fatalf("%s: %s: a target names the secret: %+v", name, step, tg)
+				}
+			}
+		}
+		check("paste")
+		d.Update(lineKey("ctrl+left"))
+		d.Update(lineKey("alt+left"))
+		check("jump")
+		d.Update(lineKey("alt+b"))
+		if d.input.cursor != 0 {
+			t.Errorf("a word jump left stops at %d", d.input.cursor)
+		}
+		d.Update(lineKey("end"))
+		d.Update(lineKey("ctrl+w"))
+		if d.Value() != "" {
+			t.Errorf("ctrl+w leaves %q", d.Value())
+		}
+		d.Paste("one two")
+		d.Update(lineKey("home"))
+		d.Update(lineKey("right"))
+		d.Update(lineKey("alt+d"))
+		if d.Value() != "o" {
+			t.Errorf("alt+d leaves %q", d.Value())
+		}
+		check("delete")
+	}
+}
+
+func TestSecondWayOfAnAnswerWinsBeforeEditing(t *testing.T) {
+	second := func(a Action) Action { a.SecondWayOf = "back"; return a }
+	acts := append(sampleActions(), second(Action{ID: "wipe", Level: LevelCtrl, DefaultKeys: []string{"alt+backspace"}, Help: "sample.wipe"}))
+	keys, err := NewKeymap(acts, CharsetUnicode)
+	if err != nil {
+		t.Fatal(err)
+	}
+	spec := plainInputSpec()
+	spec.Answers = []Answer{{Action: "wipe", Label: "a.cancel"}, {Action: "enter", Label: "a.unlock"}}
+	d, err := NewDialog(spec, keys, newTranslator(t, i18n.English, dialogCatalogs(), keys))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if answer, handled := d.Update(lineKey("alt+backspace")); answer != "wipe" || !handled || d.Value() != "one two" {
+		t.Errorf("the second way gives %q, handled %v, with %q", answer, handled, d.Value())
+	}
+	if _, err := NewKeymap(append(sampleActions(), Action{ID: "bad", Level: LevelCtrl, DefaultKeys: []string{"alt+delete"}, Help: "sample.bad"}), CharsetUnicode); err == nil {
+		t.Error("alt+delete is accepted as the key of an action")
 	}
 }
