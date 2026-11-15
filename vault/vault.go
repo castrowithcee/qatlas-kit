@@ -125,6 +125,8 @@ type Vault struct {
 
 	// rename replaces a file atomically; a test replaces it to simulate an interrupted write.
 	rename func(oldpath, newpath string) error
+	// remove deletes a pending entry an Update merged; a test replaces it to simulate a failed removal.
+	remove func(path string) error
 
 	mu       sync.Mutex
 	unlocked bool
@@ -142,7 +144,7 @@ func New(opts Options) (*Vault, error) {
 	if opts.WorkFactor == 0 {
 		opts.WorkFactor = DefaultWorkFactor
 	}
-	return &Vault{opts: opts, rename: os.Rename}, nil
+	return &Vault{opts: opts, rename: os.Rename, remove: os.Remove}, nil
 }
 
 func (o Options) check() error {

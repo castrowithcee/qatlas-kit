@@ -10,6 +10,25 @@ import (
 	"testing"
 )
 
+// widen lets other users read path.
+func widen(t *testing.T, path string) {
+	t.Helper()
+	if err := os.Chmod(path, 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func wantPrivate(t *testing.T, path string) {
+	t.Helper()
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != fileMode {
+		t.Errorf("%s has mode %04o, want %04o", path, info.Mode().Perm(), fileMode)
+	}
+}
+
 func TestVaultFilesArePrivate(t *testing.T) {
 	v, _ := created(t, nil)
 	addPending(t, v, testEntry{Name: "writer", Value: "example-1"})
