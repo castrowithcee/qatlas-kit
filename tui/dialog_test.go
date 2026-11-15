@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"slices"
 	"strings"
 	"testing"
@@ -526,5 +527,365 @@ func TestNoticeAcceptsFailDetail(t *testing.T) {
 	keys := sampleKeymap(t, CharsetUnicode)
 	if _, err := NewDialog(spec, keys, newTranslator(t, i18n.English, dialogCatalogs(), keys)); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// longDetailsSpec is a question whose n details do not fit a small room, with every scroll key.
+func longDetailsSpec(n int) DialogSpec {
+	s := confirmSpec()
+	s.Details = nil
+	for i := 1; i <= n; i++ {
+		s.Details = append(s.Details, DialogLine{Prefix: "- ", Text: fmt.Sprintf("plant %02d needs water", i)})
+	}
+	s.Keys = DialogKeys{Enter: "enter", Up: "up", Down: "down", PageUp: "pageup", PageDown: "pagedown", First: "first", Last: "last"}
+	return s
+}
+
+func dialogKey(d *Dialog, names ...string) {
+	for _, n := range names {
+		var msg tea.KeyPressMsg
+		switch n {
+		case "pgup":
+			msg = tea.KeyPressMsg{Code: tea.KeyPgUp}
+		case "pgdown":
+			msg = tea.KeyPressMsg{Code: tea.KeyPgDown}
+		case "home":
+			msg = tea.KeyPressMsg{Code: tea.KeyHome}
+		case "end":
+			msg = tea.KeyPressMsg{Code: tea.KeyEnd}
+		case "down":
+			msg = tea.KeyPressMsg{Code: tea.KeyDown}
+		default:
+			msg = press(n)
+		}
+		d.Update(msg)
+	}
+}
+
+func overlayText(t *testing.T, d *Dialog, height int) (string, []Target, bool) {
+	t.Helper()
+	view, targets, ok := d.Overlay(looks(t)["noneascii"], sampleScreen(100, 30), 100, 30, Rect{Y: 2, Width: 100, Height: height})
+	return ansi.Strip(view), targets, ok
+}
+
+// Details that do not fit scroll between the consequence and the answers; every detail is reachable, the
+// position is right and the keys stop at both ends.
+func TestDialogScrollsLongDetails(t *testing.T) {
+	d := newSampleDialog(t, longDetailsSpec(12), i18n.English)
+	seen := map[int]bool{}
+	for step := 0; step < 20; step++ {
+		text, _, ok := overlayText(t, d, 14)
+		if !ok {
+			t.Fatal("the dialog gives up although its details can scroll")
+		}
+		for _, part := range []string{"Water every plant now?", "The pump runs for a minute.", "> Water <", "[ Not now ]", "y/enter Water", "n Not now"} {
+			if !strings.Contains(text, part) {
+				t.Fatalf("step %d: %q is missing:\n%s", step, part, text)
+			}
+		}
+		shown := 0
+		for i := 1; i <= 12; i++ {
+			if strings.Contains(text, fmt.Sprintf("plant %02d ", i)) {
+				seen[i] = true
+				shown++
+			}
+		}
+		first := d.scroll.offset + 1
+		if want := fmt.Sprintf("lines %d-%d of 12", first, first+shown-1); !strings.Contains(text, want) {
+			t.Fatalf("step %d: position %q is not right:\n%s", step, want, text)
+		}
+		dialogKey(d, "down")
+	}
+	if len(seen) != 12 {
+		t.Errorf("only %d of 12 details were reachable", len(seen))
+	}
+	if d.scroll.offset != d.scroll.last {
+		t.Errorf("down went past the end: %d of %d", d.scroll.offset, d.scroll.last)
+	}
+	dialogKey(d, "up")
+	if d.scroll.offset != d.scroll.last-1 {
+		t.Errorf("up from the end is at %d", d.scroll.offset)
+	}
+	dialogKey(d, "home")
+	if d.scroll.offset != 0 {
+		t.Errorf("first is at %d", d.scroll.offset)
+	}
+	dialogKey(d, "up")
+	if d.scroll.offset != 0 {
+		t.Errorf("up went above the top: %d", d.scroll.offset)
+	}
+	dialogKey(d, "pgdown")
+	if want := d.scroll.page - 1; d.scroll.offset != want {
+		t.Errorf("a page moved to %d, want %d", d.scroll.offset, want)
+	}
+	dialogKey(d, "end")
+	if d.scroll.offset != d.scroll.last {
+		t.Errorf("last is at %d of %d", d.scroll.offset, d.scroll.last)
+	}
+	dialogKey(d, "pgup")
+	if want := d.scroll.last - (d.scroll.page - 1); d.scroll.offset != want {
+		t.Errorf("a page up moved to %d, want %d", d.scroll.offset, want)
+	}
+	dialogKey(d, "pgdown", "pgdown", "pgdown")
+	if d.scroll.offset != d.scroll.last {
+		t.Errorf("page down went past the end: %d", d.scroll.offset)
+	}
+}
+
+// A room the details no longer fill clamps the position, and a dialog whose details fit draws no position, no
+// scroll hint and no wheel target.
+func TestDialogClampsPositionWhenRoomGrows(t *testing.T) {
+	d := newSampleDialog(t, longDetailsSpec(12), i18n.English)
+	overlayText(t, d, 14)
+	dialogKey(d, "end")
+	last := d.scroll.last
+	text, targets, ok := overlayText(t, d, 18)
+	if !ok || d.scroll.offset >= last || d.scroll.offset != d.scroll.last {
+		t.Errorf("the position %d was not clamped to %d (was %d)", d.scroll.offset, d.scroll.last, last)
+	}
+	if !strings.Contains(text, "plant 12 ") {
+		t.Errorf("the end is not in view:\n%s", text)
+	}
+	text, targets, ok = overlayText(t, d, 28)
+	if !ok || strings.Contains(text, "lines ") || d.scroll.offset != 0 || !strings.Contains(text, "plant 01 ") || !strings.Contains(text, "plant 12 ") {
+		t.Errorf("details that fit still scroll:\n%s", text)
+	}
+	for _, tg := range targets {
+		if tg.Zone == ZoneDetail {
+			t.Error("a dialog whose details fit has a wheel target")
+		}
+	}
+	if slices.ContainsFunc(d.Hints(), func(h Hint) bool { return h.Action == "up" || h.Action == "last" }) {
+		t.Error("a dialog whose details fit names the scroll keys")
+	}
+	plain := newSampleDialog(t, func() DialogSpec { s := longDetailsSpec(12); s.Keys = DialogKeys{Enter: "enter"}; return s }(), i18n.English)
+	a, _, _ := plain.Overlay(looks(t)["dark"], sampleScreen(100, 30), 100, 30, Rect{Y: 2, Width: 100, Height: 28})
+	b, _, _ := d.Overlay(looks(t)["dark"], sampleScreen(100, 30), 100, 30, Rect{Y: 2, Width: 100, Height: 28})
+	if a != b {
+		t.Error("scroll keys change a dialog that fits")
+	}
+}
+
+// The overlay gives up only where not even three detail lines and their position fit.
+func TestDialogOverlayNeedsThreeDetailLines(t *testing.T) {
+	d := newSampleDialog(t, longDetailsSpec(12), i18n.English)
+	if _, _, ok := overlayText(t, d, 11); ok {
+		t.Error("the dialog claims to fit with two detail lines")
+	}
+	text, _, ok := overlayText(t, d, 12)
+	if !ok {
+		t.Fatal("the dialog gives up with three detail lines")
+	}
+	if n := strings.Count(text, " needs water"); n != 3 || !strings.Contains(text, "lines 1-3 of 12") {
+		t.Errorf("%d detail lines shown:\n%s", n, text)
+	}
+}
+
+// View scrolls the details in the workspace and names the scroll keys for the footer.
+func TestDialogViewScrollsDetails(t *testing.T) {
+	st := looks(t)["noneascii"]
+	d := newSampleDialog(t, longDetailsSpec(12), i18n.English)
+	page, targets := d.View(st, 40, 10)
+	plain := ansi.Strip(page)
+	if lines := strings.Split(plain, "\n"); len(lines) != 10 || lipgloss.Width(lines[0]) != 40 {
+		t.Fatalf("the page is not 40x10:\n%s", plain)
+	}
+	for _, part := range []string{"Water every plant now?", "The pump runs for a minute.", "plant 01 ", "lines 1-6 of 12"} {
+		if !strings.Contains(plain, part) {
+			t.Errorf("%q is missing:\n%s", part, plain)
+		}
+	}
+	if !slices.ContainsFunc(d.Hints(), func(h Hint) bool { return h.Action == "down" }) || !slices.ContainsFunc(d.Hints(), func(h Hint) bool { return h.Action == "yes" }) {
+		t.Errorf("the hints of a scrolling dialog are %+v", d.Hints())
+	}
+	if !slices.ContainsFunc(targets, func(tg Target) bool { return tg.Zone == ZoneDetail }) {
+		t.Error("no wheel target")
+	}
+	dialogKey(d, "end")
+	plain = ansi.Strip(func() string { p, _ := d.View(st, 40, 10); return p }())
+	if !strings.Contains(plain, "plant 12 ") || !strings.Contains(plain, "lines 7-12 of 12") {
+		t.Errorf("the end is not in view:\n%s", plain)
+	}
+}
+
+// The key line names the scroll keys while the details scroll, behind the answers, and the footer keeps every
+// answer where it is short.
+func TestDialogHintsNameScrollKeysAfterTheAnswers(t *testing.T) {
+	d := newSampleDialog(t, longDetailsSpec(12), i18n.English)
+	if slices.ContainsFunc(d.Hints(), func(h Hint) bool { return h.Action == "down" }) {
+		t.Error("hints name scroll keys before anything scrolled")
+	}
+	overlayText(t, d, 14)
+	hints := d.Hints()
+	last := -1
+	for i, h := range hints {
+		if h.Kind == HintAnswer {
+			last = i
+		}
+	}
+	if len(hints) == 0 || hints[last].Action == "" || !slices.ContainsFunc(hints[last+1:], func(h Hint) bool { return h.Action == "last" }) {
+		t.Errorf("hints %+v", hints)
+	}
+	st := looks(t)["noneascii"]
+	for _, w := range []int{80, 40, 30} {
+		line, _ := st.footer(d.keys.Hints(d.Hints(), d.focus(), d.text), "", w)
+		plain := ansi.Strip(line)
+		for _, answer := range []string{"y", "n"} {
+			if !strings.Contains(plain, answer+" ") && !strings.Contains(plain, answer+"/") {
+				t.Errorf("width %d lost the answer %q: %q", w, answer, plain)
+			}
+		}
+	}
+}
+
+// The wheel over the dialog scrolls three lines a notch; beside it, it does not.
+func TestDialogWheelScrollsOverTheDialogOnly(t *testing.T) {
+	d := newSampleDialog(t, longDetailsSpec(12), i18n.English)
+	_, targets, ok := overlayText(t, d, 14)
+	if !ok {
+		t.Fatal("no overlay")
+	}
+	m := NewMouseMap(targets, true)
+	wheel := func(x, y int, b tea.MouseButton) {
+		if r := m.Handle(tea.MouseWheelMsg{X: x, Y: y, Button: b}); r.Zone == ZoneDetail {
+			d.Wheel(r.WheelSteps)
+		}
+	}
+	box := Rect{}
+	for _, tg := range targets {
+		if tg.Zone == ZoneDetail {
+			box = tg.Rect
+		}
+	}
+	if box.Width == 0 {
+		t.Fatal("no wheel target")
+	}
+	wheel(box.X+2, box.Y+3, tea.MouseWheelDown)
+	if d.scroll.offset != WheelTextLines {
+		t.Errorf("a notch scrolled to %d", d.scroll.offset)
+	}
+	wheel(0, 0, tea.MouseWheelDown)
+	wheel(box.X-1, box.Y+3, tea.MouseWheelDown)
+	wheel(box.X+box.Width, box.Y+3, tea.MouseWheelDown)
+	wheel(box.X+2, box.Y+box.Height, tea.MouseWheelDown)
+	if d.scroll.offset != WheelTextLines {
+		t.Errorf("the wheel beside the dialog scrolled to %d", d.scroll.offset)
+	}
+	wheel(box.X+2, box.Y, tea.MouseWheelUp)
+	wheel(box.X+2, box.Y, tea.MouseWheelUp)
+	if d.scroll.offset != 0 {
+		t.Errorf("the wheel went above the top: %d", d.scroll.offset)
+	}
+	for range 10 {
+		wheel(box.X+2, box.Y, tea.MouseWheelDown)
+	}
+	if d.scroll.offset != d.scroll.last {
+		t.Errorf("the wheel went past the end: %d of %d", d.scroll.offset, d.scroll.last)
+	}
+	// A click on a button still answers, and a click on the free area of the dialog does nothing.
+	for _, tg := range targets {
+		if tg.Action == "yes" {
+			if a, ok := d.Click(m.Handle(click(tg.Rect.X, tg.Rect.Y))); !ok || a != "yes" {
+				t.Errorf("a click on the button gave %q, %v", a, ok)
+			}
+		}
+	}
+	if a, ok := d.Click(m.Handle(click(box.X+1, box.Y+1))); ok || a != "" {
+		t.Errorf("a click on the details gave %q, %v", a, ok)
+	}
+}
+
+// With an input, the scroll keys scroll the details and never edit the text; first and last stay with the text
+// line, and the typed text is never a scroll key.
+func TestDialogWithInputKeepsTypingAndScrolling(t *testing.T) {
+	s := unlockSpec()
+	s.Details = longDetailsSpec(12).Details
+	s.Keys.Up, s.Keys.Down, s.Keys.PageUp, s.Keys.PageDown = "up", "down", "pageup", "pagedown"
+	s.Keys.First, s.Keys.Last = "first", "last"
+	d := newSampleDialog(t, s, i18n.English)
+	if _, _, ok := overlayText(t, d, 16); !ok {
+		t.Fatal("no overlay")
+	}
+	for _, r := range "hunter" {
+		d.Update(tea.KeyPressMsg{Code: r, Text: string(r)})
+	}
+	dialogKey(d, "down", "down")
+	if d.scroll.offset != 2 || d.Value() != "hunter" {
+		t.Errorf("offset %d, value %q", d.scroll.offset, d.Value())
+	}
+	for _, name := range []string{"home", "end"} {
+		if _, handled := d.Update(map[string]tea.KeyPressMsg{"home": {Code: tea.KeyHome}, "end": {Code: tea.KeyEnd}}[name]); handled {
+			t.Errorf("%s is taken from the text line", name)
+		}
+	}
+	if d.scroll.offset != 2 {
+		t.Errorf("home or end scrolled to %d", d.scroll.offset)
+	}
+	dialogKey(d, "pgdown")
+	if d.scroll.offset <= 2 {
+		t.Errorf("a page did not scroll: %d", d.scroll.offset)
+	}
+	if slices.ContainsFunc(d.Hints(), func(h Hint) bool { return h.Action == "first" || h.Action == "last" }) {
+		t.Error("an input dialog names first and last as scroll keys")
+	}
+	d.Update(press("j"))
+	if d.Value() != "hunterj" {
+		t.Errorf("a letter did not type: %q", d.Value())
+	}
+}
+
+// Control characters and masked values stay masked in every scroll position.
+func TestDialogScrollKeepsDetailsMasked(t *testing.T) {
+	s := unlockSpec()
+	s.Details = nil
+	for i := 0; i < 8; i++ {
+		s.Details = append(s.Details, DialogLine{Text: fmt.Sprintf("row %d \x1b[31mred\x07 with hunter22 inside", i)})
+	}
+	s.Keys.Down, s.Keys.Up = "down", "up"
+	d := newSampleDialog(t, s, i18n.English)
+	for _, r := range "hunter22" {
+		d.Update(tea.KeyPressMsg{Code: r, Text: string(r)})
+	}
+	for step := 0; step < 10; step++ {
+		view, _, ok := d.Overlay(looks(t)["noneascii"], sampleScreen(100, 30), 100, 30, Rect{Y: 2, Width: 100, Height: 14})
+		if !ok {
+			t.Fatal("no overlay")
+		}
+		if strings.ContainsAny(view, "\x1b\x07") || strings.Contains(view, "hunter22") {
+			t.Fatalf("step %d leaks a control character or the secret:\n%q", step, view)
+		}
+		dialogKey(d, "down")
+	}
+	if d.scroll.last == 0 || !strings.Contains(fmt.Sprint(d.parts(50, looks(t)["noneascii"]).details), "***") {
+		t.Error("the details did not scroll or lost the mask")
+	}
+}
+
+func TestNewDialogRejectsBadScrollKeys(t *testing.T) {
+	cases := []struct {
+		name string
+		edit func(*DialogSpec)
+		want string
+	}{
+		{"unknown", func(s *DialogSpec) { s.Keys.Up = "fly" }, `up key "fly" is no action`},
+		{"twice", func(s *DialogSpec) { s.Keys.Down = "up" }, `also the up key`},
+		{"answer", func(s *DialogSpec) { s.Keys.PageUp = "yes" }, "also an answer or the enter key"},
+		{"enter", func(s *DialogSpec) { s.Keys.Last = "enter" }, "also an answer or the enter key"},
+		{"typing", func(s *DialogSpec) {
+			*s = unlockSpec()
+			s.Keys.Up = "vim.up"
+		}, "no key that acts while text is typed"},
+	}
+	keys := sampleKeymap(t, CharsetUnicode)
+	text := newTranslator(t, i18n.English, dialogCatalogs(), keys)
+	for _, c := range cases {
+		s := longDetailsSpec(3)
+		c.edit(&s)
+		if _, err := NewDialog(s, keys, text); err == nil || !strings.Contains(err.Error(), c.want) {
+			t.Errorf("%s: err = %v, want %q", c.name, err, c.want)
+		}
+	}
+	if _, err := NewDialog(longDetailsSpec(3), keys, text); err != nil {
+		t.Errorf("valid scroll keys refused: %v", err)
 	}
 }
