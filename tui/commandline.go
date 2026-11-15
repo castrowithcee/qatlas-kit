@@ -18,16 +18,22 @@ type Context struct {
 	Focus InputFocus
 }
 
-// Command is one entry of the command line: a name for something a key or a tab click already does. Running
-// it yields the command, and the application does with Action, Area and Tab exactly what the key or the tab
-// click does, so a command is never a second way with rules of its own.
+// Command is one entry of the command line: a name for an action the application already has, which a key, a
+// tab click or a row of its screen triggers. Running it yields the command, and the application does with
+// Action, Area and Tab exactly what that trigger does, so a command is never a second way with rules of its
+// own. A key is optional; a command without one shows an empty key column and still runs by enter or click.
 type Command struct {
 	// Name is lower-case words separated by single blanks; Aliases are further such names that match it.
 	Name    string
 	Aliases []string
-	// Description says what the command does; it names no key, the key stands beside it.
-	Description TextID
-	Action      ActionID
+	// Icon is an optional glyph that passes CheckIcon. It stands before the name in a Unicode terminal, never
+	// in its place; once any command has one, every row keeps the column so the names stay aligned.
+	Icon string
+	// Description says what the command does; it names no key, the key stands beside it. DescriptionArgs are
+	// formatted into it; the result is escaped like any text.
+	Description     TextID
+	DescriptionArgs []any
+	Action          ActionID
 	// Key is the position, counted from 1, of the one key of Action that does the same, for an action whose
 	// keys each do another thing, such as one digit per area; 0 shows all keys of Action.
 	Key  int
@@ -69,17 +75,17 @@ type CommandLine struct {
 	keys     *Keymap
 	text     Translator
 
-	input  []rune
+	line   textLine
 	cursor int
 	msg    string
 	ctx    Context
 }
 
 // NewCommandLine checks spec and returns a closed, empty command line. It rejects an empty list, a name or
-// alias that is not lower-case words separated by single blanks or that two commands share, a command without
-// description or availability, one that names neither an action nor an area, a tab without its area, a key
-// position outside the keys of a known action, two commands that do the same, and a move key that names no
-// action of keys.
+// alias that is not lower-case words separated by single blanks or that two commands share, an icon that
+// fails CheckIcon, a command without description or availability, one that names neither an action nor an
+// area, a tab without its area, a key position outside the keys of a known action, two commands that do the
+// same, and a move key that names no action of keys.
 func NewCommandLine(spec CommandLineSpec, keys *Keymap, text Translator) (*CommandLine, error) {
 	if keys == nil || text == nil {
 		return nil, errors.New("the command line needs a key table and a translator")
@@ -105,6 +111,7 @@ func NewCommandLine(spec CommandLineSpec, keys *Keymap, text Translator) (*Comma
 	list := make([]Command, len(commands))
 	for i, c := range commands {
 		c.Aliases = append([]string(nil), c.Aliases...)
+		c.DescriptionArgs = append([]any(nil), c.DescriptionArgs...)
 		list[i] = c
 		fail := func(format string, args ...any) {
 			errs = append(errs, fmt.Errorf("command %q: "+format, append([]any{c.Name}, args...)...))
@@ -121,6 +128,11 @@ func NewCommandLine(spec CommandLineSpec, keys *Keymap, text Translator) (*Comma
 		}
 		if c.Description == "" {
 			fail("no description")
+		}
+		if c.Icon != "" {
+			if err := CheckIcon(c.Icon); err != nil {
+				fail("%v", err)
+			}
 		}
 		if c.Available == nil {
 			fail("no availability; use Always for a command that acts everywhere")
@@ -170,21 +182,34 @@ func normalizeCommand(text string) string {
 }
 
 // Reset empties the line, for a command line closed by other means than its keys.
-func (c *CommandLine) Reset() { c.input, c.cursor, c.msg = nil, 0, "" }
+func (c *CommandLine) Reset() {
+	c.line.clear()
+	c.cursor, c.msg = 0, ""
+}
 
 // SetContext sets the place the command line is opened from, which decides where a command acts. The
 // application sets it when it opens the line.
 func (c *CommandLine) SetContext(ctx Context) { c.ctx = ctx }
 
 // Query is the typed text.
-func (c *CommandLine) Query() string { return string(c.input) }
+func (c *CommandLine) Query() string { return c.line.String() }
+
+// Paste puts pasted text into the line at its cursor, cleaned as a text line cleans it, and reports whether
+// any of it was taken. The matches follow the text and the choice starts over.
+func (c *CommandLine) Paste(text string) bool {
+	if !c.line.insert(text) {
+		return false
+	}
+	c.cursor, c.msg = 0, ""
+	return true
+}
 
 // Matches are the commands that match the typed text in their order: those whose name or an alias is the text
 // first, then those that begin with it, then those with a word that begins with it, then those that hold it
 // inside a word; each group keeps the order of the commands. Case does not count. The empty line lists the
 // commands that are not hidden.
 func (c *CommandLine) Matches() []Command {
-	query := normalizeCommand(string(c.input))
+	query := normalizeCommand(c.line.String())
 	if query == "" {
 		var shown []Command
 		for _, cmd := range c.commands {
@@ -218,8 +243,8 @@ func (c *CommandLine) Matches() []Command {
 
 // Update handles a key of the open command line. done reports that the line closes: with the zero Command for
 // the back key, and with the chosen command for the enter key where it is available. An unknown or
-// unavailable command keeps the line open with the typed text and says why. Every other key that types text
-// edits the line.
+// unavailable command keeps the line open with the typed text and says why. Every other key of a text line
+// edits the typed text.
 func (c *CommandLine) Update(msg tea.KeyPressMsg) (cmd Command, done bool) {
 	matches := c.Matches()
 	is := func(id ActionID) bool { return c.keys.Is(msg, id, InputText) }
@@ -236,18 +261,7 @@ func (c *CommandLine) Update(msg tea.KeyPressMsg) (cmd Command, done bool) {
 	case is(c.nav.Enter):
 		return c.run(matches)
 	}
-	before := len(c.input)
-	switch {
-	case msg.Code == tea.KeyBackspace && msg.Mod == 0 && len(c.input) > 0:
-		c.input = c.input[:len(c.input)-1]
-	case msg.Text != "" && msg.Mod&^tea.ModShift == 0:
-		for _, r := range msg.Text {
-			if unicode.IsPrint(r) {
-				c.input = append(c.input, r)
-			}
-		}
-	}
-	if len(c.input) != before {
+	if _, changed := c.line.edit(msg, false); changed {
 		c.cursor, c.msg = 0, ""
 	}
 	return Command{}, false
@@ -271,7 +285,7 @@ func (c *CommandLine) Click(r MouseResult) (cmd Command, done bool) {
 
 func (c *CommandLine) run(matches []Command) (Command, bool) {
 	if len(matches) == 0 {
-		c.msg = c.text.Lookup(TextCommandUnknown, normalizeCommand(string(c.input)))
+		c.msg = c.text.Lookup(TextCommandUnknown, normalizeCommand(c.line.String()))
 		return Command{}, false
 	}
 	cmd := matches[min(c.cursor, len(matches)-1)]
@@ -281,6 +295,7 @@ func (c *CommandLine) run(matches []Command) (Command, bool) {
 	}
 	c.Reset()
 	cmd.Aliases = append([]string(nil), cmd.Aliases...)
+	cmd.DescriptionArgs = append([]any(nil), cmd.DescriptionArgs...)
 	return cmd, true
 }
 
@@ -320,7 +335,7 @@ func (c *CommandLine) View(styles Styles, width, height int) (string, []Target) 
 		cursor := min(c.cursor, len(matches)-1)
 		start := max(min(cursor-rows/2, len(matches)-rows), 0)
 		end := min(start+rows, len(matches))
-		keyW, nameW := 0, 0
+		keyW, nameW, iconW := 0, 0, c.iconWidth(styles)
 		for _, m := range matches[start:end] {
 			keyW = max(keyW, lipgloss.Width(c.keyLabel(m)))
 			nameW = max(nameW, lipgloss.Width(m.Name))
@@ -328,7 +343,7 @@ func (c *CommandLine) View(styles Styles, width, height int) (string, []Target) 
 		for i := start; i < end; i++ {
 			targets = append(targets, Target{Rect: Rect{X: x0, Y: y0 + len(lines), Width: inner, Height: 1},
 				Zone: ZoneRows, Action: matches[i].Action, Area: matches[i].Area, Tab: matches[i].Tab})
-			lines = append(lines, c.row(styles, matches[i], i == cursor, nameW, keyW, inner))
+			lines = append(lines, c.row(styles, matches[i], i == cursor, nameW, keyW, iconW, inner))
 		}
 		if len(matches) > end-start {
 			pos := c.text.Lookup(TextListPosition, start+1, end, len(matches))
@@ -345,13 +360,14 @@ func (c *CommandLine) View(styles Styles, width, height int) (string, []Target) 
 	return strings.Join(styles.Panel(title, "", lines, width, height, true), "\n"), kept
 }
 
-// inputLine is the prompt and the typed text, the end in view where it is long, or the dimmed placeholder.
+// inputLine is the prompt and the typed text with its cursor, scrolled where it is long, or the dimmed
+// placeholder.
 func (c *CommandLine) inputLine(styles Styles, width int) string {
 	room := max(width-len(commandPrompt), 0)
-	if len(c.input) == 0 {
+	if len(c.line.runes) == 0 {
 		return commandPrompt + styles.Render(StyleHint, styles.Truncate(Escape(c.text.Lookup(TextCommandPrompt)), room))
 	}
-	return commandPrompt + styles.TruncateLeft(Escape(string(c.input)), room)
+	return commandPrompt + c.line.view(room, styles, true, "")
 }
 
 // keyLabel is the key column of a command: the keys of its action in force, or the one key it names.
@@ -364,11 +380,28 @@ func (c *CommandLine) keyLabel(cmd Command) string {
 	return Escape(c.keys.KeyNameLabel(c.keys.bound[c.keys.index[cmd.Action]][cmd.Key-1]))
 }
 
-func (c *CommandLine) row(styles Styles, cmd Command, chosen bool, nameW, keyW, width int) string {
+// iconWidth is the width of the icon column: the widest icon of any command, so the column does not change
+// with the filter, or 0 in an ASCII terminal and where no command has an icon.
+func (c *CommandLine) iconWidth(styles Styles) int {
+	if styles.charset != CharsetUnicode {
+		return 0
+	}
+	w := 0
+	for _, cmd := range c.commands {
+		w = max(w, lipgloss.Width(cmd.Icon))
+	}
+	return w
+}
+
+func (c *CommandLine) row(styles Styles, cmd Command, chosen bool, nameW, keyW, iconW, width int) string {
 	key := c.keyLabel(cmd)
 	key = strings.Repeat(" ", keyW-lipgloss.Width(key)) + key
 	avail := max(width-2-keyW-1, 1)
-	left := cmd.Name + strings.Repeat(" ", nameW-lipgloss.Width(cmd.Name)) + "  " + Escape(c.text.Lookup(cmd.Description))
+	desc := Escape(c.text.Lookup(cmd.Description, cmd.DescriptionArgs...))
+	left := cmd.Name + strings.Repeat(" ", nameW-lipgloss.Width(cmd.Name)) + "  " + desc
+	if iconW > 0 {
+		left = cmd.Icon + strings.Repeat(" ", iconW-lipgloss.Width(cmd.Icon)+1) + left
+	}
 	left = Pad(styles.Truncate(left, avail), avail)
 	if ok, _ := cmd.Available(c.ctx); !ok {
 		left = styles.Render(StyleHint, left)
