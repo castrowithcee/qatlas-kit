@@ -9,6 +9,7 @@ import (
 	"path"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -55,11 +56,14 @@ func (c *Client) InstallPrepared(ctx context.Context, p *Prepared) (Result, erro
 	if c.Executable == "" || !filepath.IsAbs(c.Executable) {
 		return Result{}, errors.New("absolute executable path is required")
 	}
-	wantProgram := c.ProgramName
-	if runtime.GOOS == "windows" && !strings.HasSuffix(wantProgram, ".exe") {
-		wantProgram += ".exe"
+	// A release of the previous set may replace a program installed under either name; which path that
+	// is stays the application's choice.
+	programName, companions, previous := c.payload(version)
+	names := []string{c.ProgramName}
+	if previous {
+		names = append(names, programName)
 	}
-	if filepath.Base(c.Executable) != wantProgram {
+	if !slices.ContainsFunc(names, func(name string) bool { return filepath.Base(c.Executable) == platformProgram(name) }) {
 		return Result{}, &UnsupportedInstallationError{c.Executable, "the path does not name the configured program"}
 	}
 	info, err := os.Lstat(c.Executable)
@@ -69,13 +73,13 @@ func (c *Client) InstallPrepared(ctx context.Context, p *Prepared) (Result, erro
 	if !info.Mode().IsRegular() {
 		return Result{}, &UnsupportedInstallationError{c.Executable, "the program is not a regular file"}
 	}
-	plans := make([]companionPlan, len(c.Companions))
-	current := make([][]byte, len(c.Companions))
-	for i, companion := range c.Companions {
+	plans := make([]companionPlan, len(companions))
+	current := make([][]byte, len(companions))
+	for i, companion := range companions {
 		if !filepath.IsAbs(companion.Path) || filepath.Clean(companion.Path) == filepath.Clean(c.Executable) {
 			return Result{}, fmt.Errorf("companion %s needs a separate absolute path", companion.Entry)
 		}
-		for _, other := range c.Companions[:i] {
+		for _, other := range companions[:i] {
 			if filepath.Clean(other.Path) == filepath.Clean(companion.Path) {
 				return Result{}, fmt.Errorf("companion path %s is not unique", companion.Path)
 			}
@@ -188,6 +192,14 @@ func (c *Client) InstallPrepared(ctx context.Context, p *Prepared) (Result, erro
 		c.AfterReplace(ctx, files)
 	}
 	return result, nil
+}
+
+// platformProgram is the file name of the program on this platform.
+func platformProgram(name string) string {
+	if runtime.GOOS == "windows" && !strings.HasSuffix(name, ".exe") {
+		return name + ".exe"
+	}
+	return name
 }
 
 // restoreCompanions puts back the companions replaced so far, newest first, and reports what it could not.

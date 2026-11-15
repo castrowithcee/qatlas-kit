@@ -212,15 +212,15 @@ func TestPreviousSignatureMustBeValid(t *testing.T) {
 	signer := releasetest.NewSigner(t)
 	api := newReleaseAPI(t)
 	for name, previous := range map[string]PreviousSignature{
-		"invalid last version":       {"1.5", oldNamespace, oldSignature},
-		"empty last version":         {"", oldNamespace, oldSignature},
-		"empty namespace":            {"v1.5.0", "", oldSignature},
-		"same namespace":             {"v1.5.0", testNamespace, oldSignature},
-		"invalid signature asset":    {"v1.5.0", oldNamespace, "dir/old.sig"},
-		"empty signature asset":      {"v1.5.0", oldNamespace, ""},
-		"checksums as signature":     {"v1.5.0", oldNamespace, "checksums.txt"},
-		"same signature asset":       {"v1.5.0", oldNamespace, testSignatureAsset},
-		"whitespace signature asset": {"v1.5.0", oldNamespace, "old sig"},
+		"invalid last version":       {LastVersion: "1.5", Namespace: oldNamespace, SignatureAsset: oldSignature},
+		"empty last version":         {LastVersion: "", Namespace: oldNamespace, SignatureAsset: oldSignature},
+		"empty namespace":            {LastVersion: "v1.5.0", Namespace: "", SignatureAsset: oldSignature},
+		"same namespace":             {LastVersion: "v1.5.0", Namespace: testNamespace, SignatureAsset: oldSignature},
+		"invalid signature asset":    {LastVersion: "v1.5.0", Namespace: oldNamespace, SignatureAsset: "dir/old.sig"},
+		"empty signature asset":      {LastVersion: "v1.5.0", Namespace: oldNamespace, SignatureAsset: ""},
+		"checksums as signature":     {LastVersion: "v1.5.0", Namespace: oldNamespace, SignatureAsset: "checksums.txt"},
+		"same signature asset":       {LastVersion: "v1.5.0", Namespace: oldNamespace, SignatureAsset: testSignatureAsset},
+		"whitespace signature asset": {LastVersion: "v1.5.0", Namespace: oldNamespace, SignatureAsset: "old sig"},
 	} {
 		c := transitionClient(api, signer, "/unused")
 		c.PreviousSignature = &previous

@@ -67,9 +67,13 @@ func (c *Client) binding(version string) (trustBinding, error) {
 		return trustBinding{}, fmt.Errorf("invalid release version: %w", err)
 	}
 	namespace, signatureAsset := c.signatureSet(v)
-	b := trustBinding{repository: c.RepositoryAPI, namespace: namespace, signature: signatureAsset, archive: c.ArchiveName(version), program: c.ProgramName}
+	programName, companions, _ := c.payload(v)
+	if !validPayloadName(programName) {
+		return trustBinding{}, errors.New("invalid program name")
+	}
+	b := trustBinding{repository: c.RepositoryAPI, namespace: namespace, signature: signatureAsset, archive: c.ArchiveName(version), program: programName}
 	program := programEntry(b.archive, b.program)
-	for _, companion := range c.Companions {
+	for _, companion := range companions {
 		if name, ok := entryPath(companion.Entry); !ok || name == "" || name != companion.Entry {
 			return trustBinding{}, fmt.Errorf("invalid companion entry %q", companion.Entry)
 		}
