@@ -463,3 +463,29 @@ func TestBuildWithPreviousSignatureWritesTheSameAssets(t *testing.T) {
 		}
 	}
 }
+
+func TestBuildAcceptsNamespaceIndependentOfProgram(t *testing.T) {
+	const suite = "sample-suite-release"
+	m := newModule(t)
+	m.write(t, "allowed-signers", suite+" "+strings.TrimSpace(string(ssh.MarshalAuthorizedKey(m.signer.PublicKey())))+"\n")
+	o := m.options(t)
+	o.Namespace = suite
+	names, err := releasebuild.Build(context.Background(), m.config(), o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assets := readAssets(t, o.Output)
+	for _, installer := range []string{"install.sh", "install.ps1"} {
+		if !strings.Contains(string(assets[installer]), suite+" ssh-ed25519 ") {
+			t.Errorf("%s does not trust the key under %s", installer, suite)
+		}
+	}
+	signature := releasetest.Sign(t, m.signer, suite, "sha512", assets["checksums.txt"])
+	for _, name := range names {
+		if strings.HasSuffix(name, ".zip") || strings.HasSuffix(name, ".tar.gz") {
+			if err := release.VerifyArchive(assets["checksums.txt"], signature, assets[name], suite, name, []ssh.PublicKey{m.signer.PublicKey()}); err != nil {
+				t.Errorf("VerifyArchive(%s): %v", name, err)
+			}
+		}
+	}
+}

@@ -103,6 +103,8 @@ var (
 	programPattern     = regexp.MustCompile(`^[a-z][a-z0-9-]{0,63}$`)
 	variablePattern    = regexp.MustCompile(`^[A-Za-z0-9_.~/-]+\.[A-Za-z_][A-Za-z0-9_]*$`)
 	archivePathPattern = regexp.MustCompile(`^[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)*$`)
+	// The release workflow checks the same pattern.
+	namespacePattern = regexp.MustCompile(`^[a-z][a-z0-9-]{0,63}-release$`)
 	// Same pattern as the installers accept for a namespace.
 	previousNamespacePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,127}$`)
 	assetPattern             = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$`)
