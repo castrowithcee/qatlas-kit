@@ -1743,3 +1743,108 @@ func TestTickWhileTypingNeedsTicksAndTypedSearch(t *testing.T) {
 		}
 	}
 }
+
+// keptGroups adds a described group without entries that the list keeps.
+func keptGroups(keep bool) []ListGroup {
+	return append(sampleGroups(), ListGroup{Key: "beds", Title: "Empty bed", Cells: []string{"", "none"}, Keep: keep})
+}
+
+func keptList(t *testing.T, keep bool) *List {
+	t.Helper()
+	l, _ := newSampleList(t, looks(t)["noneascii"], i18n.English, func(s *ListSpec) { s.Ticks, s.AllRow = true, true })
+	if err := l.SetItems(samplePlants()); err != nil {
+		t.Fatal(err)
+	}
+	if err := l.SetGroups(keptGroups(keep)); err != nil {
+		t.Fatal(err)
+	}
+	l.SetGrouped(true)
+	return l
+}
+
+func TestKeptGroupShowsWithoutEntriesInTitleOrder(t *testing.T) {
+	l := keptList(t, true)
+	if got, want := shownRows(l), "*,[trees],oak,[beds],[herbs],basil,mint,thyme,[],fern"; got != want {
+		t.Errorf("rows %s, want %s", got, want)
+	}
+	view, _ := l.View(looks(t)["noneascii"], 90, 14)
+	if !strings.Contains(ansi.Strip(view), "Empty bed (0)") {
+		t.Errorf("the empty group is not drawn with count 0:\n%s", ansi.Strip(view))
+	}
+	if got, want := shownRows(keptList(t, false)), "*,[trees],oak,[herbs],basil,mint,thyme,[],fern"; got != want {
+		t.Errorf("without Keep rows %s, want %s", got, want)
+	}
+}
+
+func TestKeptGroupIsMarkedAndIgnoresFoldTickAndClick(t *testing.T) {
+	st := looks(t)["noneascii"]
+	l := keptList(t, true)
+	l.Select("oak")
+	keysTo(l, "down")
+	if key, ok := l.SelectedGroup(); !ok || key != "beds" {
+		t.Fatalf("marked group %q %v, rows %s", key, ok, shownRows(l))
+	}
+	before, _ := l.View(st, 90, 14)
+	for _, keys := range [][]string{{"enter"}, {"left"}, {"right"}, {"toggle"}} {
+		if open, _ := keysTo(l, keys...); open != "" {
+			t.Errorf("%v opened %q", keys, open)
+		}
+		if got, want := shownRows(l), "*,[trees],oak,[beds],[herbs],basil,mint,thyme,[],fern"; got != want {
+			t.Errorf("%v changed the rows to %s", keys, got)
+		}
+		if key, ok := l.SelectedGroup(); !ok || key != "beds" {
+			t.Errorf("%v moved the mark to %q", keys, key)
+		}
+	}
+	if len(l.Ticked()) != 0 {
+		t.Errorf("a toggle ticked %v", l.Ticked())
+	}
+	if after, _ := l.View(st, 90, 14); after != before {
+		t.Errorf("the view changed:\n%s\nwant:\n%s", ansi.Strip(after), ansi.Strip(before))
+	}
+
+	// The row has a click target, and a click marks it without folding.
+	l = keptList(t, true)
+	view, targets := l.View(st, 90, 14)
+	y := -1
+	for i, ln := range strings.Split(ansi.Strip(view), "\n") {
+		if strings.Contains(ln, "Empty bed") {
+			y = i
+		}
+	}
+	m := NewMouseMap(targets, true)
+	res := m.Handle(click(30, y))
+	if res.Action != "enter" || res.Item != groupRef+"beds" {
+		t.Fatalf("the row has target %+v", res)
+	}
+	if open, handled := clickFocused(l, res, true); open != "" || !handled {
+		t.Errorf("click returned %q %v", open, handled)
+	}
+	if key, ok := l.SelectedGroup(); !ok || key != "beds" {
+		t.Errorf("the click marked %q", key)
+	}
+	if after, _ := l.View(st, 90, 14); strings.Contains(ansi.Strip(after), "▸") || strings.Count(ansi.Strip(after), "Empty bed") != 1 {
+		t.Errorf("the click folded the group:\n%s", ansi.Strip(after))
+	}
+}
+
+func TestKeptGroupGoesWithAFilter(t *testing.T) {
+	l := keptList(t, true)
+	keysTo(l, "/")
+	typeList(l, "mint")
+	if got, want := shownRows(l), "*,[herbs],mint"; got != want {
+		t.Errorf("rows %s, want %s", got, want)
+	}
+	keysTo(l, "backspace", "backspace", "backspace", "backspace")
+	if got := shownRows(l); !strings.Contains(got, "[beds]") {
+		t.Errorf("the group is back after the filter: %s", got)
+	}
+}
+
+func TestGoldenListKeptGroup(t *testing.T) {
+	st := looks(t)["noneascii"]
+	l := keptList(t, true)
+	l.Select("mint")
+	out, _ := l.View(st, 100, 14)
+	checkGolden(t, "listgroups.kept.golden", out+"\n")
+}
