@@ -38,7 +38,7 @@ func isolatedHome(t *testing.T) string {
 
 func TestSuggestEmptyAndTilde(t *testing.T) {
 	for _, mode := range []Mode{Directories, Files} {
-		s := NewSuggester(mode, "/start/dir", "")
+		s := NewSuggester(mode, sep("/start/dir"), "")
 		if got, want := s.Suggest(""), []string{sep("/start/dir/")}; !reflect.DeepEqual(got, want) {
 			t.Errorf("empty = %q, want %q", got, want)
 		}
