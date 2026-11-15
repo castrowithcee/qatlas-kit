@@ -38,6 +38,34 @@ func mustPath(t *testing.T, e Endpoint) string {
 	return path
 }
 
+// heldWait bounds how long acceptHeld keeps a connection open.
+const heldWait = 5 * time.Second
+
+// acceptHeld accepts one connection on l and keeps it open until the client
+// closes it or heldWait has passed, so an in-process client can read the
+// server's credentials, which macOS refuses once the server side has closed.
+// The channel carries the result of Accept, and of inspect when given, as soon
+// as the connection is accepted; the final read only releases the connection,
+// so its outcome carries no result.
+func acceptHeld(l net.Listener, inspect func(net.Conn) error) <-chan error {
+	accepted := make(chan error, 1)
+	go func() {
+		c, err := l.Accept()
+		if c == nil {
+			accepted <- err
+			return
+		}
+		defer c.Close()
+		if inspect != nil {
+			err = errors.Join(err, inspect(c))
+		}
+		accepted <- err
+		_ = c.SetReadDeadline(time.Now().Add(heldWait))
+		_, _ = io.Copy(io.Discard, c)
+	}()
+	return accepted
+}
+
 func TestValidConnectionAndPermissions(t *testing.T) {
 	e := testEndpoint(t)
 	listener, err := e.Listen()
@@ -55,14 +83,7 @@ func TestValidConnectionAndPermissions(t *testing.T) {
 			t.Fatalf("%s mode = %04o; want %04o", file, info.Mode().Perm(), want)
 		}
 	}
-	accepted := make(chan error, 1)
-	go func() {
-		c, err := listener.Accept()
-		if c != nil {
-			_ = c.Close()
-		}
-		accepted <- err
-	}()
+	accepted := acceptHeld(listener, nil)
 	conn, err := e.Dial(context.Background())
 	if err != nil {
 		t.Fatal(err)
