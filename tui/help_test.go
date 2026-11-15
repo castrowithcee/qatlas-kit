@@ -393,3 +393,172 @@ func TestHelpEscapesControlCharacters(t *testing.T) {
 		}
 	}
 }
+
+func helpWithNote(t *testing.T, note string) *Help {
+	t.Helper()
+	keys := sampleKeymap(t, CharsetUnicode)
+	cat := helpCatalogs()
+	cat[i18n.English]["h.note"] = note
+	spec := sampleHelpSpec()
+	spec.Note = "h.note"
+	h, err := NewHelp(spec, keys, newTranslator(t, i18n.English, cat, keys))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return h
+}
+
+// blankInside reports whether the line holds nothing between its frame bars, or nothing at all outside a frame.
+func blankInside(l string) bool {
+	if i, j := strings.Index(l, "|"), strings.LastIndex(l, "|"); i >= 0 && j > i {
+		l = l[i+1 : j]
+	}
+	return strings.TrimSpace(l) == ""
+}
+
+func lineIndex(plain, sub string) int {
+	for i, l := range strings.Split(plain, "\n") {
+		if strings.Contains(l, sub) {
+			return i
+		}
+	}
+	return -1
+}
+
+func TestHelpNoteStandsBetweenTabsAndTextOnEveryTopic(t *testing.T) {
+	st := looks(t)["noneascii"]
+	h := helpWithNote(t, "Hold the fn key for F-keys")
+	for topic := 0; topic < 3; topic++ {
+		if topic > 0 {
+			helpKeysTo(h, "right")
+		}
+		helpKeysTo(h, "down", "down")
+		over, _, ok := h.Overlay(st, sampleScreen(100, 40), 100, 40, Rect{Y: 2, Width: 100, Height: 37})
+		if !ok {
+			t.Fatal("the help does not fit")
+		}
+		page, _ := h.View(st, 80, 20)
+		for _, v := range []string{over, page} {
+			plain := ansi.Strip(v)
+			lines := strings.Split(plain, "\n")
+			n, tabs := lineIndex(plain, "Hold the fn key"), lineIndex(plain, "harvest")
+			if n < 0 || tabs < 0 || n-tabs != 2 || !blankInside(lines[tabs+1]) || !blankInside(lines[n+1]) {
+				t.Errorf("topic %d: note misplaced:\n%s", topic, plain)
+			}
+		}
+	}
+}
+
+func TestHelpNoteKeepsTheClickTargets(t *testing.T) {
+	st := looks(t)["noneascii"]
+	room := Rect{Y: 2, Width: 100, Height: 37}
+	h := helpWithNote(t, "Hold the fn key for F-keys")
+	view, targets, ok := h.Overlay(st, sampleScreen(100, 40), 100, 40, room)
+	if !ok || !strings.Contains(ansi.Strip(view), "Hold the fn key") {
+		t.Fatal("the help does not fit with its note")
+	}
+	lines := strings.Split(ansi.Strip(view), "\n")
+	m := NewMouseMap(targets, true)
+	for _, text := range []string{"harvest", "F2 save", "? help"} {
+		y := lineIndex(ansi.Strip(view), text)
+		x := strings.Index(lines[y], text)
+		if y < 0 || x < 0 {
+			t.Fatalf("%q is not drawn", text)
+		}
+		x = ansi.StringWidth(lines[y][:x])
+		hit := false
+		for _, tg := range targets {
+			if tg.Rect.Y == y && x >= tg.Rect.X && x < tg.Rect.X+tg.Rect.Width {
+				hit = true
+			}
+		}
+		if !hit {
+			t.Errorf("%q has no target on its own line", text)
+		}
+		plain := newSampleHelp(t, nil, i18n.English)
+		_, pt, _ := plain.Overlay(st, sampleScreen(100, 40), 100, 40, room)
+		pm := NewMouseMap(pt, true)
+		py := lineIndex(ansi.Strip(mustOverlay(t, plain, st, room)), text)
+		px := ansi.StringWidth(strings.Split(ansi.Strip(mustOverlay(t, plain, st, room)), "\n")[py][:strings.Index(strings.Split(ansi.Strip(mustOverlay(t, plain, st, room)), "\n")[py], text)])
+		hh := helpWithNote(t, "Hold the fn key for F-keys")
+		hh.Overlay(st, sampleScreen(100, 40), 100, 40, room)
+		got, gh := hh.Click(m.Handle(click(x, y)))
+		want, wh := plain.Click(pm.Handle(click(px, py)))
+		if got != want || gh != wh || hh.Topic() != plain.Topic() {
+			t.Errorf("click on %q: with note %q %v %q, without %q %v %q", text, got, gh, hh.Topic(), want, wh, plain.Topic())
+		}
+	}
+}
+
+func mustOverlay(t *testing.T, h *Help, st Styles, room Rect) string {
+	t.Helper()
+	v, _, ok := h.Overlay(st, sampleScreen(100, 40), 100, 40, room)
+	if !ok {
+		t.Fatal("the help does not fit")
+	}
+	return v
+}
+
+func TestHelpNoteLimitHeightDropsItWholeAndKeepsOk(t *testing.T) {
+	st := looks(t)["noneascii"]
+	h := helpWithNote(t, "Hold the fn key for F-keys")
+	plainH := newSampleHelp(t, nil, i18n.English)
+	// Overlay: textRoom = room.Height-8; the note takes one row plus a blank line.
+	for roomH := 11; roomH <= 16; roomH++ {
+		room := Rect{Y: 1, Width: 100, Height: roomH}
+		want := roomH-8 >= helpMinText+2
+		over, _, ok := h.Overlay(st, sampleScreen(100, 40), 100, 40, room)
+		_, _, okPlain := plainH.Overlay(st, sampleScreen(100, 40), 100, 40, room)
+		if ok != okPlain || !ok {
+			t.Fatalf("room %d: ok %v, without note %v", roomH, ok, okPlain)
+		}
+		if got := strings.Contains(ansi.Strip(over), "Hold the fn key"); got != want {
+			t.Errorf("room %d: note shown = %v, want %v", roomH, got, want)
+		}
+		if !want {
+			base, _, _ := plainH.Overlay(st, sampleScreen(100, 40), 100, 40, room)
+			if base != over {
+				t.Errorf("room %d: dropped note changes the drawing", roomH)
+			}
+		}
+	}
+	// View: two rows for title and blank, then note and blank, then helpMinText rows.
+	for height := 6; height <= 10; height++ {
+		page, _ := h.View(st, 80, height)
+		want := height-2-2 >= helpMinText
+		if got := strings.Contains(ansi.Strip(page), "Hold the fn key"); got != want {
+			t.Errorf("height %d: note shown = %v, want %v", height, got, want)
+		}
+	}
+}
+
+func TestHelpNoteWrapsAndEscapesAndKeepsTargets(t *testing.T) {
+	st := looks(t)["noneascii"]
+	h := helpWithNote(t, "Hold the fn key\x1b[2J to reach the F-keys\x07 on a Mac laptop, every time")
+	view, targets, ok := h.Overlay(st, sampleScreen(60, 40), 60, 40, Rect{Y: 2, Width: 60, Height: 37})
+	if !ok {
+		t.Fatal("the help does not fit")
+	}
+	plain := ansi.Strip(view)
+	if strings.ContainsAny(plain, "\x1b\x07") || !strings.Contains(plain, `\x1b[2J`) || !strings.Contains(plain, `\a`) {
+		t.Errorf("control characters not masked:\n%q", plain)
+	}
+	if !strings.Contains(plain, "Mac laptop") || lineIndex(plain, "Hold the fn") == lineIndex(plain, "Mac laptop") {
+		t.Errorf("note not wrapped:\n%s", plain)
+	}
+	lines := strings.Split(plain, "\n")
+	for _, tg := range targets {
+		if tg.Rect.Y >= len(lines) {
+			t.Fatalf("target %+v outside the view", tg)
+		}
+		if tg.Item == helpTopicRef+"watering" {
+			l := lines[tg.Rect.Y]
+			if !strings.Contains(l, "watering") {
+				t.Errorf("tab target misses its line: %q", l)
+			}
+		}
+	}
+	if len(targets) == 0 {
+		t.Error("no targets")
+	}
+}
