@@ -344,3 +344,24 @@ func TestPathIsInTheApplicationFolder(t *testing.T) {
 		t.Errorf("Path = %q", got)
 	}
 }
+
+// A binding on a control punctuation key is saved, loaded and bound again unchanged.
+func TestCtrlPunctuationKeysRoundTrip(t *testing.T) {
+	s := testSchema(t)
+	path := Path(t.TempDir())
+	want := Default(s)
+	want.Keys = map[tui.ActionID]string{"save": `ctrl+\`, "info": "ctrl+]"}
+	if err := Save(path, want, s); err != nil {
+		t.Fatal(err)
+	}
+	got, warnings := Load(path, s)
+	if !reflect.DeepEqual(got.Keys, want.Keys) || len(warnings) != 0 {
+		t.Fatalf("Load() keys = %v, warnings %v; want %v", got.Keys, warnings, want.Keys)
+	}
+	if err := s.Keys.Bind(got.Keys); err != nil {
+		t.Fatalf("the loaded keys do not bind: %v", err)
+	}
+	if again := read(t, path); !strings.Contains(again, `save: ctrl+\`) {
+		t.Fatalf("file = %q", again)
+	}
+}

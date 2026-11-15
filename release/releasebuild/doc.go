@@ -70,6 +70,36 @@
 // (default release.json) and allowed-signers (default .github/release-allowed-signers) name the files in
 // the application repository.
 //
+// # Dry run
+//
+// The input dry-run runs only the build job, on any ref, so a release can be tried on a branch before its
+// tag exists. It needs the input version, a SemVer tag name such as v1.2.3, which replaces the tag name as
+// the release version, and takes the source date from HEAD. The sign and publish jobs are skipped: a
+// skipped job neither enters the protected environment nor receives the secret, and no signature or
+// release exists afterwards. Without dry-run the workflow still refuses a ref that is not a tag and a set
+// version. The assets of a dry run are the artifact release-dist. An application starts it from a workflow
+// of its own, which grants the same permissions as for a release because the jobs of a called workflow may
+// not request more than the caller grants, whether or not they run:
+//
+//	on:
+//	  workflow_dispatch:
+//	    inputs:
+//	      version:
+//	        description: Version to build, such as v1.2.3
+//	        required: true
+//	permissions: {}
+//	jobs:
+//	  dry-run:
+//	    uses: castrowithcee/qatlas-kit/.github/workflows/release.yml@<commit>
+//	    permissions:
+//	      contents: write
+//	    with:
+//	      dry-run: true
+//	      version: ${{ inputs.version }}
+//	      program: tool
+//	      namespace: tool-release
+//	      signature-asset: checksums.txt.example.sig
+//
 // # Previous signature
 //
 // An application that renamed its signature namespace and signature file keeps the updaters of earlier
