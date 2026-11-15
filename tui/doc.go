@@ -13,7 +13,8 @@
 // lowercase ASCII letter followed by lowercase ASCII letters, digits, '.', '_' or '-'. Lookup replaces each
 // placeholder with the keys currently bound before it formats the arguments, so a rebinding shows in every
 // text at once and an argument that holds braces stays as it is. A text that must show such a brace
-// sequence literally passes it as an argument. To change the language, build a new Translator.
+// sequence literally passes it as an argument. Find returns the raw text and whether the language or English
+// holds it. To change the language, build a new Translator.
 //
 // Keys come from one key table per TUI. NewKeymap takes the application's actions, each with a level,
 // default keys, a help text and whether a user may replace its key or add an extra one, and rejects a table
@@ -26,7 +27,7 @@
 // captured as a new binding only ctrl+c and esc act; in an embedded terminal no key does. Bind applies the
 // user's keys as a whole or not at all, and CheckBinding and Resolve apply the same rules of a binding and
 // name the reason of every refusal. A Keymap satisfies KeyLabels, so labels and the key placeholders of
-// every text follow a binding at once.
+// every text follow a binding at once; Keys and KeyNameLabel give a tool the keys in force and their labels.
 //
 // The parts with state share one shape. NewX checks an XSpec, which holds the content and, in Keys, the
 // actions of the key table the part reads, against the Keymap and the Translator and refuses what cannot

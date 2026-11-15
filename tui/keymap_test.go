@@ -333,6 +333,48 @@ func TestBindChangesMatchLabelAndTextTogether(t *testing.T) {
 	}
 }
 
+func TestKeysAreTheBoundKeysInForce(t *testing.T) {
+	k := sampleKeymap(t, CharsetUnicode)
+	if got := k.Keys("info"); !slices.Equal(got, []string{"i"}) {
+		t.Errorf("default keys of info = %q", got)
+	}
+	if err := k.Bind(map[ActionID]string{"save": "f4", "info": "f3"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := k.Keys("save"); !slices.Equal(got, []string{"f4"}) {
+		t.Errorf("replaced key of save = %q, want f4", got)
+	}
+	got := k.Keys("info")
+	if !slices.Equal(got, []string{"i", "f3"}) {
+		t.Errorf("keys of info = %q, want the letter and the extra key", got)
+	}
+	got[0] = "x"
+	if k.Label("info") != "i/F3" || !slices.Equal(k.Keys("info"), []string{"i", "f3"}) {
+		t.Error("a change to the returned keys reached the table")
+	}
+	if got := k.Keys("gone"); len(got) != 0 {
+		t.Errorf("an unknown action has the keys %q", got)
+	}
+}
+
+func TestKeyNameLabelSpellsOneKey(t *testing.T) {
+	uni, ascii := sampleKeymap(t, CharsetUnicode), sampleKeymap(t, CharsetASCII)
+	for _, c := range []struct{ key, unicode, ascii string }{
+		{"f2", "F2", "F2"},
+		{"up", "↑", "up"},
+		{"left", "←", "left"},
+		{"ctrl+x", "ctrl+x", "ctrl+x"},
+		{"q", "q", "q"},
+	} {
+		if got := uni.KeyNameLabel(c.key); got != c.unicode {
+			t.Errorf("Unicode label of %s = %q, want %q", c.key, got, c.unicode)
+		}
+		if got := ascii.KeyNameLabel(c.key); got != c.ascii {
+			t.Errorf("ASCII label of %s = %q, want %q", c.key, got, c.ascii)
+		}
+	}
+}
+
 func TestBindIsAllOrNothing(t *testing.T) {
 	k := sampleKeymap(t, CharsetUnicode)
 	err := k.Bind(map[ActionID]string{"save": "f4", "help": "f4", "back": "f6", "lock": "x", "gone": "f7"})
