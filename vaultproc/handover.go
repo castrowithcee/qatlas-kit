@@ -22,12 +22,15 @@ import (
 	"github.com/castrowithcee/qatlas-kit/release"
 )
 
-// The largest release files a prepare reads, and the largest program a commit hashes.
+// The largest release metadata a prepare reads, and the kit's limit for the release archive it reads and
+// the program a commit hashes; HandoverConfig.MaxFileSize can only lower the latter.
 const (
 	maxMetadataFile = 1 << 20
-	maxArchiveFile  = 256 << 20
-	maxProgramFile  = 256 << 20
+	maxReleaseFile  = 256 << 20
 )
+
+// errTooLarge marks a release file or program over its limit; it never leaves the process.
+var errTooLarge = errors.New("the file is too large")
 
 // HandoverConfig is what a vault process needs to hand the vault over to a successor. It comes from the
 // program and the configuration the process was started with, never from a request.
@@ -43,6 +46,18 @@ type HandoverConfig struct {
 	// HandsOver reads, with the vault's key, whether the user chose that an update hands the vault over.
 	// It is asked at every prepare; false, or a setting it cannot trust, locks the process. Required.
 	HandsOver func(key *age.X25519Identity) bool
+	// MaxFileSize, when positive, is the largest release archive the process reads and the largest program
+	// it hashes, in bytes. Zero means the kit's limit of 256 MiB. It can only tighten that limit: a negative
+	// value or one above it is invalid. A file over the limit locks the process with HandoverTooLarge.
+	MaxFileSize int64
+}
+
+// fileLimit is the largest release archive and program the process accepts.
+func (h *HandoverConfig) fileLimit() int64 {
+	if h.MaxFileSize > 0 {
+		return h.MaxFileSize
+	}
+	return maxReleaseFile
 }
 
 func (h *HandoverConfig) validate() error {
@@ -53,6 +68,8 @@ func (h *HandoverConfig) validate() error {
 		return errors.New("vaultproc: a handover needs the program's file name")
 	case h.HandsOver == nil:
 		return errors.New("vaultproc: a handover needs the user's update setting")
+	case h.MaxFileSize < 0 || h.MaxFileSize > maxReleaseFile:
+		return fmt.Errorf("vaultproc: the handover's file size limit must be between 0 and %d", int64(maxReleaseFile))
 	}
 	return nil
 }
@@ -68,23 +85,24 @@ func (s *Server) serveHandover(conn net.Conn, body json.RawMessage) {
 	defer s.releaseHandover()
 	var req handoverRequest
 	if json.Unmarshal(body, &req) != nil || req.Phase != phasePrepare || req.Release == nil {
-		s.failHandover(conn, codeBadRequest)
+		s.failHandover(conn, codeBadRequest, "")
 		return
 	}
 	_ = conn.SetDeadline(time.Now().Add(HandoverTimeout))
-	hash, handsOver, code := s.prepare(*req.Release)
+	hash, handsOver, code, reason := s.prepare(*req.Release)
 	switch {
 	case code != "":
-		s.failHandover(conn, code)
+		s.failHandover(conn, code, reason)
 		return
 	case !handsOver:
 		// The user's setting asks an update to lock the vault.
-		s.stop()
+		s.stop(LockHandoverDeclined)
+		s.reportHandover(HandoverResult{Reason: HandoverDeclined})
 		_ = writeMessage(conn, s.answer("", handoverResult{}))
 		return
 	}
 	if writeMessage(conn, s.answer("", handoverResult{HandOver: true})) != nil {
-		s.failHandover(conn, codeHandoverFailed)
+		s.failHandover(conn, codeHandoverFailed, "")
 		return
 	}
 
@@ -93,23 +111,24 @@ func (s *Server) serveHandover(conn net.Conn, body json.RawMessage) {
 	_ = conn.SetDeadline(time.Now().Add(HandoverTimeout))
 	var commit request
 	if err := readMessage(conn, &commit); err != nil {
-		s.failHandover(conn, codeHandoverFailed)
+		s.failHandover(conn, codeHandoverFailed, "")
 		return
 	}
 	var phase handoverRequest
 	if commit.V != ProtocolVersion || commit.App != s.cfg.Version || commit.Op != OpHandover ||
 		json.Unmarshal(commit.Body, &phase) != nil || phase.Phase != phaseCommit {
-		s.failHandover(conn, codeBadRequest)
+		s.failHandover(conn, codeBadRequest, "")
 		return
 	}
 	_ = conn.SetDeadline(time.Now().Add(HandoverTimeout))
-	pid, code := s.commit(hash)
+	pid, code, reason := s.commit(hash)
 	if code != "" {
-		s.failHandover(conn, code)
+		s.failHandover(conn, code, reason)
 		return
 	}
+	s.reportHandover(HandoverResult{HandedOver: true})
 	_ = writeMessage(conn, s.answer("", handoverResult{PID: pid}))
-	s.stop()
+	s.stop(LockHandedOver)
 }
 
 func (s *Server) claimHandover(conn net.Conn) string {
@@ -134,48 +153,55 @@ func (s *Server) releaseHandover() {
 }
 
 // failHandover locks the server and then answers with code, so no client hears of the failure while the
-// server still accepts connections.
-func (s *Server) failHandover(conn net.Conn, code string) {
+// server still accepts connections. reason is why, or empty for the one that code stands for.
+func (s *Server) failHandover(conn net.Conn, code string, reason HandoverReason) {
+	if reason == "" {
+		reason = handoverReason(code)
+	}
 	s.mu.Lock()
 	s.handingOver = false
 	s.mu.Unlock()
-	s.stop()
+	s.stopWith(LockEvent{Reason: LockHandoverFailed, Handover: reason})
+	s.reportHandover(HandoverResult{Reason: reason})
 	_ = conn.SetWriteDeadline(time.Now().Add(s.requestTimeout()))
 	_ = writeMessage(conn, s.answer(code, nil))
 }
 
 // prepare verifies the release files and reads the user's update setting, both by the server itself. It
 // returns the SHA-256 of the program in the release.
-func (s *Server) prepare(files releaseFiles) (hash string, handsOver bool, code string) {
+func (s *Server) prepare(files releaseFiles) (hash string, handsOver bool, code string, reason HandoverReason) {
 	s.mu.Lock()
 	key, locked := s.key, s.locked || s.stopping()
 	s.mu.Unlock()
 	config := s.cfg.Handover
 	switch {
 	case locked:
-		return "", false, codeLocked
+		return "", false, codeLocked, ""
 	case !handoverSupported || config == nil:
-		return "", false, codeNoHandover
+		return "", false, codeNoHandover, ""
 	case files.Rollback:
 		// An older program cannot be trusted with the vault.
-		return "", false, codeRollback
+		return "", false, codeRollback, ""
 	}
 	hash, err := verifyRelease(files, config)
-	if err != nil {
-		return "", false, codeUnverified
+	if errors.Is(err, errTooLarge) {
+		return "", false, codeUnverified, HandoverTooLarge
 	}
-	return hash, config.HandsOver(key), ""
+	if err != nil {
+		return "", false, codeUnverified, ""
+	}
+	return hash, config.HandsOver(key), "", ""
 }
 
 // commit hands the vault over to a successor started from the program that replaced this one, which must
 // be the program of the verified release. From its start, new requests are answered replaced; those already
 // read are answered first, so the successor's state holds their changes. Any failure before the successor
 // took the socket over ends the successor.
-func (s *Server) commit(hash string) (int, string) {
+func (s *Server) commit(hash string) (int, string, HandoverReason) {
 	s.mu.Lock()
 	if s.locked || s.stopping() {
 		s.mu.Unlock()
-		return 0, codeLocked
+		return 0, codeLocked, ""
 	}
 	s.handingOver = true
 	// The successor takes the lock time over; no timer is needed here until then.
@@ -185,19 +211,23 @@ func (s *Server) commit(hash string) (int, string) {
 	l := s.listener
 	s.mu.Unlock()
 	if !s.drain() {
-		return 0, codeHandoverFailed
+		return 0, codeHandoverFailed, ""
 	}
 
 	program, replaced, err := s.program()
 	if err != nil || !replaced || !filepath.IsAbs(program) {
-		return 0, codeUnchanged
+		return 0, codeUnchanged, ""
 	}
-	if got, err := programHash(program); err != nil || got != hash {
-		return 0, codeMismatch
+	got, err := programHash(program, s.cfg.Handover.fileLimit())
+	if errors.Is(err, errTooLarge) {
+		return 0, codeMismatch, HandoverTooLarge
+	}
+	if err != nil || got != hash {
+		return 0, codeMismatch, ""
 	}
 	state, ok := s.snapshot()
 	if !ok {
-		return 0, codeHandoverFailed
+		return 0, codeHandoverFailed, ""
 	}
 	defer clear(state)
 
@@ -212,7 +242,7 @@ func (s *Server) commit(hash string) (int, string) {
 	}()
 	pid, end, err := s.start(ctx, program, state)
 	if err != nil {
-		return 0, codeHandoverFailed
+		return 0, codeHandoverFailed, ""
 	}
 	// The socket changes hands under s.mu, which stop takes as well: a lock that comes first ends the
 	// successor, and one that comes after finds the socket handed over.
@@ -225,9 +255,9 @@ func (s *Server) commit(hash string) (int, string) {
 	s.mu.Unlock()
 	if err != nil {
 		end()
-		return 0, codeHandoverFailed
+		return 0, codeHandoverFailed, ""
 	}
-	return pid, ""
+	return pid, "", ""
 }
 
 // startSuccessor starts program as the successor and hands it state; it returns once the successor
@@ -300,7 +330,7 @@ func verifyRelease(files releaseFiles, config *HandoverConfig) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	archive, err := readReleaseFile(files.Archive, maxArchiveFile)
+	archive, err := readReleaseFile(files.Archive, config.fileLimit())
 	if err != nil {
 		return "", err
 	}
@@ -323,24 +353,24 @@ func readReleaseFile(path string, limit int64) ([]byte, error) {
 		return nil, errors.New("the file cannot be read")
 	}
 	if int64(len(data)) > limit {
-		return nil, errors.New("the file is too large")
+		return nil, errTooLarge
 	}
 	return data, nil
 }
 
-func programHash(path string) (string, error) {
-	f, err := openRegular(path, maxProgramFile)
+func programHash(path string, limit int64) (string, error) {
+	f, err := openRegular(path, limit)
 	if err != nil {
 		return "", err
 	}
 	defer f.Close()
 	h := sha256.New()
-	n, err := io.Copy(h, io.LimitReader(f, maxProgramFile+1))
+	n, err := io.Copy(h, io.LimitReader(f, limit+1))
 	if err != nil {
 		return "", errors.New("the program cannot be read")
 	}
-	if n > maxProgramFile {
-		return "", errors.New("the program is too large")
+	if n > limit {
+		return "", errTooLarge
 	}
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
@@ -356,7 +386,10 @@ func openRegular(path string, limit int64) (*os.File, error) {
 		return nil, errors.New("the file cannot be read")
 	}
 	if !before.Mode().IsRegular() || before.Size() > limit {
-		return nil, fmt.Errorf("the file is not a regular file of at most %d bytes", limit)
+		if before.Mode().IsRegular() {
+			return nil, errTooLarge
+		}
+		return nil, errors.New("the file is not a regular file")
 	}
 	f, err := os.Open(path)
 	if err != nil {

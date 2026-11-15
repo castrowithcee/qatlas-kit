@@ -8,14 +8,15 @@ import (
 	"path/filepath"
 )
 
-func runtimeRoot(fallback string) (string, error) {
+// runtimeRoot reports whether it fell back to the fallback directory.
+func runtimeRoot(fallback string) (string, bool, error) {
 	if xdg := os.Getenv("XDG_RUNTIME_DIR"); filepath.IsAbs(xdg) {
 		if err := privateExistingDir(xdg); err != nil {
-			return "", fmt.Errorf("XDG_RUNTIME_DIR: %w", err)
+			return "", false, fmt.Errorf("XDG_RUNTIME_DIR: %w", err)
 		}
-		return xdg, nil
+		return xdg, false, nil
 	}
-	return fallback, nil
+	return fallback, true, nil
 }
 
 // macOS provides a private per-user temporary directory when the primary path
