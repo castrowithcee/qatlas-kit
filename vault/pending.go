@@ -164,7 +164,7 @@ func (v *Vault) readPending(id *identity, names []string) ([]Pending, [][]byte, 
 		payload, err := decryptFrom(data, id.key)
 		if err != nil {
 			clearPending(pending)
-			return nil, nil, fmt.Errorf("cannot decrypt %s: %w", path, ErrDamaged)
+			return nil, nil, decryptFailure(path, data, err)
 		}
 		pending = append(pending, Pending{Name: name, Payload: payload})
 		raw = append(raw, data)

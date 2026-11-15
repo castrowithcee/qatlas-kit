@@ -621,11 +621,24 @@ func (l *LogView) Update(msg tea.KeyPressMsg) (handled bool) {
 			return l.Act(id)
 		}
 	}
-	if focus == InputText && l.query.edit(msg) {
-		l.queryChanged()
-		return true
+	if focus == InputText {
+		handled, changed := l.query.edit(msg, false)
+		if changed {
+			l.queryChanged()
+		}
+		return handled
 	}
 	return false
+}
+
+// Paste puts pasted text into the search text at its cursor, cleaned as a text line cleans it, and reports
+// whether the view took it. Nothing is taken unless a search is being typed.
+func (l *LogView) Paste(text string) bool {
+	if l.fm != nil || !l.searching || !l.query.insert(text) {
+		return false
+	}
+	l.queryChanged()
+	return true
 }
 
 // Act runs one of the log view keys as its key does, for a click or a command that stands for the key.

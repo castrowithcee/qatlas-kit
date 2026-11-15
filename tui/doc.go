@@ -29,6 +29,17 @@
 // name the reason of every refusal. A Keymap satisfies KeyLabels, so labels and the key placeholders of
 // every text follow a binding at once; Keys and KeyNameLabel give a tool the keys in force and their labels.
 //
+// A one-line text field, the input of a Dialog, the text, masked and date fields of a Form and the search of a
+// LogView, edits with fixed keys that no action may hold: the arrows, home, end, ctrl+a, ctrl+e, ctrl+b and
+// ctrl+f move by a character and to the ends; ctrl or alt with an arrow, alt+b and alt+f by a word; backspace,
+// delete, ctrl+h, ctrl+d, ctrl+w, alt+d, alt+backspace and alt+delete delete a character or a word; ctrl+u and
+// ctrl+k delete to the start or end. A word ends at white space; in a masked field a word jump goes to an end
+// and a word deletion takes everything on that side, so no boundary shows. A screen asks its own actions first,
+// so a Form and a LogView keep theirs for left, right, home and end, and a second way of an action wins over an
+// edit. Dialog.Paste, Form.Paste and LogView.Paste insert whole at the cursor, never as keys: line breaks at
+// the end go, those and tabs inside become one space, and other control characters, invalid UTF-8 and
+// direction marks such as U+202E are dropped, in a masked field too.
+//
 // The parts with state share one shape. NewX checks an XSpec, which holds the content and, in Keys, the
 // actions of the key table the part reads, against the Keymap and the Translator and refuses what cannot
 // work. Update reads a key press and Click the MouseResult of a target the part drew; both return what the
@@ -42,7 +53,7 @@
 // rule; the workspace, cut or padded to its rows, with the message under it; and the footer in the last
 // row, or the last two. Workspace gives the room the content has, less the rows the footer takes, and
 // Render returns the click targets of the drawn keys and tabs for that frame only. The header stays one
-// line: the status marks take their short words and go before the header keys, and the header keys go
+// line within the width: each status mark gives way in the order of its MarkRank, and the header keys go
 // before the back button. A tab line that runs short closes its gaps and then shrinks the inactive tabs to
 // their digit; the active tab stays whole. CheckAreas holds areas to what the tab line can draw. FrameSpec.Icon
 // stands before the product name and Area.Icon before the title of its tab, each as "icon name"; CheckFrame
@@ -81,14 +92,16 @@
 //
 // A CommandLine runs commands by name: lower-case words without arguments, with aliases that keep older names
 // valid. Typing filters, an exact name first, then names that begin with the text, then a word that does,
-// then the text inside a word; the empty line lists the commands that are not hidden. A command names the
-// action, and where it opens one, the area and tab that its key or tab click already triggers, so Update and
-// Click yield what the dispatcher of the application runs for that key. It acts only where Available says its
-// key acts, in the Context the application sets when it opens the line; anywhere else the line stays open
-// with the typed text and the reason. The line reads keys where text is typed, so a letter is always text,
-// and moves with the actions of CommandLineKeys. View draws a panel with the key in force beside each
-// command, at most twelve rows that scroll with the choice and one target per row; the application places it
-// over the workspace, or on it where the terminal is too small.
+// then the text inside a word; the empty line lists the commands that are not hidden. A command names an
+// action the application already has, which a key, a tab click or a row of its screen triggers, and where it
+// opens one, the area and tab, so Update and Click yield what the dispatcher of the application runs for that
+// trigger: the line is a register of existing actions, never a second way to operate, and a key is optional.
+// It acts only where Available says its trigger acts, in the Context the application sets when it opens the
+// line; anywhere else the line stays open with the typed text and the reason. The line reads keys where text
+// is typed, so a letter is always text, and moves with the actions of CommandLineKeys. View draws a panel
+// with an optional icon before each name, in a Unicode terminal only, and the key in force beside it, at most
+// twelve rows that scroll with the choice and one target per row; the application places it over the
+// workspace, or on it where the terminal is too small.
 //
 // A List shows the entries an application hands it, each with a stable ItemID, its cells and a group key, as
 // a table under dimmed upper-case column titles. The selection follows the ID, never the position, when the
@@ -169,7 +182,7 @@
 // without the buttons where they do not fit beside it. Overlay draws the form as a modal in the way of
 // Dialog.Overlay, under FormSpec.Title in its frame, with its buttons and the keys of Hints, and ok is false
 // where room does not hold it, also with a list of values or the calendar open; the application then draws
-// View in the workspace and Hints in the footer. The modal shows no more of a masked field than View does.
+// View in the workspace and Hints in the footer.
 // FormSpec.Lead is one or two dimmed sentences under the title, wrapped and never cut. It stays in view at
 // every focus, in View as in the modal, counts for ok, and SetLead changes it and keeps values, focus and
 // open list. A masked field never shows what is typed, not in its row, a target or a problem, and is never
@@ -221,16 +234,18 @@
 // decide, so a plain success without details belongs in the message line. Only the answers and the scroll keys
 // act; every other key goes back to the application, so a stray key neither saves nor destroys. The answer to
 // enter is the default and shows focused, and the destroying answer of a destructive question is drawn in the
-// fail colour and can never be the default. A dialog with an input reads typed text, shows what runs and the
-// last error inside itself and never shows a masked input. Overlay dims the screen behind it and returns the
-// targets of the dialog alone; where it does not fit, View fills the workspace and Hints go into the footer,
-// whose targets answer it.
+// fail colour and can never be the default. A dialog with an input is a text field, shows what runs and the
+// last error inside itself, drops the error when the text changes and never shows a masked input. Overlay dims
+// the screen behind it and returns the targets of the dialog alone; where it does not fit, View fills the
+// workspace and Hints go into the footer, whose targets answer it.
 //
 // Details that do not fit never push out the question: the question, the consequence, the input, the buttons
 // and the key line stay, and the details scroll in the rest with their position under them; Overlay gives
 // way to View only where not even three detail lines fit. The wheel and the optional scroll actions of
 // DialogKeys stop at the ends, and Hints names the scroll keys behind the answers, the first to go where the
 // line is short. A dialog whose details fit has no position line, scroll hint or wheel target.
+// DialogSpec.Extra adds hints of the application, such as help, behind the answers: click targets that give
+// way before the answers and that Update and Click leave to the application.
 //
 // Help explains in three stages: the one-line hint under the focused field, the explanation of the focused
 // element, and the help with its topics. The Help shows the application's helptopics.Topic values, the same
