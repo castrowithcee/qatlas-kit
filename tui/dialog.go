@@ -28,6 +28,10 @@ type DialogInput struct {
 // enter key; a dialog with a default needs it.
 type DialogKeys struct {
 	Enter ActionID
+	// Up, Down, PageUp and PageDown scroll the details where they do not fit, and stop at the ends; First and
+	// Last jump there. All are optional; without them only the wheel scrolls. In a dialog with an input, the
+	// four that scroll need a key that acts while text is typed, and First and Last stay with the text line.
+	Up, Down, PageUp, PageDown, First, Last ActionID
 }
 
 // DialogLine is one detail line of a dialog: plain text with a style, optionally behind a prefix such as a
@@ -74,6 +78,8 @@ type DialogSpec struct {
 const (
 	dialogMinInner = 36
 	dialogMaxInner = 60
+	// dialogMinDetails is the fewest detail lines a dialog over the screen keeps before it gives way to View.
+	dialogMinDetails = 3
 )
 
 // buttonGap stands between two buttons of a row.
@@ -91,6 +97,8 @@ type Dialog struct {
 	text  Translator
 	input textLine
 	msg   *Message
+	// scroll is the first shown detail line and what the last drawing found.
+	scroll textScroll
 }
 
 // NewDialog checks spec and returns the open dialog. It rejects a dialog without question, a question without
@@ -99,7 +107,9 @@ type Dialog struct {
 // answers, an answer or key that names no action of keys or a label-less answer, an answer listed twice, a
 // default or danger that is no answer, a default without the enter action or with an enter key that is another
 // answer, a danger that is the default, so enter never destroys, an answer of an input dialog that has no key
-// outside the typed text, and a masked input that starts with a value.
+// outside the typed text, a scroll key that names no action, is listed twice or is an answer or the enter key,
+// a scroll key of an input dialog that has no key outside the typed text, and a masked input that starts with
+// a value.
 func NewDialog(spec DialogSpec, keys *Keymap, text Translator) (*Dialog, error) {
 	if keys == nil || text == nil {
 		return nil, errors.New("the dialog needs a key table and a translator")
@@ -176,6 +186,19 @@ func NewDialog(spec DialogSpec, keys *Keymap, text Translator) (*Dialog, error) 
 	if spec.Input != nil && spec.Input.Masked && spec.Input.Value != "" {
 		fail("a masked input starts empty")
 	}
+	k := spec.Keys
+	scrollKeys := []namedKey{{"up", k.Up, false}, {"down", k.Down, false}, {"page up", k.PageUp, false},
+		{"page down", k.PageDown, false}, {"first", k.First, false}, {"last", k.Last, false}}
+	errs = append(errs, checkKeys("dialog", keys, scrollKeys)...)
+	for i, sk := range scrollKeys {
+		switch {
+		case sk.id == "" || !keys.known(sk.id):
+		case slices.Contains(answers, sk.id) || sk.id == k.Enter:
+			fail("%s key %q is also an answer or the enter key", sk.name, sk.id)
+		case focus == InputText && i < 4 && len(keys.keysUnder(keys.index[sk.id], InputText)) == 0:
+			fail("%s key %q has no key that acts while text is typed", sk.name, sk.id)
+		}
+	}
 	if err := errors.Join(errs...); err != nil {
 		return nil, err
 	}
@@ -219,14 +242,57 @@ func (d *Dialog) Update(msg tea.KeyPressMsg) (answer ActionID, handled bool) {
 	if d.spec.Default != "" && d.keys.Is(msg, d.spec.Keys.Enter, focus) {
 		return d.spec.Default, true
 	}
-	if d.spec.Input != nil && d.input.edit(msg) {
-		d.clearError()
-		return "", true
+	for _, id := range d.scrollKeys() {
+		if d.keys.Is(msg, id, focus) {
+			d.scrollBy(id)
+			return "", true
+		}
+	}
+	if d.spec.Input != nil {
+		handled, changed := d.input.edit(msg, d.spec.Input.Masked)
+		if changed {
+			d.clearError()
+		}
+		return "", handled
 	}
 	return "", false
 }
 
-// Paste puts pasted text into the input at its cursor; line breaks and other control characters are dropped.
+// scrollKeys are the scroll actions the dialog acts on. A dialog with an input leaves first and last to the
+// text line.
+func (d *Dialog) scrollKeys() []ActionID {
+	k := d.spec.Keys
+	ids := []ActionID{k.Up, k.Down, k.PageUp, k.PageDown}
+	if d.spec.Input == nil {
+		ids = append(ids, k.First, k.Last)
+	}
+	return slices.DeleteFunc(ids, func(id ActionID) bool { return id == "" })
+}
+
+// scrollBy runs a scroll action on the details.
+func (d *Dialog) scrollBy(id ActionID) {
+	k := d.spec.Keys
+	switch id {
+	case k.Up:
+		d.scroll.by(-1)
+	case k.Down:
+		d.scroll.by(1)
+	case k.PageUp:
+		d.scroll.by(-d.scroll.step())
+	case k.PageDown:
+		d.scroll.by(d.scroll.step())
+	case k.First:
+		d.scroll.offset = 0
+	case k.Last:
+		d.scroll.offset = d.scroll.last
+	}
+}
+
+// Wheel scrolls the details by the notches of the wheel, WheelTextLines a notch, and stops at their ends. The
+// application passes it a notch over the dialog, which reports ZoneDetail while the details scroll.
+func (d *Dialog) Wheel(steps int) { d.scroll.by(steps * WheelTextLines) }
+
+// Paste puts pasted text into the input at its cursor, cleaned as a text line cleans it.
 func (d *Dialog) Paste(text string) bool {
 	if d.spec.Input == nil || !d.input.insert(text) {
 		return false
@@ -259,6 +325,10 @@ func (d *Dialog) Click(r MouseResult) (answer ActionID, handled bool) {
 	if d.spec.Default != "" && r.Action == d.spec.Keys.Enter {
 		return d.spec.Default, true
 	}
+	if r.Action != "" && slices.Contains(d.scrollKeys(), r.Action) {
+		d.scrollBy(r.Action)
+		return "", true
+	}
 	return "", false
 }
 
@@ -279,15 +349,36 @@ func (d *Dialog) SetMessage(msg *Message) {
 	d.msg = &m
 }
 
-// Hints are the answers as hints of the key line, the enter key beside the default. A dialog drawn over the
-// screen shows them itself; where it does not fit, the application puts them into the footer, whose targets
-// then answer it.
+// Hints are the answers as hints of the key line, the enter key beside the default, and the scroll keys while
+// the last drawing scrolled the details. The scroll keys give way first where the line is short; an answer is
+// shortened and never dropped. A dialog drawn over the screen shows them itself; where it does not fit, the
+// application puts them into the footer, whose targets then answer it.
 func (d *Dialog) Hints() []Hint {
 	var hints []Hint
 	for _, a := range d.spec.Answers {
 		hints = append(hints, Hint{Action: a.Action, Label: a.Label, Kind: HintAnswer})
 		if a.Action == d.spec.Default && d.spec.Keys.Enter != d.spec.Default {
 			hints = append(hints, Hint{Action: d.spec.Keys.Enter, Label: a.Label, Kind: HintAnswer})
+		}
+	}
+	if d.scroll.last > 0 {
+		k := d.spec.Keys
+		for _, h := range []struct {
+			id       ActionID
+			label    TextID
+			priority int
+		}{{k.Up, TextHelpScroll, 1}, {k.Down, TextHelpScroll, 1}, {k.PageUp, TextHelpPage, 2}, {k.PageDown, TextHelpPage, 2}} {
+			if h.id != "" {
+				hints = append(hints, Hint{Action: h.id, Label: h.label, Priority: h.priority})
+			}
+		}
+		if d.spec.Input == nil {
+			if k.First != "" {
+				hints = append(hints, Hint{Action: k.First, Label: TextKeyFirst, Priority: 3})
+			}
+			if k.Last != "" {
+				hints = append(hints, Hint{Action: k.Last, Label: TextKeyLast, Priority: 3})
+			}
 		}
 	}
 	return hints
@@ -313,10 +404,16 @@ func redactSecret(text, secret string) string {
 	return strings.ReplaceAll(text, secret, "***")
 }
 
-// body is the content above the buttons in width cells, and the target of the input line, counted from its
-// top left.
-func (d *Dialog) body(width int, styles Styles) ([]string, []Target) {
-	var lines []string
+// dialogParts is the content above the buttons in width cells: what stands above the details, the details
+// and what stands below them, with the target of the input line counted from the top left of the tail.
+type dialogParts struct {
+	head, details, tail []string
+	tailTargets         []Target
+}
+
+// parts draws the content above the buttons in width cells.
+func (d *Dialog) parts(width int, styles Styles) dialogParts {
+	var lines, details []string
 	var targets []Target
 	wrapped := func(style TextStyle, text, lead string) {
 		indent := strings.Repeat(" ", lipgloss.Width(lead))
@@ -349,6 +446,8 @@ func (d *Dialog) body(width int, styles Styles) ([]string, []Target) {
 			wrapped(consequence, d.spec.Consequence, "")
 		}
 	}
+	head := lines
+	lines = nil
 	for _, detail := range d.spec.Details {
 		// Escape and measure the prefix before wrapping, so the continuation stands under the text as drawn.
 		lead := Escape(d.redact(detail.Prefix))
@@ -361,6 +460,7 @@ func (d *Dialog) body(width int, styles Styles) ([]string, []Target) {
 			lines = append(lines, row+styles.Render(detail.Style, l))
 		}
 	}
+	details, lines = lines, nil
 	if d.spec.Input != nil {
 		mask := ""
 		if d.spec.Input.Masked {
@@ -374,6 +474,30 @@ func (d *Dialog) body(width int, styles Styles) ([]string, []Target) {
 		lines = append(lines, "")
 		lines = append(lines, strings.Split(styles.Message(d.msg.Kind, d.redact(d.msg.Text), width), "\n")...)
 	}
+	return dialogParts{head: head, details: details, tail: lines, tailTargets: targets}
+}
+
+// compose joins the parts with the details cut to room rows: where they do not fit, they scroll and a position
+// line stands under them, which takes one of the rows. A room below zero shows every detail. scrolls reports
+// that the details scroll.
+func (d *Dialog) compose(p dialogParts, room, width int, styles Styles) (lines []string, targets []Target, scrolls bool) {
+	details := p.details
+	if room >= 0 {
+		start, end, position := d.scroll.window(len(details), room, d.text)
+		details = slices.Clone(details[start:end])
+		if position != "" {
+			details = append(details, styles.Render(StyleHint, styles.Truncate(Escape(position), width)))
+		}
+		scrolls = d.scroll.last > 0
+	}
+	lines = append(append(slices.Clone(p.head), details...), p.tail...)
+	return lines, OffsetTargets(p.tailTargets, 0, len(p.head)+len(details)), scrolls
+}
+
+// body is the content above the buttons in width cells with every detail, and the target of the input line,
+// counted from its top left.
+func (d *Dialog) body(width int, styles Styles) ([]string, []Target) {
+	lines, targets, _ := d.compose(d.parts(width, styles), -1, width, styles)
 	return lines, targets
 }
 
@@ -469,9 +593,10 @@ func (d *Dialog) buttons(width int, styles Styles) ([]string, []Target) {
 	return flowButtons(cells, width)
 }
 
-// content is the whole dialog in width cells: the body, the buttons and the key line.
-func (d *Dialog) content(width int, styles Styles) ([]string, []Target) {
-	lines, targets := d.body(width, styles)
+// content is the whole dialog in width cells: the body with the details cut to room rows, the buttons and the
+// key line. A scrolling dialog also has a target over all of it, which the wheel reports as ZoneDetail.
+func (d *Dialog) content(width int, styles Styles, p dialogParts, room int) ([]string, []Target) {
+	lines, targets, scrolls := d.compose(p, room, width, styles)
 	lines = append(lines, "")
 	rows, bt := d.buttons(width, styles)
 	targets = append(targets, OffsetTargets(bt, 0, len(lines))...)
@@ -482,6 +607,9 @@ func (d *Dialog) content(width int, styles Styles) ([]string, []Target) {
 	for i, l := range lines {
 		lines[i] = Pad(Clip(l, width), width)
 	}
+	if scrolls {
+		targets = append(targets, Target{Rect: Rect{Width: width, Height: len(lines)}, Zone: ZoneDetail})
+	}
 	return lines, targets
 }
 
@@ -489,13 +617,22 @@ func (d *Dialog) content(width int, styles Styles) ([]string, []Target) {
 // dimmed, without its colours, and the dialog in its frame centred in room, the part of the screen it may
 // cover, such as the workspace of the frame, so the header and the tab line stay in view. The targets are the
 // dialog's alone, so the screen behind it takes no click. ok is false where room is too small for the dialog;
-// the application then draws View in the workspace and Hints in the footer.
+// the application then draws View in the workspace and Hints in the footer. Where the details do not fit,
+// the question, the consequence, the input, the buttons and the key line stay and the details scroll in the
+// rest, which holds at least dialogMinDetails lines and the position line under them; ok is false only where
+// even that does not fit.
 func (d *Dialog) Overlay(styles Styles, screen string, width, height int, room Rect) (view string, targets []Target, ok bool) {
 	inner := min(dialogMaxInner, room.Width-8)
 	if inner < dialogMinInner {
 		return "", nil, false
 	}
-	lines, ts := d.content(inner, styles)
+	p := d.parts(inner, styles)
+	rows, _ := d.buttons(inner, styles)
+	avail := room.Height - 2 - len(p.head) - len(p.tail) - 1 - len(rows) - 1
+	if len(p.details) > avail && avail < dialogMinDetails+1 {
+		return "", nil, false
+	}
+	lines, ts := d.content(inner, styles, p, avail)
 	box := styles.Panel(d.text.Lookup(d.spec.Title), "", lines, inner+4, len(lines)+2, true)
 	if len(box) > room.Height {
 		return "", nil, false
@@ -507,12 +644,19 @@ func (d *Dialog) Overlay(styles Styles, screen string, width, height int, room R
 
 // View draws the dialog with styles as the content of a workspace of width by height cells, for a terminal
 // too small to draw it over the screen: the body without buttons and key line, which stand in the footer.
+// Details that do not fit scroll between the question and what follows them, as in Overlay.
 func (d *Dialog) View(styles Styles, width, height int) (string, []Target) {
 	width, height = max(width, 0), max(height, 0)
 	if height == 0 {
 		return "", nil
 	}
-	lines, targets := d.body(max(width-2, 1), styles)
+	inner := max(width-2, 1)
+	p := d.parts(inner, styles)
+	room := height - len(p.head) - len(p.tail)
+	if room < 2 {
+		room = -1
+	}
+	lines, targets, scrolls := d.compose(p, room, inner, styles)
 	out := make([]string, height)
 	for i := range out {
 		line := ""
@@ -526,6 +670,9 @@ func (d *Dialog) View(styles Styles, width, height int) (string, []Target) {
 		if t.Rect.Y < height {
 			kept = append(kept, t)
 		}
+	}
+	if scrolls {
+		kept = append(kept, Target{Rect: Rect{Width: width, Height: height}, Zone: ZoneDetail})
 	}
 	return strings.Join(out, "\n"), kept
 }
