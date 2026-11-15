@@ -30,8 +30,9 @@
 //
 // Unix places the socket at <root>/<RuntimeDirName>/<SocketBase>.sock. The
 // root is Endpoint.RuntimeRoot when set; otherwise it is XDG_RUNTIME_DIR, then
-// /run/user/<uid> on Linux, then FallbackDir, and on macOS a path too long for
-// a socket moves to TMPDIR. Unix also uses a private runtime directory, socket
+// /run/user/<uid> on Linux, then FallbackDir, where Endpoint.FallbackDirName,
+// when set, takes the place of RuntimeDirName; on macOS a path too long for a
+// socket moves to TMPDIR. Unix also uses a private runtime directory, socket
 // permissions, and a lock; Close removes the socket and the lock file. Windows
 // uses a protected named pipe that rejects network clients and another first
 // instance. On Unix a running listener can hand its channel to a successor
