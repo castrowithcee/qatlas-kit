@@ -31,6 +31,9 @@ type Translator interface {
 	// without args is returned unformatted. An ID without a text in the language or in English is returned
 	// as it is.
 	Lookup(id TextID, args ...any) string
+	// Find returns the raw text of id in the language, else in English, with its placeholders and format
+	// verbs untouched. It reports false only when neither holds the ID.
+	Find(id TextID) (string, bool)
 }
 
 type translator struct {
@@ -85,6 +88,10 @@ func (t *translator) Lookup(id TextID, args ...any) string {
 	// A key label is literal text, so a "%" in it must not become a verb of the format.
 	text, _ = resolvePlaceholders(text, percentEscaped{t.keys})
 	return fmt.Sprintf(text, args...)
+}
+
+func (t *translator) Find(id TextID) (string, bool) {
+	return i18n.Find(t.texts, t.lang, id)
 }
 
 type percentEscaped struct{ keys KeyLabels }
