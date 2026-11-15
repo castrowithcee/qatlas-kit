@@ -45,11 +45,15 @@ type ListItem struct {
 
 // ListGroup describes the group whose key is Key: the Title its row shows instead of the key and the Cells
 // it carries in the columns of the list, one per column at most. The first column of a group row holds the
-// group head, so the first cell is not shown; a missing cell is empty.
+// group head, so the first cell is not shown; a missing cell is empty. With Keep the group row shows also
+// while the group has no entry, with the count 0 and nothing below it; it can be marked, but folding and
+// ticking change nothing there, and a typed filter hides it like a group without hit. Without Keep a
+// description of a group without entries draws nothing.
 type ListGroup struct {
 	Key   string
 	Title string
 	Cells []string
+	Keep  bool
 }
 
 // ListKeys are the actions of the key table a list reads.
@@ -324,9 +328,9 @@ func (l *List) SetItems(items []ListItem) error {
 // SetGroups replaces the descriptions of the groups: the title and the cells a group row shows. The fold
 // state, the partial selection of the ticks and the marked row follow the key, so a new title or new cells
 // lose none of them; the filter and the scroll position stay. A group without description shows its key and
-// no cells, and a description of a key without entries draws nothing. It rejects an empty key, a key with a
-// control character, a key listed twice and a group with more cells than the list has columns, and then
-// changes nothing.
+// no cells, and a description of a key without entries draws nothing unless it sets Keep. It rejects an
+// empty key, a key with a control character, a key listed twice and a group with more cells than the list
+// has columns, and then changes nothing.
 func (l *List) SetGroups(groups []ListGroup) error {
 	var errs []error
 	seen := map[string]bool{}
@@ -842,16 +846,11 @@ func (l *List) box(s tickScope, styles Styles) string {
 // the title in the accent colour and, dimmed, the number of its entries.
 func (l *List) groupRow(group string, styles Styles) string {
 	glyph := GlyphExpanded
-	if l.folded[group] && len(l.query) == 0 {
+	count := l.count(group)
+	if l.folded[group] && len(l.query) == 0 && count > 0 {
 		glyph = GlyphCollapsed
 	}
 	title := l.groupTitle(group)
-	count := 0
-	for _, it := range l.items {
-		if it.Group == group {
-			count++
-		}
-	}
 	box := ""
 	if l.spec.Ticks {
 		box = l.box(tickScope{group: group}, styles) + " "
@@ -876,9 +875,23 @@ func (l *List) groupTitle(group string) string {
 	return group
 }
 
+// count is the number of entries of a group, whatever the filter.
+func (l *List) count(group string) int {
+	n := 0
+	for _, it := range l.items {
+		if it.Group == group {
+			n++
+		}
+	}
+	return n
+}
+
 func (l *List) folds() bool { return l.grouped && len(l.query) == 0 }
 
 func (l *List) setFolded(group string, folded bool) {
+	if l.count(group) == 0 {
+		return
+	}
 	if folded {
 		l.folded[group] = true
 	} else {
@@ -951,6 +964,11 @@ func (l *List) rebuild(prev listMark) {
 				groups = append(groups, it.Group)
 			}
 			members[it.Group] = append(members[it.Group], i)
+		}
+		for k, g := range l.groups {
+			if _, ok := members[k]; !ok && g.Keep {
+				groups = append(groups, k)
+			}
 		}
 		// Groups go in alphabetical order of their shown title, the group without key last.
 		slices.SortFunc(groups, func(a, b string) int {
@@ -1223,7 +1241,7 @@ func (l *List) lead() int {
 	return n
 }
 
-// describedGroups are the groups with a description that have entries, in no order.
+// describedGroups are the groups with a description that have entries or are kept, in no order.
 func (l *List) describedGroups() []ListGroup {
 	if !l.grouped || len(l.groups) == 0 {
 		return nil
@@ -1234,7 +1252,7 @@ func (l *List) describedGroups() []ListGroup {
 	}
 	var out []ListGroup
 	for k, g := range l.groups {
-		if has[k] {
+		if has[k] || g.Keep {
 			out = append(out, g)
 		}
 	}
@@ -1359,6 +1377,11 @@ func (l *List) wanted() int {
 		groups := map[string]bool{}
 		for _, it := range l.items {
 			groups[it.Group] = true
+		}
+		for k, g := range l.groups {
+			if g.Keep {
+				groups[k] = true
+			}
 		}
 		rows += len(groups)
 	}
