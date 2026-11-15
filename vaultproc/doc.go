@@ -50,7 +50,14 @@
 // shorter maximum, so a handover never extends an unlock. Where the application changed its endpoint, a
 // successor takes the vault over from a process that serves the earlier one and runs its own handover
 // (RunOptions.Earlier, with the checks and limits of localipc.ListenOptions.Earlier); it serves nothing
-// before that process handed over. After an install without a handover, the application can find and end
+// before that process handed over. A successor started by an earlier version of the application receives
+// that version's state format: RunOptions.DecodeEarlier translates it, only for a successor and only when
+// the kit's own format does not parse, and Run rejects a result without a key, without a lock time or with
+// a negative maximum. RunOptions.Configure forms the Config and the Earlier endpoint from the key once the
+// state is read, for settings the application keeps encrypted under that key; Run validates the Config in
+// full, and a successor still keeps its predecessor's lock time and shorter maximum. Both hooks run after
+// the process is hardened and report a failure without its text; Run overwrites the bytes it read and
+// listens only if both succeed. After an install without a handover, the application can find and end
 // a process that still serves the earlier endpoint with localipc's Endpoint.Holder and EndHolder. Every
 // failure locks, and so do a rollback, a user's setting that asks for it, a process without
 // HandoverConfig, and Windows, which has no handover.
