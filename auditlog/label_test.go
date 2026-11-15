@@ -409,6 +409,16 @@ func misplacements(line []byte) map[string][]byte {
 	out := map[string][]byte{
 		"doubled": insert(`,"mac":"`, `,"mac_key":2,"mac_key":2`),
 		"escaped": insert(`,"mac":"`, `,"mac\u005fkey":2`),
+		// encoding/json reads these spellings as mac_key, so they count as one.
+		"upper case, before mac":   insert(`,"mac":"`, `,"MAC_KEY":2`),
+		"upper case, in place":     bytes.Replace(line, keyIDField, []byte(`,"MAC_KEY":`), 1),
+		"mixed case, moved":        insert(`,"time"`, `,"Mac_Key":2`),
+		"escaped mixed case":       insert(`,"mac":"`, `,"MAC\u005fKey":2`),
+		"kelvin sign":              insert(`,"mac":"`, ",\"mac_\u212Aey\":2"),
+		"escaped kelvin sign":      insert(`,"mac":"`, `,"mac_\u212aey":2`),
+		"doubled, mixed case":      insert(`,"mac":"`, `,"mac_key":2,"MAC_KEY":2`),
+		"doubled, mixed case last": insert(`,"mac":"`, `,"MAC_KEY":2,"mac_key":2`),
+		"doubled, moved":           insert(`,"time"`, `,"mac_key":2,"Mac_Key":2`),
 	}
 	for _, id := range []string{"0", "2", "7"} {
 		out["moved, value "+id] = insert(`,"time"`, `,"mac_key":`+id)
@@ -475,7 +485,9 @@ func TestKeyMemberOKRejectsAnyBytes(t *testing.T) {
 	for _, in := range []string{
 		"", "{", "[]", "null", "{}", `{"mac":"x"}x`, `{"a":1,"a":`, `{"mac_key":2,"mac_key":2,"mac":"x"}`,
 		`{"mac_key":"2","mac":"x"}`, `{"mac_key": 2,"mac":"x"}`, `{"mac_key":2,"seq":1,"mac":"x"}`,
-		`{"mac\u005fkey":2,"mac":"x"}`, `{"x":{"mac_key":2},"mac":"x"}x`, "\xff\xfe{", string(bytes.Repeat([]byte("["), 100000)),
+		`{"mac\u005fkey":2,"mac":"x"}`, `{"MAC_KEY":2,"mac":"x"}`, `{"Mac_Key":2,"mac":"x"}`,
+		"{\"mac_\u212Aey\":2,\"mac\":\"x\"}", `{"mac_\u212aey":2,"mac":"x"}`, `{"mac_key":2,"MAC_KEY":2,"mac":"x"}`,
+		`{"MAC_KEY":2,"mac_key":2,"mac":"x"}`, `{"x":{"mac_key":2},"mac":"x"}x`, "\xff\xfe{", string(bytes.Repeat([]byte("["), 100000)),
 		`{"a":` + string(bytes.Repeat([]byte("["), 100000)),
 	} {
 		if keyMemberOK([]byte(in)) && in != good {
