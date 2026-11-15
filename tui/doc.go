@@ -13,7 +13,8 @@
 // lowercase ASCII letter followed by lowercase ASCII letters, digits, '.', '_' or '-'. Lookup replaces each
 // placeholder with the keys currently bound before it formats the arguments, so a rebinding shows in every
 // text at once and an argument that holds braces stays as it is. A text that must show such a brace
-// sequence literally passes it as an argument. To change the language, build a new Translator.
+// sequence literally passes it as an argument. Find returns the raw text and whether the language or English
+// holds it. To change the language, build a new Translator.
 //
 // Keys come from one key table per TUI. NewKeymap takes the application's actions, each with a level,
 // default keys, a help text and whether a user may replace its key or add an extra one, and rejects a table
@@ -68,7 +69,9 @@
 // without taking the focus; WheelStep stops it at the ends, and WheelTextLines is its step in a text area. The
 // application disables the map where the mouse is switched off, while a key is captured and while the
 // terminal is too small; under a dialog it passes the targets of the dialog alone, so the background takes no
-// click, and it passes the footer targets only where the footer holds the answers of a question.
+// click, and it passes the footer targets only where the footer holds the answers of a question. A notch
+// over a dialog whose details scroll reports ZoneDetail, which the application hands to Dialog.Wheel; beside
+// the dialog it reports no zone, so nothing scrolls.
 //
 // Mouse reports never become text. An InputFilter, installed with tea.WithFilter and attached to the program,
 // drops the pieces of a report that a terminal behind SSH or tmux delivered in more than one read, so a text
@@ -131,21 +134,24 @@
 // handled false, and the application runs the action of the MouseResult as it runs the key. What enter and
 // back mean, and the state from before the modal opened, are the application's.
 //
-// A click on a row marks it, and only a click on the marked row while the rows have the focus, as SetFocused
-// says, opens it, as enter does; a click on a group row folds it and never changes the ticks, a click on a
+// The marked row is drawn as selected only while the rows have the focus, as SetFocused says (a new list has
+// it; the modal always draws the mark), so no second mark shows while the focus lies elsewhere. A click on a
+// row marks it, and only a click on the marked row while the rows have the focus opens it, as enter does; a
+// click on a group row folds it and never changes the ticks, a click on a
 // tick box does what the toggle key does, and one on the search line starts the search. Each such target
 // carries the action of its key and an Item the list reads back in Click; a target with a zone alone is the
-// free area of the zone. A FilterBar holds choice fields such as the grouping, a state or the sort order:
-// left and right change the value, enter opens the list of values, which back closes without change, and tab
-// and shift+tab step through the fields and leave the bar at its ends to the application. Its values change
-// only what the application hands to the list, never its data. A click on a field opens its values and one on
-// a value takes it; the search field of a list may stand at the right end of the bar. On a narrow terminal
-// the values are cut first; where the fields still do not fit, a single button with the number of fields off
-// their first value takes their place, always, with the search field beside it or, with little room, only the
+// free area of the zone. A FilterBar holds choice fields of one value or more: left and right change the
+// value, enter opens the list of values, which back closes without change, and tab and shift+tab step through
+// the fields and leave the bar at its ends. Its values change only what the application hands to the list,
+// never its data. SetOptions replaces a field's values; the value, the open list and the modal's draft stay
+// on their IDs, and a call that drops the value is rejected unchanged. A click opens a field's values, one on
+// a value takes it; the search field of a list may stand at its right end. On a narrow terminal the values
+// are cut first; where the fields still do not fit, a single button with the number of fields off their
+// first value takes their place, always, with the search field beside it or, with little room, only the
 // search key. The button is one stop of the focus. Enter or a click opens a modal with all fields one under
-// the other: up and down choose a field, left and right change its value, enter takes all changes at once and
-// back drops them all. The modal takes every key; it is drawn over the screen where it fits and otherwise in
-// the workspace, with its keys in the footer.
+// the other: up and down choose a field, left and right change its value, enter takes all changes at once
+// and back drops them all. The modal takes every key and is drawn over the screen where it fits, else in the
+// workspace with its keys in the footer.
 //
 // A Form shows the fields an application hands it, each with a stable ID, a kind, a label and a value, and
 // knows no schema: the application checks the values when the save key is pressed, from any field, and hands
@@ -212,22 +218,31 @@
 // no styled text, so it escapes and wraps before it styles, and the tool chooses prefix, style and wording.
 // Irreversible draws the sentence on what follows in the warn colour. A Notice is a calm message without the
 // warning glyph that needs at least one detail: a dialog interrupts only where there is something to read or to
-// decide, so a plain success without details belongs in the message line. Only the answers act; every other key
-// goes back to the application, so a stray key neither saves nor destroys. The answer to enter is the default
-// and shows focused, and the destroying answer of a destructive question is drawn in the fail colour and can
-// never be the default. A dialog with an input reads typed text, shows what runs and the last error inside
-// itself and never shows a masked input. Overlay dims the screen behind it and returns the targets of the dialog
-// alone; where it does not fit, View fills the workspace and Hints go into the footer, whose targets answer it.
+// decide, so a plain success without details belongs in the message line. Only the answers and the scroll keys
+// act; every other key goes back to the application, so a stray key neither saves nor destroys. The answer to
+// enter is the default and shows focused, and the destroying answer of a destructive question is drawn in the
+// fail colour and can never be the default. A dialog with an input reads typed text, shows what runs and the
+// last error inside itself and never shows a masked input. Overlay dims the screen behind it and returns the
+// targets of the dialog alone; where it does not fit, View fills the workspace and Hints go into the footer,
+// whose targets answer it.
+//
+// Details that do not fit never push out the question: the question, the consequence, the input, the buttons
+// and the key line stay, and the details scroll in the rest with their position under them; Overlay gives
+// way to View only where not even three detail lines fit. The wheel and the optional scroll actions of
+// DialogKeys stop at the ends, and Hints names the scroll keys behind the answers, the first to go where the
+// line is short. A dialog whose details fit has no position line, scroll hint or wheel target.
 //
 // Help explains in three stages: the one-line hint under the focused field, the explanation of the focused
 // element, and the help with its topics. The Help shows the application's helptopics.Topic values, the same
 // topics its command line and manpage show, wrapped as the command line wraps them, with a short unindented
-// line that ends in a colon as a heading. The first topic ends with the keys of the screen the help was
-// opened from and the keys that act everywhere, in the binding in force. Left and right, and the topic keys
-// of the help level, change the topic with wrap-around; the scroll keys and the wheel stop at the ends; back
-// and the help key close it. An Explanation shows a title, the long text, a helptopics.Term and the address
-// of the documentation, which is shown in full and, where the terminal takes escapes, also linked; it accepts
-// only an absolute http or https address of printable ASCII, so the address cannot end the link sequence.
+// line that ends in a colon as a heading. An optional dimmed Note stands fixed between the tabs and the text
+// of every topic where three text rows remain below it, and is otherwise left out whole. The first topic ends
+// with the keys of the screen the help was opened from and the keys that act everywhere, in the binding in
+// force. Left and right, and the topic keys of the help level, change the topic with wrap-around; the scroll
+// keys and the wheel stop at the ends; back and the help key close it. An Explanation shows a title, the long
+// text, a helptopics.Term and the address of the documentation, which is shown in full and, where the terminal
+// takes escapes, also linked; it accepts only an absolute http or https address of printable ASCII, so the
+// address cannot end the link sequence.
 // Back and the info key close it, its scroll keys may page and jump to the ends, and the copy key hands Text
 // to the application, which holds nothing that is not shown and no control character. Both stand over the
 // screen like a dialog, or fill the workspace with View where room is too small; an explanation also stands

@@ -55,7 +55,7 @@ func TestNewFilterBarRejectsBrokenFields(t *testing.T) {
 		"control in ID":    func(f []FilterField, _ *FilterBarKeys) []FilterField { f[0].ID = "g\x00o"; return f },
 		"field twice":      func(f []FilterField, _ *FilterBarKeys) []FilterField { f[1].ID = "group"; return f },
 		"no label":         func(f []FilterField, _ *FilterBarKeys) []FilterField { f[1].Label = ""; return f },
-		"one value":        func(f []FilterField, _ *FilterBarKeys) []FilterField { f[0].Options = f[0].Options[:1]; return f },
+		"no value":         func(f []FilterField, _ *FilterBarKeys) []FilterField { f[0].Options = nil; return f },
 		"value twice":      func(f []FilterField, _ *FilterBarKeys) []FilterField { f[1].Options[2].ID = "all"; return f },
 		"value without ID": func(f []FilterField, _ *FilterBarKeys) []FilterField { f[1].Options[2].ID = ""; return f },
 		"value label":      func(f []FilterField, _ *FilterBarKeys) []FilterField { f[1].Options[0].Label = ""; return f },
@@ -530,6 +530,241 @@ func TestFilterBarModalSweep(t *testing.T) {
 					if tg.Rect.X < 0 || tg.Rect.Y < 0 || tg.Rect.X+tg.Rect.Width > width || tg.Rect.Y >= max(height, 1) {
 						t.Errorf("fields %d %dx%d: target %+v outside", nf, width, height, tg.Rect)
 					}
+				}
+			}
+		}
+	}
+}
+
+func opts(ids ...string) []Choice {
+	out := make([]Choice, len(ids))
+	for i, id := range ids {
+		label := TextID("bar.state.on")
+		if id == "all" || id == "off" {
+			label = TextID("bar.state." + id)
+		}
+		out[i] = Choice{ID: ChoiceID(id), Label: label}
+	}
+	return out
+}
+
+// snapshot is everything a rejected SetOptions must leave as it was.
+func snapshot(b *FilterBar, st Styles) string {
+	view, _ := b.View(st, 80)
+	list, _ := b.ValueList(st)
+	modal, _ := b.ModalView(st, 40, 8)
+	return fmt.Sprintf("%v|%+v|%d %v %d %v %v %d|%s|%s|%s", b.Fields(), b.nav, b.focus, b.open, b.choice, b.modal, b.draft, b.mfocus, view, list, modal)
+}
+
+func TestFilterBarSetOptionsKeepsValueByID(t *testing.T) {
+	st := looks(t)["noneascii"]
+	b := sampleBar(t, sampleKeymap(t, st.Charset()), i18n.English, nil)
+	b.Focus(false)
+	keysTo2(b, "tab")
+	b.View(st, 80)
+	if err := b.SetOptions("state", opts("off", "all", "extra")); err != nil {
+		t.Fatal(err)
+	}
+	if b.Value("state") != "all" {
+		t.Errorf("value %q", b.Value("state"))
+	}
+	f := b.Fields()[1]
+	if len(f.Options) != 3 || f.Options[0].ID != "off" || b.focus != 1 {
+		t.Errorf("options %+v, focus %d", f.Options, b.focus)
+	}
+	// Right goes on from the place of the kept value in the new order.
+	if changed, _ := keysTo2(b, "right"); firstField(changed).Selected != "extra" {
+		t.Errorf("right: %+v", changed)
+	}
+	if err := b.SetOptions("state", opts("extra")); err != nil || b.Value("state") != "extra" {
+		t.Fatalf("shrink to the value in force: %v %q", err, b.Value("state"))
+	}
+	// The caller's slice is copied.
+	in := opts("a", "b")
+	if err := b.SetOptions("group", in); err == nil {
+		t.Fatal("group lost its value in force")
+	}
+	in = opts("kind", "b")
+	if err := b.SetOptions("group", in); err != nil {
+		t.Fatal(err)
+	}
+	in[0].ID = "changed"
+	if b.Fields()[0].Options[0].ID != "kind" {
+		t.Error("SetOptions keeps the caller's slice")
+	}
+}
+
+func TestFilterBarSetOptionsKeepsOpenList(t *testing.T) {
+	st := looks(t)["noneascii"]
+	b := sampleBar(t, sampleKeymap(t, st.Charset()), i18n.English, nil)
+	b.Focus(false)
+	keysTo2(b, "tab", "enter", "down")
+	if b.choice != 1 {
+		t.Fatalf("cursor %d", b.choice)
+	}
+	if err := b.SetOptions("state", opts("off", "on", "all")); err != nil {
+		t.Fatal(err)
+	}
+	if !b.Open() || b.choice != 1 {
+		t.Errorf("open %v, cursor %d; the cursor stays on its ID", b.Open(), b.choice)
+	}
+	// A cursor on a value that is gone falls back to the value in force.
+	keysTo2(b, "up")
+	if err := b.SetOptions("state", opts("all", "on")); err != nil {
+		t.Fatal(err)
+	}
+	if !b.Open() || b.choice != 0 {
+		t.Errorf("open %v, cursor %d", b.Open(), b.choice)
+	}
+	if changed, _ := keysTo2(b, "down", "enter"); firstField(changed).Selected != "on" || b.Open() {
+		t.Errorf("enter: %+v", changed)
+	}
+	// Another field's list is not moved.
+	keysTo2(b, "enter", "down")
+	at := b.choice
+	if err := b.SetOptions("group", sampleFields()[0].Options); err != nil || b.choice != at || !b.Open() {
+		t.Errorf("other field: %v, cursor %d", err, b.choice)
+	}
+}
+
+func TestFilterBarSetOptionsKeepsModalDraft(t *testing.T) {
+	st := looks(t)["noneascii"]
+	b := sampleBar(t, sampleKeymap(t, st.Charset()), i18n.English, nil)
+	b.Focus(false)
+	b.View(st, 10)
+	keysTo2(b, "enter", "down", "right")
+	if !b.modal || b.draft[1] != 1 {
+		t.Fatalf("modal %v draft %v", b.modal, b.draft)
+	}
+	if err := b.SetOptions("state", opts("off", "all", "on")); err != nil {
+		t.Fatal(err)
+	}
+	if !b.modal || b.mfocus != 1 || b.draft[1] != 2 || b.fields[1].Options[b.draft[1]].ID != "on" {
+		t.Errorf("modal %v focus %d draft %v", b.modal, b.mfocus, b.draft)
+	}
+	// A draft value that is gone rejects the call and changes nothing.
+	before := snapshot(b, st)
+	if err := b.SetOptions("state", opts("off", "all")); err == nil {
+		t.Error("the pending value was dropped")
+	}
+	if snapshot(b, st) != before {
+		t.Error("a rejected call changed the bar")
+	}
+	if changed, _ := keysTo2(b, "enter"); firstField(changed).Selected != "on" || len(changed) != 1 {
+		t.Errorf("apply: %+v", changed)
+	}
+}
+
+func TestFilterBarSingleValue(t *testing.T) {
+	keys := sampleKeymap(t, CharsetUnicode)
+	text := newTranslator(t, i18n.English, listCatalogs(), keys)
+	fields := sampleFields()
+	fields[0].Options = fields[0].Options[:1]
+	b, err := NewFilterBar(FilterBarSpec{Fields: fields, Keys: sampleFilterKeys}, keys, text)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b.Focus(false)
+	for _, key := range []string{"left", "right"} {
+		if changed, handled := keysTo2(b, key); changed != nil || !handled || b.Value("group") != "kind" {
+			t.Errorf("%s: %+v %v %q", key, changed, handled, b.Value("group"))
+		}
+	}
+	// Narrowing a field by SetOptions behaves the same.
+	b2 := sampleBar(t, keys, i18n.English, nil)
+	b2.Focus(false)
+	if err := b2.SetOptions("state", opts("all")); err != nil {
+		t.Fatal(err)
+	}
+	keysTo2(b2, "tab")
+	for _, key := range []string{"left", "right"} {
+		if changed, handled := keysTo2(b2, key); changed != nil || !handled || b2.Value("state") != "all" {
+			t.Errorf("%s: %+v %v %q", key, changed, handled, b2.Value("state"))
+		}
+	}
+	keysTo2(b2, "enter")
+	if !b2.Open() {
+		t.Error("the list of one value did not open")
+	}
+	if changed, _ := keysTo2(b2, "enter"); changed != nil || b2.Open() {
+		t.Errorf("enter on the only value: %+v", changed)
+	}
+}
+
+func TestFilterBarSetOptionsRejects(t *testing.T) {
+	st := looks(t)["noneascii"]
+	cases := map[string]struct {
+		field   FieldID
+		options []Choice
+	}{
+		"unknown field":   {"gone", opts("all", "on")},
+		"duplicate ID":    {"state", opts("all", "all")},
+		"empty ID":        {"state", []Choice{{ID: "all", Label: "bar.state.all"}, {ID: "", Label: "bar.state.on"}}},
+		"control in ID":   {"state", []Choice{{ID: "all", Label: "bar.state.all"}, {ID: "o\x1bn", Label: "bar.state.on"}}},
+		"no label":        {"state", []Choice{{ID: "all"}}},
+		"empty list":      {"state", nil},
+		"no value in use": {"state", opts("on", "off")},
+	}
+	for name, c := range cases {
+		for _, mode := range []string{"closed", "list", "modal"} {
+			b := sampleBar(t, sampleKeymap(t, st.Charset()), i18n.English, nil)
+			b.Focus(false)
+			b.View(st, 80)
+			keysTo2(b, "tab")
+			switch mode {
+			case "list":
+				keysTo2(b, "enter", "down")
+			case "modal":
+				b.View(st, 10)
+				keysTo2(b, "enter", "right")
+			}
+			before := snapshot(b, st)
+			if err := b.SetOptions(c.field, c.options); err == nil {
+				t.Errorf("%s/%s: accepted", name, mode)
+			}
+			if snapshot(b, st) != before {
+				t.Errorf("%s/%s: a rejected call changed the bar", name, mode)
+			}
+		}
+	}
+}
+
+func TestFilterBarWidthSweepAfterSetOptions(t *testing.T) {
+	st := looks(t)["noneascii"]
+	keys := sampleKeymap(t, st.Charset())
+	b := sampleBar(t, keys, i18n.English, nil)
+	if err := b.SetOptions("state", opts("off", "all", "on")); err != nil {
+		t.Fatal(err)
+	}
+	if err := b.SetOptions("group", []Choice{{ID: "kind", Label: "bar.group.kind"}}); err != nil {
+		t.Fatal(err)
+	}
+	b.Focus(false)
+	for width := 0; width <= 120; width++ {
+		line, targets := b.View(st, width)
+		if w := lipgloss.Width(line); w != width {
+			t.Errorf("width %d: line is %d cells", width, w)
+		}
+		for _, tg := range targets {
+			if tg.Rect.X < 0 || tg.Rect.Width < 0 || tg.Rect.X+tg.Rect.Width > width {
+				t.Errorf("width %d: target %+v outside", width, tg.Rect)
+			}
+		}
+	}
+	b.Focus(false)
+	b.View(st, 10)
+	keysTo2(b, "enter")
+	for width := 0; width <= 90; width += 3 {
+		for height := 0; height <= 20; height += 2 {
+			v, vt := b.ModalView(st, width, height)
+			for _, l := range strings.Split(v, "\n") {
+				if v != "" && lipgloss.Width(l) > width {
+					t.Errorf("%dx%d: view row of %d cells", width, height, lipgloss.Width(l))
+				}
+			}
+			for _, tg := range vt {
+				if tg.Rect.X < 0 || tg.Rect.Y < 0 || tg.Rect.X+tg.Rect.Width > width || tg.Rect.Y >= max(height, 1) {
+					t.Errorf("%dx%d: target %+v outside", width, height, tg.Rect)
 				}
 			}
 		}
