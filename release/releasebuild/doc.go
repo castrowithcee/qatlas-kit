@@ -14,14 +14,20 @@
 // packages and the installers of the installer package read. Build checks every archive with
 // release.ProgramSHA256 before it writes checksums.txt.
 //
+// After an application renamed its program, Config.PreviousArchive keeps the updaters of earlier releases
+// finding their archive: every target also gets an archive under the former program name, with the same
+// program file under that name and the manpages written for it, but without extra files or service unit.
+// The installers download the current archive only.
+//
 // # Build
 //
 // The program is built with CGO_ENABLED=0, -trimpath, -buildvcs=false and -ldflags "-s -w -X
-// <VersionVariable>=<version>", so the same source, Go version and source date give byte-identical
-// assets. The manpage command of the Config runs first with SOURCE_DATE_EPOCH set and must write at
-// least one <name>.1 file and nothing else. The version must be a SemVer tag such as v1.2.3 or
-// v1.2.3-rc.1, the signature namespace must be <program>-release, and the allowed signers file must list
-// only Ed25519 keys for that namespace, without options; the installers embed these keys.
+// <VersionVariable>=<version>", so the same source, Go version and source date give byte-identical assets.
+// The manpage command of the Config runs first, once per program name with "{program}" replaced by it, with
+// SOURCE_DATE_EPOCH set, and must write at least one <name>.1 file and nothing else. The version must be a
+// SemVer tag such as v1.2.3 or v1.2.3-rc.1, the signature namespace must be <program>-release, and the
+// allowed signers file must list only Ed25519 keys for that namespace, without options; the installers
+// embed these keys.
 //
 // # System service
 //

@@ -43,13 +43,18 @@ const (
 var sourceDate = time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
 
 func TestMain(m *testing.M) {
-	if mode := os.Getenv(manpageMode); mode != "" && len(os.Args) == 3 && os.Args[1] == "manpage" {
-		os.Exit(writeManpages(mode, os.Args[2]))
+	if mode := os.Getenv(manpageMode); mode != "" && (len(os.Args) == 3 || len(os.Args) == 4) && os.Args[1] == "manpage" {
+		name := program
+		if len(os.Args) == 4 {
+			name = os.Args[3]
+		}
+		os.Exit(writeManpages(mode, os.Args[2], name))
 	}
 	os.Exit(m.Run())
 }
 
-func writeManpages(mode, dir string) int {
+// writeManpages writes the manpages of mode for the program name, which the "{program}" argument carries.
+func writeManpages(mode, dir, name string) int {
 	write := func(name, body string) int {
 		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o644); err != nil {
 			fmt.Fprintln(os.Stderr, err)
@@ -64,6 +69,13 @@ func writeManpages(mode, dir string) int {
 		return 0
 	case "other":
 		return write(program+".1", "x") + write("notes.txt", "x")
+	case "program":
+		return write(name+".1", ".TH "+name+" 1\n")
+	case "fail-previous":
+		if name == program {
+			return write(name+".1", ".TH "+name+" 1\n")
+		}
+		return 3
 	case "fail":
 		return 3
 	}
