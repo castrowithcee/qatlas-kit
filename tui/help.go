@@ -35,6 +35,10 @@ type HelpSpec struct {
 	Screen []Hint
 	Global []ActionID
 	Keys   HelpKeys
+	// Note is an optional hint of the application, shown dimmed and wrapped between the topic tabs and the
+	// text of every topic, without scrolling. It stands only where at least helpMinText text rows remain below
+	// it; otherwise it is left out whole and never cut. Empty shows none.
+	Note TextID
 }
 
 // helpMaxInner is the widest text of the help drawn over the screen.
@@ -336,6 +340,23 @@ func (h *Help) strip(width int, styles Styles) (string, []Target) {
 	return Clip(line, width), targets
 }
 
+// noteRows are the lines of the note wrapped to width, followed by a blank line, where room leaves at least
+// helpMinText rows for the text; otherwise nil.
+func (h *Help) noteRows(styles Styles, width, room int) []textRow {
+	if h.spec.Note == "" || width < 1 {
+		return nil
+	}
+	lines := wrapWords(Escape(h.text.Lookup(h.spec.Note)), width)
+	if len(lines) == 0 || room-len(lines)-1 < helpMinText {
+		return nil
+	}
+	rows := make([]textRow, 0, len(lines)+1)
+	for _, l := range lines {
+		rows = append(rows, textRow{text: styles.Render(StyleHint, l)})
+	}
+	return append(rows, textRow{})
+}
+
 // window is rows cut to room lines from the scroll position, with the position line where they do not fit.
 func (h *Help) window(rows []textRow, room, width int, styles Styles) []textRow {
 	start, end, position := h.scroll.window(len(rows), room, h.text)
@@ -368,7 +389,9 @@ func (h *Help) Overlay(styles Styles, screen string, width, height int, room Rec
 	}
 	strip, st := h.strip(inner, styles)
 	lines, ts := []string{strip, ""}, st
-	lines, ts = place(lines, ts, h.window(h.rows(inner, styles), textRoom, inner, styles), 0)
+	note := h.noteRows(styles, inner, textRoom)
+	lines, ts = place(lines, ts, note, 0)
+	lines, ts = place(lines, ts, h.window(h.rows(inner, styles), textRoom-len(note), inner, styles), 0)
 	keyLine, kt := styles.footer(h.keys.Hints(h.Hints(), InputNavigation, h.text), "", inner)
 	lines = append(lines, "")
 	ts = append(ts, OffsetTargets(kt, 0, len(lines))...)
@@ -392,6 +415,8 @@ func (h *Help) View(styles Styles, width, height int) (string, []Target) {
 	strip, st := h.strip(max(width-tw, 1), styles)
 	lines, targets := []string{title + strip, ""}, OffsetTargets(st, tw, 0)
 	if height > len(lines) {
+		note := h.noteRows(styles, width, height-len(lines))
+		lines, targets = place(lines, targets, note, 0)
 		lines, targets = place(lines, targets, h.window(h.rows(width, styles), height-len(lines), width, styles), 0)
 	}
 	return finishPage(lines, targets, width, height)

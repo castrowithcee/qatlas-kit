@@ -52,7 +52,7 @@ func (v *Vault) ReadSealed(name string) ([]byte, error) {
 	}
 	plain, err := decryptFrom(data, v.identity.key)
 	if err != nil {
-		return nil, fmt.Errorf("cannot decrypt %s: %w", path, ErrDamaged)
+		return nil, decryptFailure(path, data, err)
 	}
 	return plain, nil
 }

@@ -77,7 +77,7 @@ func (v *Vault) reloadHeld(f savedFile) error {
 		plain, err := decryptFrom(f.data, v.identity.key)
 		if err != nil {
 			v.forget()
-			return &DocumentError{Path: f.path, Kind: DocumentDecrypt}
+			return decryptFailure(f.path, f.data, err)
 		}
 		doc, err = v.readDocument(f.path, plain)
 		if err != nil {

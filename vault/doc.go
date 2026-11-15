@@ -50,6 +50,10 @@
 // ErrKeyMismatch, and a file that does not decrypt or decode ErrDamaged. A problem with the document, on
 // read or write, is a *DocumentError that names the file and tells Kind (DocumentDecrypt, DocumentDecode or
 // DocumentSchema) and, for DocumentSchema, the Version found; it wraps ErrDamaged or ErrUnsupportedSchema.
+// A file that does not decrypt, whether the document, a sealed file or a pending entry, is a
+// *DocumentError of Kind DocumentDecrypt whose Cause is CauseWrongKey (an age file for another key),
+// CauseNotAge (not an age file, such as a plain text file) or CauseDamaged (a damaged or altered age
+// file, and any failure that cannot be told apart safely). Each cause has a fixed message of its own.
 // The library's own messages and file contents never appear in an error. The scrypt work factor is
 // DefaultWorkFactor unless Options.WorkFactor raises it; a lower one is accepted only in test binaries.
 //
