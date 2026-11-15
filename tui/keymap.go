@@ -210,6 +210,15 @@ func (k *Keymap) Actions() []Action {
 	return out
 }
 
+// Keys returns a copy of the key names bound to an action now, in binding order. An unknown action has none.
+func (k *Keymap) Keys(id ActionID) []string {
+	i, ok := k.index[id]
+	if !ok {
+		return nil
+	}
+	return slices.Clone(k.bound[i])
+}
+
 // Bind makes overrides the keys in force: each entry is the key of a RebindReplace action or the extra
 // key of a RebindExtra action, and every action left out keeps its default keys. Bind checks the whole
 // set first and changes nothing if one entry breaks a rule or two collide.
@@ -338,12 +347,14 @@ func (k *Keymap) labelUnder(id ActionID, focus InputFocus) (string, bool) {
 	}
 	names := make([]string, len(keys))
 	for j, key := range keys {
-		names[j] = k.keyLabel(key)
+		names[j] = k.KeyNameLabel(key)
 	}
 	return strings.Join(names, "/"), true
 }
 
-func (k *Keymap) keyLabel(key string) string {
+// KeyNameLabel is how a footer spells one key name, by the rules of Label: a function key capitalised, an
+// arrow as a glyph (as a word in ASCII), any other name as it is.
+func (k *Keymap) KeyNameLabel(key string) string {
 	if n, ok := functionKey(key); ok {
 		return fmt.Sprintf("F%d", n)
 	}
