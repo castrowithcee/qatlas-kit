@@ -12,16 +12,21 @@ import (
 // documentation gives where the channel lives. RuntimeDirName and SocketBase
 // must each be a single path component on Unix. RuntimeRoot, when set, must be
 // an absolute, existing, private directory of the user. FallbackDir must be
-// absolute, and may be empty only with RuntimeRoot. On Windows, PipePrefix and
-// SocketBase form the pipe name with the user's SID, and RuntimeRoot and
-// FallbackDir are ignored. Running needs every field except SocketBase.
+// absolute, and may be empty only with RuntimeRoot. FallbackDirName, when set,
+// must be a single path component on Unix. On Windows, PipePrefix and
+// SocketBase form the pipe name with the user's SID, and RuntimeRoot,
+// FallbackDir and FallbackDirName are ignored. Running needs every field
+// except SocketBase.
 type Endpoint struct {
 	RuntimeDirName string
 	SocketBase     string
 	FallbackDir    string
-	RuntimeRoot    string
-	ErrorName      string
-	PipePrefix     string
+	// FallbackDirName names the directory under FallbackDir that holds the
+	// socket when no runtime directory exists. Empty means RuntimeDirName.
+	FallbackDirName string
+	RuntimeRoot     string
+	ErrorName       string
+	PipePrefix      string
 }
 
 // ErrRunning means a listener already owns this endpoint.
