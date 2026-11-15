@@ -314,7 +314,7 @@ func TestReleaseFilesAreOpenedSafely(t *testing.T) {
 	if data, err := readReleaseFile(file, 5); err != nil || string(data) != "12345" {
 		t.Errorf("readReleaseFile = %q, %v", data, err)
 	}
-	if _, err := programHash(filepath.Join(dir, "missing")); err == nil {
+	if _, err := programHash(filepath.Join(dir, "missing"), 1<<20); err == nil {
 		t.Error("a missing program was hashed")
 	}
 }

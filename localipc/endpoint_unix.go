@@ -25,11 +25,10 @@ func endpointPath(e Endpoint) (string, error) {
 	if !component(e.SocketBase) {
 		return "", errInvalidEndpoint(e)
 	}
-	root, err := endpointRoot(e)
+	dir, err := endpointDir(e)
 	if err != nil {
 		return "", err
 	}
-	dir := filepath.Join(root, e.RuntimeDirName)
 	if err := privateExistingDir(dir); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return "", fmt.Errorf("%s: %w", e.label(), err)
 	}
@@ -44,14 +43,14 @@ func endpointPath(e Endpoint) (string, error) {
 }
 
 func errInvalidEndpoint(e Endpoint) error {
-	return fmt.Errorf("%s: runtime directory name, socket base, absolute fallback directory, or absolute runtime root is invalid", e.label())
+	return fmt.Errorf("%s: runtime directory name, fallback directory name, socket base, absolute fallback directory, or absolute runtime root is invalid", e.label())
 }
 
-// endpointRoot validates the fields shared by every operation and returns the
-// directory that holds the runtime directory.
-func endpointRoot(e Endpoint) (string, error) {
+// endpointDir validates the fields shared by every operation and returns the
+// runtime directory that holds the socket.
+func endpointDir(e Endpoint) (string, error) {
 	fallbackOK := filepath.IsAbs(e.FallbackDir) || (e.RuntimeRoot != "" && e.FallbackDir == "")
-	if !component(e.RuntimeDirName) || !fallbackOK || (e.RuntimeRoot != "" && !filepath.IsAbs(e.RuntimeRoot)) {
+	if !component(e.RuntimeDirName) || (e.FallbackDirName != "" && !component(e.FallbackDirName)) || !fallbackOK || (e.RuntimeRoot != "" && !filepath.IsAbs(e.RuntimeRoot)) {
 		return "", errInvalidEndpoint(e)
 	}
 	if e.RuntimeRoot != "" {
@@ -60,13 +59,16 @@ func endpointRoot(e Endpoint) (string, error) {
 		if err := privateExistingDir(e.RuntimeRoot); err != nil {
 			return "", fmt.Errorf("%s: runtime root: %w", e.label(), err)
 		}
-		return e.RuntimeRoot, nil
+		return filepath.Join(e.RuntimeRoot, e.RuntimeDirName), nil
 	}
-	root, err := runtimeRoot(e.FallbackDir)
+	root, fellBack, err := runtimeRoot(e.FallbackDir)
 	if err != nil {
 		return "", fmt.Errorf("%s: %w", e.label(), err)
 	}
-	return root, nil
+	if fellBack && e.FallbackDirName != "" {
+		return filepath.Join(root, e.FallbackDirName), nil
+	}
+	return filepath.Join(root, e.RuntimeDirName), nil
 }
 
 func component(s string) bool {
@@ -142,11 +144,11 @@ func dial(ctx context.Context, e Endpoint) (net.Conn, error) {
 }
 
 func running(e Endpoint) ([]string, error) {
-	root, err := endpointRoot(e)
+	dir, err := endpointDir(e)
 	if err != nil {
 		return nil, err
 	}
-	dirs := []string{filepath.Join(root, e.RuntimeDirName)}
+	dirs := []string{dir}
 	if e.RuntimeRoot == "" {
 		dirs = append(dirs, fallbackRuntimeDirs(e)...)
 	}

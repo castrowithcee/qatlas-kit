@@ -2,11 +2,9 @@ package vault
 
 import (
 	"bytes"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
-	"slices"
 
 	"filippo.io/age"
 )
@@ -103,19 +101,11 @@ func decryptFrom(data []byte, id age.Identity) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	return io.ReadAll(r)
-}
-
-// checkSchema refuses a document that is not a JSON object with an accepted integer schema version.
-func checkSchema(document []byte, schemas []int) error {
-	var envelope struct {
-		Schema *int `json:"schema"`
+	plain, err := io.ReadAll(r)
+	if err != nil {
+		// A stream that fails its authentication may have released plaintext already.
+		clear(plain)
+		return nil, err
 	}
-	if err := json.Unmarshal(document, &envelope); err != nil || envelope.Schema == nil {
-		return fmt.Errorf("the vault document is not a versioned JSON object: %w", ErrDamaged)
-	}
-	if !slices.Contains(schemas, *envelope.Schema) {
-		return fmt.Errorf("%w: %d", ErrUnsupportedSchema, *envelope.Schema)
-	}
-	return nil
+	return plain, nil
 }
