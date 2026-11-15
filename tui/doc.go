@@ -101,6 +101,7 @@
 // mark, the title and the count as the group head in the first column, and the cells from the second column on
 // by the rules of their column; the first cell is not shown. The fold state, the partial selection and the
 // marked row follow the key, so new titles or cells lose none of them, and the filter never reads them.
+// A described group with Keep shows also without entries, as a row that marks but neither folds nor ticks.
 // SelectedGroup names the marked group row; Selected and Current stay empty there. When a row does not fit,
 // the free text column gives way first, then the short labels of a column, then the optional columns from the
 // right, and then the widest values, never below their title, for group rows as for entries; the first column

@@ -140,14 +140,7 @@ func TestSuccessorTakesOverFromEarlierEndpoint(t *testing.T) {
 	_ = conn.Close()
 	_ = early.Close()
 
-	accepted := make(chan error, 1)
-	go func() {
-		c, err := successor.Accept()
-		if c != nil {
-			_ = c.Close()
-		}
-		accepted <- err
-	}()
+	accepted := acceptHeld(successor, nil)
 	conn, err = current.Dial(ctx)
 	if err != nil {
 		t.Fatal(err)

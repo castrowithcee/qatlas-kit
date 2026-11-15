@@ -87,14 +87,7 @@ func TestRuntimeRootChannelWithoutFallback(t *testing.T) {
 	defer l.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	accepted := make(chan error, 1)
-	go func() {
-		c, err := l.Accept()
-		if c != nil {
-			defer c.Close()
-		}
-		accepted <- err
-	}()
+	accepted := acceptHeld(l, nil)
 	conn, err := e.Dial(ctx)
 	if err != nil {
 		t.Fatal(err)
