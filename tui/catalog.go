@@ -172,6 +172,12 @@ const (
 	TextLogProblemOrder  TextID = "tui.log.problemorder"
 	TextLogNextOrder     TextID = "tui.log.nextorder"
 
+	TextChatSend        TextID = "tui.chat.send"
+	TextChatSendKey     TextID = "tui.chat.sendkey"
+	TextChatPlaceholder TextID = "tui.chat.placeholder"
+	TextChatDetails     TextID = "tui.chat.details"
+	TextChatDetailsKey  TextID = "tui.chat.detailskey"
+
 	TextSettingsTitle    TextID = "tui.settings.title"
 	TextSettingsGeneral  TextID = "tui.settings.general"
 	TextSettingTheme     TextID = "tui.setting.theme"
@@ -359,6 +365,12 @@ func ModuleCatalog() i18n.Catalogs[TextID] {
 			TextLogProblemOrder:  "the end is before the start",
 			TextLogNextOrder:     "set the end to the start or later",
 
+			TextChatSend:        "send",
+			TextChatSendKey:     "ctrl+enter send",
+			TextChatPlaceholder: "Write a message…",
+			TextChatDetails:     "details (%d)",
+			TextChatDetailsKey:  "details",
+
 			TextSettingsTitle:    "Settings",
 			TextSettingsGeneral:  "General",
 			TextSettingTheme:     "theme",
@@ -540,6 +552,12 @@ func ModuleCatalog() i18n.Catalogs[TextID] {
 			TextLogNextOpen:      "eingeben oder im Kalender wählen",
 			TextLogProblemOrder:  "das Ende liegt vor dem Anfang",
 			TextLogNextOrder:     "das Ende auf den Anfang oder später legen",
+
+			TextChatSend:        "Senden",
+			TextChatSendKey:     "ctrl+enter senden",
+			TextChatPlaceholder: "Nachricht schreiben…",
+			TextChatDetails:     "Details (%d)",
+			TextChatDetailsKey:  "Details",
 
 			TextSettingsTitle:    "Einstellungen",
 			TextSettingsGeneral:  "Allgemein",

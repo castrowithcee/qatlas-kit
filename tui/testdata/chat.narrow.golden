@@ -1,0 +1,24 @@
+                                        
+                                        
+                                        
+                                        
+  planner  Mar 13 18:40  + read         
+  The beds on the east side need compost
+  before Friday. Shall I order two bags?
+  v details (2)                         
+    supplier: Green Acre                
+    price: 12.40 each                   
+                                        
+      you  09:12  * sent                
+      Yes, order two bags.              
+      And check the hose.               
+                                        
+      you  09:18  x not delivered       
+      Also water the seedlings.         
+                                        
+> planner  09:20  ! needs approval      
+> Order total 24.80. Approve?           
+> [ a approve ]  [ r reject ]           
+----------------------------------------
+  Thanks,                       [ send ]
+  see you                               

@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"strings"
 	"unicode"
+
+	tea "charm.land/bubbletea/v2"
 )
 
 const spaceKey = "space"
@@ -35,8 +37,16 @@ var takenKeys = func() map[string]string {
 		"alt+0", "alt+1", "alt+2", "alt+3", "alt+4", "alt+5", "alt+6", "alt+7", "alt+8", "alt+9")
 	add("edits text in a text line", "ctrl+e", "ctrl+w", "ctrl+u", "ctrl+d", "alt+b", "alt+d", "ctrl+left",
 		"ctrl+right", "backspace", "delete")
+	add("sends the text of a text area", textAreaSend)
 	return m
 }()
+
+// textAreaSend sends the text of a multi-line field, where enter adds a line break. Many terminals report it
+// as enter, so a field that sends with it always offers a second way.
+const textAreaSend = "ctrl+enter"
+
+// sendsText reports whether a key press is the key that sends the text of a multi-line field.
+func sendsText(msg tea.KeyPressMsg) bool { return KeyName(msg) == textAreaSend }
 
 // fixedKeys keep their meaning on every screen, so no binding may take them.
 var fixedKeys = map[string]string{
