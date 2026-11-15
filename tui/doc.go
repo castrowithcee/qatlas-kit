@@ -41,7 +41,7 @@
 // rule; the workspace, cut or padded to its rows, with the message under it; and the footer in the last
 // row, or the last two. Workspace gives the room the content has, less the rows the footer takes, and
 // Render returns the click targets of the drawn keys and tabs for that frame only. The header stays one
-// line: the status marks take their short words and go before the header keys, and the header keys go
+// line within the width: each status mark gives way in the order of its MarkRank, and the header keys go
 // before the back button. A tab line that runs short closes its gaps and then shrinks the inactive tabs to
 // their digit; the active tab stays whole. CheckAreas holds areas to what the tab line can draw. FrameSpec.Icon
 // stands before the product name and Area.Icon before the title of its tab, each as "icon name"; CheckFrame
