@@ -3,7 +3,7 @@ module github.com/castrowithcee/qatlas-kit
 go 1.26.0
 
 require (
-	charm.land/bubbletea/v2 v2.1.0
+	charm.land/bubbletea/v2 v2.1.1
 	charm.land/lipgloss/v2 v2.0.6
 	filippo.io/age v1.3.0
 	github.com/charmbracelet/colorprofile v0.4.3
