@@ -236,3 +236,22 @@ The colour values and names of the built-in themes in `tui/themes_builtin_gen.go
 [iTerm2-Color-Schemes](https://github.com/mbadolato/iTerm2-Color-Schemes) collection (MIT, Copyright (c) 2011
 to Present Mark Badolato). Each scheme is licensed by its creators under the MIT licence; the licence text of
 the collection and the credit and copyright notice of every scheme are in `tui/themes_builtin_licenses.txt`.
+
+## Embedded SQLite driver
+
+The `sqlite` package links the pure Go SQLite driver and the components it compiles in. Each keeps its own
+license; the license texts ship with the respective module.
+
+| Component | Copyright | License | Role |
+| --- | --- | --- | --- |
+| [`modernc.org/sqlite`](https://pkg.go.dev/modernc.org/sqlite) | Copyright (c) 2017 The Sqlite Authors | BSD-3-Clause | Go driver for `database/sql` |
+| SQLite (translated into Go by the driver) | The authors of SQLite | Public domain | Database engine |
+| sqlite-vec (part of the driver) | Copyright (c) 2024 Alex Garcia | MIT | Vector search extension compiled into the driver |
+| [`modernc.org/libc`](https://pkg.go.dev/modernc.org/libc) | Copyright (c) 2017 The Libc Authors | BSD-3-Clause | C runtime for the translated engine; its `LICENSE-3RD-PARTY.md` lists further notices |
+| [`modernc.org/mathutil`](https://pkg.go.dev/modernc.org/mathutil) | Copyright (c) 2014 The mathutil Authors | BSD-3-Clause | Integer and math helpers |
+| [`modernc.org/memory`](https://pkg.go.dev/modernc.org/memory) | Copyright (c) 2017 The Memory Authors | BSD-3-Clause | Memory allocator |
+| [`github.com/remyoudompheng/bigfft`](https://pkg.go.dev/github.com/remyoudompheng/bigfft) | Copyright (c) 2012 The Go Authors | BSD-3-Clause | Large integer multiplication |
+| [`github.com/google/uuid`](https://pkg.go.dev/github.com/google/uuid) | Copyright (c) 2009,2014 Google Inc. | BSD-3-Clause | UUID generation |
+| [`github.com/dustin/go-humanize`](https://pkg.go.dev/github.com/dustin/go-humanize) | Copyright (c) 2005-2008 Dustin Sallings | MIT | Size formatting |
+| [`github.com/mattn/go-isatty`](https://pkg.go.dev/github.com/mattn/go-isatty) | Copyright (c) Yasuhiro MATSUMOTO | MIT | Terminal detection (macOS and Windows builds) |
+| [`github.com/ncruces/go-strftime`](https://pkg.go.dev/github.com/ncruces/go-strftime) | Copyright (c) 2022 Nuno Cruces | MIT | Time formatting (macOS and Windows builds) |
