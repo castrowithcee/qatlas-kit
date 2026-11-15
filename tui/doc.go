@@ -56,7 +56,11 @@
 // Render returns the click targets of the drawn keys and tabs for that frame only. The header stays one
 // line within the width: each status mark gives way in the order of its MarkRank, and the header keys go
 // before the back button. A tab line that runs short closes its gaps and then shrinks the inactive tabs to
-// their digit; the active tab stays whole. CheckAreas holds areas to what the tab line can draw. FrameSpec.Icon
+// their digit; the active tab stays whole. A Tab with GroupStart has a separator before it on the sub-tab
+// line, which is no tab and no target and goes where only the active sub-tab fits. FrameSpec.ModeTab shows
+// the application outside every area, such as a guided setup: no area is active, the text stands after the
+// areas as the active tab, whole at every level and no target, and the sub-tab line stays empty so the
+// workspace keeps its height. CheckAreas holds areas to what the tab line can draw. FrameSpec.Icon
 // stands before the product name and Area.Icon before the title of its tab, each as "icon name"; CheckFrame
 // and CheckAreas reject an icon that fails CheckIcon, and the frame draws no icon that fails it. The tab line gives
 // up its icons before it closes any gap, and the digit-only level holds none; no icon is drawn in an ASCII
