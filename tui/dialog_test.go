@@ -1034,3 +1034,208 @@ func TestNewDialogRejectsBadScrollKeys(t *testing.T) {
 		t.Errorf("valid scroll keys refused: %v", err)
 	}
 }
+
+// extraSpec is a confirmation whose application adds help and the command line behind the answers.
+func extraSpec() DialogSpec {
+	s := confirmSpec()
+	s.Extra = []Hint{{Action: "help", Label: TextKeyHelp}, {Action: "command", Label: TextKeyCommands}}
+	return s
+}
+
+func dialogFooter(t *testing.T, d *Dialog, width int) string {
+	t.Helper()
+	line, _ := looks(t)["noneascii"].footer(d.keys.Hints(d.Hints(), d.focus(), d.text), "", width)
+	return ansi.Strip(line)
+}
+
+func TestNewDialogRejectsBadExtraHints(t *testing.T) {
+	cases := []struct {
+		name  string
+		extra Hint
+		want  string
+	}{
+		{"unknown", Hint{Action: "fly", Label: TextKeyHelp}, `extra hint "fly" is no action`},
+		{"no action", Hint{Label: TextKeyHelp}, "has no action"},
+		{"answer", Hint{Action: "no", Label: TextKeyHelp}, "is also an answer"},
+		{"enter", Hint{Action: "enter", Label: TextKeyHelp}, "enter action or a scroll action"},
+		{"scroll", Hint{Action: "down", Label: TextKeyHelp}, "enter action or a scroll action"},
+		{"kind", Hint{Action: "help", Label: TextKeyHelp, Kind: HintAnswer}, "normal hint"},
+		{"typing", Hint{Action: "help", Label: TextKeyHelp, WhileTyping: true}, "normal hint"},
+	}
+	keys := sampleKeymap(t, CharsetUnicode)
+	text := newTranslator(t, i18n.English, dialogCatalogs(), keys)
+	for _, c := range cases {
+		s := longDetailsSpec(3)
+		s.Extra = []Hint{c.extra}
+		if _, err := NewDialog(s, keys, text); err == nil || !strings.Contains(err.Error(), c.want) {
+			t.Errorf("%s: err = %v, want %q", c.name, err, c.want)
+		}
+	}
+	s := extraSpec()
+	s.Extra = append(s.Extra, Hint{Action: "help", Label: TextKeyHelp})
+	if _, err := NewDialog(s, keys, text); err == nil || !strings.Contains(err.Error(), "listed twice") {
+		t.Errorf("a doubled extra hint: err = %v", err)
+	}
+	// The enter action is only an answer of the dialog with a default; without one it is refused as well.
+	s = deleteSpec()
+	s.Keys.Enter = "enter"
+	s.Extra = []Hint{{Action: "enter", Label: TextKeyHelp}}
+	if _, err := NewDialog(s, keys, text); err == nil {
+		t.Error("the enter action was accepted as an extra hint")
+	}
+	if _, err := NewDialog(extraSpec(), keys, text); err != nil {
+		t.Errorf("valid extra hints refused: %v", err)
+	}
+}
+
+func TestDialogExtraHintsStandBehindTheAnswersInOrder(t *testing.T) {
+	d := newSampleDialog(t, extraSpec(), i18n.English)
+	hints := d.Hints()
+	var actions []ActionID
+	for _, h := range hints {
+		actions = append(actions, h.Action)
+	}
+	want := []ActionID{"yes", "enter", "no", "help", "command"}
+	if !slices.Equal(actions, want) {
+		t.Errorf("hints %v, want %v", actions, want)
+	}
+	plain := dialogFooter(t, d, 80)
+	iy, ih, ic := strings.Index(plain, "y/enter Water"), strings.Index(plain, "? help"), strings.Index(plain, ": commands")
+	if iy < 0 || ih < iy || ic < ih || !strings.Contains(plain, "n Not now") {
+		t.Errorf("footer %q", plain)
+	}
+	// Scroll hints stand behind the extra hints.
+	s := longDetailsSpec(12)
+	s.Extra = extraSpec().Extra
+	d = newSampleDialog(t, s, i18n.English)
+	overlayText(t, d, 14)
+	actions = nil
+	for _, h := range d.Hints() {
+		actions = append(actions, h.Action)
+	}
+	if i := slices.Index(actions, "command"); i < 0 || slices.Index(actions, "down") < i {
+		t.Errorf("hints %v", actions)
+	}
+}
+
+// Where the line is short, the extra hints go and the answers are shortened, never dropped.
+func TestDialogExtraHintsGiveWayBeforeTheAnswers(t *testing.T) {
+	d := newSampleDialog(t, extraSpec(), i18n.English)
+	widths := map[int]bool{}
+	for w := 80; w >= 14; w-- {
+		plain := dialogFooter(t, d, w)
+		for _, k := range []string{"y/enter", "  n"} {
+			if !strings.Contains(plain, k) {
+				t.Fatalf("width %d lost an answer %q: %q", w, k, plain)
+			}
+		}
+		if strings.Contains(plain, "commands") && !strings.Contains(plain, "help") {
+			t.Errorf("width %d dropped the first extra hint before the second: %q", w, plain)
+		}
+		widths[w] = strings.Contains(plain, "help")
+	}
+	if !widths[80] || widths[16] {
+		t.Errorf("the extra hints did not give way: 80 %v, 16 %v", widths[80], widths[16])
+	}
+	// With scrolling hints, the later ones go first at equal priority.
+	s := longDetailsSpec(12)
+	s.Extra = extraSpec().Extra
+	d = newSampleDialog(t, s, i18n.English)
+	overlayText(t, d, 14)
+	for w := 60; w >= 14; w-- {
+		plain := dialogFooter(t, d, w)
+		if !strings.Contains(plain, "y/enter") || !strings.Contains(plain, "  n") {
+			t.Fatalf("width %d lost an answer: %q", w, plain)
+		}
+	}
+}
+
+func TestDialogClickOnExtraHintGivesTheActionToTheApplication(t *testing.T) {
+	d := newSampleDialog(t, extraSpec(), i18n.English)
+	st := looks(t)["noneascii"]
+	_, targets, ok := d.Overlay(st, sampleScreen(90, 30), 90, 30, Rect{Y: 2, Width: 90, Height: 27})
+	if !ok {
+		t.Fatal("no overlay")
+	}
+	m := NewMouseMap(targets, true)
+	found := map[ActionID]bool{}
+	for _, tg := range targets {
+		if tg.Action != "help" && tg.Action != "command" {
+			continue
+		}
+		found[tg.Action] = true
+		got := m.Handle(click(tg.Rect.X, tg.Rect.Y))
+		if got.Action != tg.Action {
+			t.Errorf("click on %q reports %q", tg.Action, got.Action)
+		}
+		if answer, handled := d.Click(got); handled || answer != "" {
+			t.Errorf("click on %q: answer %q, handled %v", tg.Action, answer, handled)
+		}
+	}
+	if len(found) != 2 {
+		t.Errorf("targets of the extra hints: %v", found)
+	}
+	// No button comes from an extra hint.
+	rows, _ := d.buttons(40, st)
+	if text := ansi.Strip(strings.Join(rows, "\n")); strings.Contains(text, "help") || strings.Contains(text, "commands") {
+		t.Errorf("an extra hint became a button: %q", text)
+	}
+	// The key is left to the application.
+	for _, key := range []string{"?", ":"} {
+		if answer, handled := d.Update(press(key)); handled || answer != "" {
+			t.Errorf("update of %q: answer %q, handled %v", key, answer, handled)
+		}
+	}
+}
+
+// In a dialog with an input, text goes first: an extra hint whose keys would be typed is not shown, one with
+// a key that acts while typing is.
+func TestDialogWithInputHidesExtraHintsOnTextKeys(t *testing.T) {
+	s := unlockSpec()
+	s.Extra = []Hint{{Action: "help", Label: TextKeyHelp}, {Action: "save", Label: TextKeySave}, {Action: "command", Label: TextKeyCommands}}
+	d := newSampleDialog(t, s, i18n.English)
+	plain := dialogFooter(t, d, 80)
+	if strings.Contains(plain, "help") || strings.Contains(plain, "commands") || !strings.Contains(plain, "F2") {
+		t.Errorf("footer %q", plain)
+	}
+	d.Update(press("?"))
+	if d.Value() != "?" {
+		t.Errorf("the key did not type: %q", d.Value())
+	}
+}
+
+func TestDialogWithoutExtraHintsIsUnchanged(t *testing.T) {
+	plain := newSampleDialog(t, confirmSpec(), i18n.English)
+	empty := confirmSpec()
+	empty.Extra = []Hint{}
+	other := newSampleDialog(t, empty, i18n.English)
+	if !slices.Equal(plain.Hints(), other.Hints()) || len(plain.Hints()) != 3 {
+		t.Errorf("hints %+v", plain.Hints())
+	}
+	st := looks(t)["noneascii"]
+	a, ta, _ := plain.Overlay(st, sampleScreen(90, 30), 90, 30, Rect{Y: 2, Width: 90, Height: 27})
+	b, tb, _ := other.Overlay(st, sampleScreen(90, 30), 90, 30, Rect{Y: 2, Width: 90, Height: 27})
+	if a != b || !slices.Equal(ta, tb) {
+		t.Error("an empty Extra changes the drawing")
+	}
+}
+
+func TestDialogEscapesControlCharactersInExtraHints(t *testing.T) {
+	catalogs := dialogCatalogs()
+	catalogs[i18n.English]["x.bad"] = "bad\x1b[31m\x07"
+	catalogs[i18n.German]["x.bad"] = "bad\x1b[31m\x07"
+	keys := sampleKeymap(t, CharsetUnicode)
+	s := confirmSpec()
+	s.Extra = []Hint{{Action: "help", Label: "x.bad"}}
+	d, err := NewDialog(s, keys, newTranslator(t, i18n.English, catalogs, keys))
+	if err != nil {
+		t.Fatal(err)
+	}
+	view, _, ok := d.Overlay(looks(t)["noneascii"], sampleScreen(90, 30), 90, 30, Rect{Y: 2, Width: 90, Height: 27})
+	if !ok {
+		t.Fatal("no overlay")
+	}
+	if strings.ContainsAny(ansi.Strip(view), "\x1b\x07") || !strings.Contains(view, "bad") {
+		t.Errorf("control characters in the key line:\n%q", view)
+	}
+}

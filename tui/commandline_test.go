@@ -43,13 +43,13 @@ func commandCatalogs() i18n.Catalogs[TextID] {
 			"cmd.overview": "Open Overview", "cmd.items": "Open Items", "cmd.settings": "Open Settings",
 			"cmd.advanced": "Open the advanced settings", "cmd.reload": "Read the data again",
 			"cmd.upgrade": "Install the newer version", "cmd.export": "Write the configuration to a file",
-			"cmd.help": "Show the help", "cmd.quit": "End the program",
+			"cmd.help": "Show the help", "cmd.quit": "End the program", "cmd.area": "Open %s",
 		},
 		i18n.German: {
 			"cmd.overview": "Übersicht öffnen", "cmd.items": "Einträge öffnen", "cmd.settings": "Einstellungen öffnen",
 			"cmd.advanced": "Erweiterte Einstellungen öffnen", "cmd.reload": "Daten neu einlesen",
 			"cmd.upgrade": "Neuere Version installieren", "cmd.export": "Konfiguration in eine Datei schreiben",
-			"cmd.help": "Hilfe anzeigen", "cmd.quit": "Programm beenden",
+			"cmd.help": "Hilfe anzeigen", "cmd.quit": "Programm beenden", "cmd.area": "%s öffnen",
 		},
 	}
 }
@@ -123,6 +123,11 @@ func TestNewCommandLineRejectsWhatCannotWork(t *testing.T) {
 		{"key of an unknown action", with(func(c *Command) { c.Action, c.Key = "export", 1 }), sampleCommandKeys, keys, text, "no key of action"},
 		{"same effect", []Command{ok, {Name: "show help", Description: "cmd.help", Action: "help", Available: Always}}, sampleCommandKeys, keys, text, "make it an alias"},
 		{"same name in two commands", []Command{ok, {Name: "quit", Aliases: []string{"help"}, Description: "cmd.quit", Action: "quit", Available: Always}}, sampleCommandKeys, keys, text, "also a name"},
+		{"icon with variation selector", with(func(c *Command) { c.Icon = "\u26a0\ufe0f" }), sampleCommandKeys, keys, text, "variation selector"},
+		{"icon with joiner", with(func(c *Command) { c.Icon = "\U0001F468\u200d\U0001F4BB" }), sampleCommandKeys, keys, text, "joiner"},
+		{"icon as flag", with(func(c *Command) { c.Icon = "\U0001F1E9\U0001F1EA" }), sampleCommandKeys, keys, text, "regional indicator"},
+		{"icon of two code points", with(func(c *Command) { c.Icon = "ab" }), sampleCommandKeys, keys, text, "2 code points"},
+		{"icon with control character", with(func(c *Command) { c.Icon = "\x1b" }), sampleCommandKeys, keys, text, "control character"},
 	} {
 		_, err := NewCommandLine(CommandLineSpec{Commands: c.commands, Keys: c.nav}, c.keys, c.text)
 		if err == nil || !strings.Contains(err.Error(), c.want) {
@@ -584,5 +589,213 @@ func TestALongInputScrollsAndKeepsTheCursorInView(t *testing.T) {
 				}
 			}
 		}
+	}
+}
+
+const (
+	narrowIcon = "\u2605"     // one cell
+	wideIcon   = "\U0001F680" // two cells
+)
+
+// iconCommands are the sample commands with a narrow and a wide icon on two of them and none on the rest.
+func iconCommands() []Command {
+	cmds := sampleCommands()
+	cmds[0].Icon = narrowIcon
+	cmds[1].Icon = wideIcon
+	return cmds
+}
+
+// nameColumn is the cell at which the name of a command starts in its row of the plain view, or -1. The
+// frame, the input line and the gap below it are skipped.
+func nameColumn(view, name string) int {
+	for _, l := range plainRows(view)[3:] {
+		if i := strings.Index(l, " "+name+" "); i >= 0 {
+			return ansi.StringWidth(l[:i]) + 1
+		}
+	}
+	return -1
+}
+
+// An icon stands before the name, and the names stay flush for rows with a narrow icon, a wide icon and none.
+func TestAnIconStandsBeforeTheNameAndTheNamesStayFlush(t *testing.T) {
+	st := looks(t)["mono"]
+	plain, _ := sampleCommandLine(t, i18n.English, sampleCommands())
+	withIcons, _ := sampleCommandLine(t, i18n.English, iconCommands())
+	base, _ := viewIn(plain, st, 80, 16, Context{})
+	view, _ := viewIn(withIcons, st, 80, 16, Context{})
+	col := nameColumn(view, "go overview")
+	for _, name := range []string{"go items", "go settings", "reload", "help", "quit"} {
+		if got := nameColumn(view, name); got != col {
+			t.Errorf("%q starts at cell %d, want %d:\n%s", name, got, col, view)
+		}
+	}
+	// The column is the width of the widest icon and one blank.
+	if want := nameColumn(base, "go overview") + 3; col != want {
+		t.Errorf("names start at cell %d, want %d", col, want)
+	}
+	for glyph, name := range map[string]string{narrowIcon: "go overview", wideIcon: "go items"} {
+		for _, l := range plainRows(view) {
+			if strings.Contains(l, " "+name+" ") && !strings.Contains(l, glyph+" ") && !strings.Contains(l, glyph+"  ") {
+				t.Errorf("no icon %q in the row of %q: %q", glyph, name, l)
+			}
+			if strings.Contains(l, " "+name+" ") && strings.Index(l, glyph) > strings.Index(l, name) {
+				t.Errorf("icon %q stands behind the name: %q", glyph, l)
+			}
+		}
+	}
+	// A narrow icon alone makes a one cell column.
+	narrow := sampleCommands()
+	narrow[0].Icon = narrowIcon
+	one, _ := sampleCommandLine(t, i18n.English, narrow)
+	if got, _ := viewIn(one, st, 80, 16, Context{}); nameColumn(got, "help") != nameColumn(base, "help")+2 {
+		t.Errorf("a one cell icon column:\n%s", got)
+	}
+}
+
+// The column stays while the filter shows commands without icon only, and is absent without any icon and in
+// an ASCII terminal.
+func TestTheIconColumnFollowsTheCommandsAndTheTerminal(t *testing.T) {
+	looksByName := looks(t)
+	withIcons, _ := sampleCommandLine(t, i18n.English, iconCommands())
+	plain, _ := sampleCommandLine(t, i18n.English, sampleCommands())
+	full, _ := viewIn(withIcons, looksByName["mono"], 80, 16, Context{})
+	typeInto(withIcons, "help")
+	if got := withIcons.Matches(); len(got) != 1 || got[0].Icon != "" {
+		t.Fatalf("filter shows %v", names(got))
+	}
+	filtered, _ := viewIn(withIcons, looksByName["mono"], 80, 16, Context{})
+	if a, b := nameColumn(full, "help"), nameColumn(filtered, "help"); a != b || a < 0 {
+		t.Errorf("the column moved with the filter: %d, %d", a, b)
+	}
+	base, _ := viewIn(plain, looksByName["mono"], 80, 16, Context{})
+	if a, b := nameColumn(base, "help"), nameColumn(full, "help"); b != a+3 {
+		t.Errorf("without icon at %d, with icons at %d", a, b)
+	}
+	for _, look := range []string{"noneascii", "asciidark"} {
+		withIcons.Reset()
+		view, _ := viewIn(withIcons, looksByName[look], 80, 16, Context{})
+		if strings.Contains(view, narrowIcon) || strings.Contains(view, wideIcon) {
+			t.Errorf("%s draws an icon:\n%s", look, view)
+		}
+		ref, _ := viewIn(plain, looksByName[look], 80, 16, Context{})
+		if nameColumn(view, "help") != nameColumn(ref, "help") {
+			t.Errorf("%s keeps the icon column", look)
+		}
+	}
+}
+
+// The line is exactly its size with icons at every size and in German, shortens its rows at a narrow width,
+// and its targets are those of the same commands without icons.
+func TestIconsKeepTheSizeTheCutAndTheTargets(t *testing.T) {
+	for _, lang := range []i18n.Lang{i18n.English, i18n.German} {
+		withIcons, _ := sampleCommandLine(t, lang, iconCommands())
+		plain, _ := sampleCommandLine(t, lang, sampleCommands())
+		for look, st := range looks(t) {
+			for width := 0; width <= 64; width += 4 {
+				for height := 0; height <= 18; height += 3 {
+					view, targets := viewIn(withIcons, st, width, height, Context{})
+					_, want := viewIn(plain, st, width, height, Context{})
+					for i, r := range strings.Split(view, "\n") {
+						if w := ansi.StringWidth(r); height > 0 && w != width {
+							t.Errorf("%s %s %dx%d: row %d is %d cells: %q", lang, look, width, height, i, w, r)
+						}
+					}
+					if len(targets) != len(want) {
+						t.Fatalf("%s %s %dx%d: %d targets, want %d", lang, look, width, height, len(targets), len(want))
+					}
+					for i := range targets {
+						if targets[i] != want[i] {
+							t.Errorf("%s %s %dx%d: target %+v, want %+v", lang, look, width, height, targets[i], want[i])
+						}
+					}
+				}
+			}
+		}
+		view, _ := viewIn(withIcons, looks(t)["mono"], 30, 16, Context{})
+		if !strings.Contains(view, "\u2026") {
+			t.Errorf("%s: no cut at a narrow width:\n%s", lang, view)
+		}
+	}
+}
+
+func argCommand(arg any) []Command {
+	return []Command{{Name: "go items", Description: "cmd.area", DescriptionArgs: []any{arg}, Action: "area", Key: 2, Area: "items", Available: Always}}
+}
+
+// The arguments are formatted into the description in both languages; what they hold is escaped, and braces
+// that look like a key placeholder stay as they are.
+func TestDescriptionArgumentsAreFormattedAndEscaped(t *testing.T) {
+	st := looks(t)["noneascii"]
+	for lang, want := range map[i18n.Lang]string{i18n.English: "Open Items", i18n.German: "Items öffnen"} {
+		c, _ := sampleCommandLine(t, lang, argCommand("Items"))
+		if view, _ := viewIn(c, st, 80, 8, Context{}); !strings.Contains(view, want) {
+			t.Errorf("%s: want %q:\n%s", lang, want, view)
+		}
+	}
+	c, _ := sampleCommandLine(t, i18n.English, argCommand("A\x1b[31mB"))
+	view, _ := viewIn(c, st, 80, 8, Context{})
+	if strings.Contains(view, "\x1b") || !strings.Contains(view, `A\x1b[31mB`) {
+		t.Errorf("a control character reaches the line:\n%q", view)
+	}
+	c, _ = sampleCommandLine(t, i18n.English, argCommand("{help}"))
+	if view, _ := viewIn(c, st, 80, 8, Context{}); !strings.Contains(view, "Open {help}") {
+		t.Errorf("a placeholder in an argument was replaced:\n%s", view)
+	}
+}
+
+// The line holds its own copy of the arguments, and so does the command that Update yields.
+func TestDescriptionArgumentsAreCopied(t *testing.T) {
+	st := looks(t)["noneascii"]
+	args := []any{"Items"}
+	cmds := argCommand("")
+	cmds[0].DescriptionArgs = args
+	c, _ := sampleCommandLine(t, i18n.English, cmds)
+	args[0] = "Changed"
+	cmds[0].DescriptionArgs[0] = "Changed"
+	if view, _ := viewIn(c, st, 80, 8, Context{}); !strings.Contains(view, "Open Items") {
+		t.Errorf("the line follows the caller's slice:\n%s", view)
+	}
+	got, done := updateIn(c, enterKey, Context{})
+	if !done || len(got.DescriptionArgs) != 1 {
+		t.Fatalf("enter yields %+v, %v", got, done)
+	}
+	got.DescriptionArgs[0] = "Changed"
+	if view, _ := viewIn(c, st, 80, 8, Context{}); !strings.Contains(view, "Open Items") {
+		t.Errorf("the yielded command shares the line's slice:\n%s", view)
+	}
+	again, _ := updateIn(c, enterKey, Context{})
+	if again.DescriptionArgs[0] != "Items" {
+		t.Errorf("the next command holds %v", again.DescriptionArgs)
+	}
+}
+
+// A command without a key shows an empty key column; a click and enter yield it.
+func TestACommandWithoutKeyShowsNoKeyAndRuns(t *testing.T) {
+	cmds := []Command{
+		{Name: "reload", Description: "cmd.reload", Action: "reload", Available: Always},
+		{Name: "export config", Description: "cmd.export", Action: "export", Available: Always},
+	}
+	c, _ := sampleCommandLine(t, i18n.English, cmds)
+	st := looks(t)["noneascii"]
+	view, targets := viewIn(c, st, 80, 8, Context{})
+	for _, l := range plainRows(view) {
+		if strings.Contains(l, " export config ") && !strings.HasSuffix(strings.TrimRight(strings.Trim(l, "| "), " "), "Write the configuration to a file") {
+			t.Errorf("a key stands in the row: %q", l)
+		}
+	}
+	m := NewMouseMap(OffsetTargets(targets, 5, 2), true)
+	for i, tg := range targets {
+		if !strings.Contains(plainRows(view)[tg.Rect.Y], "export config") {
+			continue
+		}
+		got, done := clickIn(c, m.Handle(click(tg.Rect.X+5+3, tg.Rect.Y+2)), Context{})
+		if !done || got.Name != "export config" {
+			t.Errorf("click on target %d yields %+v, %v", i, got, done)
+		}
+	}
+	c.Reset()
+	typeInto(c, "export")
+	if got, done := updateIn(c, enterKey, Context{}); !done || got.Name != "export config" {
+		t.Errorf("enter yields %+v, %v", got, done)
 	}
 }

@@ -93,15 +93,16 @@
 //
 // A CommandLine runs commands by name: lower-case words without arguments, with aliases that keep older names
 // valid. Typing filters, an exact name first, then names that begin with the text, then a word that does,
-// then the text inside a word; the empty line lists the commands that are not hidden. A command names the
-// action, and where it opens one, the area and tab that its key or tab click already triggers, so Update and
-// Click yield what the dispatcher of the application runs for that key. It acts only where Available says its
-// key acts, in the Context the application sets when it opens the line; anywhere else the line stays open
-// with the typed text and the reason. The line reads keys where text is typed, so a letter is always text; it
-// edits its text as a text line does and moves the choice with the actions of CommandLineKeys. View draws a
-// panel with the key in force beside each
-// command, at most twelve rows that scroll with the choice and one target per row; the application places it
-// over the workspace, or on it where the terminal is too small.
+// then the text inside a word; the empty line lists the commands that are not hidden. A command names an
+// action the application already has, which a key, a tab click or a row of its screen triggers, and where it
+// opens one, the area and tab, so Update and Click yield what the dispatcher of the application runs for that
+// trigger: the line is a register of existing actions, never a second way to operate, and a key is optional.
+// It acts only where Available says its trigger acts, in the Context the application sets when it opens the
+// line; anywhere else the line stays open with the typed text and the reason. The line reads keys where text
+// is typed, so a letter is always text; it edits its text as a text line does and moves the choice with the
+// actions of CommandLineKeys. View draws a panel with an optional icon before each name, in a Unicode
+// terminal only, and the key in force beside it, at most twelve rows that scroll with the choice and one
+// target per row; the application places it over the workspace, or on it where the terminal is too small.
 //
 // A List shows the entries an application hands it, each with a stable ItemID, its cells and a group key, as
 // a table under dimmed upper-case column titles. The selection follows the ID, never the position, when the
@@ -246,6 +247,8 @@
 // way to View only where not even three detail lines fit. The wheel and the optional scroll actions of
 // DialogKeys stop at the ends, and Hints names the scroll keys behind the answers, the first to go where the
 // line is short. A dialog whose details fit has no position line, scroll hint or wheel target.
+// DialogSpec.Extra adds hints of the application, such as help, behind the answers: click targets that give
+// way before the answers and that Update and Click leave to the application.
 //
 // Help explains in three stages: the one-line hint under the focused field, the explanation of the focused
 // element, and the help with its topics. The Help shows the application's helptopics.Topic values, the same

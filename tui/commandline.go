@@ -18,16 +18,22 @@ type Context struct {
 	Focus InputFocus
 }
 
-// Command is one entry of the command line: a name for something a key or a tab click already does. Running
-// it yields the command, and the application does with Action, Area and Tab exactly what the key or the tab
-// click does, so a command is never a second way with rules of its own.
+// Command is one entry of the command line: a name for an action the application already has, which a key, a
+// tab click or a row of its screen triggers. Running it yields the command, and the application does with
+// Action, Area and Tab exactly what that trigger does, so a command is never a second way with rules of its
+// own. A key is optional; a command without one shows an empty key column and still runs by enter or click.
 type Command struct {
 	// Name is lower-case words separated by single blanks; Aliases are further such names that match it.
 	Name    string
 	Aliases []string
-	// Description says what the command does; it names no key, the key stands beside it.
-	Description TextID
-	Action      ActionID
+	// Icon is an optional glyph that passes CheckIcon. It stands before the name in a Unicode terminal, never
+	// in its place; once any command has one, every row keeps the column so the names stay aligned.
+	Icon string
+	// Description says what the command does; it names no key, the key stands beside it. DescriptionArgs are
+	// formatted into it; the result is escaped like any text.
+	Description     TextID
+	DescriptionArgs []any
+	Action          ActionID
 	// Key is the position, counted from 1, of the one key of Action that does the same, for an action whose
 	// keys each do another thing, such as one digit per area; 0 shows all keys of Action.
 	Key  int
@@ -76,10 +82,10 @@ type CommandLine struct {
 }
 
 // NewCommandLine checks spec and returns a closed, empty command line. It rejects an empty list, a name or
-// alias that is not lower-case words separated by single blanks or that two commands share, a command without
-// description or availability, one that names neither an action nor an area, a tab without its area, a key
-// position outside the keys of a known action, two commands that do the same, and a move key that names no
-// action of keys.
+// alias that is not lower-case words separated by single blanks or that two commands share, an icon that
+// fails CheckIcon, a command without description or availability, one that names neither an action nor an
+// area, a tab without its area, a key position outside the keys of a known action, two commands that do the
+// same, and a move key that names no action of keys.
 func NewCommandLine(spec CommandLineSpec, keys *Keymap, text Translator) (*CommandLine, error) {
 	if keys == nil || text == nil {
 		return nil, errors.New("the command line needs a key table and a translator")
@@ -105,6 +111,7 @@ func NewCommandLine(spec CommandLineSpec, keys *Keymap, text Translator) (*Comma
 	list := make([]Command, len(commands))
 	for i, c := range commands {
 		c.Aliases = append([]string(nil), c.Aliases...)
+		c.DescriptionArgs = append([]any(nil), c.DescriptionArgs...)
 		list[i] = c
 		fail := func(format string, args ...any) {
 			errs = append(errs, fmt.Errorf("command %q: "+format, append([]any{c.Name}, args...)...))
@@ -121,6 +128,11 @@ func NewCommandLine(spec CommandLineSpec, keys *Keymap, text Translator) (*Comma
 		}
 		if c.Description == "" {
 			fail("no description")
+		}
+		if c.Icon != "" {
+			if err := CheckIcon(c.Icon); err != nil {
+				fail("%v", err)
+			}
 		}
 		if c.Available == nil {
 			fail("no availability; use Always for a command that acts everywhere")
@@ -283,6 +295,7 @@ func (c *CommandLine) run(matches []Command) (Command, bool) {
 	}
 	c.Reset()
 	cmd.Aliases = append([]string(nil), cmd.Aliases...)
+	cmd.DescriptionArgs = append([]any(nil), cmd.DescriptionArgs...)
 	return cmd, true
 }
 
@@ -322,7 +335,7 @@ func (c *CommandLine) View(styles Styles, width, height int) (string, []Target) 
 		cursor := min(c.cursor, len(matches)-1)
 		start := max(min(cursor-rows/2, len(matches)-rows), 0)
 		end := min(start+rows, len(matches))
-		keyW, nameW := 0, 0
+		keyW, nameW, iconW := 0, 0, c.iconWidth(styles)
 		for _, m := range matches[start:end] {
 			keyW = max(keyW, lipgloss.Width(c.keyLabel(m)))
 			nameW = max(nameW, lipgloss.Width(m.Name))
@@ -330,7 +343,7 @@ func (c *CommandLine) View(styles Styles, width, height int) (string, []Target) 
 		for i := start; i < end; i++ {
 			targets = append(targets, Target{Rect: Rect{X: x0, Y: y0 + len(lines), Width: inner, Height: 1},
 				Zone: ZoneRows, Action: matches[i].Action, Area: matches[i].Area, Tab: matches[i].Tab})
-			lines = append(lines, c.row(styles, matches[i], i == cursor, nameW, keyW, inner))
+			lines = append(lines, c.row(styles, matches[i], i == cursor, nameW, keyW, iconW, inner))
 		}
 		if len(matches) > end-start {
 			pos := c.text.Lookup(TextListPosition, start+1, end, len(matches))
@@ -367,11 +380,28 @@ func (c *CommandLine) keyLabel(cmd Command) string {
 	return Escape(c.keys.KeyNameLabel(c.keys.bound[c.keys.index[cmd.Action]][cmd.Key-1]))
 }
 
-func (c *CommandLine) row(styles Styles, cmd Command, chosen bool, nameW, keyW, width int) string {
+// iconWidth is the width of the icon column: the widest icon of any command, so the column does not change
+// with the filter, or 0 in an ASCII terminal and where no command has an icon.
+func (c *CommandLine) iconWidth(styles Styles) int {
+	if styles.charset != CharsetUnicode {
+		return 0
+	}
+	w := 0
+	for _, cmd := range c.commands {
+		w = max(w, lipgloss.Width(cmd.Icon))
+	}
+	return w
+}
+
+func (c *CommandLine) row(styles Styles, cmd Command, chosen bool, nameW, keyW, iconW, width int) string {
 	key := c.keyLabel(cmd)
 	key = strings.Repeat(" ", keyW-lipgloss.Width(key)) + key
 	avail := max(width-2-keyW-1, 1)
-	left := cmd.Name + strings.Repeat(" ", nameW-lipgloss.Width(cmd.Name)) + "  " + Escape(c.text.Lookup(cmd.Description))
+	desc := Escape(c.text.Lookup(cmd.Description, cmd.DescriptionArgs...))
+	left := cmd.Name + strings.Repeat(" ", nameW-lipgloss.Width(cmd.Name)) + "  " + desc
+	if iconW > 0 {
+		left = cmd.Icon + strings.Repeat(" ", iconW-lipgloss.Width(cmd.Icon)+1) + left
+	}
 	left = Pad(styles.Truncate(left, avail), avail)
 	if ok, _ := cmd.Available(c.ctx); !ok {
 		left = styles.Render(StyleHint, left)
