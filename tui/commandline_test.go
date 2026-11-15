@@ -475,3 +475,114 @@ func clickIn(c *CommandLine, r MouseResult, ctx Context) (Command, bool) {
 	c.SetContext(ctx)
 	return c.Click(r)
 }
+
+// The line edits its text as a text line does: the cursor moves, typing and deletion work in the middle, and
+// the matches follow.
+func TestTheLineEditsInTheMiddle(t *testing.T) {
+	c, _ := sampleCommandLine(t, i18n.English, sampleCommands())
+	in := func(msg tea.KeyPressMsg) { updateIn(c, msg, Context{}) }
+	typeInto(c, "rload")
+	for range 4 {
+		in(tea.KeyPressMsg{Code: tea.KeyLeft})
+	}
+	typeInto(c, "e")
+	if c.Query() != "reload" || names(c.Matches())[0] != "reload" {
+		t.Fatalf("typing in the middle: %q, matches %v", c.Query(), names(c.Matches()))
+	}
+	in(tea.KeyPressMsg{Code: tea.KeyBackspace})
+	in(tea.KeyPressMsg{Code: tea.KeyDelete})
+	if c.Query() != "road" {
+		t.Errorf("backspace and delete in the middle: %q", c.Query())
+	}
+	in(ctrlKey('a'))
+	typeInto(c, "re")
+	in(ctrlKey('e'))
+	typeInto(c, " now")
+	in(ctrlKey('w'))
+	if c.Query() != "reroad " {
+		t.Errorf("ctrl+w: %q", c.Query())
+	}
+	in(tea.KeyPressMsg{Code: tea.KeyLeft, Mod: tea.ModCtrl})
+	in(altKey('d'))
+	if c.Query() != " " {
+		t.Errorf("a word jump to the start and alt+d: %q", c.Query())
+	}
+	in(ctrlKey('e'))
+	in(ctrlKey('u'))
+	if c.Query() != "" || len(c.Matches()) != len(sampleCommands())-1 {
+		t.Errorf("ctrl+u: %q with %d matches", c.Query(), len(c.Matches()))
+	}
+}
+
+// Up, down, tab and shift+tab choose the match and leave the cursor; moving the cursor keeps the choice.
+func TestTheChoiceKeysDoNotMoveTheCursor(t *testing.T) {
+	c, _ := sampleCommandLine(t, i18n.English, sampleCommands())
+	typeInto(c, "go")
+	for _, key := range []tea.KeyPressMsg{downKey, upKey, {Code: tea.KeyTab}, {Code: tea.KeyTab, Mod: tea.ModShift}} {
+		updateIn(c, key, Context{})
+		if c.line.cursor != 2 {
+			t.Errorf("%s moved the cursor to %d", key.String(), c.line.cursor)
+		}
+	}
+	updateIn(c, downKey, Context{})
+	updateIn(c, tea.KeyPressMsg{Code: tea.KeyLeft}, Context{})
+	updateIn(c, ctrlKey('a'), Context{})
+	if got, _ := updateIn(c, enterKey, Context{}); got.Name != "go items" {
+		t.Errorf("moving the cursor changed the choice: %q", got.Name)
+	}
+}
+
+// Pasted text goes in at the cursor by the rule of the text line, filters again and starts the choice over.
+func TestPasteIntoTheLine(t *testing.T) {
+	c, _ := sampleCommandLine(t, i18n.English, sampleCommands())
+	if c.Paste("\x1b\x07\n") || c.Query() != "" {
+		t.Fatal("control characters were taken")
+	}
+	typeInto(c, "goitems")
+	updateIn(c, downKey, Context{})
+	for range 5 {
+		updateIn(c, tea.KeyPressMsg{Code: tea.KeyLeft}, Context{})
+	}
+	if !c.Paste(" \r\n") || c.Query() != "go items" {
+		t.Fatalf("paste in the middle: %q", c.Query())
+	}
+	if got := names(c.Matches()); len(got) == 0 || got[0] != "go items" {
+		t.Errorf("matches after the paste: %v", got)
+	}
+	c.Reset()
+	if !c.Paste("go\nsettings\n") || c.Query() != "go settings" {
+		t.Fatalf("a paste with line breaks: %q", c.Query())
+	}
+	if got, _ := updateIn(c, enterKey, Context{}); got.Name != "go settings" {
+		t.Errorf("enter runs %q", got.Name)
+	}
+}
+
+// A long input scrolls sideways, the panel keeps its size and the cursor stays in view.
+func TestALongInputScrollsAndKeepsTheCursorInView(t *testing.T) {
+	const text = "abcdefghijklmnopqrstuvwxyz0123456789ABCD"
+	c, _ := sampleCommandLine(t, i18n.English, sampleCommands())
+	typeInto(c, text)
+	st := looks(t)["noneascii"]
+	plain := func() string {
+		view, _ := viewIn(c, st, 24, 8, Context{})
+		return ansi.Strip(view)
+	}
+	if got := plain(); !strings.Contains(got, text[len(text)-17:]+"_") || strings.Contains(got, "abcdef") {
+		t.Errorf("end of the text:\n%s", got)
+	}
+	updateIn(c, ctrlKey('a'), Context{})
+	if got := plain(); !strings.Contains(got, text[:12]) || strings.Contains(got, "ABCD") {
+		t.Errorf("start of the text:\n%s", got)
+	}
+	for look, st := range looks(t) {
+		for width := 0; width <= 30; width++ {
+			view, _ := viewIn(c, st, width, 6, Context{})
+			for i, row := range strings.Split(view, "\n") {
+				if w := ansi.StringWidth(row); w != width {
+					t.Errorf("%s: row %d is %d cells at width %d", look, i, w, width)
+				}
+			}
+		}
+	}
+}
