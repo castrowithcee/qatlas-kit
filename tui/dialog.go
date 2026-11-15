@@ -72,6 +72,13 @@ type DialogSpec struct {
 	Danger ActionID
 	Input  *DialogInput
 	Keys   DialogKeys
+	// Extra are hints of the application for the key line, such as the command line and the help. They stand
+	// behind the answers in the order given and give way before them where the line is short, by Priority as
+	// the other normal hints do. Each is a click target, but the dialog does not act on it: Update and Click
+	// report it as not handled, so the application runs the action. Each needs an action that is no answer,
+	// no enter or scroll action and listed once, and is a normal hint. An extra whose keys would be typed text
+	// in a dialog with an input is not shown.
+	Extra []Hint
 }
 
 // The smallest and the widest text of a dialog drawn over the screen.
@@ -109,7 +116,8 @@ type Dialog struct {
 // answer, a danger that is the default, so enter never destroys, an answer of an input dialog that has no key
 // outside the typed text, a scroll key that names no action, is listed twice or is an answer or the enter key,
 // a scroll key of an input dialog that has no key outside the typed text, and a masked input that starts with
-// a value.
+// a value, and an extra hint without action, of another kind than normal, that names an unknown action, lists
+// one twice or names an answer, the enter action or a scroll action.
 func NewDialog(spec DialogSpec, keys *Keymap, text Translator) (*Dialog, error) {
 	if keys == nil || text == nil {
 		return nil, errors.New("the dialog needs a key table and a translator")
@@ -199,9 +207,29 @@ func NewDialog(spec DialogSpec, keys *Keymap, text Translator) (*Dialog, error) 
 			fail("%s key %q has no key that acts while text is typed", sk.name, sk.id)
 		}
 	}
+	var extras []ActionID
+	for i, h := range spec.Extra {
+		switch {
+		case h.Action == "":
+			fail("extra hint %d has no action; it is a click target", i)
+		case !keys.known(h.Action):
+			fail("extra hint %q is no action of the key table", h.Action)
+		case slices.Contains(extras, h.Action):
+			fail("extra hint %q is listed twice", h.Action)
+		case slices.Contains(answers, h.Action):
+			fail("extra hint %q is also an answer", h.Action)
+		case h.Action == k.Enter || slices.ContainsFunc(scrollKeys, func(sk namedKey) bool { return sk.id == h.Action }):
+			// Update would run these itself and report them handled.
+			fail("extra hint %q is also the enter action or a scroll action", h.Action)
+		case h.Kind != HintNormal || h.WhileTyping:
+			fail("extra hint %q is a normal hint that names no text keys", h.Action)
+		}
+		extras = append(extras, h.Action)
+	}
 	if err := errors.Join(errs...); err != nil {
 		return nil, err
 	}
+	spec.Extra = slices.Clone(spec.Extra)
 	spec.Answers = slices.Clone(spec.Answers)
 	spec.Details = slices.Clone(spec.Details)
 	d := &Dialog{spec: spec, keys: keys, text: text}
@@ -309,7 +337,8 @@ func (d *Dialog) clearError() {
 
 // Click handles a click on a target the dialog drew, as the MouseMap of its targets reports it: a button or
 // a key of the key line gives its answer, as its key does, and a click on the input does nothing more than
-// keep it.
+// keep it. A click on an extra hint is not handled, as its key is not: r.Action is the action for the
+// application to run.
 func (d *Dialog) Click(r MouseResult) (answer ActionID, handled bool) {
 	if !r.Handled {
 		return "", false
@@ -349,10 +378,12 @@ func (d *Dialog) SetMessage(msg *Message) {
 	d.msg = &m
 }
 
-// Hints are the answers as hints of the key line, the enter key beside the default, and the scroll keys while
-// the last drawing scrolled the details. The scroll keys give way first where the line is short; an answer is
-// shortened and never dropped. A dialog drawn over the screen shows them itself; where it does not fit, the
-// application puts them into the footer, whose targets then answer it.
+// Hints are the answers as hints of the key line, the enter key beside the default, the extra hints of the
+// application and the scroll keys while the last drawing scrolled the details. The extra and the scroll hints
+// give way by their priority where the line is short; an answer is shortened and never dropped. The extra
+// hints stand before the scroll hints, so they keep their place while the scroll hints come and go. A dialog
+// drawn over the screen shows them itself; where it does not fit, the application puts them into the footer,
+// whose targets then answer it.
 func (d *Dialog) Hints() []Hint {
 	var hints []Hint
 	for _, a := range d.spec.Answers {
@@ -361,6 +392,7 @@ func (d *Dialog) Hints() []Hint {
 			hints = append(hints, Hint{Action: d.spec.Keys.Enter, Label: a.Label, Kind: HintAnswer})
 		}
 	}
+	hints = append(hints, d.spec.Extra...)
 	if d.scroll.last > 0 {
 		k := d.spec.Keys
 		for _, h := range []struct {

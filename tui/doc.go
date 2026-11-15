@@ -242,6 +242,8 @@
 // way to View only where not even three detail lines fit. The wheel and the optional scroll actions of
 // DialogKeys stop at the ends, and Hints names the scroll keys behind the answers, the first to go where the
 // line is short. A dialog whose details fit has no position line, scroll hint or wheel target.
+// DialogSpec.Extra adds hints of the application, such as help, behind the answers: click targets that give
+// way before the answers and that Update and Click leave to the application.
 //
 // Help explains in three stages: the one-line hint under the focused field, the explanation of the focused
 // element, and the help with its topics. The Help shows the application's helptopics.Topic values, the same
