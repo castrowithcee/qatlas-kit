@@ -103,7 +103,13 @@ func decryptFrom(data []byte, id age.Identity) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	return io.ReadAll(r)
+	plain, err := io.ReadAll(r)
+	if err != nil {
+		// A stream that fails its authentication may have released plaintext already.
+		clear(plain)
+		return nil, err
+	}
+	return plain, nil
 }
 
 // checkSchema refuses a document that is not a JSON object with an accepted integer schema version.
