@@ -100,24 +100,11 @@ func (v *Vault) mergePending(id *identity, doc []byte, all bool) ([]byte, int, e
 	if v.opts.Merge == nil {
 		return nil, 0, ErrPendingUnmerged
 	}
-	pending := make([]Pending, 0, len(names))
-	defer func() {
-		for _, p := range pending {
-			clear(p.Payload)
-		}
-	}()
-	for _, name := range names {
-		path := filepath.Join(v.pendingPath(), name)
-		data, err := readFile(path)
-		if err != nil {
-			return nil, 0, fmt.Errorf("cannot read %s: %w", path, err)
-		}
-		payload, err := decryptFrom(data, id.key)
-		if err != nil {
-			return nil, 0, fmt.Errorf("cannot decrypt %s: %w", path, ErrDamaged)
-		}
-		pending = append(pending, Pending{Name: name, Payload: payload})
+	pending, _, err := v.readPending(id, names)
+	if err != nil {
+		return nil, 0, err
 	}
+	defer clearPending(pending)
 	merged, done, err := v.opts.Merge(slices.Clone(doc), pending)
 	if err != nil {
 		return nil, 0, err
@@ -149,4 +136,33 @@ func (v *Vault) mergePending(id *identity, doc []byte, all bool) ([]byte, int, e
 	}
 	clear(doc)
 	return merged, len(done), nil
+}
+
+// readPending reads and decrypts the pending entries names and returns each entry's file content beside
+// it. On error no decrypted payload is left in memory. The caller holds the mutex and clears the payloads.
+func (v *Vault) readPending(id *identity, names []string) ([]Pending, [][]byte, error) {
+	pending := make([]Pending, 0, len(names))
+	raw := make([][]byte, 0, len(names))
+	for _, name := range names {
+		path := filepath.Join(v.pendingPath(), name)
+		data, err := readFile(path)
+		if err != nil {
+			clearPending(pending)
+			return nil, nil, fmt.Errorf("cannot read %s: %w", path, err)
+		}
+		payload, err := decryptFrom(data, id.key)
+		if err != nil {
+			clearPending(pending)
+			return nil, nil, fmt.Errorf("cannot decrypt %s: %w", path, ErrDamaged)
+		}
+		pending = append(pending, Pending{Name: name, Payload: payload})
+		raw = append(raw, data)
+	}
+	return pending, raw, nil
+}
+
+func clearPending(pending []Pending) {
+	for _, p := range pending {
+		clear(p.Payload)
+	}
 }

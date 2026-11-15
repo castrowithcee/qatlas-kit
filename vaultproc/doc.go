@@ -38,6 +38,15 @@
 // socket is gone or replaced, and when its program was replaced without a handover under way. A process
 // whose program was replaced refuses every client.
 //
+// Config.OnLock lets the application overwrite state it derived from the vault. It runs once for every lock
+// of a process that served, after the requests in flight ended and before the process overwrites what it
+// holds, with the vault through Held as a handler has it, and says why in a LockEvent: LockIdle,
+// LockMaxUnlock, LockCommand, LockClosed (Close, a stop signal, the end of Run's context), LockSocketGone,
+// LockProgramReplaced, LockHandedOver, LockHandoverFailed with the reason of the handover, LockHandoverDeclined
+// or LockListenerFailed. The first cause is the reason. The process overwrites what it holds even if the
+// hook fails or panics; Serve then returns ErrHook, which carries nothing of the hook's error. A process
+// that never served calls nothing.
+//
 // # Handover
 //
 // On Linux and macOS an update can hand the vault over to the program it installs. NewReplacement returns
@@ -50,10 +59,23 @@
 // shorter maximum, so a handover never extends an unlock. Where the application changed its endpoint, a
 // successor takes the vault over from a process that serves the earlier one and runs its own handover
 // (RunOptions.Earlier, with the checks and limits of localipc.ListenOptions.Earlier); it serves nothing
-// before that process handed over. After an install without a handover, the application can find and end
-// a process that still serves the earlier endpoint with localipc's Endpoint.Holder and EndHolder. Every
-// failure locks, and so do a rollback, a user's setting that asks for it, a process without
-// HandoverConfig, and Windows, which has no handover.
+// before that process handed over. A successor started by an earlier version of the application receives
+// that version's state format: RunOptions.DecodeEarlier translates it, only for a successor and only when
+// the kit's own format does not parse, and Run rejects a result without a key, without a lock time or with
+// a negative maximum. RunOptions.Configure forms the Config and the Earlier endpoint from the key once the
+// state is read, for settings the application keeps encrypted under that key; Run validates the Config in
+// full, and a successor still keeps its predecessor's lock time and shorter maximum. Both hooks run after
+// the process is hardened and report a failure without its text; Run overwrites the bytes it read and
+// listens only if both succeed. After an install without a handover, the application can find and end
+// a process that still serves the earlier endpoint with localipc's Endpoint.Holder and EndHolder.
+// HandoverConfig.MaxFileSize can lower the 256 MiB the kit reads of the release archive and hashes of the
+// installed program, never raise it; a file over the limit locks with HandoverTooLarge. Config.OnHandover is
+// told the result of each handover as a HandoverResult, with a HandoverReason when none happened: after the
+// successor took the vault over and before the client is answered, or after a failure locked the process
+// and before the client is told. A request refused because another handover is under way or the process
+// is locking reports nothing. Like OnLock it reaches the vault through Held, and a panic or an error in it
+// changes nothing about the handover. Every failure locks, and so do a rollback, a user's setting that asks
+// for it, a process without HandoverConfig, and Windows, which has no handover.
 //
 // # Boundary
 //

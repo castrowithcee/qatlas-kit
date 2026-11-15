@@ -56,6 +56,45 @@ func OpenWithIdentity(opts Options, key *age.X25519Identity) (*Vault, error) {
 	return v, nil
 }
 
+// ReadSealedWithIdentity decrypts the sealed file name, one of opts.Files.Sealed, with key, the vault's
+// own private key, without the passphrase and without reading the document, so a damaged document does not
+// stop it. key must belong to the recipient file. The files are read under the same permission check as
+// every other vault file. The plaintext goes only to the caller, who clears it; see ReadSealed for what
+// the content may be trusted for.
+func ReadSealedWithIdentity(opts Options, key *age.X25519Identity, name string) ([]byte, error) {
+	if key == nil {
+		return nil, ErrLocked
+	}
+	v, err := New(opts)
+	if err != nil {
+		return nil, err
+	}
+	if err := v.checkSealed(name); err != nil {
+		return nil, err
+	}
+	text, err := readFile(v.recipientPath())
+	if err != nil {
+		if isNotExist(err) {
+			return nil, ErrAbsent
+		}
+		return nil, fmt.Errorf("cannot read %s: %w", v.recipientPath(), err)
+	}
+	id, err := bindIdentity(key, text)
+	if err != nil {
+		return nil, err
+	}
+	path := v.path(name)
+	data, err := readFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("cannot read %s: %w", path, err)
+	}
+	plain, err := decryptFrom(data, id.key)
+	if err != nil {
+		return nil, fmt.Errorf("cannot decrypt %s: %w", path, ErrDamaged)
+	}
+	return plain, nil
+}
+
 // Recipient returns the public recipient of an encrypted vault as age text. It needs no passphrase.
 func (v *Vault) Recipient() (string, error) {
 	v.mu.Lock()
