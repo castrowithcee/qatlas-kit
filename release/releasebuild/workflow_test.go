@@ -268,3 +268,175 @@ func TestCheckInputsStepChecksNamespace(t *testing.T) {
 		})
 	}
 }
+
+// TestDryRunSkipsSigningAndPublishing checks that a dry run reaches neither the signing environment, the
+// secret nor the release.
+func TestDryRunSkipsSigningAndPublishing(t *testing.T) {
+	data, err := os.ReadFile("../../.github/workflows/release.yml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := strings.ReplaceAll(string(data), "\r\n", "\n")
+	_, jobsText, _ := strings.Cut(text, "\njobs:\n")
+	build, rest, _ := strings.Cut(jobsText, "\n  sign:\n")
+	sign, publish, _ := strings.Cut(rest, "\n  publish:\n")
+	if build == "" || sign == "" || publish == "" {
+		t.Fatal("jobs build, sign and publish not found")
+	}
+	jobIf := regexp.MustCompile(`(?m)^    if: \$\{\{ !inputs\.dry-run \}\}$`)
+	// The condition stands before the steps, so it belongs to the job and not to a step.
+	for name, body := range map[string]string{"sign": sign, "publish": publish} {
+		head, _, _ := strings.Cut(body, "    steps:\n")
+		if !jobIf.MatchString(head) {
+			t.Errorf("job %s must be skipped in a dry run", name)
+		}
+	}
+	if regexp.MustCompile(`(?m)^    if:`).MatchString(build) {
+		t.Error("the build job must run in a dry run")
+	}
+	if !strings.Contains(sign, "\n    environment: ") || strings.Count(text, "environment: ${{") != 1 || strings.Contains(build, "environment:") || strings.Contains(publish, "environment:") {
+		t.Error("only the sign job may enter an environment")
+	}
+	if strings.Contains(build, "secrets.") || strings.Contains(publish, "secrets.") {
+		t.Error("only the sign job may read a secret")
+	}
+	if !strings.Contains(publish, `[ "$GITHUB_REF_TYPE" = tag ]`) {
+		t.Error("the publish job must check for a tag itself")
+	}
+	for _, want := range []string{"      dry-run:\n        description:", "        type: boolean\n        default: false\n", "      version:\n        description:"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("the workflow lacks the input %q", want)
+		}
+	}
+}
+
+// TestCheckInputsStepChecksDryRun runs the input check of the build job for dry runs and releases.
+func TestCheckInputsStepChecksDryRun(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the build job runs on Linux")
+	}
+	if _, err := exec.LookPath("bash"); err != nil {
+		t.Skip("bash is not available")
+	}
+	script := stepScript(t, "Check inputs")
+	tests := map[string]struct {
+		dryRun, refType, version string
+		ok                       bool
+	}{
+		"dry run on a branch":                  {"true", "branch", "v1.2.3", true},
+		"dry run with pre-release":             {"true", "branch", "v1.2.3-rc.1", true},
+		"dry run on a tag":                     {"true", "tag", "v1.2.3", true},
+		"dry run without version":              {"true", "branch", "", false},
+		"dry run on a tag without version":     {"true", "tag", "", false},
+		"dry run version without v":            {"true", "branch", "1.2.3", false},
+		"dry run version without patch":        {"true", "branch", "v1.2", false},
+		"dry run version with leading zero":    {"true", "branch", "v01.2.3", false},
+		"dry run version with empty suffix":    {"true", "branch", "v1.2.3-", false},
+		"dry run version with build metadata":  {"true", "branch", "v1.2.3+b1", false},
+		"dry run version with space":           {"true", "branch", "v1.2.3 ", false},
+		"dry run version with second line":     {"true", "branch", "v1.2.3\nx", false},
+		"dry run version with leading line":    {"true", "branch", "x\nv1.2.3", false},
+		"dry run version with path":            {"true", "branch", "v1.2.3/../x", false},
+		"release on a tag":                     {"false", "tag", "", true},
+		"release on a branch":                  {"false", "branch", "", false},
+		"release on a branch with version":     {"false", "branch", "v1.2.3", false},
+		"release on a tag with version":        {"false", "tag", "v1.2.3", false},
+		"release with unset dry run on branch": {"", "branch", "", false},
+	}
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			cmd := exec.Command("bash", "-c", script)
+			cmd.Env = append(os.Environ(), "GITHUB_REF_TYPE="+tc.refType, "GITHUB_REF_NAME=v1.2.3", "PROGRAM=sample-tool", "NAMESPACE=sample-tool-release",
+				"SIGNATURE_ASSET=demo.sig", "PREVIOUS_NAMESPACE=", "PREVIOUS_SIGNATURE_ASSET=", "ENVIRONMENT=release", "DRY_RUN="+tc.dryRun, "VERSION="+tc.version)
+			out, err := cmd.CombinedOutput()
+			if (err == nil) != tc.ok {
+				t.Errorf("err = %v, want ok = %v\n%s", err, tc.ok, out)
+			}
+		})
+	}
+	t.Run("dry run still checks the namespace", func(t *testing.T) {
+		cmd := exec.Command("bash", "-c", script)
+		cmd.Env = append(os.Environ(), "GITHUB_REF_TYPE=branch", "GITHUB_REF_NAME=main", "PROGRAM=sample-tool", "NAMESPACE=sample-tool",
+			"SIGNATURE_ASSET=demo.sig", "PREVIOUS_NAMESPACE=", "PREVIOUS_SIGNATURE_ASSET=", "ENVIRONMENT=release", "DRY_RUN=true", "VERSION=v1.2.3")
+		if out, err := cmd.CombinedOutput(); err == nil {
+			t.Errorf("the script succeeded, want failure\n%s", out)
+		}
+	})
+}
+
+// TestBuildStepVersionAndSourceDate runs the build script with a stand-in for the go command and checks the
+// version and source date it passes on.
+func TestBuildStepVersionAndSourceDate(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the build job runs on Linux")
+	}
+	for _, tool := range []string{"bash", "git"} {
+		if _, err := exec.LookPath(tool); err != nil {
+			t.Skipf("%s is not available", tool)
+		}
+	}
+	script := stepScript(t, "Build release assets")
+	dir := t.TempDir()
+	bin := filepath.Join(dir, "bin")
+	if err := os.MkdirAll(bin, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	fake := "#!/bin/sh\nprintf '%s\\n' \"$SOURCE_DATE_EPOCH\" \"$@\" > \"$RECORD\"\n"
+	if err := os.WriteFile(filepath.Join(bin, "go"), []byte(fake), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	repo := filepath.Join(dir, "repo")
+	if err := os.MkdirAll(repo, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	env := append(os.Environ(), "HOME="+dir, "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_SYSTEM=/dev/null", "GIT_AUTHOR_NAME=a", "GIT_AUTHOR_EMAIL=a@example.invalid",
+		"GIT_COMMITTER_NAME=a", "GIT_COMMITTER_EMAIL=a@example.invalid")
+	git := func(date string, args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = repo
+		cmd.Env = append(env, "GIT_COMMITTER_DATE="+date, "GIT_AUTHOR_DATE="+date)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+	git("1000000000 +0000", "init", "-q")
+	git("1000000000 +0000", "commit", "-q", "--allow-empty", "-m", "first")
+	git("1000000000 +0000", "tag", "v1.2.3")
+	git("1000000100 +0000", "commit", "-q", "--allow-empty", "-m", "second")
+	tests := map[string]struct {
+		dryRun, refType, refName, version string
+		wantEpoch, wantVersion            string
+	}{
+		"dry run uses version and HEAD":         {"true", "branch", "main", "v9.8.7", "1000000100", "v9.8.7"},
+		"release uses the tag and its commit":   {"false", "tag", "v1.2.3", "", "1000000000", "v1.2.3"},
+		"dry run on a tag still uses HEAD":      {"true", "tag", "v1.2.3", "v9.8.7-rc.1", "1000000100", "v9.8.7-rc.1"},
+		"release with unset dry run is release": {"", "tag", "v1.2.3", "", "1000000000", "v1.2.3"},
+	}
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			record := filepath.Join(dir, "record")
+			os.Remove(record)
+			cmd := exec.Command("bash", "-c", script)
+			cmd.Dir = repo
+			cmd.Env = append(env, "PATH="+bin+string(os.PathListSeparator)+os.Getenv("PATH"), "RECORD="+record, "GITHUB_REF_TYPE="+tc.refType, "GITHUB_REF_NAME="+tc.refName,
+				"GITHUB_SERVER_URL=https://example.invalid", "GITHUB_REPOSITORY=example/sample", "PROGRAM=sample-tool", "NAMESPACE=sample-tool-release", "SIGNATURE_ASSET=demo.sig",
+				"PREVIOUS_NAMESPACE=", "PREVIOUS_SIGNATURE_ASSET=", "CONFIG=release.json", "ALLOWED_SIGNERS=signers", "DRY_RUN="+tc.dryRun, "VERSION="+tc.version)
+			if out, err := cmd.CombinedOutput(); err != nil {
+				t.Fatalf("script: %v\n%s", err, out)
+			}
+			data, err := os.ReadFile(record)
+			if err != nil {
+				t.Fatal(err)
+			}
+			lines := strings.Fields(string(data))
+			if len(lines) == 0 || lines[0] != tc.wantEpoch {
+				t.Errorf("SOURCE_DATE_EPOCH = %v, want %s", lines, tc.wantEpoch)
+			}
+			i := slices.Index(lines, "-version")
+			if i < 0 || i+1 >= len(lines) || lines[i+1] != tc.wantVersion {
+				t.Errorf("arguments = %v, want -version %s", lines, tc.wantVersion)
+			}
+		})
+	}
+}
