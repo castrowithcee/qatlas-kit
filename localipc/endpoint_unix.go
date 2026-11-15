@@ -43,25 +43,25 @@ func endpointPath(e Endpoint) (string, error) {
 }
 
 func errInvalidEndpoint(e Endpoint) error {
-	return fmt.Errorf("%s: runtime directory name, fallback directory name, socket base, absolute fallback directory, or absolute runtime root is invalid", e.label())
+	return fmt.Errorf("%s: runtime directory name, fallback directory name, socket base, absolute fallback directory, absolute runtime root, or runtime access is invalid", e.label())
 }
 
 // endpointDir validates the fields shared by every operation and returns the
 // runtime directory that holds the socket.
 func endpointDir(e Endpoint) (string, error) {
 	fallbackOK := filepath.IsAbs(e.FallbackDir) || (e.RuntimeRoot != "" && e.FallbackDir == "")
-	if !component(e.RuntimeDirName) || (e.FallbackDirName != "" && !component(e.FallbackDirName)) || !fallbackOK || (e.RuntimeRoot != "" && !filepath.IsAbs(e.RuntimeRoot)) {
+	if !component(e.RuntimeDirName) || (e.FallbackDirName != "" && !component(e.FallbackDirName)) || !fallbackOK || (e.RuntimeRoot != "" && !filepath.IsAbs(e.RuntimeRoot)) || !e.RuntimeAccess.valid() {
 		return "", errInvalidEndpoint(e)
 	}
 	if e.RuntimeRoot != "" {
 		// An explicit root replaces the search and never falls back to a
 		// shorter location.
-		if err := privateExistingDir(e.RuntimeRoot); err != nil {
+		if err := e.RuntimeAccess.checkRoot(e.RuntimeRoot); err != nil {
 			return "", fmt.Errorf("%s: runtime root: %w", e.label(), err)
 		}
 		return filepath.Join(e.RuntimeRoot, e.RuntimeDirName), nil
 	}
-	root, fellBack, err := runtimeRoot(e.FallbackDir)
+	root, fellBack, err := runtimeRoot(e.FallbackDir, e.RuntimeAccess)
 	if err != nil {
 		return "", fmt.Errorf("%s: %w", e.label(), err)
 	}
@@ -83,6 +83,25 @@ func privateExistingDir(dir string) error {
 	}
 	if !info.IsDir() || !ownedByMe(info) || info.Mode().Perm()&0o077 != 0 {
 		return fmt.Errorf("%w: runtime directory %q is not a private directory of this user", ErrRefused, dir)
+	}
+	return nil
+}
+
+func (a RuntimeAccess) valid() bool { return a == RuntimePrivate || a == RuntimeReadable }
+
+// checkRoot checks a runtime root, the parent of the private directory that
+// holds the socket. A root that others can write to lets them replace that
+// directory, so it is refused even with the sticky bit.
+func (a RuntimeAccess) checkRoot(dir string) error {
+	if a != RuntimeReadable {
+		return privateExistingDir(dir)
+	}
+	info, err := os.Lstat(dir)
+	if err != nil {
+		return err
+	}
+	if !info.IsDir() || !ownedByMe(info) || info.Mode().Perm()&0o022 != 0 {
+		return fmt.Errorf("%w: runtime directory %q is not a directory of this user that only this user can write", ErrRefused, dir)
 	}
 	return nil
 }

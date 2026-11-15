@@ -137,7 +137,7 @@ func (v *Vault) loadDocument(id *identity) ([]byte, error) {
 	}
 	plain, err := decryptFrom(data, id.key)
 	if err != nil {
-		return nil, &DocumentError{Path: v.documentPath(), Kind: DocumentDecrypt}
+		return nil, decryptFailure(v.documentPath(), data, err)
 	}
 	return v.readDocument(v.documentPath(), plain)
 }

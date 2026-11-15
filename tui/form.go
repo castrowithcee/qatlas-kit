@@ -721,9 +721,13 @@ func (f *Form) Update(msg tea.KeyPressMsg) (act ActionID, handled bool) {
 	if focus == InputText && f.fields[f.focus].Kind == FieldMaskedBlock {
 		return "", f.editBlock(msg)
 	}
-	if focus == InputText && f.fields[f.focus].line.edit(msg) {
-		f.changed(f.focus)
-		return "", true
+	if focus == InputText {
+		field := &f.fields[f.focus]
+		handled, changed := field.line.edit(msg, field.Kind == FieldMasked)
+		if changed {
+			f.changed(f.focus)
+		}
+		return "", handled
 	}
 	return "", false
 }
@@ -770,9 +774,8 @@ func (f *Form) addToBlock(text string, replace bool) bool {
 	return true
 }
 
-// Paste puts pasted text into the focused text or masked field at its cursor; line breaks and other control
-// characters are dropped. In a block field it replaces the whole value, or is refused whole, and reports
-// true for both.
+// Paste puts pasted text into the focused text or masked field at its cursor, cleaned as a text line cleans
+// it. In a block field it replaces the whole value, or is refused whole, and reports true for both.
 func (f *Form) Paste(text string) bool {
 	field := &f.fields[f.focus]
 	if field.Kind == FieldMaskedBlock {
