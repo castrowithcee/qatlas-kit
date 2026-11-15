@@ -366,10 +366,13 @@ func (s *Store) Adopt(admin Admin, approvals map[string]Approval) error {
 	return err
 }
 
-// authorized refuses a change without the admin proof for this store's vault.
+// authorized refuses a change without a valid admin proof for this store's vault.
 func (s *Store) authorized(admin Admin) error {
 	if admin.vault == nil || admin.vault != s.opts.Vault {
 		return ErrNotAdmin
+	}
+	if admin.expired() {
+		return ErrAdminExpired
 	}
 	return nil
 }
