@@ -68,7 +68,9 @@
 // without taking the focus; WheelStep stops it at the ends, and WheelTextLines is its step in a text area. The
 // application disables the map where the mouse is switched off, while a key is captured and while the
 // terminal is too small; under a dialog it passes the targets of the dialog alone, so the background takes no
-// click, and it passes the footer targets only where the footer holds the answers of a question.
+// click, and it passes the footer targets only where the footer holds the answers of a question. A notch
+// over a dialog whose details scroll reports ZoneDetail, which the application hands to Dialog.Wheel; beside
+// the dialog it reports no zone, so nothing scrolls.
 //
 // Mouse reports never become text. An InputFilter, installed with tea.WithFilter and attached to the program,
 // drops the pieces of a report that a terminal behind SSH or tmux delivered in more than one read, so a text
@@ -212,12 +214,19 @@
 // no styled text, so it escapes and wraps before it styles, and the tool chooses prefix, style and wording.
 // Irreversible draws the sentence on what follows in the warn colour. A Notice is a calm message without the
 // warning glyph that needs at least one detail: a dialog interrupts only where there is something to read or to
-// decide, so a plain success without details belongs in the message line. Only the answers act; every other key
-// goes back to the application, so a stray key neither saves nor destroys. The answer to enter is the default
-// and shows focused, and the destroying answer of a destructive question is drawn in the fail colour and can
-// never be the default. A dialog with an input reads typed text, shows what runs and the last error inside
-// itself and never shows a masked input. Overlay dims the screen behind it and returns the targets of the dialog
-// alone; where it does not fit, View fills the workspace and Hints go into the footer, whose targets answer it.
+// decide, so a plain success without details belongs in the message line. Only the answers and the scroll keys
+// act; every other key goes back to the application, so a stray key neither saves nor destroys. The answer to
+// enter is the default and shows focused, and the destroying answer of a destructive question is drawn in the
+// fail colour and can never be the default. A dialog with an input reads typed text, shows what runs and the
+// last error inside itself and never shows a masked input. Overlay dims the screen behind it and returns the
+// targets of the dialog alone; where it does not fit, View fills the workspace and Hints go into the footer,
+// whose targets answer it.
+//
+// Details that do not fit never push out the question: the question, the consequence, the input, the buttons
+// and the key line stay, and the details scroll in the rest with their position under them; Overlay gives
+// way to View only where not even three detail lines fit. The wheel and the optional scroll actions of
+// DialogKeys stop at the ends, and Hints names the scroll keys behind the answers, the first to go where the
+// line is short. A dialog whose details fit has no position line, scroll hint or wheel target.
 //
 // Help explains in three stages: the one-line hint under the focused field, the explanation of the focused
 // element, and the help with its topics. The Help shows the application's helptopics.Topic values, the same
