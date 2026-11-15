@@ -35,14 +35,20 @@ type AuthorizeOptions struct {
 	// process's terminal. Nil reads it with vault.ReadPassphrase from the controlling terminal. Either way
 	// Authorize first checks for a terminal and then verifies the passphrase against the vault.
 	Dialog func(prompt string) (string, error)
+	// PersonChannel is the one way to authorize without a terminal: the application delivers the passphrase
+	// through a channel of its own, such as a form of its web interface, and thereby guarantees that the
+	// passphrase comes from a person and not from an agent or a stored secret. Authorize then skips only
+	// the terminal check; the passphrase is verified against the vault as always. Nil keeps the terminal
+	// rules. Setting it together with Dialog is an error.
+	PersonChannel func(prompt string) (string, error)
 	// Valid limits how long the Admin is accepted by Approve and Adopt, counted from Authorize. Zero means
 	// no limit, as long as the application keeps the Admin. A negative value is an error.
 	Valid time.Duration
 }
 
-// Admin proves that a person at this process's terminal typed the passphrase of one vault. Only Authorize
-// creates one; the zero value proves nothing. The application keeps it no longer than the command or the
-// admin session it was asked for.
+// Admin proves that a person typed the passphrase of one vault, at this process's terminal or through the
+// application's PersonChannel. Only Authorize creates one; the zero value proves nothing. The application
+// keeps it no longer than the command or the admin session it was asked for.
 //
 // An Admin with a validity expires; Approve and Adopt then refuse it with ErrAdminExpired. Extend renews
 // one that has not expired yet.
@@ -95,7 +101,10 @@ func Authorize(v *vault.Vault, opts AuthorizeOptions) (Admin, error) {
 	if opts.Agent {
 		return Admin{}, ErrAgent
 	}
-	if !interactive() {
+	if opts.PersonChannel != nil && opts.Dialog != nil {
+		return Admin{}, errors.New("approval: Dialog and PersonChannel are set together")
+	}
+	if opts.PersonChannel == nil && !interactive() {
 		return Admin{}, vault.ErrNoTerminal
 	}
 	state, err := v.State()
@@ -106,7 +115,9 @@ func Authorize(v *vault.Vault, opts AuthorizeOptions) (Admin, error) {
 		return Admin{}, err
 	}
 	read := opts.Dialog
-	if read == nil {
+	if opts.PersonChannel != nil {
+		read = opts.PersonChannel
+	} else if read == nil {
 		read = readPassphrase
 	}
 	passphrase, err := read(opts.Prompt)
