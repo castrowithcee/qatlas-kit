@@ -135,17 +135,18 @@
 // says, opens it, as enter does; a click on a group row folds it and never changes the ticks, a click on a
 // tick box does what the toggle key does, and one on the search line starts the search. Each such target
 // carries the action of its key and an Item the list reads back in Click; a target with a zone alone is the
-// free area of the zone. A FilterBar holds choice fields such as the grouping, a state or the sort order:
-// left and right change the value, enter opens the list of values, which back closes without change, and tab
-// and shift+tab step through the fields and leave the bar at its ends to the application. Its values change
-// only what the application hands to the list, never its data. A click on a field opens its values and one on
-// a value takes it; the search field of a list may stand at the right end of the bar. On a narrow terminal
-// the values are cut first; where the fields still do not fit, a single button with the number of fields off
-// their first value takes their place, always, with the search field beside it or, with little room, only the
+// free area of the zone. A FilterBar holds choice fields of one value or more: left and right change the
+// value, enter opens the list of values, which back closes without change, and tab and shift+tab step through
+// the fields and leave the bar at its ends. Its values change only what the application hands to the list,
+// never its data. SetOptions replaces a field's values; the value, the open list and the modal's draft stay
+// on their IDs, and a call that drops the value is rejected unchanged. A click opens a field's values, one on
+// a value takes it; the search field of a list may stand at its right end. On a narrow terminal the values
+// are cut first; where the fields still do not fit, a single button with the number of fields off their
+// first value takes their place, always, with the search field beside it or, with little room, only the
 // search key. The button is one stop of the focus. Enter or a click opens a modal with all fields one under
-// the other: up and down choose a field, left and right change its value, enter takes all changes at once and
-// back drops them all. The modal takes every key; it is drawn over the screen where it fits and otherwise in
-// the workspace, with its keys in the footer.
+// the other: up and down choose a field, left and right change its value, enter takes all changes at once
+// and back drops them all. The modal takes every key and is drawn over the screen where it fits, else in the
+// workspace with its keys in the footer.
 //
 // A Form shows the fields an application hands it, each with a stable ID, a kind, a label and a value, and
 // knows no schema: the application checks the values when the save key is pressed, from any field, and hands
