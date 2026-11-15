@@ -57,7 +57,7 @@ func sampleFrame(t *testing.T, st Styles, lang i18n.Lang) (styledFrame, *Keymap)
 func sampleSpec(width, height int) FrameSpec {
 	return FrameSpec{
 		Width: width, Height: height, Product: "example",
-		Status: []StatusMark{{Kind: StatusOK, Text: "store open", Short: "open"}, {Text: "session off", Short: "off"}},
+		Status: []StatusMark{{Kind: StatusOK, Text: "store open", Short: []string{"open"}}, {Text: "session off", Short: []string{"off"}}},
 		Back:   &Hint{Action: "back", Label: "ex.back"},
 		HeaderKeys: []Hint{
 			{Action: "help", Label: "ex.help"}, {Action: "command", Label: "ex.cmd"},
@@ -230,6 +230,253 @@ func TestHeaderGivesWayInItsOrder(t *testing.T) {
 		}
 		if !seenShort {
 			t.Errorf("%s: no width shows the short marks beside the key hints", lang)
+		}
+	}
+}
+
+// Forms of an invented release mark, longest first; the first holds an emoji of two cells.
+var releaseForms = []string{
+	"Update available v0.4.0 → v0.5.0 \U0001F389 · U update",
+	"Update available v0.4.0 → v0.5.0 · U update",
+	"Update available v0.5.0 · U update",
+	"Update v0.5.0 · U",
+}
+
+func releaseMark() StatusMark {
+	return StatusMark{Kind: StatusOK, Text: releaseForms[0], Short: releaseForms[1:], Rank: MarkBeforeKeys, NoGlyph: true}
+}
+
+// rankStatus are the marks of the ranked header tests by name.
+func rankStatus(name string) []StatusMark {
+	switch name {
+	case "one":
+		return []StatusMark{{Kind: StatusWarn, Text: "store locked", Rank: MarkAlways}}
+	case "two":
+		return []StatusMark{{Kind: StatusOK, Text: "store unlocked", Rank: MarkAlways}, {Kind: StatusWarn, Text: "login off", Rank: MarkAlways}}
+	case "release":
+		return []StatusMark{{Kind: StatusWarn, Text: "store locked", Rank: MarkAlways}, releaseMark()}
+	}
+	return nil
+}
+
+func rankSpec(width int, status string, back bool) FrameSpec {
+	spec := sampleSpec(width, 8)
+	spec.Product, spec.ProductShort = "Garden Console", "Garden"
+	spec.Status = rankStatus(status)
+	if !back {
+		spec.Back = nil
+	}
+	return spec
+}
+
+// headerRow is the header line as the frame lays it out, before Render clips it to the width.
+func headerRow(f styledFrame, spec FrameSpec) (string, []Target) {
+	return (&frameRun{styles: f.styles, text: f.text, keys: f.keys}).header(spec, spec.Width)
+}
+
+// The ranked header lays out as the reference layout it follows: the short name where the full one, the
+// marks that always stand and the widest block do not fit side by side, a mark before keys in its longest
+// form that fits, and then the widest block that fits two cells apart.
+func TestRankedHeaderFollowsTheReference(t *testing.T) {
+	f, _ := sampleFrame(t, looks(t)["mono"], i18n.English)
+	const keys, backOnly = "[esc] back  [?] help  [:] cmd", "[esc] back"
+	const hints = "[?] help  [:] cmd"
+	release := func(name string, form int) string { return name + "  ● store locked  " + releaseForms[form] }
+	for _, c := range []struct {
+		status string
+		width  int
+		back   bool
+		left   string
+		right  string
+	}{
+		{"one", 40, true, "Garden  ● store locked", backOnly},
+		{"one", 40, false, "Garden  ● store locked", ""},
+		{"one", 60, true, "Garden  ● store locked", keys},
+		{"one", 60, false, "Garden Console  ● store locked", hints},
+		{"one", 79, true, "Garden Console  ● store locked", keys},
+		{"one", 79, false, "Garden Console  ● store locked", hints},
+		{"one", 80, true, "Garden Console  ● store locked", keys},
+		{"one", 80, false, "Garden Console  ● store locked", hints},
+		{"one", 120, true, "Garden Console  ● store locked", keys},
+		{"one", 120, false, "Garden Console  ● store locked", hints},
+		{"two", 40, true, "Garden  ● store unlocked  ● login off", ""},
+		{"two", 40, false, "Garden  ● store unlocked  ● login off", ""},
+		{"two", 60, true, "Garden  ● store unlocked  ● login off", backOnly},
+		{"two", 60, false, "Garden  ● store unlocked  ● login off", hints},
+		{"two", 79, true, "Garden Console  ● store unlocked  ● login off", keys},
+		{"two", 79, false, "Garden Console  ● store unlocked  ● login off", hints},
+		{"two", 80, true, "Garden Console  ● store unlocked  ● login off", keys},
+		{"two", 80, false, "Garden Console  ● store unlocked  ● login off", hints},
+		{"two", 120, true, "Garden Console  ● store unlocked  ● login off", keys},
+		{"two", 120, false, "Garden Console  ● store unlocked  ● login off", hints},
+		{"release", 40, true, "Garden  ● store locked", backOnly},
+		{"release", 40, false, "Garden  ● store locked", ""},
+		{"release", 60, true, release("Garden", 2), ""},
+		{"release", 60, false, release("Garden Console", 3), ""},
+		{"release", 79, true, release("Garden Console", 0), ""},
+		{"release", 79, false, release("Garden Console", 0), ""},
+		{"release", 80, true, release("Garden Console", 0), ""},
+		{"release", 80, false, release("Garden Console", 0), ""},
+		{"release", 120, true, release("Garden Console", 0), keys},
+		{"release", 120, false, release("Garden Console", 0), hints},
+	} {
+		row, targets := headerRow(f, rankSpec(c.width, c.status, c.back))
+		want := c.left
+		if c.right != "" {
+			want += strings.Repeat(" ", c.width-ansi.StringWidth(c.left)-ansi.StringWidth(c.right)) + c.right
+		}
+		if got := ansi.Strip(row); got != want {
+			t.Errorf("%s %d columns, back %v:\n got %q\nwant %q", c.status, c.width, c.back, got, want)
+		}
+		if c.right == "" && len(targets) > 0 {
+			t.Errorf("%s %d columns, back %v: targets without a block: %+v", c.status, c.width, c.back, targets)
+		}
+	}
+}
+
+// At every width the ranked header is one line no wider than the width; every mark that always stands is
+// there in full or cut only at the edge, and the key hints never stand without the back button.
+func TestRankedHeaderKeepsMarksThatAlwaysStand(t *testing.T) {
+	f, _ := sampleFrame(t, looks(t)["mono"], i18n.English)
+	blocks := map[ActionID]string{"back": "[esc] back", "help": "[?] help", "command": "[:] cmd"}
+	for _, status := range []string{"one", "two", "release"} {
+		var words []string
+		for _, m := range rankStatus(status) {
+			if m.Rank == MarkAlways {
+				words = append(words, "● "+m.Text)
+			}
+		}
+		marks := strings.Join(words, "  ")
+		for _, back := range []bool{true, false} {
+			for width := 120; width >= 1; width-- {
+				row, targets := headerRow(f, rankSpec(width, status, back))
+				plain := ansi.Strip(row)
+				if strings.Contains(row, "\n") || ansi.StringWidth(row) > width {
+					t.Fatalf("%s %d columns: %q is not one line within the width", status, width, plain)
+				}
+				if !strings.Contains(plain, marks) {
+					if cut := strings.TrimSuffix(plain, "…"); cut == plain || !strings.HasPrefix("Garden  "+marks, cut) {
+						t.Errorf("%s %d columns lose a mark that always stands: %q", status, width, plain)
+					}
+				}
+				if back && strings.Contains(plain, "[?]") && !strings.Contains(plain, "[esc]") {
+					t.Errorf("%s %d columns keep the key hints without the back button: %q", status, width, plain)
+				}
+				for _, tg := range targets {
+					if r := tg.Rect; ansi.Cut(plain, r.X, r.X+r.Width) != blocks[tg.Action] {
+						t.Errorf("%s %d columns: target %+v does not lie on its text in %q", status, width, tg, plain)
+					}
+				}
+				for action, text := range blocks {
+					has := slices.ContainsFunc(targets, func(tg Target) bool { return tg.Action == action })
+					if has != strings.Contains(plain, text) {
+						t.Errorf("%s %d columns: target of %s is %v in %q", status, width, action, has, plain)
+					}
+				}
+			}
+		}
+	}
+}
+
+// One column under and on each width where the name takes its short form, the key hints go and the back
+// button goes, the header changes at that width and no other.
+func TestRankedHeaderChangesAtItsBorders(t *testing.T) {
+	f, _ := sampleFrame(t, looks(t)["mono"], i18n.English)
+	full, short := ansi.StringWidth("Garden Console  ● store locked"), ansi.StringWidth("Garden  ● store locked")
+	keys, back := ansi.StringWidth("[esc] back  [?] help  [:] cmd"), ansi.StringWidth("[esc] back")
+	for _, c := range []struct {
+		width            int
+		name, hints, esc bool
+	}{
+		{full + 2 + keys, true, true, true},
+		{full + 2 + keys - 1, false, true, true},
+		{short + 2 + keys, false, true, true},
+		{short + 2 + keys - 1, false, false, true},
+		{short + 2 + back, false, false, true},
+		{short + 2 + back - 1, false, false, false},
+	} {
+		plain := ansi.Strip(first(headerRow(f, rankSpec(c.width, "one", true))))
+		if got := [3]bool{strings.Contains(plain, "Console"), strings.Contains(plain, "[?]"), strings.Contains(plain, "[esc]")}; got != [3]bool{c.name, c.hints, c.esc} {
+			t.Errorf("%d columns: full name, hints, back = %v, want %v: %q", c.width, got, [3]bool{c.name, c.hints, c.esc}, plain)
+		}
+	}
+	// Without a short form the name stays whole and the blocks follow the same borders.
+	spec := rankSpec(full+2+keys-1, "one", true)
+	spec.ProductShort = ""
+	if plain := ansi.Strip(first(headerRow(f, spec))); !strings.HasPrefix(plain, "Garden Console  ● store locked") || strings.Contains(plain, "[?]") {
+		t.Errorf("without a short form: %q", plain)
+	}
+}
+
+// A mark before keys takes the longest of its forms that fits and goes where none fits; a mark that always
+// stands takes its shorter form before the line is cut.
+func TestMarkFormsTakeTheLongestThatFits(t *testing.T) {
+	f, _ := sampleFrame(t, looks(t)["mono"], i18n.English)
+	spec := rankSpec(0, "", false)
+	spec.HeaderKeys = nil
+	spec.Product = "Garden"
+	spec.Status = []StatusMark{releaseMark()}
+	for _, c := range []struct{ width, form int }{
+		{120, 0}, {54, 0}, {53, 1}, {51, 1}, {50, 2}, {42, 2}, {41, 3}, {25, 3}, {24, -1}, {6, -1},
+	} {
+		spec.Width = c.width
+		plain := ansi.Strip(first(headerRow(f, spec)))
+		want := "Garden"
+		if c.form >= 0 {
+			want += "  " + releaseForms[c.form]
+		}
+		if plain != want {
+			t.Errorf("%d columns: %q, want %q", c.width, plain, want)
+		}
+	}
+	spec.Status = []StatusMark{{Kind: StatusWarn, Text: "store locked", Short: []string{"", "locked"}, Rank: MarkAlways}}
+	for width, want := range map[int]string{22: "Garden  ● store locked", 21: "Garden  ● locked", 16: "Garden  ● locked", 15: "Garden  ● lock…", 9: "Garden  …", 8: "Garden …", 3: "Ga…"} {
+		spec.Width = width
+		if plain := ansi.Strip(first(headerRow(f, spec))); plain != want {
+			t.Errorf("%d columns: %q, want %q", width, plain, want)
+		}
+	}
+}
+
+// A mark without its glyph reads as its words in every profile: no glyph without colour or in ASCII, and the
+// colour of its kind where there is colour.
+func TestMarkWithoutGlyph(t *testing.T) {
+	spec := rankSpec(120, "", false)
+	spec.HeaderKeys = nil
+	spec.Status = []StatusMark{releaseMark()}
+	for _, look := range []string{"mono", "noneascii", "asciidark", "dark"} {
+		f, _ := sampleFrame(t, looks(t)[look], i18n.English)
+		row := first(headerRow(f, spec))
+		plain := ansi.Strip(row)
+		if plain != "Garden Console  "+releaseForms[0] {
+			t.Errorf("%s: %q", look, plain)
+		}
+		switch look {
+		case "mono", "noneascii":
+			noColorSequence(t, look, row)
+		case "dark":
+			if !strings.Contains(row, "\x1b[") {
+				t.Errorf("%s: the mark has no colour: %q", look, row)
+			}
+		}
+	}
+}
+
+// Untrusted text in the short name and in every form of every mark never reaches the terminal as a
+// control sequence.
+func TestRankedHeaderEscapesControlCharacters(t *testing.T) {
+	hostile := "a\x1b[2J\x1b]8;;x\x07b\rc\u009bd‮e"
+	f, _ := sampleFrame(t, looks(t)["noneascii"], i18n.English)
+	for width := 120; width >= 1; width-- {
+		spec := rankSpec(width, "", true)
+		spec.Product, spec.ProductShort = hostile+hostile, hostile
+		spec.Status = []StatusMark{
+			{Kind: StatusFail, Text: hostile + hostile, Short: []string{hostile}, Rank: MarkAlways},
+			{Kind: StatusOK, Text: hostile + hostile, Short: []string{hostile, "\x1b"}, Rank: MarkBeforeKeys, NoGlyph: true},
+			{Text: hostile + hostile, Short: []string{hostile}},
+		}
+		if row, _ := headerRow(f, spec); strings.ContainsAny(row, "\x1b\x07\r\u009b‮") {
+			t.Fatalf("%d columns pass a control character: %q", width, row)
 		}
 	}
 }

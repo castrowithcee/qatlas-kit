@@ -36,7 +36,7 @@ var takenKeys = func() map[string]string {
 	add("is no meta key on macOS and taken by GNOME Terminal",
 		"alt+0", "alt+1", "alt+2", "alt+3", "alt+4", "alt+5", "alt+6", "alt+7", "alt+8", "alt+9")
 	add("edits text in a text line", "ctrl+e", "ctrl+w", "ctrl+u", "ctrl+d", "alt+b", "alt+d", "ctrl+left",
-		"ctrl+right", "backspace", "delete")
+		"ctrl+right", "backspace", "delete", "alt+backspace", "alt+delete")
 	add("sends the text of a text area", textAreaSend)
 	return m
 }()
@@ -47,6 +47,55 @@ const textAreaSend = "ctrl+enter"
 
 // sendsText reports whether a key press is the key that sends the text of a multi-line field.
 func sendsText(msg tea.KeyPressMsg) bool { return KeyName(msg) == textAreaSend }
+
+// lineEdit is what a key does in a one-line text field.
+type lineEdit int
+
+const (
+	editLeft lineEdit = iota + 1
+	editRight
+	editWordLeft
+	editWordRight
+	editStart
+	editEnd
+	editDeleteLeft
+	editDeleteRight
+	editDeleteWordLeft
+	editDeleteWordRight
+	editDeleteToStart
+	editDeleteToEnd
+)
+
+// lineEdits is the fixed table of the keys that edit a one-line text field. The keys that move the cursor by
+// a character or to an end of the line are also actions of some screens, which are asked first. Every other
+// key in it is in takenKeys, so no action can hold it.
+var lineEdits = func() map[string]lineEdit {
+	m := map[string]lineEdit{}
+	add := func(op lineEdit, keys ...string) {
+		for _, k := range keys {
+			m[k] = op
+		}
+	}
+	add(editLeft, "left", "ctrl+b")
+	add(editRight, "right", "ctrl+f")
+	add(editWordLeft, "ctrl+left", "alt+left", "alt+b")
+	add(editWordRight, "ctrl+right", "alt+right", "alt+f")
+	add(editStart, "home", "ctrl+a")
+	add(editEnd, "end", "ctrl+e")
+	add(editDeleteLeft, "backspace", "ctrl+h")
+	add(editDeleteRight, "delete", "ctrl+d")
+	add(editDeleteWordLeft, "ctrl+w", "alt+backspace")
+	add(editDeleteWordRight, "alt+d", "alt+delete")
+	add(editDeleteToStart, "ctrl+u")
+	add(editDeleteToEnd, "ctrl+k")
+	return m
+}()
+
+// lineEditOf returns the edit a key press makes in a text field, if it is one.
+func lineEditOf(msg tea.KeyPressMsg) (lineEdit, bool) {
+	op, ok := lineEdits[KeyName(msg)]
+	return op, ok
+}
 
 // fixedKeys keep their meaning on every screen, so no binding may take them.
 var fixedKeys = map[string]string{

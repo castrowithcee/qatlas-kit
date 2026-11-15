@@ -276,7 +276,7 @@ func NewList(spec ListSpec, keys *Keymap, text Translator) (*List, error) {
 	spec.Columns = slices.Clone(spec.Columns)
 	spec.Buttons = slices.Clone(spec.Buttons)
 	l := &List{spec: spec, keys: keys, text: text, folded: map[string]bool{},
-		ticked: map[ItemID]bool{}, memory: map[tickScope]tickMemory{}, page: 1}
+		ticked: map[ItemID]bool{}, memory: map[tickScope]tickMemory{}, page: 1, focused: true}
 	for _, c := range spec.Columns {
 		l.titles = append(l.titles, strings.ToUpper(Escape(text.Lookup(c.Title))))
 	}
@@ -369,8 +369,10 @@ func (l *List) Reset() {
 	l.cursor = l.firstEntry()
 }
 
-// SetFocused says whether the rows have the focus, which decides what a click on the marked row does. The
-// application sets it when the focus enters or leaves the rows.
+// SetFocused says whether the rows have the focus. Without it the marked row is drawn like any other, so
+// only one mark shows on screen, and a click on it opens nothing; the mark stays and shows again with the
+// focus. The modal always draws it. A new list has the focus. The application sets it when the focus enters
+// or leaves the rows.
 func (l *List) SetFocused(on bool) { l.focused = on }
 
 // SetGrouped shows the entries under their groups or as one flat list.
@@ -759,7 +761,7 @@ func (l *List) view(styles Styles, width, height int, modal bool) (string, []Tar
 			targets = append(targets, Target{Rect: Rect{X: 2 + boxAt, Y: len(lines), Width: 3, Height: 1}, Zone: ZoneRows,
 				Action: l.spec.Keys.Toggle, Item: tickRef + ref})
 		}
-		lines = append(lines, styles.Row(text, width, i == l.cursor))
+		lines = append(lines, styles.Row(text, width, i == l.cursor && (modal || l.focused)))
 	}
 	out := make([]string, height)
 	for i := range out {

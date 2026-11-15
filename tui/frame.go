@@ -50,14 +50,39 @@ type Target struct {
 	Item string
 }
 
-// StatusMark is a part of the header after the product name. Kind gives it the status glyph in its colour
-// and leaves the word plain; without a kind the text stands dimmed alone. Short is the shorter word the
-// header takes when room runs out; empty keeps Text.
+// StatusMark is a part of the header after the product name; the marks stand in the order of
+// FrameSpec.Status. Kind gives it the status glyph in its colour and leaves the word plain; without a kind
+// the text stands dimmed alone.
 type StatusMark struct {
-	Kind  StatusKind
-	Text  string
-	Short string
+	Kind StatusKind
+	Text string
+	// Short are the shorter forms of Text the header takes as room runs out, longest first; empty ones are
+	// skipped.
+	Short []string
+	// Rank says what the mark gives way to; the zero value gives way first.
+	Rank MarkRank
+	// NoGlyph draws the text in the colour of Kind without the status glyph, for a mark whose words carry its
+	// state alone.
+	NoGlyph bool
 }
+
+// MarkRank is the place of a status mark in the order the header fills its room: the name and the marks
+// that always stand, then the marks before keys, then the widest block at the right that fits two cells
+// apart from them (the back button with the header keys, the back button, or nothing), and last the
+// normal marks in the room left.
+type MarkRank uint8
+
+const (
+	// MarkNormal takes the room the back button and the header keys leave: the normal marks take their
+	// shorter forms together and then go, the last first, before the header keys go.
+	MarkNormal MarkRank = iota
+	// MarkBeforeKeys takes the longest of its forms that fits before the back button and the header keys are
+	// placed, and goes only where none fits.
+	MarkBeforeKeys
+	// MarkAlways stands at every width: where the name and these marks do not fit, they take their shorter
+	// forms together, and then the line is cut at its end with the ellipsis, so none goes unmarked.
+	MarkAlways
+)
 
 // Message is a message line under the content of the workspace.
 type Message struct {
@@ -70,6 +95,9 @@ type Message struct {
 type FrameSpec struct {
 	Width, Height int
 	Product       string
+	// ProductShort replaces Product where the full name, the marks that always stand and the widest block at
+	// the right do not fit side by side; empty keeps Product.
+	ProductShort string
 	// Icon is the logo before the product name: one glyph that passes CheckIcon; empty shows none. The frame
 	// draws no glyph that fails CheckIcon, and CheckFrame reports one.
 	Icon   string
@@ -231,15 +259,101 @@ func (f *frameRun) ruleChar() string {
 const headerGap = "  "
 
 // header is the header line: the product name and the status marks at the left, the back button and the
-// header keys dimmed at the right end. It stays one line: the marks take their short words, then the last
-// marks go, before the header keys go, and the header keys go before the back button; the name is cut
-// last.
+// header keys dimmed at the right end. It stays one line and fills its room in the order MarkRank names.
 func (f *frameRun) header(spec FrameSpec, width int) (string, []Target) {
-	product := Escape(spec.Product)
-	if icon := f.icon(spec.Icon); icon != "" {
-		product = icon + " " + product
+	blocks := f.headerBlocks(spec)
+	marks := spec.Status
+	forms := make([][]string, len(marks))
+	var always, beforeKeys, normal []int
+	for i, m := range marks {
+		forms[i] = markForms(m)
+		switch m.Rank {
+		case MarkAlways:
+			always = append(always, i)
+		case MarkBeforeKeys:
+			beforeKeys = append(beforeKeys, i)
+		default:
+			normal = append(normal, i)
+		}
 	}
-	var blocks []headerBlock
+	// pick holds the form each mark is drawn in; -1 leaves it out.
+	pick := make([]int, len(marks))
+	for i := range pick {
+		pick[i] = -1
+	}
+	level := func(idx []int, depth int) {
+		for _, i := range idx {
+			pick[i] = min(depth, len(forms[i])-1)
+		}
+	}
+	left := func(product string) string { return f.headerLeft(product, marks, forms, pick) }
+
+	level(always, 0)
+	product := f.productName(spec.Icon, spec.Product)
+	if spec.ProductShort != "" {
+		need := lipgloss.Width(left(product))
+		if len(blocks) > 0 {
+			need += len(headerGap) + lipgloss.Width(blocks[0].text)
+		}
+		if need > width {
+			product = f.productName(spec.Icon, spec.ProductShort)
+		}
+	}
+	fits := false
+	for depth := range max(formDepth(forms, always), 1) {
+		level(always, depth)
+		if fits = lipgloss.Width(left(product)) <= width; fits {
+			break
+		}
+	}
+	if !fits && len(always) == 0 {
+		return f.styles.Render(StyleTitle, f.styles.Truncate(product, width)), nil
+	}
+	if !fits {
+		return f.styles.Truncate(left(product), width), nil
+	}
+	used := lipgloss.Width(left(product))
+	for _, i := range beforeKeys {
+		for k, form := range forms[i] {
+			if w := len(headerGap) + lipgloss.Width(f.markText(marks[i], form)); used+w <= width {
+				pick[i], used = k, used+w
+				break
+			}
+		}
+	}
+	var block headerBlock
+	room := width
+	for _, b := range blocks {
+		if w := lipgloss.Width(b.text); width-used-w >= len(headerGap) {
+			block, room = b, width-w-len(headerGap)
+			break
+		}
+	}
+	for depth := range max(formDepth(forms, normal), 1) {
+		level(normal, depth)
+		if lipgloss.Width(left(product)) <= room {
+			break
+		}
+	}
+	for n := len(normal) - 1; n >= 0 && lipgloss.Width(left(product)) > room; n-- {
+		pick[normal[n]] = -1
+	}
+	line := left(product)
+	if block.text == "" {
+		return line, nil
+	}
+	x := width - lipgloss.Width(block.text)
+	ts := make([]Target, len(block.targets))
+	for i, t := range block.targets {
+		t.Rect.X += x
+		ts[i] = t
+	}
+	return line + strings.Repeat(" ", x-lipgloss.Width(line)) + block.styled, ts
+}
+
+// headerBlocks are the blocks the right end of the header can show, widest first: the back button with the
+// header keys, the back button alone, or the header keys alone where there is no back button.
+func (f *frameRun) headerBlocks(spec FrameSpec) []headerBlock {
 	back, hasBack := f.headerBlock(spec, spec.Back)
 	var keys headerBlock
 	for _, h := range spec.HeaderKeys {
@@ -254,37 +368,41 @@ func (f *frameRun) header(spec FrameSpec, width int) (string, []Target) {
 	}
 	switch {
 	case hasBack && keys.text != "":
-		blocks = append(blocks, back.join(keys), back)
+		return []headerBlock{back.join(keys), back}
 	case hasBack:
-		blocks = append(blocks, back)
+		return []headerBlock{back}
 	case keys.text != "":
-		blocks = append(blocks, keys)
+		return []headerBlock{keys}
 	}
-	blocks = append(blocks, headerBlock{})
-	levels := f.statusLevels(spec.Status)
-	for _, block := range blocks {
-		room := width
-		if block.text != "" {
-			room -= lipgloss.Width(block.text) + len(headerGap)
-		}
-		for _, marks := range levels {
-			left := f.headerLeft(product, marks)
-			if lipgloss.Width(left) > room {
-				continue
-			}
-			if block.text == "" {
-				return left, nil
-			}
-			x := width - lipgloss.Width(block.text)
-			ts := make([]Target, len(block.targets))
-			for i, t := range block.targets {
-				t.Rect.X += x
-				ts[i] = t
-			}
-			return left + strings.Repeat(" ", x-lipgloss.Width(left)) + block.styled, ts
+	return nil
+}
+
+func (f *frameRun) productName(icon, name string) string {
+	name = Escape(name)
+	if icon := f.icon(icon); icon != "" {
+		return icon + " " + name
+	}
+	return name
+}
+
+// markForms are the forms of m, longest first.
+func markForms(m StatusMark) []string {
+	forms := []string{m.Text}
+	for _, s := range m.Short {
+		if s != "" {
+			forms = append(forms, s)
 		}
 	}
-	return f.styles.Render(StyleTitle, f.styles.Truncate(product, width)), nil
+	return forms
+}
+
+// formDepth is the number of forms of the mark among idx that has the most.
+func formDepth(forms [][]string, idx []int) int {
+	depth := 0
+	for _, i := range idx {
+		depth = max(depth, len(forms[i]))
+	}
+	return depth
 }
 
 // headerBlock is a block at the right end of the header with the targets of its keys, counted from its
@@ -326,33 +444,25 @@ func (f *frameRun) headerBlock(spec FrameSpec, h *Hint) (headerBlock, bool) {
 	}, true
 }
 
-// statusLevels are the marks the header tries, richest first: every mark in full, every mark short, and
-// then one mark fewer at a time.
-func (f *frameRun) statusLevels(marks []StatusMark) [][]StatusMark {
-	short := make([]StatusMark, len(marks))
-	for i, m := range marks {
-		short[i] = m
-		if m.Short != "" {
-			short[i].Text = m.Short
-		}
-	}
-	levels := [][]StatusMark{marks, short}
-	for n := len(short) - 1; n >= 0; n-- {
-		levels = append(levels, short[:n])
-	}
-	return levels
-}
-
-func (f *frameRun) headerLeft(product string, marks []StatusMark) string {
+// headerLeft is the name and every mark pick draws, in the order of the marks.
+func (f *frameRun) headerLeft(product string, marks []StatusMark, forms [][]string, pick []int) string {
 	parts := []string{f.styles.Render(StyleTitle, product)}
-	for _, m := range marks {
-		if m.Kind == "" {
-			parts = append(parts, f.styles.Render(StyleHint, Escape(m.Text)))
-		} else {
-			parts = append(parts, f.styles.Status(m.Kind, m.Text))
+	for i, m := range marks {
+		if pick[i] >= 0 {
+			parts = append(parts, f.markText(m, forms[i][pick[i]]))
 		}
 	}
 	return strings.Join(parts, headerGap)
+}
+
+func (f *frameRun) markText(m StatusMark, text string) string {
+	switch {
+	case m.Kind == "":
+		return f.styles.Render(StyleHint, Escape(text))
+	case m.NoGlyph:
+		return f.styles.Render(statusStyle(m.Kind), Escape(text))
+	}
+	return f.styles.Status(m.Kind, text)
 }
 
 // icon is glyph where it may stand: the terminal draws UTF-8 and glyph passes CheckIcon. The check runs again
