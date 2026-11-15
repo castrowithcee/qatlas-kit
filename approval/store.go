@@ -261,6 +261,11 @@ func (s *Store) Approve(admin Admin, items ...Item) error {
 	if err := s.authorized(admin); err != nil {
 		return err
 	}
+	return s.approve(nil, items)
+}
+
+// approve is the writing of Approve; covers, when set, is asked for every item before anything is written.
+func (s *Store) approve(covers coverage, items []Item) error {
 	now := time.Now().UTC()
 	next := map[string]Approval{}
 	for _, item := range items {
@@ -276,6 +281,9 @@ func (s *Store) Approve(admin Admin, items ...Item) error {
 		}
 		if item.Shown != fingerprint {
 			return fmt.Errorf("%s: %w", item.Name, ErrChanged)
+		}
+		if err := covers.check(item.Name, state); err != nil {
+			return err
 		}
 		next[item.Name] = Approval{Fingerprint: fingerprint, State: state, Approved: now}
 	}
@@ -340,6 +348,11 @@ func (s *Store) Adopt(admin Admin, approvals map[string]Approval) error {
 	if err := s.authorized(admin); err != nil {
 		return err
 	}
+	return s.adopt(nil, approvals)
+}
+
+// adopt is the writing of Adopt; covers, when set, is asked for every approval before anything is written.
+func (s *Store) adopt(covers coverage, approvals map[string]Approval) error {
 	next := make(map[string]Approval, len(approvals))
 	for name, a := range approvals {
 		if name == "" {
@@ -355,6 +368,9 @@ func (s *Store) Adopt(admin Admin, approvals map[string]Approval) error {
 		a.State = compact.Bytes()
 		a.Approved = a.Approved.UTC()
 		if err := s.consistent(name, a); err != nil {
+			return err
+		}
+		if err := covers.check(name, a.State); err != nil {
 			return err
 		}
 		next[name] = a
