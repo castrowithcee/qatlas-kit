@@ -111,8 +111,11 @@ func TestFallbackDirNameChannel(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// The listener reads the client's credentials on Accept, which macOS
+	// refuses once the client has closed.
+	err = <-accepted
 	_ = conn.Close()
-	if err := <-accepted; err != nil {
+	if err != nil {
 		t.Fatal(err)
 	}
 	if _, err := e.Listen(); !errors.Is(err, ErrRunning) {
