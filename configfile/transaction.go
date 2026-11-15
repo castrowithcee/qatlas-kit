@@ -34,10 +34,16 @@ func (e *ConflictError) Is(target error) bool { return target == ErrConflict }
 
 // Codec supplies document-specific validation and serialization. Encode must produce
 // deterministic canonical bytes so a decoded hand edit can be recognized.
+//
+// Canonicalize is optional and decides what counts as a hand-edited version when a backup is made. It
+// returns the canonical bytes for data, and data is hand-edited when they differ or it fails. When it is
+// nil, data is hand-edited unless it decodes and encodes back to itself. A caller whose files may still
+// carry names or layouts from before a migration sets it so those files do not count as hand-edited.
 type Codec[T any] struct {
-	Validate func(T) error
-	Encode   func(T) ([]byte, error)
-	Decode   func([]byte) (T, error)
+	Validate     func(T) error
+	Encode       func(T) ([]byte, error)
+	Decode       func([]byte) (T, error)
+	Canonicalize func([]byte) ([]byte, error)
 }
 
 // NotFoundError reports a file that does not exist. errors.Is(err, fs.ErrNotExist) is true for it.
@@ -62,10 +68,13 @@ type Store[T any] struct {
 	observe   Observer
 	now       func() time.Time
 	transient func(error) bool
+	naming    naming
+	tempName  string
 }
 
-// NewStore creates a store for one file. The path is made absolute at construction.
-func NewStore[T any](path string, codec Codec[T]) (*Store[T], error) {
+// NewStore creates a store for one file. The path is made absolute at construction. Options choose the
+// backup naming and the temporary file prefix; invalid ones are rejected before anything is created.
+func NewStore[T any](path string, codec Codec[T], opts ...Option) (*Store[T], error) {
 	if path == "" || codec.Validate == nil || codec.Encode == nil || codec.Decode == nil {
 		return nil, errors.New("configuration path and codec callbacks are required")
 	}
@@ -73,7 +82,30 @@ func NewStore[T any](path string, codec Codec[T]) (*Store[T], error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Store[T]{path: abs, codec: codec, now: time.Now, transient: fileretry.Transient}, nil
+	var o options
+	for _, opt := range opts {
+		if opt != nil {
+			opt(&o)
+		}
+	}
+	base := filepath.Base(abs)
+	scheme := defaultNaming(base)
+	if o.naming != nil {
+		if scheme, err = newNaming(*o.naming); err != nil {
+			return nil, err
+		}
+		if err := scheme.validate(base); err != nil {
+			return nil, err
+		}
+	}
+	tempName := ""
+	if o.tempPrefix != nil {
+		if err := validTempPrefix(*o.tempPrefix); err != nil {
+			return nil, err
+		}
+		tempName = *o.tempPrefix
+	}
+	return &Store[T]{path: abs, codec: codec, now: time.Now, transient: fileretry.Transient, naming: scheme, tempName: tempName}, nil
 }
 
 // Observed returns a store like s that reports its file retries and lock waits to obs. s is unchanged.
@@ -265,7 +297,7 @@ func (s *Store[T]) replaceIfUnchanged(target string, data []byte, expected Revis
 	if err := unchanged(); err != nil {
 		return err
 	}
-	return replaceResolved(target, data, unchanged, s.retry)
+	return replaceWithTemp(target, data, s.tempName, unchanged, s.retry)
 }
 
 // SaveIfUnchanged writes only if the file still has expected's revision.

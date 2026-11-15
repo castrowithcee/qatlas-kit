@@ -6,8 +6,10 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"strconv"
 )
 
@@ -170,7 +172,8 @@ func (k *Key) Check(lines [][]byte) ([]bool, error) {
 
 // unsignedOf splits a signed line into the bytes its check value was computed over, the check value and
 // the key ID. It fails with ErrMalformedMAC unless the line ends with a mac member of exactly macSize
-// lowercase hex digits and a key ID that keyIDOf reads, the only form sign writes.
+// lowercase hex digits and a key ID that keyIDOf reads, the only form sign writes, and unless mac_key
+// stands at most once, as written, right before mac (see keyMemberOK).
 func unsignedOf(line []byte) (unsigned, mac []byte, id uint, err error) {
 	at := bytes.LastIndex(line, macField)
 	if at < 0 {
@@ -185,6 +188,9 @@ func unsignedOf(line []byte) (unsigned, mac []byte, id uint, err error) {
 		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
 			return nil, nil, 0, ErrMalformedMAC
 		}
+	}
+	if !keyMemberOK(line) {
+		return nil, nil, 0, ErrMalformedMAC
 	}
 	unsigned = make([]byte, 0, at+len(emptyMACSuffix))
 	unsigned = append(unsigned, line[:at]...)
@@ -228,4 +234,78 @@ func keyIDOf(unsigned []byte) (uint, error) {
 // could not be made at all, which Verify never reports as valid or invalid.
 type Checker interface {
 	Check(lines [][]byte) ([]bool, error)
+}
+
+// keyMemberOK reports whether a signed line holds mac_key only in the one form sign writes: at most once
+// among the members of the top-level object, spelled literally, with a number as its value and right
+// before the last member, mac. It scans the members as JSON, so an escaped spelling of the name and a
+// repeated member are found, and it never decodes more than the line holds. A line that is not a JSON
+// object fails.
+func keyMemberOK(line []byte) bool {
+	dec := json.NewDecoder(bytes.NewReader(line))
+	if t, err := dec.Token(); err != nil || t != json.Delim('{') {
+		return false
+	}
+	type member struct {
+		name string
+		raw  []byte
+	}
+	var members []member
+	for dec.More() {
+		start := int(dec.InputOffset())
+		t, err := dec.Token()
+		name, ok := t.(string)
+		if err != nil || !ok {
+			return false
+		}
+		raw := bytes.TrimLeft(line[start:dec.InputOffset()], ", \t\r\n")
+		var skip json.RawMessage
+		if dec.Decode(&skip) != nil {
+			return false
+		}
+		if name == "mac_key" && !bytes.Equal(raw, []byte(`"mac_key"`)) {
+			return false
+		}
+		if name != "mac_key" {
+			skip = nil
+		}
+		members = append(members, member{name, skip})
+	}
+	if t, err := dec.Token(); err != nil || t != json.Delim('}') {
+		return false
+	}
+	if _, err := dec.Token(); err != io.EOF {
+		return false
+	}
+	n := len(members)
+	if n == 0 || members[n-1].name != "mac" {
+		return false
+	}
+	found := -1
+	for i, m := range members {
+		if m.name == "mac_key" {
+			if found >= 0 {
+				return false
+			}
+			found = i
+		}
+	}
+	if found < 0 {
+		return true
+	}
+	if found != n-2 {
+		return false
+	}
+	// The value must be the plain digits keyIDOf reads from the bytes.
+	value := members[found].raw
+	for _, c := range value {
+		if c < '0' || c > '9' {
+			return false
+		}
+	}
+	if len(value) == 0 {
+		return false
+	}
+	beforeMAC := line[:bytes.LastIndex(line, macField)]
+	return bytes.HasSuffix(beforeMAC, value) && bytes.HasSuffix(beforeMAC[:len(beforeMAC)-len(value)], keyIDField)
 }

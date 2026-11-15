@@ -19,6 +19,9 @@ const (
 	ProblemMissing    Problem = "missing-entries"
 	ProblemChain      Problem = "chain-broken"
 	ProblemMAC        Problem = "check-value-mismatch"
+	// ProblemKeyIDChange is a line signed under a key ID other than Options.KeyID after a line signed under
+	// it. A malformed check value or key ID, or a misplaced mac_key, is ProblemMAC instead.
+	ProblemKeyIDChange Problem = "key-id-changed"
 )
 
 // DayReport is one day file's part of a Report.
@@ -36,8 +39,8 @@ type DayReport struct {
 	// right after them. Such a line does not break the chain.
 	Damaged int
 	// Changed counts the lines of the day whose check value is malformed or does not match, or that are
-	// signed under a key ID other than Options.KeyID after a line signed under it. Each one breaks the
-	// chain.
+	// signed under a key ID other than Options.KeyID after a line signed under it, or that holds mac_key
+	// anywhere but once right before mac. Each one breaks the chain.
 	Changed int
 	// Missing counts the sequence numbers skipped right before a line of this day that no retention cut
 	// documents.
@@ -92,8 +95,9 @@ const (
 	MACUnchecked
 	// MACValid is a line whose check value matches it.
 	MACValid
-	// MACInvalid is a line whose check value is malformed or does not match it, or a line signed under a key
-	// ID other than Options.KeyID after a line signed under it.
+	// MACInvalid is a line whose check value is malformed or does not match it, whose mac_key is not once
+	// right before mac, or that is signed under a key ID other than Options.KeyID after a line signed under
+	// it.
 	MACInvalid
 )
 
@@ -141,9 +145,10 @@ type DayLines[T any] struct {
 //
 // Every well-formed check value is checked with checker when there is one; a malformed one, or one that
 // does not match, breaks the chain, while an empty one counts as unverified. So does, with or without a
-// checker, a line signed under a key ID other than Options.KeyID after the first line signed under it. A
-// check that cannot be made at all fails Verify. The files are read under the lock, which is released
-// before the first check.
+// checker, a signed line whose mac_key is not once right before mac, and a line signed under a key ID
+// other than Options.KeyID after the first line signed under it, which is named ProblemKeyIDChange unless
+// the line is malformed in the first way. A check that cannot be made at all fails Verify. The files are
+// read under the lock, which is released before the first check.
 func (l *Log[T]) Verify(checker Checker) (Report, error) {
 	report, _, err := l.verify(checker, nil)
 	return report, err
@@ -322,9 +327,9 @@ func (l *Log[T]) verify(checker Checker, inRange func(date string) bool) (Report
 				}
 				found = append(found, finding{ProblemChain, entry.Seq})
 			}
-			state := countMAC(day, checks(d.date), &results, l.opts.KeyID, &relabeled, entry.MAC, raw)
+			state, problem := countMAC(day, checks(d.date), &results, l.opts.KeyID, &relabeled, entry.MAC, raw)
 			if state == MACInvalid {
-				found = append(found, finding{ProblemMAC, entry.Seq})
+				found = append(found, finding{problem, entry.Seq})
 			}
 			if line != nil {
 				line.MAC = state
@@ -379,19 +384,20 @@ func documents[T any](next parsedLine[T], damaged []byte) bool {
 	return next.ok && next.env.Kind == KindDamage && next.env.Damage.LineHash == hashHex(damaged)
 }
 
-// countMAC counts the check value of one line into its day and returns its state. results holds the
-// answers of the checker for the well-formed check values not counted yet, in order. relabeled records
-// whether a line signed under the current key ID came before: from there on a line signed under another
-// one is invalid, checked or not.
-func countMAC(day *DayReport, checked bool, results *[]bool, current uint, relabeled *bool, mac string, raw []byte) MACState {
+// countMAC counts the check value of one line into its day and returns its state and, for an invalid one,
+// its problem: ProblemKeyIDChange for a line signed under another key ID after one under current, whatever
+// its check value, and ProblemMAC for the rest. results holds the answers of the checker for the
+// well-formed check values not counted yet, in order. relabeled records whether a line signed under the
+// current key ID came before: from there on a line signed under another one is invalid, checked or not.
+func countMAC(day *DayReport, checked bool, results *[]bool, current uint, relabeled *bool, mac string, raw []byte) (MACState, Problem) {
 	if mac == "" {
 		day.Unverified++
-		return MACNone
+		return MACNone, ProblemNone
 	}
 	_, _, id, err := unsignedOf(raw)
 	if err != nil {
 		day.Changed++
-		return MACInvalid
+		return MACInvalid, ProblemMAC
 	}
 	state := MACUnchecked
 	if checked {
@@ -401,10 +407,14 @@ func countMAC(day *DayReport, checked bool, results *[]bool, current uint, relab
 		}
 		*results = (*results)[1:]
 	}
+	problem := ProblemNone
+	if state == MACInvalid {
+		problem = ProblemMAC
+	}
 	if id == current {
 		*relabeled = true
 	} else if *relabeled {
-		state = MACInvalid
+		state, problem = MACInvalid, ProblemKeyIDChange
 	}
 	switch state {
 	case MACUnchecked:
@@ -412,7 +422,7 @@ func countMAC(day *DayReport, checked bool, results *[]bool, current uint, relab
 	case MACInvalid:
 		day.Changed++
 	}
-	return state
+	return state, problem
 }
 
 // readDays reads and parses every day file under the lock, which it releases before it returns.
