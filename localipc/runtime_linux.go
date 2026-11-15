@@ -12,14 +12,14 @@ import (
 var userRuntimeRoot = "/run/user"
 
 // runtimeRoot reports whether it fell back to the fallback directory.
-func runtimeRoot(fallback string) (string, bool, error) {
+func runtimeRoot(fallback string, access RuntimeAccess) (string, bool, error) {
 	if xdg := os.Getenv("XDG_RUNTIME_DIR"); filepath.IsAbs(xdg) {
-		if err := privateExistingDir(xdg); err != nil {
+		if err := access.checkRoot(xdg); err != nil {
 			return "", false, fmt.Errorf("XDG_RUNTIME_DIR: %w", err)
 		}
 		return xdg, false, nil
 	}
-	if user := filepath.Join(userRuntimeRoot, strconv.Itoa(os.Getuid())); privateExistingDir(user) == nil {
+	if user := filepath.Join(userRuntimeRoot, strconv.Itoa(os.Getuid())); access.checkRoot(user) == nil {
 		return user, false, nil
 	}
 	return fallback, true, nil
