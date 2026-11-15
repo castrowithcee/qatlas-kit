@@ -63,7 +63,7 @@ func Validate(schema json.RawMessage, value any, mode Mode) error {
 // constraint is never skipped in silence. The errors are joined in a fixed order, depth first, each naming
 // its schema path.
 func CheckSchema(schema json.RawMessage) error {
-	if json.Valid(schema) && knownValid(schema) {
+	if json.Valid(schema) && knownValid(schema, nil) {
 		return nil
 	}
 	return checkSchemaTree(schema)
