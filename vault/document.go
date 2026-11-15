@@ -3,8 +3,11 @@ package vault
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"slices"
+
+	"filippo.io/age"
 )
 
 // DocumentErrorKind tells what is wrong with a document.
@@ -20,12 +23,61 @@ const (
 	DocumentSchema DocumentErrorKind = "schema"
 )
 
+// DecryptCause tells why a vault file does not decrypt. It is the answer to the question what to check
+// first: the key, the file's origin, or the file's integrity.
+type DecryptCause string
+
+// The causes of a decryption failure. A failure that cannot be told apart safely is CauseDamaged.
+const (
+	// CauseWrongKey means the file is an age file that was not encrypted to this vault's key.
+	CauseWrongKey DecryptCause = "wrong-key"
+	// CauseNotAge means the file does not start like an age file, for instance a plain text file.
+	CauseNotAge DecryptCause = "not-age"
+	// CauseDamaged means the file starts like an age file but its header or payload is damaged or was
+	// altered.
+	CauseDamaged DecryptCause = "damaged"
+)
+
+// text is the fixed description of the cause; it never carries library text or file content.
+func (c DecryptCause) text() string {
+	switch c {
+	case CauseWrongKey:
+		return "the file was not encrypted to this vault's key"
+	case CauseNotAge:
+		return "the file is not an age file"
+	}
+	return "the file is damaged or was altered"
+}
+
+// ageIntro is the first line of every binary age file.
+var ageIntro = []byte("age-encryption.org/v1\n")
+
+// decryptCauseOf classifies a failed decryption of data from the type of the library's error and the
+// file's first bytes, never from the library's message.
+func decryptCauseOf(data []byte, err error) DecryptCause {
+	var noMatch *age.NoIdentityMatchError
+	switch {
+	case !bytes.HasPrefix(data, ageIntro):
+		return CauseNotAge
+	case errors.As(err, &noMatch):
+		return CauseWrongKey
+	}
+	return CauseDamaged
+}
+
+// decryptFailure is the error of a file at path that did not decrypt. It drops the library's error.
+func decryptFailure(path string, data []byte, err error) *DocumentError {
+	return &DocumentError{Path: path, Kind: DocumentDecrypt, Cause: decryptCauseOf(data, err)}
+}
+
 // DocumentError reports a document that cannot be used. It wraps ErrDamaged for DocumentDecrypt and
 // DocumentDecode and ErrUnsupportedSchema for DocumentSchema. It carries no library text and no content.
 type DocumentError struct {
 	// Path is the file the document was read from or is written to.
 	Path string
 	Kind DocumentErrorKind
+	// Cause is why the file does not decrypt, set only for DocumentDecrypt.
+	Cause DecryptCause
 	// Version is the schema version found, set only for DocumentSchema.
 	Version int
 }
@@ -33,7 +85,7 @@ type DocumentError struct {
 func (e *DocumentError) Error() string {
 	switch e.Kind {
 	case DocumentDecrypt:
-		return fmt.Sprintf("cannot decrypt %s: %s", e.Path, ErrDamaged)
+		return fmt.Sprintf("cannot decrypt %s: %s", e.Path, e.Cause.text())
 	case DocumentSchema:
 		return fmt.Sprintf("%s: %s: %d", e.Path, ErrUnsupportedSchema, e.Version)
 	}

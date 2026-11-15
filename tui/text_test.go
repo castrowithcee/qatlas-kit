@@ -217,6 +217,36 @@ func TestLookupResolvesKeysBeforeFormatting(t *testing.T) {
 	}
 }
 
+func TestFindReturnsTheRawTextAndWhetherItExists(t *testing.T) {
+	app := sampleCatalogs()
+	app[i18n.English]["app.same"] = "app.same"
+	app[i18n.English]["app.empty"] = ""
+	app[i18n.German]["app.empty"] = ""
+	keys := keyTable{"save": "F2"}
+	cases := []struct {
+		lang i18n.Lang
+		id   TextID
+		want string
+		ok   bool
+	}{
+		{i18n.German, "app.greeting", "Hallo", true},
+		{i18n.German, "app.english", "only English", true},
+		{i18n.Lang("fr"), "app.greeting", "Hello", true},
+		{i18n.German, "app.unknown", "", false},
+		{i18n.German, "app.same", "app.same", true},
+		{i18n.German, "app.empty", "", true},
+		{i18n.German, "app.save", "{save} speichert %s", true},
+		{i18n.English, "app.items", "%d items", true},
+		{i18n.German, TextCancelled, "Abgebrochen", true},
+	}
+	for _, c := range cases {
+		got, ok := newTranslator(t, c.lang, app, keys).Find(c.id)
+		if got != c.want || ok != c.ok {
+			t.Errorf("%s Find(%s) = %q, %v, want %q, %v", c.lang, c.id, got, ok, c.want, c.ok)
+		}
+	}
+}
+
 func TestPlaceholderSyntax(t *testing.T) {
 	keys := keyTable{"a.b-c_1": "K", "save": "F2"}
 	app := i18n.Catalogs[TextID]{i18n.English: {

@@ -50,6 +50,10 @@
 // ErrKeyMismatch, and a file that does not decrypt or decode ErrDamaged. A problem with the document, on
 // read or write, is a *DocumentError that names the file and tells Kind (DocumentDecrypt, DocumentDecode or
 // DocumentSchema) and, for DocumentSchema, the Version found; it wraps ErrDamaged or ErrUnsupportedSchema.
+// A file that does not decrypt, whether the document, a sealed file or a pending entry, is a
+// *DocumentError of Kind DocumentDecrypt whose Cause is CauseWrongKey (an age file for another key),
+// CauseNotAge (not an age file, such as a plain text file) or CauseDamaged (a damaged or altered age
+// file, and any failure that cannot be told apart safely). Each cause has a fixed message of its own.
 // The library's own messages and file contents never appear in an error. The scrypt work factor is
 // DefaultWorkFactor unless Options.WorkFactor raises it; a lower one is accepted only in test binaries.
 //
@@ -67,11 +71,17 @@
 // prompt as escapes. A Vault holds the key and the decrypted document in memory until Forget; Snapshot
 // hands both to a process that keeps the vault open, and OpenWithIdentity reopens it from the key alone.
 // ReadSealedWithIdentity reads one sealed file with the key alone and never touches the document, so a
-// damaged document does not stop it. Checkpoint records the vault files and returns a function that
-// restores them without the passphrase, removing every pending entry it did not record, also one another
-// process added. Update and WriteWithUndo instead return the undo of their own change: it puts back the
-// document file and the pending files that operation removed, byte for byte, and leaves every other entry
-// pending.
+// damaged document does not stop it. It binds the key to the recipient file and reports ErrAbsent when that
+// file is missing; ReadSealedWithIdentityOptions with AllowMissingRecipient reads the sealed file with the
+// key alone in that case, and then the authenticity of the content is the application's to check.
+// Checkpoint records the vault files and returns a function that restores them without the passphrase,
+// removing every pending entry it did not record, also one another process added. Update and WriteWithUndo
+// instead return the undo of their own change: it puts back the document file and the pending files that
+// operation removed, byte for byte, and leaves every other entry pending.
+//
+// Decrypt refuses a vault whose document file is missing, because a file that is only temporarily missing
+// would be unreadable once the key is gone. An application that means to turn such a vault into an empty
+// plain one says so itself: Unlock, Write an empty document when Document returns nil, then Decrypt.
 //
 // # Boundary
 //

@@ -10,8 +10,9 @@ import (
 	"charm.land/lipgloss/v2"
 )
 
-// FilterField is one choice field of a filter bar, such as the grouping, a state or the sort order. Selected
-// is the ID of the value in force; empty takes the first.
+// FilterField is one choice field of a filter bar, such as the grouping, a state or the sort order. A field
+// has at least one value; SetOptions replaces them later. Selected is the ID of the value in force; empty takes
+// the first.
 type FilterField struct {
 	ID       FieldID
 	Label    TextID
@@ -73,8 +74,8 @@ type FilterBar struct {
 }
 
 // NewFilterBar checks spec and returns a bar without focus. It rejects a bar without fields, a field
-// or value without ID or label, an ID with a control character or listed twice, a field with fewer than two
-// values, a selected value that is no value of its field, and a key that names no action of keys or is named
+// or value without ID or label, an ID with a control character or listed twice, a field without a value, a
+// selected value that is no value of its field, and a key that names no action of keys or is named
 // twice.
 func NewFilterBar(spec FilterBarSpec, keys *Keymap, text Translator) (*FilterBar, error) {
 	if keys == nil || text == nil {
@@ -112,21 +113,12 @@ func NewFilterBar(spec FilterBarSpec, keys *Keymap, text Translator) (*FilterBar
 		if f.Label == "" {
 			fail("no label")
 		}
-		if len(f.Options) < 2 {
-			fail("%d values; a field to choose from has at least two", len(f.Options))
-		}
 		values := map[ChoiceID]bool{}
 		for _, o := range f.Options {
-			switch {
-			case badID(string(o.ID)):
-				fail("value %q: an ID is not empty and holds no control character", o.ID)
-			case values[o.ID]:
-				fail("value %q is listed twice", o.ID)
-			}
 			values[o.ID] = true
-			if o.Label == "" {
-				fail("value %q has no label", o.ID)
-			}
+		}
+		for _, p := range optionProblems(f.Options) {
+			fail("%s", p)
 		}
 		f.Options = append([]Choice(nil), f.Options...)
 		switch {
@@ -141,6 +133,75 @@ func NewFilterBar(spec FilterBarSpec, keys *Keymap, text Translator) (*FilterBar
 		return nil, err
 	}
 	return &FilterBar{fields: list, nav: nav, list: spec.List, keys: keys, text: text, focus: -1}, nil
+}
+
+// optionProblems lists what is wrong with the values of a field: none at all, an ID that is empty, holds a
+// control character or is listed twice, and a missing label.
+func optionProblems(options []Choice) []string {
+	if len(options) == 0 {
+		return []string{"no value; a field has at least one"}
+	}
+	var out []string
+	seen := map[ChoiceID]bool{}
+	for _, o := range options {
+		switch {
+		case o.ID == "" || strings.IndexFunc(string(o.ID), unicode.IsControl) >= 0:
+			out = append(out, fmt.Sprintf("value %q: an ID is not empty and holds no control character", o.ID))
+		case seen[o.ID]:
+			out = append(out, fmt.Sprintf("value %q is listed twice", o.ID))
+		}
+		seen[o.ID] = true
+		if o.Label == "" {
+			out = append(out, fmt.Sprintf("value %q has no label", o.ID))
+		}
+	}
+	return out
+}
+
+// SetOptions replaces the values of the field id with options and checks them as NewFilterBar does. The value
+// in force, the cursor of an open list of values and the pending value of an open modal stay on their IDs, in
+// whatever place the new values put them; the focus stays on its field. A call that leaves out the value in
+// force or a pending value of the modal is rejected, as is any other broken input, and changes nothing: the
+// application keeps the current value in its list, so no filter changes unseen.
+func (b *FilterBar) SetOptions(id FieldID, options []Choice) error {
+	i := b.field(id)
+	if i < 0 {
+		return fmt.Errorf("filter field %q is unknown", id)
+	}
+	if problems := optionProblems(options); len(problems) > 0 {
+		return fmt.Errorf("filter field %q: %s", id, strings.Join(problems, "; "))
+	}
+	at := func(c ChoiceID) int {
+		for j, o := range options {
+			if o.ID == c {
+				return j
+			}
+		}
+		return -1
+	}
+	f := &b.fields[i]
+	if at(f.Selected) < 0 {
+		return fmt.Errorf("filter field %q: the value in force %q is no value of the new list", id, f.Selected)
+	}
+	draft := -1
+	if b.modal {
+		draft = at(f.Options[b.draft[i]].ID)
+		if draft < 0 {
+			return fmt.Errorf("filter field %q: the pending value %q is no value of the new list", id, f.Options[b.draft[i]].ID)
+		}
+	}
+	cursor := at(f.Selected)
+	if b.open && b.focus == i {
+		if c := at(f.Options[b.choice].ID); c >= 0 {
+			cursor = c
+		}
+		b.choice = cursor
+	}
+	if b.modal {
+		b.draft[i] = draft
+	}
+	f.Options = append([]Choice(nil), options...)
+	return nil
 }
 
 // Fields are the fields with the values in force.
@@ -475,7 +536,7 @@ func (b *FilterBar) View(styles Styles, width int) (string, []Target) {
 	}
 	targets := []Target{{Rect: Rect{Width: width, Height: 1}, Zone: ZoneFilters}}
 	search := list != nil && list.spec.SearchInBar
-	idle := !search || (!list.searching && len(list.query) == 0)
+	idle := !search || (!list.searching && len(list.query.runes) == 0)
 	const gap = 2
 	natural := func(i int) int { return lipgloss.Width(fieldText(styles, labels[i], values[i], 1<<20)) }
 	least := func(i int) int { return fieldLeast(styles, labels[i]) }
