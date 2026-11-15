@@ -54,7 +54,7 @@
 // rule; the workspace, cut or padded to its rows, with the message under it; and the footer in the last
 // row, or the last two. Workspace gives the room the content has, less the rows the footer takes, and
 // Render returns the click targets of the drawn keys and tabs for that frame only. The header stays one
-// line: the status marks take their short words and go before the header keys, and the header keys go
+// line within the width: each status mark gives way in the order of its MarkRank, and the header keys go
 // before the back button. A tab line that runs short closes its gaps and then shrinks the inactive tabs to
 // their digit; the active tab stays whole. CheckAreas holds areas to what the tab line can draw. FrameSpec.Icon
 // stands before the product name and Area.Icon before the title of its tab, each as "icon name"; CheckFrame
@@ -261,12 +261,12 @@
 // text, a helptopics.Term and the address of the documentation, which is shown in full and, where the terminal
 // takes escapes, also linked; it accepts only an absolute http or https address of printable ASCII, so the
 // address cannot end the link sequence.
-// Back and the info key close it, and the copy key hands Text to the application, which holds nothing that is
-// not shown and no control character. Both stand over the screen like a dialog, or fill the workspace with
-// View where room is too small; an explanation also stands in a Pane beside a form or a list. Every topic
-// tab, key, line of the key list and address is a target that does what its key does, and a click anywhere
-// else on an explanation over the screen closes it. Only their own keys act; every other key goes back to the
-// application.
+// Back and the info key close it, its scroll keys may page and jump to the ends, and the copy key hands Text
+// to the application, which holds nothing that is not shown and no control character. Both stand over the
+// screen like a dialog, or fill the workspace with View where room is too small; an explanation also stands
+// in a Pane beside a form or a list. Every topic tab, key, line of the key list and address is a target that
+// does what its key does, and a click anywhere else on an explanation over the screen closes it. Only their
+// own keys act; every other key goes back to the application.
 //
 // A LogView shows lines that arrive over time. The application supplies them with Append, one text or
 // several, each with an optional time and source; where they come from, saving them and any structure in them
