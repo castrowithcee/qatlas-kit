@@ -258,12 +258,12 @@
 // text, a helptopics.Term and the address of the documentation, which is shown in full and, where the terminal
 // takes escapes, also linked; it accepts only an absolute http or https address of printable ASCII, so the
 // address cannot end the link sequence.
-// Back and the info key close it, and the copy key hands Text to the application, which holds nothing that is
-// not shown and no control character. Both stand over the screen like a dialog, or fill the workspace with
-// View where room is too small; an explanation also stands in a Pane beside a form or a list. Every topic
-// tab, key, line of the key list and address is a target that does what its key does, and a click anywhere
-// else on an explanation over the screen closes it. Only their own keys act; every other key goes back to the
-// application.
+// Back and the info key close it, its scroll keys may page and jump to the ends, and the copy key hands Text
+// to the application, which holds nothing that is not shown and no control character. Both stand over the
+// screen like a dialog, or fill the workspace with View where room is too small; an explanation also stands
+// in a Pane beside a form or a list. Every topic tab, key, line of the key list and address is a target that
+// does what its key does, and a click anywhere else on an explanation over the screen closes it. Only their
+// own keys act; every other key goes back to the application.
 //
 // A LogView shows lines that arrive over time. The application supplies them with Append, one text or
 // several, each with an optional time and source; where they come from, saving them and any structure in them
