@@ -76,14 +76,7 @@ func TestHandOverKeepsSuccessorFilesUntilItCloses(t *testing.T) {
 			t.Fatalf("closing the old listener removed %s: %v", name, err)
 		}
 	}
-	accepted := make(chan error, 1)
-	go func() {
-		c, err := successor.Accept()
-		if c != nil {
-			_ = c.Close()
-		}
-		accepted <- err
-	}()
+	accepted := acceptHeld(successor, nil)
 	conn, err := e.Dial(ctx)
 	if err != nil {
 		t.Fatal(err)

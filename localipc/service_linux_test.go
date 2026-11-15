@@ -58,17 +58,12 @@ func TestServiceChannel(t *testing.T) {
 	if err != nil || info.Mode().Perm() != serviceSocketMode {
 		t.Fatalf("socket = %v, %v", info, err)
 	}
-	accepted := make(chan error, 1)
-	go func() {
-		c, err := l.Accept()
-		if c != nil {
-			if uid, uidErr := PeerUID(c); uidErr != nil || uid != uint32(os.Getuid()) {
-				err = errors.Join(err, uidErr, errors.New("wrong peer user"))
-			}
-			_ = c.Close()
+	accepted := acceptHeld(l, func(c net.Conn) error {
+		if uid, err := PeerUID(c); err != nil || uid != uint32(os.Getuid()) {
+			return errors.Join(err, errors.New("wrong peer user"))
 		}
-		accepted <- err
-	}()
+		return nil
+	})
 	conn, err := e.Dial(context.Background())
 	if err != nil {
 		t.Fatal(err)
@@ -124,11 +119,7 @@ func TestServiceClientRejectsForeignServer(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer l.Close()
-	go func() {
-		if c, err := l.Accept(); err == nil {
-			_ = c.Close()
-		}
-	}()
+	accepted := acceptHeld(l, nil)
 	path, _ := e.Path()
 	stranger := []uint32{uint32(os.Getuid()) + 1}
 	if err := checkServiceFiles(path, stranger); !errors.Is(err, ErrRefused) {
@@ -141,6 +132,9 @@ func TestServiceClientRejectsForeignServer(t *testing.T) {
 	defer conn.Close()
 	if pid, err := checkServer(conn, stranger); !errors.Is(err, ErrRefused) || pid != os.Getpid() {
 		t.Fatalf("server of a stranger accepted: %d, %v", pid, err)
+	}
+	if err := <-accepted; err != nil {
+		t.Fatal(err)
 	}
 }
 
