@@ -637,6 +637,84 @@ func TestRowClickMarksThenOpens(t *testing.T) {
 	}
 }
 
+// Only a list with the focus draws the selection mark; the marked row stays and returns with the focus, the
+// rows stay clickable, and the modal always draws the mark.
+func TestSelectionMarkOnlyWithFocus(t *testing.T) {
+	for name, st := range map[string]Styles{"dark": looks(t)["dark"], "noneascii": looks(t)["noneascii"], "asciidark": looks(t)["asciidark"]} {
+		l, _ := newSampleList(t, st, i18n.English, nil)
+		if err := l.SetItems(samplePlants()); err != nil {
+			t.Fatal(err)
+		}
+		mark := st.SelectionMark()
+		markedLine := func(width, height int) int {
+			view, _ := l.View(st, width, height)
+			at := -1
+			for i, line := range strings.Split(ansi.Strip(view), "\n") {
+				if strings.HasPrefix(line, ansi.Strip(mark)) {
+					if at >= 0 {
+						t.Fatalf("%s: two marks", name)
+					}
+					at = i
+				}
+			}
+			return at
+		}
+		keysTo(l, "down")
+		on := markedLine(70, 12)
+		if on < 0 {
+			t.Fatalf("%s: no mark with focus", name)
+		}
+		sel := selected(t, l)
+		l.SetFocused(false)
+		if markedLine(70, 12) != -1 {
+			t.Errorf("%s: mark without focus", name)
+		}
+		if selected(t, l) != sel {
+			t.Errorf("%s: selection lost without focus", name)
+		}
+		l.SetFocused(true)
+		if got := markedLine(70, 12); got != on {
+			t.Errorf("%s: mark at %d after focus, was %d", name, got, on)
+		}
+	}
+}
+
+// Rows without focus are clickable and markable; the first click marks and takes no action beyond that.
+func TestRowClickWithoutFocusMarks(t *testing.T) {
+	l := filledList(t, nil)
+	l.SetFocused(false)
+	_, targets := l.View(Styles{}, 60, 10)
+	for _, tg := range targets {
+		if tg.Item == "mint" {
+			m := NewMouseMap(targets, true)
+			if open, handled := l.Click(m.Handle(click(tg.Rect.X+1, tg.Rect.Y))); open != "" || !handled || selected(t, l) != "mint" {
+				t.Fatalf("click without focus: open %q handled %v marked %q", open, handled, selected(t, l))
+			}
+			return
+		}
+	}
+	t.Fatal("no target for mint")
+}
+
+// The selection stays inside the window without focus, and a new list has the focus.
+func TestUnfocusedKeepsSelectionInView(t *testing.T) {
+	l := filledList(t, nil)
+	if !l.focused {
+		t.Fatal("a new list has no focus")
+	}
+	l.SetFocused(false)
+	keysTo(l, "down", "down", "down")
+	view, _ := l.View(Styles{}, 60, 3)
+	if strings.Count(view, "\n") != 2 || !strings.Contains(view, string(selected(t, l))) {
+		t.Fatalf("the marked row %q is not in the unfocused view: %q", selected(t, l), view)
+	}
+	l.SetFocused(true)
+	view, _ = l.View(Styles{}, 60, 3)
+	if !strings.Contains(view, string(selected(t, l))) {
+		t.Errorf("the marked row %q is not in view: %q", selected(t, l), view)
+	}
+}
+
 // Every control the list and its filter bar draw has a target, and a click on it does what its key does: a
 // row and a group row the enter key, the search line and the search field the search key, a field and a value
 // of the open list the enter key of the bar.
@@ -1315,6 +1393,17 @@ func frameRows(view string) (rows []string, top, bottom int) {
 		}
 	}
 	return rows, top, bottom
+}
+
+// The modal draws the selection mark whether or not SetFocused was called with false.
+func TestListModalAlwaysDrawsMark(t *testing.T) {
+	st := looks(t)["noneascii"]
+	l := newModalList(t, st, 5, nil)
+	l.SetFocused(false)
+	view, _, ok := l.Overlay(st, sampleScreen(100, 30), 100, 30, Rect{Y: 3, Width: 100, Height: 26})
+	if !ok || !strings.Contains(ansi.Strip(view), ansi.Strip(st.SelectionMark())) {
+		t.Fatalf("the modal draws no mark (ok %v)", ok)
+	}
 }
 
 func TestListModalIsCentredWithTitleAndSearchFirst(t *testing.T) {

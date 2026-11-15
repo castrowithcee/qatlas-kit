@@ -25,9 +25,25 @@ type Endpoint struct {
 	// socket when no runtime directory exists. Empty means RuntimeDirName.
 	FallbackDirName string
 	RuntimeRoot     string
-	ErrorName       string
-	PipePrefix      string
+	// RuntimeAccess selects which runtime root the Unix channel accepts. The
+	// zero value is RuntimePrivate. Windows ignores it.
+	RuntimeAccess RuntimeAccess
+	ErrorName     string
+	PipePrefix    string
 }
+
+// RuntimeAccess selects how much access an existing runtime root may allow.
+// The directory that holds the socket stays private in every case.
+type RuntimeAccess int
+
+const (
+	// RuntimePrivate accepts only a private runtime root: a directory of this
+	// user without access for group and others.
+	RuntimePrivate RuntimeAccess = iota
+	// RuntimeReadable also accepts a runtime root of this user that group and
+	// others may read but not write.
+	RuntimeReadable
+)
 
 // ErrRunning means a listener already owns this endpoint.
 var ErrRunning = errors.New("local channel is already running")
