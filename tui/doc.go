@@ -13,7 +13,8 @@
 // lowercase ASCII letter followed by lowercase ASCII letters, digits, '.', '_' or '-'. Lookup replaces each
 // placeholder with the keys currently bound before it formats the arguments, so a rebinding shows in every
 // text at once and an argument that holds braces stays as it is. A text that must show such a brace
-// sequence literally passes it as an argument. To change the language, build a new Translator.
+// sequence literally passes it as an argument. Find returns the raw text and whether the language or English
+// holds it. To change the language, build a new Translator.
 //
 // Keys come from one key table per TUI. NewKeymap takes the application's actions, each with a level,
 // default keys, a help text and whether a user may replace its key or add an extra one, and rejects a table
