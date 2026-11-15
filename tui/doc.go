@@ -282,6 +282,16 @@
 // search last and the period before them; the position gives way last, to a shorter form. While the search text is typed the row holds that field and
 // the position only.
 //
+// A Chat shows the messages an application hands it, oldest first, each with a stable ID, sender, time, status
+// and details, above a field to write the next one. The selection follows the ID, and the newest message while
+// it is selected; a status names its state by a glyph and a word, never by colour alone, and every text of a
+// message is escaped. Enter unfolds the details of the selected message, and the quick replies of
+// ChatSpec.Actions stand as buttons under it and answer it by their key or a click. In the field every key that
+// types a character is text, enter adds a line break and back leaves it; ctrl+enter sends where the terminal
+// tells it from enter, and no action of a key table may hold it. The send button, the stop after the field for
+// the next key, sends with enter in every terminal. Update and Click return the sent text or the quick reply;
+// delivering, storing and the state of a message stay with the application.
+//
 // Colours come from themes. Screen code names roles, never colour values: a Palette assigns one colour per
 // role, Styles build text styles and widgets on it. A ThemeSet holds the terminal theme, the application's
 // own themes and the built-in schemes; each theme is data, either hand-picked palettes per colour profile
