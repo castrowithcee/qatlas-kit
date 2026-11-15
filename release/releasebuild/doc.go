@@ -25,9 +25,9 @@
 // <VersionVariable>=<version>", so the same source, Go version and source date give byte-identical assets.
 // The manpage command of the Config runs first, once per program name with "{program}" replaced by it, with
 // SOURCE_DATE_EPOCH set, and must write at least one <name>.1 file and nothing else. The version must be a
-// SemVer tag such as v1.2.3 or v1.2.3-rc.1, the signature namespace must be <program>-release, and the
-// allowed signers file must list only Ed25519 keys for that namespace, without options; the installers
-// embed these keys.
+// SemVer tag such as v1.2.3 or v1.2.3-rc.1, the signature namespace must have the form <name>-release that
+// Options.Namespace describes, independent of the program name, and the allowed signers file must list
+// only Ed25519 keys for that namespace, without options; the installers embed these keys.
 //
 // # System service
 //
@@ -77,5 +77,5 @@
 // Options.PreviousSignature). The sign job then signs checksums.txt a second time with the same key under
 // the former namespace and publishes that signature as the former file; the allowed signers file keeps
 // listing the key under the current namespace only. The installers verify the current signature only. The
-// former namespace is not bound to <program>-release.
+// former namespace is not bound to the <name>-release form.
 package releasebuild

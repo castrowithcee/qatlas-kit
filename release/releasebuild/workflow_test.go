@@ -105,17 +105,24 @@ func TestReleaseWorkflowIsolatesSigning(t *testing.T) {
 // signStep returns the script of the sign step of the workflow.
 func signStep(t *testing.T) string {
 	t.Helper()
+	return stepScript(t, "Sign checksums.txt")
+}
+
+// stepScript returns the run script of the named step of the workflow.
+func stepScript(t *testing.T, step string) string {
+	t.Helper()
 	data, err := os.ReadFile("../../.github/workflows/release.yml")
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, rest, ok := strings.Cut(string(data), "      - name: Sign checksums.txt\n")
+	text := strings.ReplaceAll(string(data), "\r\n", "\n")
+	_, rest, ok := strings.Cut(text, "      - name: "+step+"\n")
 	if !ok {
-		t.Fatal("sign step not found")
+		t.Fatalf("step %q not found", step)
 	}
 	_, rest, ok = strings.Cut(rest, "        run: |\n")
 	if !ok {
-		t.Fatal("sign script not found")
+		t.Fatalf("script of step %q not found", step)
 	}
 	var script strings.Builder
 	for _, line := range strings.SplitAfter(rest, "\n") {
@@ -221,6 +228,42 @@ func TestSignStepSignsBothNamespaces(t *testing.T) {
 			if tc.previousAsset != "" {
 				verify(tc.previousAsset, tc.previousNS, true)
 				verify(tc.previousAsset, "sample-release", false)
+			}
+		})
+	}
+}
+
+// TestCheckInputsStepChecksNamespace runs the input check of the build job, which must accept the same
+// namespaces as Build.
+func TestCheckInputsStepChecksNamespace(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the build job runs on Linux")
+	}
+	if _, err := exec.LookPath("bash"); err != nil {
+		t.Skip("bash is not available")
+	}
+	script := stepScript(t, "Check inputs")
+	tests := map[string]bool{
+		"sample-tool-release":                true,
+		"sample-suite-release":               true,
+		strings.Repeat("a", 64) + "-release": true,
+		"Sample-tool-release":                false,
+		"sample-tool":                        false,
+		"-release":                           false,
+		strings.Repeat("a", 65) + "-release": false,
+		"sample_tool-release":                false,
+		"1sample-release":                    false,
+		"x y\nsample-release":                false,
+		"sample-release\nx":                  false,
+	}
+	for namespace, ok := range tests {
+		t.Run(strings.ReplaceAll(namespace, "\n", "_"), func(t *testing.T) {
+			cmd := exec.Command("bash", "-c", script)
+			cmd.Env = append(os.Environ(), "GITHUB_REF_TYPE=tag", "GITHUB_REF_NAME=v1.2.3", "PROGRAM=sample-tool", "NAMESPACE="+namespace,
+				"SIGNATURE_ASSET=demo.sig", "PREVIOUS_NAMESPACE=", "PREVIOUS_SIGNATURE_ASSET=", "ENVIRONMENT=release")
+			out, err := cmd.CombinedOutput()
+			if (err == nil) != ok {
+				t.Errorf("err = %v, want ok = %v\n%s", err, ok, out)
 			}
 		})
 	}
