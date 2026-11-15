@@ -28,8 +28,8 @@ type Config struct {
 	// Targets are the platforms to build as "goos/goarch", with goos linux, darwin or windows and goarch
 	// amd64 or arm64.
 	Targets []string `json:"targets"`
-	// ManpageCommand is the command that writes the manpages. The arguments "{version}" and "{dir}" are
-	// replaced by the version and the output directory.
+	// ManpageCommand is the command that writes the manpages. "{version}", "{dir}" and "{program}" in its
+	// arguments are replaced by the version, the output directory and the program name.
 	ManpageCommand []string `json:"manpageCommand"`
 	// Files are extra regular files for every archive.
 	Files []File `json:"files"`
@@ -37,6 +37,21 @@ type Config struct {
 	Installer Installer `json:"installer"`
 	// Service, if set, builds the system service variant; see Service.
 	Service *Service `json:"service"`
+	// PreviousArchive, if set, adds an archive under the former program name for every target; see
+	// PreviousArchive.
+	PreviousArchive *PreviousArchive `json:"previousArchive"`
+}
+
+// PreviousArchive keeps the updaters of releases made before an application renamed its program working:
+// for every target the build also writes ArchiveName(Program, ...) with the same program file at
+// bin/<Program> (bin/<Program>.exe on windows) and, except on windows, the manpages that the manpage
+// command writes for Program. It holds neither Files nor a service unit, is listed in checksums.txt and
+// checked like every archive. The manpage command runs once per program name and must therefore take
+// "{program}". It cannot be combined with Service.
+type PreviousArchive struct {
+	// Program is the former program name, with the rules of Options.Program. It must differ from
+	// Options.Program.
+	Program string `json:"program"`
 }
 
 // Service selects the system service variant: every archive carries the unit and install.sh installs the

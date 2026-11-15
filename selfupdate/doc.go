@@ -21,16 +21,20 @@
 // After an application renamed its signature namespace and file, Client.PreviousSignature names the old
 // set and the newest release signed only with it: releases up to and including that version are verified
 // with the old set alone, every later release with the current set alone, under the same trusted keys.
-// The installers of the release package always use the current set.
+// The old set may also name the previous program and companion entries; the archives of those releases
+// are then read and installed with them alone, under the same archive checks, and later archives with the
+// current entries alone. Which archive name a version has stays with ArchiveName. The installers of the
+// release package always use the current set.
 //
-// A Prepared release is bound to the repository, the namespace and signature file of its version, keys,
-// archive, program and companion entries of the client that prepared it; InstallPrepared refuses it under
-// any other policy. It refuses a program path that is not a regular file named after the program, and
-// companion paths that are not regular files named after their entries. An older release is installed
-// only after ValidateRollback accepted it, and Prepared.ReadsConfig runs the new program against an
-// isolated copy of a configuration for that check. Companions are installed first and the program last,
-// each staged next to its target and renamed into place; on Windows the running program is moved aside
-// first and CleanupLeftovers removes it later. If the program cannot be replaced, every companion is
-// restored. BeforeReplace and AfterReplace receive the verified release files, for example to hand a
-// running process over to the new program.
+// A Prepared release is bound to the repository and keys of the client that prepared it and to the namespace,
+// signature file, archive, program and companion entries of its version; InstallPrepared refuses it under any
+// other policy. It refuses a program path that is not a regular file named after the program, or for a
+// release of the old set after the current or the previous program, and companion paths that are not regular
+// files named after the entries of the release's set. An older release is installed only after
+// ValidateRollback accepted it, and Prepared.ReadsConfig runs the new program against an isolated copy of a
+// configuration for that check. Companions are installed first and the program last, each staged next to its
+// target and renamed into place; on Windows the running program is moved aside first and CleanupLeftovers
+// removes it later. If the program cannot be replaced, every companion is restored. BeforeReplace and
+// AfterReplace receive the verified release files, for example to hand a running process over to the new
+// program.
 package selfupdate

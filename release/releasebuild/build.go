@@ -79,17 +79,33 @@ func Build(ctx context.Context, c Config, o Options) ([]string, error) {
 	}
 	defer os.RemoveAll(work)
 
-	manpages, err := plan.manpages(ctx, work)
+	manpages, err := plan.manpages(ctx, work, plan.Program)
 	if err != nil {
 		return nil, err
 	}
+	var previousManpages map[string][]byte
+	if prev := plan.PreviousArchive; prev != nil {
+		if previousManpages, err = plan.manpages(ctx, work, prev.Program); err != nil {
+			return nil, err
+		}
+	}
 	assets := map[string][]byte{}
 	for _, t := range plan.targets {
-		name, data, err := plan.archive(ctx, work, t, manpages)
+		body, err := plan.build(ctx, work, t)
+		if err != nil {
+			return nil, err
+		}
+		name, data, err := plan.archive(t, plan.Program, body, manpages, true)
 		if err != nil {
 			return nil, err
 		}
 		assets[name] = data
+		if prev := plan.PreviousArchive; prev != nil {
+			if name, data, err = plan.archive(t, prev.Program, body, previousManpages, false); err != nil {
+				return nil, err
+			}
+			assets[name] = data
+		}
 	}
 	maps.Copy(assets, plan.installers)
 	names := slices.Sorted(maps.Keys(assets))
@@ -169,6 +185,27 @@ func prepare(c Config, o Options) (*plan, error) {
 	reserved := []string{"checksums.txt", "install.sh", "install.ps1"}
 	for _, t := range p.targets {
 		reserved = append(reserved, ArchiveName(o.Program, o.Version, t.goos, t.goarch))
+	}
+	if prev := c.PreviousArchive; prev != nil {
+		if !programPattern.MatchString(prev.Program) {
+			return nil, fmt.Errorf("invalid previous program name %q", prev.Program)
+		}
+		if prev.Program == o.Program {
+			return nil, errors.New("previous program name must differ from the program name")
+		}
+		if c.Service != nil {
+			return nil, errors.New("previous archive cannot be combined with service")
+		}
+		if !slices.ContainsFunc(c.ManpageCommand, func(arg string) bool { return strings.Contains(arg, "{program}") }) {
+			return nil, errors.New(`previous archive needs a manpage command that takes the program name "{program}"`)
+		}
+		for _, t := range p.targets {
+			name := ArchiveName(prev.Program, o.Version, t.goos, t.goarch)
+			if slices.Contains(reserved, name) {
+				return nil, fmt.Errorf("previous archive name %q collides with an asset of the build", name)
+			}
+			reserved = append(reserved, name)
+		}
 	}
 	if slices.Contains(reserved, o.SignatureAsset) {
 		return nil, fmt.Errorf("signature asset name %q collides with an asset of the build", o.SignatureAsset)
@@ -275,15 +312,15 @@ func (p *plan) env(extra ...string) []string {
 	return append(os.Environ(), append([]string{"SOURCE_DATE_EPOCH=" + strconv.FormatInt(p.SourceDate.Unix(), 10)}, extra...)...)
 }
 
-// manpages runs the manpage command and returns the pages by file name.
-func (p *plan) manpages(ctx context.Context, work string) (map[string][]byte, error) {
-	dir := filepath.Join(work, "man")
+// manpages runs the manpage command for program and returns the pages by file name.
+func (p *plan) manpages(ctx context.Context, work, program string) (map[string][]byte, error) {
+	dir := filepath.Join(work, "man-"+program)
 	if err := os.Mkdir(dir, 0o755); err != nil {
 		return nil, err
 	}
 	args := make([]string, len(p.ManpageCommand))
 	for i, arg := range p.ManpageCommand {
-		args[i] = strings.NewReplacer("{version}", p.Version, "{dir}", dir).Replace(arg)
+		args[i] = strings.NewReplacer("{version}", p.Version, "{dir}", dir, "{program}", program).Replace(arg)
 	}
 	cmd := exec.CommandContext(ctx, args[0], args[1:]...)
 	cmd.Dir, cmd.Env, cmd.Stdout, cmd.Stderr = p.Dir, p.env(), p.log, p.log
@@ -309,23 +346,28 @@ func (p *plan) manpages(ctx context.Context, work string) (map[string][]byte, er
 	return pages, nil
 }
 
-// archive builds the program for t and returns the checked archive.
-func (p *plan) archive(ctx context.Context, work string, t target, manpages map[string][]byte) (string, []byte, error) {
-	program := p.Program
+// build builds the program for t and returns it.
+func (p *plan) build(ctx context.Context, work string, t target) ([]byte, error) {
+	binary := filepath.Join(work, t.goos+"_"+t.goarch, p.Program)
 	if t.goos == "windows" {
-		program += ".exe"
+		binary += ".exe"
 	}
-	binary := filepath.Join(work, t.goos+"_"+t.goarch, program)
 	cmd := exec.CommandContext(ctx, "go", "build", "-trimpath", "-buildvcs=false",
 		"-ldflags", "-s -w -X "+p.VersionVariable+"="+p.Version, "-o", binary, p.pkg)
 	cmd.Dir, cmd.Stdout, cmd.Stderr = p.Dir, p.log, p.log
 	cmd.Env = p.env("CGO_ENABLED=0", "GOOS="+t.goos, "GOARCH="+t.goarch)
 	if err := cmd.Run(); err != nil {
-		return "", nil, fmt.Errorf("build %s/%s: %w", t.goos, t.goarch, err)
+		return nil, fmt.Errorf("build %s/%s: %w", t.goos, t.goarch, err)
 	}
-	body, err := os.ReadFile(binary)
-	if err != nil {
-		return "", nil, err
+	return os.ReadFile(binary)
+}
+
+// archive returns the checked archive of the built program under programName for t. Only the archive of
+// the current program carries the service unit and the extra files.
+func (p *plan) archive(t target, programName string, body []byte, manpages map[string][]byte, current bool) (string, []byte, error) {
+	program := programName
+	if t.goos == "windows" {
+		program += ".exe"
 	}
 	entries := []entry{{name: "bin/" + program, body: body, executable: true}}
 	if t.goos != "windows" {
@@ -333,17 +375,19 @@ func (p *plan) archive(ctx context.Context, work string, t target, manpages map[
 			entries = append(entries, entry{name: "share/man/man1/" + name, body: page})
 		}
 	}
-	if p.unit != nil {
-		entries = append(entries, entry{name: sysservice.UnitEntry(p.Program), body: p.unit})
-	}
-	for _, f := range p.Files {
-		data, err := os.ReadFile(filepath.Join(p.Dir, filepath.FromSlash(f.Source)))
-		if err != nil {
-			return "", nil, err
+	if current {
+		if p.unit != nil {
+			entries = append(entries, entry{name: sysservice.UnitEntry(p.Program), body: p.unit})
 		}
-		entries = append(entries, entry{name: f.Path, body: data})
+		for _, f := range p.Files {
+			data, err := os.ReadFile(filepath.Join(p.Dir, filepath.FromSlash(f.Source)))
+			if err != nil {
+				return "", nil, err
+			}
+			entries = append(entries, entry{name: f.Path, body: data})
+		}
 	}
-	name := ArchiveName(p.Program, p.Version, t.goos, t.goarch)
+	name := ArchiveName(programName, p.Version, t.goos, t.goarch)
 	data, err := writeArchive(name, entries, p.SourceDate)
 	if err != nil {
 		return "", nil, err
