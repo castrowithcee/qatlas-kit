@@ -84,3 +84,24 @@ func TestWidenedModeIsRefused(t *testing.T) {
 		t.Fatalf("Document() of a widened plain file error = %v, want a PermissionError", err)
 	}
 }
+
+func TestReadSealedWithIdentityRefusesWidenedMode(t *testing.T) {
+	v, _ := created(t, nil)
+	if err := v.WriteSealed(sealedName, []byte("example settings")); err != nil {
+		t.Fatal(err)
+	}
+	snap, _ := v.Snapshot()
+	for _, path := range []string{v.path(sealedName), v.recipientPath()} {
+		if err := os.Chmod(path, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		_, err := ReadSealedWithIdentity(v.opts, snap.Identity, sealedName)
+		var perm *PermissionError
+		if !errors.As(err, &perm) || perm.Path != path {
+			t.Fatalf("error = %v, want a PermissionError for %s", err, path)
+		}
+		if err := os.Chmod(path, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+}

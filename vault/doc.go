@@ -50,12 +50,15 @@
 //
 // Only a person unlocks. ReadPassphrase reads the passphrase without echo from the controlling terminal
 // and refuses with ErrNoTerminal when no standard stream is a terminal, so an agent or a CI job is never
-// asked. A Vault holds the key and the decrypted document in memory until Forget; Snapshot hands both to
-// a process that keeps the vault open, and OpenWithIdentity reopens it from the key alone. Checkpoint
-// records the vault files and returns a function that restores them without the passphrase, removing every
-// pending entry it did not record, also one another process added. Update and WriteWithUndo instead return
-// the undo of their own change: it puts back the document file and the pending files that operation
-// removed, byte for byte, and leaves every other entry pending.
+// asked. ReadConfirm asks a yes-or-no question under the same rule and shows control characters in the
+// prompt as escapes. A Vault holds the key and the decrypted document in memory until Forget; Snapshot
+// hands both to a process that keeps the vault open, and OpenWithIdentity reopens it from the key alone.
+// ReadSealedWithIdentity reads one sealed file with the key alone and never touches the document, so a
+// damaged document does not stop it. Checkpoint records the vault files and returns a function that
+// restores them without the passphrase, removing every pending entry it did not record, also one another
+// process added. Update and WriteWithUndo instead return the undo of their own change: it puts back the
+// document file and the pending files that operation removed, byte for byte, and leaves every other entry
+// pending.
 //
 // # Boundary
 //

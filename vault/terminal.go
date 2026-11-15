@@ -1,10 +1,15 @@
 package vault
 
 import (
+	"bufio"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"runtime"
+	"strconv"
+	"strings"
+	"unicode"
 
 	"golang.org/x/term"
 )
@@ -30,6 +35,70 @@ func ReadPassphrase(prompt string) (string, error) {
 		return "", ErrNoTerminal
 	}
 	return string(passphrase), nil
+}
+
+// confirmLimit is the most bytes of an answer ReadConfirm reads; a longer line counts as no.
+const confirmLimit = 64
+
+// ReadConfirm shows prompt on the controlling terminal and reads one line back. Only "y" or "yes", in any
+// case and with surrounding space, answers yes; an empty line, a line longer than confirmLimit bytes and
+// anything else answer no. A line that ends at end of input without a line break still counts. Like
+// ReadPassphrase it opens the terminal itself and returns ErrNoTerminal, without asking, when none is
+// attached or the input ends before any data. The prompt names the default itself, for example "[y/N]".
+// Control characters in prompt other than a line break are shown as Go escapes, because prompts carry
+// names and paths from configuration that someone else may have edited.
+func ReadConfirm(prompt string) (bool, error) {
+	in, out, closeTTY, err := openTTY()
+	if err != nil {
+		return false, ErrNoTerminal
+	}
+	defer closeTTY()
+	return readConfirm(in, out, prompt)
+}
+
+// readConfirm is ReadConfirm over the given streams.
+func readConfirm(in io.Reader, out io.Writer, prompt string) (bool, error) {
+	if _, err := fmt.Fprint(out, escapePrompt(prompt)); err != nil {
+		return false, ErrNoTerminal
+	}
+	r := bufio.NewReader(in)
+	var line []byte
+	for {
+		b, err := r.ReadByte()
+		if err != nil {
+			if err == io.EOF && len(line) > 0 {
+				break
+			}
+			return false, ErrNoTerminal
+		}
+		if b == '\n' {
+			break
+		}
+		if len(line) == confirmLimit {
+			// Drop the rest of the line so it does not answer the next prompt.
+			for b != '\n' && err == nil {
+				b, err = r.ReadByte()
+			}
+			return false, nil
+		}
+		line = append(line, b)
+	}
+	answer := strings.TrimSpace(string(line))
+	return strings.EqualFold(answer, "y") || strings.EqualFold(answer, "yes"), nil
+}
+
+// escapePrompt shows every control or unprintable character of prompt but a line break as a Go escape.
+func escapePrompt(prompt string) string {
+	var b strings.Builder
+	for _, r := range prompt {
+		if r != '\n' && (unicode.IsControl(r) || !unicode.IsPrint(r)) {
+			quoted := strconv.QuoteRune(r)
+			b.WriteString(quoted[1 : len(quoted)-1])
+		} else {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
 }
 
 // interactive is a variable only so a test can decide it.
