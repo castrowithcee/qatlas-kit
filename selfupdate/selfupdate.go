@@ -91,7 +91,8 @@ type Client struct {
 	SignatureAsset string
 	TrustedKeys    []ssh.PublicKey
 	// PreviousSignature, when set, makes releases up to and including its LastVersion verify only under
-	// the previous signature set instead of Namespace and SignatureAsset.
+	// the previous signature set instead of Namespace and SignatureAsset, and read the previous program
+	// and companion entries where it names them.
 	PreviousSignature *PreviousSignature
 	ProgramName       string
 	// Companions are installed together with the program and restored if the program cannot be replaced.
@@ -110,11 +111,13 @@ type Client struct {
 	Progress func(done, total int64)
 }
 
-// PreviousSignature describes the signature set of the oldest releases after an application renamed its
-// signature namespace and signature file. A release up to and including LastVersion is verified only with
-// this namespace and signature file, every later release only with the current Client.Namespace and
-// Client.SignatureAsset; a later release that still carries the previous file is not verified with it. The
-// same Client.TrustedKeys apply to both sets, and the installers of the release package always use the
+// PreviousSignature describes the release set of the oldest releases after an application renamed its
+// signature namespace and signature file, and possibly its program and companion files. A release up to
+// and including LastVersion is verified only with this namespace and signature file, and its archive is
+// read with this program name and these companions where they are given; every later release uses only
+// the current Client.Namespace, Client.SignatureAsset, Client.ProgramName and Client.Companions. A later
+// release that still carries the previous file is not verified with it. The same Client.TrustedKeys and
+// the same archive checks apply to both sets, and the installers of the release package always use the
 // current set.
 type PreviousSignature struct {
 	// LastVersion is the newest release signed only with the previous set, such as "v1.4.0".
@@ -124,6 +127,15 @@ type PreviousSignature struct {
 	// SignatureAsset is the name of the release asset that holds their signature over checksums.txt, with
 	// the same rules as Client.SignatureAsset.
 	SignatureAsset string
+	// ProgramName, when set, is the program name in the archives of those releases, which then carry
+	// "bin/<ProgramName>". It must differ from Client.ProgramName. Empty keeps Client.ProgramName.
+	ProgramName string
+	// ReplaceCompanions makes Companions the companions of those releases instead of Client.Companions;
+	// an empty Companions then means that their archives carry none. Without it Companions must be empty.
+	ReplaceCompanions bool
+	// Companions are the companion entries of those releases and their installation paths, with the rules
+	// of Client.Companions.
+	Companions []Companion
 }
 
 // Companion is a file that the release archive carries next to the program, such as a manpage.
@@ -200,6 +212,12 @@ func (c *Client) validate() (policy, error) {
 		}
 		if !validAssetName(prev.SignatureAsset) || prev.SignatureAsset == checksumsAsset || prev.SignatureAsset == c.SignatureAsset {
 			return policy{}, errors.New("previous signature needs a valid signature asset name that differs from the current one")
+		}
+		if prev.ProgramName != "" && (!validPayloadName(prev.ProgramName) || prev.ProgramName == c.ProgramName) {
+			return policy{}, errors.New("previous program name must be valid and differ from the current one")
+		}
+		if !prev.ReplaceCompanions && len(prev.Companions) != 0 {
+			return policy{}, errors.New("previous companions need ReplaceCompanions")
 		}
 	}
 	if strings.ContainsAny(c.Token, "\r\n") {
@@ -377,6 +395,23 @@ func (c *Client) signatureSet(v semver) (namespace, assetName string) {
 		}
 	}
 	return c.Namespace, c.SignatureAsset
+}
+
+// payload returns the program name and companions of the release with the given version, by the same rule
+// as signatureSet. previous reports that the program name of PreviousSignature applies.
+func (c *Client) payload(v semver) (program string, companions []Companion, previous bool) {
+	program, companions = c.ProgramName, c.Companions
+	if prev := c.PreviousSignature; prev != nil {
+		if last, err := parseSemver(prev.LastVersion); err == nil && v.compare(last) <= 0 {
+			if prev.ProgramName != "" {
+				program, previous = prev.ProgramName, true
+			}
+			if prev.ReplaceCompanions {
+				companions = prev.Companions
+			}
+		}
+	}
+	return program, companions, previous
 }
 
 func (c *Client) eligible(r githubRelease, p policy) (semver, bool) {
