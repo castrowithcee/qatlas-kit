@@ -13,6 +13,7 @@
 // of one credential (see the ratelimit package); a Retry-After of the remote side holds the next try. A
 // refusal, a TLS failure and a cancelled context end the send at once. Slack and Telegram receive plain
 // text; Slack's markup characters are escaped, so a text cannot mention anyone or link anywhere.
+// SendTelegram delivers like Send and also returns the message_id Telegram assigned.
 //
 // # Security boundary
 //
