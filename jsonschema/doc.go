@@ -17,6 +17,10 @@
 // CheckSchema checks a schema without a value and reports every such error at once. Validate and
 // ValidateJSON apply it before they check the value.
 //
+// A Checker applies the same check and remembers across calls what it found valid. It suits an
+// application that checks many schemas at start, some of them repeated; see Checker for its memory and
+// concurrency.
+//
 // Strict mode, the default, holds a value to every checked keyword and suits input. Lenient mode suits
 // data a remote side produced; see Mode.
 package jsonschema

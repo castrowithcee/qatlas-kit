@@ -162,7 +162,7 @@ func TestCorpusShape(t *testing.T) {
 		largest = max(largest, len(schema))
 		patterns += bytes.Count(schema, []byte(`"pattern"`))
 		nodes += bytes.Count(schema, []byte("{")) - bytes.Count(schema, []byte(`"properties":{`))
-		if !json.Valid(schema) || !knownValid(schema) || CheckSchema(schema) != nil {
+		if !json.Valid(schema) || !knownValid(schema, nil) || CheckSchema(schema) != nil {
 			t.Fatalf("knownValid did not recognize a valid corpus schema: %s", schema)
 		}
 	}
@@ -179,12 +179,18 @@ func TestCorpusShape(t *testing.T) {
 		float64(patterns)/float64(len(schemas)))
 }
 
-// sameVerdict fails the test if CheckSchema and checkSchemaTree disagree on a schema.
-func sameVerdict(t *testing.T, schema []byte) {
+// sameVerdict fails the test if CheckSchema, or the checker on a first or a repeated call, disagrees with
+// checkSchemaTree on a schema.
+func sameVerdict(t *testing.T, checker *Checker, schema []byte) {
 	t.Helper()
-	got, want := CheckSchema(schema), checkSchemaTree(schema)
-	if (got == nil) != (want == nil) || got != nil && got.Error() != want.Error() {
-		t.Errorf("%q: CheckSchema() = %v, tree = %v", schema, got, want)
+	want := checkSchemaTree(schema)
+	for name, got := range map[string]error{
+		"CheckSchema": CheckSchema(schema), "Checker": checker.CheckSchema(schema),
+		"Checker again": checker.CheckSchema(schema),
+	} {
+		if (got == nil) != (want == nil) || got != nil && got.Error() != want.Error() {
+			t.Errorf("%q: %s = %v, tree = %v", schema, name, got, want)
+		}
 	}
 }
 
@@ -260,18 +266,20 @@ func mutate(schema []byte, i int, c byte, insert bool) []byte {
 	return append(out, schema[i+1:]...)
 }
 
-// TestCheckSchemaMatchesTree holds the fast path to the tree's verdict and error text on every schema of
+// TestCheckSchemaMatchesTree holds the fast path and the checker to the tree's verdict and error text on every schema of
 // the other tests, on their one-byte mutations, and on one-byte mutations of the corpus.
 func TestCheckSchemaMatchesTree(t *testing.T) {
+	// One checker for all schemas, so a remembered schema or pattern meets the mutations of its neighbours.
+	checker := new(Checker)
 	everyMutation := func(schema []byte) {
-		sameVerdict(t, schema)
+		sameVerdict(t, checker, schema)
 		for i := range schema {
-			sameVerdict(t, mutate(schema, i, 0, false))
+			sameVerdict(t, checker, mutate(schema, i, 0, false))
 			for _, c := range []byte(replacements) {
-				sameVerdict(t, mutate(schema, i, c, false))
+				sameVerdict(t, checker, mutate(schema, i, c, false))
 			}
 			for _, c := range []byte(insertions) {
-				sameVerdict(t, mutate(schema, i, c, true))
+				sameVerdict(t, checker, mutate(schema, i, c, true))
 			}
 		}
 	}
@@ -296,7 +304,7 @@ func TestCheckSchemaMatchesTree(t *testing.T) {
 				// A byte from elsewhere in the schema keeps most mutations syntactically valid.
 				c = schema[r.IntN(len(schema))]
 			}
-			sameVerdict(t, mutate(schema, i, c, r.IntN(3) == 0))
+			sameVerdict(t, checker, mutate(schema, i, c, r.IntN(3) == 0))
 		}
 	}
 }
@@ -308,8 +316,9 @@ func FuzzCheckSchema(f *testing.F) {
 	for _, schema := range corpus()[:50] {
 		f.Add([]byte(schema))
 	}
+	checker := new(Checker)
 	f.Fuzz(func(t *testing.T, schema []byte) {
-		sameVerdict(t, schema)
+		sameVerdict(t, checker, schema)
 	})
 }
 
@@ -327,21 +336,35 @@ func TestCheckSchemaAllocationsPerSchema(t *testing.T) {
 	}
 }
 
-// BenchmarkCheckSchemaCorpus measures CheckSchema against the tree alone over the corpus.
+// BenchmarkCheckSchemaCorpus measures CheckSchema and a new Checker against the tree alone, over the corpus
+// and over the corpus with a third of its schemas repeated, as tools repeat a schema for several commands.
 func BenchmarkCheckSchemaCorpus(b *testing.B) {
-	schemas := corpus()
-	for _, bench := range []struct {
-		name  string
-		check func(json.RawMessage) error
-	}{{"tree", checkSchemaTree}, {"CheckSchema", CheckSchema}} {
-		b.Run(bench.name, func(b *testing.B) {
-			b.ReportAllocs()
-			for b.Loop() {
-				for _, schema := range schemas {
-					_ = bench.check(schema)
+	distinct := corpus()
+	repeated := append(slices.Clone(distinct), distinct[:len(distinct)/3]...)
+	r := rand.New(rand.NewPCG(5, 6))
+	r.Shuffle(len(repeated), func(i, j int) { repeated[i], repeated[j] = repeated[j], repeated[i] })
+	for _, set := range []struct {
+		name    string
+		schemas []json.RawMessage
+	}{{"distinct", distinct}, {"repeated", repeated}} {
+		for _, bench := range []struct {
+			name  string
+			check func() func(json.RawMessage) error
+		}{
+			{"tree", func() func(json.RawMessage) error { return checkSchemaTree }},
+			{"CheckSchema", func() func(json.RawMessage) error { return CheckSchema }},
+			{"Checker", func() func(json.RawMessage) error { return new(Checker).CheckSchema }},
+		} {
+			b.Run(set.name+"/"+bench.name, func(b *testing.B) {
+				b.ReportAllocs()
+				for b.Loop() {
+					check := bench.check()
+					for _, schema := range set.schemas {
+						_ = check(schema)
+					}
 				}
-			}
-			b.ReportMetric(float64(b.Elapsed().Nanoseconds())/float64(b.N*len(schemas)), "ns/schema")
-		})
+				b.ReportMetric(float64(b.Elapsed().Nanoseconds())/float64(b.N*len(set.schemas)), "ns/schema")
+			})
+		}
 	}
 }

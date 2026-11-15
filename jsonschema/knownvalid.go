@@ -3,27 +3,28 @@ package jsonschema
 import (
 	"bytes"
 	"encoding/json"
-	"regexp/syntax"
 	"unicode/utf8"
 )
 
 // knownValid reports whether checkSchemaTree would accept a schema that json.Valid accepted, reading the
 // bytes once without building a tree. It answers true only for a schema it recognizes as valid in full and
-// false for anything else, so false never means invalid.
+// false for anything else, so false never means invalid. A non-nil checker spares parsing the patterns it
+// has seen.
 //
 // It checks every occurrence of a keyword or member name, while the tree keeps the last of duplicates. A
 // schema whose every occurrence passes is accepted by the tree as well, so duplicates need no detection.
-func knownValid(schema []byte) bool {
-	s := scan{data: schema}
+func knownValid(schema []byte, checker *Checker) bool {
+	s := scan{data: schema, checker: checker}
 	s.space()
 	return s.pos < len(s.data) && s.data[s.pos] == '{' && s.node()
 }
 
 // scan reads a schema that json.Valid accepted, so it does not check the syntax again.
 type scan struct {
-	data []byte
-	pos  int
-	buf  []byte
+	data    []byte
+	pos     int
+	buf     []byte
+	checker *Checker
 }
 
 func (s *scan) space() {
@@ -305,14 +306,14 @@ func (s *scan) pattern() bool {
 			s.buf = content
 		}
 	}
-	var pattern string
-	if content != nil && utf8.Valid(content) {
-		pattern = string(content)
-	} else if err := json.Unmarshal(s.data[quoted:s.pos], &pattern); err != nil {
-		return false
+	if content == nil || !utf8.Valid(content) {
+		var pattern string
+		if err := json.Unmarshal(s.data[quoted:s.pos], &pattern); err != nil {
+			return false
+		}
+		content = []byte(pattern)
 	}
-	_, err := syntax.Parse(pattern, syntax.Perl)
-	return err == nil
+	return s.checker.validPattern(content)
 }
 
 // unescape appends the decoded content of a string to dst. It returns nil for a \u escape, which it leaves
