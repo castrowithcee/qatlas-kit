@@ -15,5 +15,13 @@
 // regular backups and the first hand-edited version are kept. RestoreBackup returns a Restored that
 // UndoRestore can put back. Copies made with BackupCopy are kept apart from rotation.
 //
+// Callers may choose the file names. WithBackupNaming selects the scheme for reading and writing backups
+// (prefixes, marker of later hand-edited versions, suffix, sequence width, copy marker) and WithTempPrefix
+// the prefix of the temporary file; without them the neutral defaults apply, and NewStore rejects invalid
+// choices before it creates anything. Files outside the selected scheme are not backups. Codec.Canonicalize
+// replaces the decode-and-encode comparison that recognizes hand-edited versions, so files from before a
+// rename or migration need not count as hand-edited. Choosing names never bypasses the lock or the
+// revision check.
+//
 // The file path and the document schema belong to the caller.
 package configfile

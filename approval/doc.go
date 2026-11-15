@@ -28,11 +28,19 @@
 //
 // # Only a person approves
 //
-// Approve, Revoke and Adopt need an Admin of the store's vault, and only Authorize creates one. Authorize
-// refuses an agent and a process none of whose standard streams is a terminal before it asks for
-// anything, then reads the passphrase from the terminal and verifies it against the vault, also when the
-// vault is unlocked already. Checking and comparing need no Admin, so a process that holds the vault
-// open, such as a background process, checks every use against the approvals.
+// Approve and Adopt add approved uses, so they need an Admin of the store's vault, and only Authorize
+// creates one. Authorize refuses an agent and a process none of whose standard streams is a terminal before
+// it asks for anything, then reads the passphrase from the terminal and verifies it against the vault, also
+// when the vault is unlocked already.
+//
+// Revoke, Move and Undo add no approved use and need no Admin. Revoke removes approvals. Move files an
+// approval under another name with the same state, fingerprint and approval time; the fingerprint covers
+// the state only, so the approval holds for exactly the state it was given for. Each returns an Undo that
+// writes back the bytes it replaced, only while the file still holds the bytes that change wrote, and
+// otherwise fails without writing. They use the same lock, check value and consistency checks as every
+// other change, and a damaged file is refused. The application decides whether and when to offer them,
+// and whether to ask the person first. Checking and comparing need no Admin either, so a process that
+// holds the vault open, such as a background process, checks every use against the approvals.
 //
 // # Boundary
 //
