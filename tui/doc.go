@@ -134,8 +134,10 @@
 // handled false, and the application runs the action of the MouseResult as it runs the key. What enter and
 // back mean, and the state from before the modal opened, are the application's.
 //
-// A click on a row marks it, and only a click on the marked row while the rows have the focus, as SetFocused
-// says, opens it, as enter does; a click on a group row folds it and never changes the ticks, a click on a
+// The marked row is drawn as selected only while the rows have the focus, as SetFocused says (a new list has
+// it; the modal always draws the mark), so no second mark shows while the focus lies elsewhere. A click on a
+// row marks it, and only a click on the marked row while the rows have the focus opens it, as enter does; a
+// click on a group row folds it and never changes the ticks, a click on a
 // tick box does what the toggle key does, and one on the search line starts the search. Each such target
 // carries the action of its key and an Item the list reads back in Click; a target with a zone alone is the
 // free area of the zone. A FilterBar holds choice fields such as the grouping, a state or the sort order:
