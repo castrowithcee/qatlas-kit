@@ -60,8 +60,19 @@ var fixedKeys = map[string]string{
 // captureExits are the keys that keep their action while a key is captured as a new binding.
 var captureExits = map[string]bool{"ctrl+c": true, "esc": true}
 
-// freeCtrl are the control keys no text line, terminal, multiplexer or screen needs.
-var freeCtrl = map[string]bool{"ctrl+l": true, "ctrl+x": true}
+// freeCtrl are the control keys no text line, terminal, multiplexer or screen needs. ctrl+] and ctrl+\ are
+// the bytes 0x1d and 0x1c, which tmux, GNU screen, zellij and the VS Code terminal pass on in their default
+// setup.
+var freeCtrl = map[string]bool{"ctrl+l": true, "ctrl+x": true, "ctrl+]": true, "ctrl+\\": true}
+
+// refusedCtrlPunct are the control keys with a punctuation mark that stay refused, with the reason. Each is
+// the same byte as another key, so a terminal cannot tell them apart.
+var refusedCtrlPunct = map[string]string{
+	"ctrl+[": "ctrl+[ is the same as esc",
+	"ctrl+^": "ctrl+^ is the same as ctrl+6, which vim uses",
+	"ctrl+_": "ctrl+_ is the same as ctrl+/ and ctrl+7, which readline uses to undo",
+	"ctrl+/": "ctrl+/ is the same as ctrl+_, which readline uses to undo",
+}
 
 // interceptedF are the function keys terminals and window systems take for themselves.
 var interceptedF = map[int]bool{1: true, 5: true, 10: true, 11: true, 12: true}
@@ -288,11 +299,14 @@ func checkKeyRules(a Action, key string) (string, error) {
 		}
 		return key, nil
 	}
-	if ctrlLetter.MatchString(key) {
+	if reason, ok := refusedCtrlPunct[key]; ok {
+		return refuse("%s", reason)
+	}
+	if ctrlLetter.MatchString(key) || freeCtrl[key] {
 		if !freeCtrl[key] {
-			return refuse("text lines, the terminal, a multiplexer or a screen use it; free are ctrl+l and ctrl+x")
+			return refuse("text lines, the terminal, a multiplexer or a screen use it; free are ctrl+l, ctrl+x, ctrl+] and ctrl+\\")
 		}
 		return key, nil
 	}
-	return refuse("not a single key; use a character, F2 to F20, or ctrl with a letter")
+	return refuse("not a single key; use a character, F2 to F20, ctrl+l, ctrl+x, ctrl+] or ctrl+\\")
 }

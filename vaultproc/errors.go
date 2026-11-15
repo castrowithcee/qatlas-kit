@@ -36,6 +36,10 @@ var (
 	// ErrHandover means a handover did not happen; the vault process locked itself. It wraps the reason.
 	ErrHandover = errors.New("the vault process did not hand the vault over and locked itself")
 
+	// ErrHook means a hook of Config failed or panicked; Serve returns it after the process locked and
+	// overwrote what it held. It carries nothing of the hook's error.
+	ErrHook = errors.New("a vault process hook failed")
+
 	// ErrUnknownOperation means the vault process does not know the operation.
 	ErrUnknownOperation = errors.New("the vault process does not know the operation")
 
