@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"strconv"
+	"strings"
 )
 
 // macSize is the length of a check value in hex digits: an HMAC-SHA256.
@@ -237,7 +238,8 @@ type Checker interface {
 }
 
 // keyMemberOK reports whether a signed line holds mac_key only in the one form sign writes: at most once
-// among the members of the top-level object, spelled literally, with a number as its value and right
+// among the members of the top-level object, spelled literally (any other spelling that encoding/json
+// folds to mac_key, such as MAC_KEY, fails as well), with a number as its value and right
 // before the last member, mac. It scans the members as JSON, so an escaped spelling of the name and a
 // repeated member are found, and it never decodes more than the line holds. A line that is not a JSON
 // object fails.
@@ -263,7 +265,9 @@ func keyMemberOK(line []byte) bool {
 		if dec.Decode(&skip) != nil {
 			return false
 		}
-		if name == "mac_key" && !bytes.Equal(raw, []byte(`"mac_key"`)) {
+		// encoding/json matches member names to struct fields ignoring case, including Unicode folding, so a
+		// reader that decodes the line takes any such spelling for mac_key.
+		if strings.EqualFold(name, "mac_key") && !bytes.Equal(raw, []byte(`"mac_key"`)) {
 			return false
 		}
 		if name != "mac_key" {
