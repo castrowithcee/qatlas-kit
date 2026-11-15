@@ -305,8 +305,8 @@ func TestTextFieldEditsAndScrollsWithoutCutting(t *testing.T) {
 	}
 	f.Paste("\x1b[31mred\nleaf")
 	long := f.Values()["name"].Text
-	if long != "sweet sil![31mredleaf" {
-		t.Errorf("a paste drops control characters only: %q", long)
+	if long != "sweet sil![31mred leaf" {
+		t.Errorf("a paste drops control characters and turns a line break into a space: %q", long)
 	}
 	view, _ := f.View(Styles{}, 26, 12)
 	row := ""
@@ -315,7 +315,7 @@ func TestTextFieldEditsAndScrollsWithoutCutting(t *testing.T) {
 			row = line
 		}
 	}
-	if !strings.Contains(row, "redleaf") || strings.Contains(row, "sweet") {
+	if !strings.Contains(row, "red leaf") || strings.Contains(row, "sweet") {
 		t.Errorf("the focused text does not scroll to its cursor: %q", row)
 	}
 	formKeys(f, "tab")
@@ -1064,6 +1064,104 @@ func checkFormTargetsCover(t *testing.T, name string, f *Form, view string, targ
 		}
 		if options != len(f.fields[f.focus].Choices) {
 			t.Errorf("%s: %d targets for the open values", name, options)
+		}
+	}
+}
+
+func TestFormTextFieldsEditWithTheLineKeys(t *testing.T) {
+	f := newSampleForm(t, i18n.English, nil)
+	f.Focus("name")
+	name := func() string { return f.Values()["name"].Text }
+	keys := func(names ...string) {
+		t.Helper()
+		for _, n := range names {
+			if _, handled := f.Update(lineKey(n)); !handled {
+				t.Fatalf("%s is not taken", n)
+			}
+		}
+	}
+	// "basil": the table's keys work in a text field, the form's own left, right, home and end first.
+	keys("ctrl+a", "delete", "ctrl+e", "backspace")
+	if name() != "asi" {
+		t.Fatalf("the edits give %q", name())
+	}
+	typeForm(f, "x")
+	keys("ctrl+left", "ctrl+k")
+	typeForm(f, "one two three")
+	keys("alt+left", "alt+left", "ctrl+w")
+	if name() != "two three" {
+		t.Fatalf("word edits give %q", name())
+	}
+	keys("ctrl+right", "alt+delete", "alt+backspace", "ctrl+u")
+	if name() != "" {
+		t.Fatalf("the end edits give %q", name())
+	}
+	if _, handled := f.Update(press("ctrl+z")); handled {
+		t.Error("a key that edits nothing is taken")
+	}
+	f.Paste("ab")
+	formKeys(f, "left")
+	if !f.Paste("X\r\nY\n") || name() != "aX Yb" {
+		t.Errorf("a paste in the middle gives %q", name())
+	}
+	if f.Paste("\n") || f.Paste("\x1b\x00‮") {
+		t.Error("a paste of nothing printable is taken")
+	}
+	if name() != "aX Yb" {
+		t.Errorf("a paste of nothing printable gives %q", name())
+	}
+}
+
+func TestFormMovesDoNotClearAProblem(t *testing.T) {
+	f := newSampleForm(t, i18n.English, nil)
+	f.SetProblems([]FormProblem{{Field: "name", Cause: "the name is taken", NextStep: "pick another"}})
+	shows := func() bool {
+		view, _ := f.View(Styles{}, 70, 30)
+		return strings.Contains(view, "the name is taken")
+	}
+	for _, n := range []string{"left", "ctrl+a", "alt+f", "ctrl+e", "ctrl+left", "right", "ctrl+z"} {
+		f.Update(lineKey(n))
+		if !shows() {
+			t.Fatalf("%s removes the problem", n)
+		}
+	}
+	f.Update(lineKey("ctrl+k"))
+	f.Update(lineKey("ctrl+w"))
+	if shows() {
+		t.Error("an edit keeps the problem")
+	}
+}
+
+func TestFormMaskedFieldsShowNoWordBoundaryAndNoText(t *testing.T) {
+	const canary = "canary cobalt"
+	for name, st := range looks(t) {
+		f := newSampleForm(t, i18n.English, nil)
+		f.Focus("token")
+		f.Paste(canary + "\r\n")
+		if got := f.Values()["token"].Text; got != canary {
+			t.Fatalf("a paste with a line break at the end gives %q", got)
+		}
+		f.Update(lineKey("ctrl+left"))
+		if f.fields[f.focus].line.cursor != 0 {
+			t.Errorf("a word jump in a masked field stops at %d", f.fields[f.focus].line.cursor)
+		}
+		view, targets := f.View(st, 80, 30)
+		for _, part := range []string{"canary", "cobalt"} {
+			if strings.Contains(ansi.Strip(view), part) {
+				t.Fatalf("%s shows %q", name, part)
+			}
+		}
+		for _, tg := range targets {
+			if strings.Contains(tg.Item, "canary") {
+				t.Fatalf("a target names the secret: %+v", tg)
+			}
+		}
+		f.Update(lineKey("alt+f"))
+		f.Update(lineKey("left"))
+		f.Update(lineKey("alt+d"))
+		f.Update(lineKey("ctrl+w"))
+		if got := f.Values()["token"].Text; got != "" {
+			t.Errorf("deleting words of a masked field leaves %q", got)
 		}
 	}
 }
