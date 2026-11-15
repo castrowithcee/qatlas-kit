@@ -10,6 +10,7 @@ import (
 	"log"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"sync"
 	"testing"
@@ -452,5 +453,168 @@ func TestTextIsCleanedRedactedAndCut(t *testing.T) {
 func TestNilChannelIsRefused(t *testing.T) {
 	if code := codeOfErr(t, newSender(t, Options{}).Send(context.Background(), nil, testMessage)); code != output.CodeInvalidRequest {
 		t.Errorf("code = %s", code)
+	}
+}
+
+func TestSendTelegramReturnsMessageID(t *testing.T) {
+	srv, rec := serve(t, func(w http.ResponseWriter, _ int) {
+		_, _ = w.Write([]byte(`{"ok":true,"result":{"message_id":4711,"chat":{"id":-100123}}}`))
+	})
+	token := invented("bot") + ":part/with?specials&=+%"
+	ch := Telegram{Token: token, ChatID: "-100123", BaseURL: srv.URL}
+	id, err := newSender(t, Options{}).SendTelegram(context.Background(), ch, testMessage)
+	if err != nil || id != 4711 {
+		t.Fatalf("id = %d, err = %v", id, err)
+	}
+	r := rec.all()[0]
+	if !strings.HasSuffix(r.path, "/sendMessage") || strings.Count(r.path, "/") != 2 {
+		t.Errorf("path = %s", r.path)
+	}
+	var body map[string]string
+	if err := json.Unmarshal(r.body, &body); err != nil {
+		t.Fatal(err)
+	}
+	if body["chat_id"] != "-100123" || body["text"] != "demo-app failed\nstep pull\nerror: pull failed" {
+		t.Errorf("body = %v", body)
+	}
+}
+
+func TestSendTelegramRefusesIncompleteAnswersWithoutRetry(t *testing.T) {
+	answers := map[string]string{
+		"not json":       `<html>`,
+		"empty":          ``,
+		"not ok":         `{"ok":false,"result":{"message_id":1}}`,
+		"no ok":          `{"result":{"message_id":1}}`,
+		"no result":      `{"ok":true}`,
+		"null result":    `{"ok":true,"result":null}`,
+		"no message id":  `{"ok":true,"result":{}}`,
+		"zero id":        `{"ok":true,"result":{"message_id":0}}`,
+		"negative id":    `{"ok":true,"result":{"message_id":-3}}`,
+		"id is a string": `{"ok":true,"result":{"message_id":"7"}}`,
+		"result is bool": `{"ok":true,"result":true}`,
+	}
+	for name, answer := range answers {
+		t.Run(name, func(t *testing.T) {
+			srv, rec := serve(t, func(w http.ResponseWriter, _ int) { _, _ = w.Write([]byte(answer)) })
+			var failed int
+			s := newSender(t, Options{OnFailure: func(int, *Error) { failed++ }})
+			id, err := s.SendTelegram(context.Background(),
+				Telegram{Token: invented("bot"), ChatID: "1", BaseURL: srv.URL}, testMessage)
+			if code := codeOfErr(t, err); code != output.CodeRuntime || id != 0 {
+				t.Errorf("id = %d, code = %s (%v)", id, code, err)
+			}
+			if len(rec.all()) != 1 || failed != 1 {
+				t.Errorf("requests = %d, reported = %d", len(rec.all()), failed)
+			}
+		})
+	}
+}
+
+func TestSendTelegramFollowsTheRulesOfSend(t *testing.T) {
+	s := newSender(t, Options{})
+	ctx := context.Background()
+	token := invented("bot")
+
+	for name, ch := range map[string]Telegram{
+		"plain http":    {Token: token, ChatID: "1", BaseURL: "http://example.com"},
+		"no chat":       {Token: token},
+		"user part":     {Token: token, ChatID: "1", BaseURL: "https://demo:" + invented("pass") + "@example.com"},
+		"empty channel": {},
+	} {
+		id, err := s.SendTelegram(ctx, ch, testMessage)
+		if code := codeOfErr(t, err); code != output.CodeConfigInvalid || id != 0 {
+			t.Errorf("%s: id = %d, code = %s (%v)", name, id, code, err)
+		}
+	}
+
+	target, reached := serve(t, status(http.StatusOK))
+	redirect, _ := serve(t, func(w http.ResponseWriter, _ int) {
+		w.Header().Set("Location", target.URL)
+		w.WriteHeader(http.StatusTemporaryRedirect)
+	})
+	if _, err := s.SendTelegram(ctx, Telegram{Token: token, ChatID: "1", BaseURL: redirect.URL}, testMessage); err == nil {
+		t.Error("a redirect was accepted")
+	}
+	if len(reached.all()) != 0 {
+		t.Error("a redirect was followed")
+	}
+
+	big, _ := serve(t, func(w http.ResponseWriter, _ int) { _, _ = w.Write([]byte(strings.Repeat("x", maxAnswer+1))) })
+	_, err := s.SendTelegram(ctx, Telegram{Token: token, ChatID: "1", BaseURL: big.URL}, testMessage)
+	if !strings.Contains(fmt.Sprint(err), "size limit") {
+		t.Errorf("err = %v", err)
+	}
+
+	tlsSrv := httptest.NewUnstartedServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	tlsSrv.Config.ErrorLog = log.New(io.Discard, "", 0)
+	tlsSrv.StartTLS()
+	t.Cleanup(tlsSrv.Close)
+	_, err = s.SendTelegram(ctx, Telegram{Token: token, ChatID: "1", BaseURL: tlsSrv.URL}, testMessage)
+	if code := codeOfErr(t, err); code != output.CodeTLS {
+		t.Errorf("code = %s (%v)", code, err)
+	}
+	if _, err := s.SendTelegram(ctx, Telegram{Token: token, ChatID: "1", BaseURL: tlsSrv.URL}, Message{}); err == nil {
+		t.Error("an empty message was accepted")
+	}
+}
+
+func TestSendTelegramRetriesAndRedacts(t *testing.T) {
+	token := invented("bot") + ":a/b?c"
+	appSecret := invented("app-value")
+	srv, rec := serve(t, func(w http.ResponseWriter, n int) {
+		if n == 1 {
+			w.WriteHeader(http.StatusBadGateway)
+			return
+		}
+		_, _ = w.Write([]byte(`{"ok":true,"result":{"message_id":9}}`))
+	})
+	var app redact.Redactor
+	app.Add(appSecret)
+	s := newSender(t, Options{Redactor: &app})
+	id, err := s.SendTelegram(context.Background(), Telegram{Token: token, ChatID: "1", BaseURL: srv.URL},
+		Message{Subject: "demo", Text: "uses " + appSecret + " and " + token})
+	if err != nil || id != 9 || len(rec.all()) != 2 {
+		t.Fatalf("id = %d, requests = %d, err = %v", id, len(rec.all()), err)
+	}
+	for _, r := range rec.all() {
+		if strings.Contains(string(r.body), appSecret) || strings.Contains(string(r.body), token) {
+			t.Errorf("a secret was sent: %s", r.body)
+		}
+	}
+}
+
+func TestSendTelegramNeverShowsTheToken(t *testing.T) {
+	token := invented("bot") + ":a/b?c&d=e"
+	appSecret := invented("app-value")
+	failing, _ := serve(t, func(w http.ResponseWriter, _ int) {
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = fmt.Fprintf(w, `{"ok":false,"error_code":401,"description":"token %s and %s refused"}`, token, appSecret)
+	})
+	garbled, _ := serve(t, func(w http.ResponseWriter, _ int) {
+		_, _ = w.Write([]byte(`{"ok":false,"description":"` + token + `"}`))
+	})
+	closed := httptest.NewServer(http.NotFoundHandler())
+	closedURL := closed.URL
+	closed.Close()
+
+	var app redact.Redactor
+	app.Add(appSecret)
+	var reported []string
+	s := newSender(t, Options{Redactor: &app, OnFailure: func(attempt int, err *Error) {
+		reported = append(reported, fmt.Sprintf("attempt %d: %s %+v", attempt, err, err.Original))
+	}})
+	for name, base := range map[string]string{"refused": failing.URL, "garbled": garbled.URL, "unreachable": closedURL} {
+		_, err := s.SendTelegram(context.Background(), Telegram{Token: token, ChatID: "1", BaseURL: base},
+			Message{Text: "uses " + appSecret})
+		var failure *Error
+		if !errors.As(err, &failure) {
+			t.Fatalf("%s: %v", name, err)
+		}
+		shown := fmt.Sprintf("%s %+v %v", failure, failure.Original, reported)
+		for _, secret := range []string{token, url.PathEscape(token), url.QueryEscape(token), appSecret} {
+			if strings.Contains(shown, secret) {
+				t.Errorf("%s: a credential is shown: %s", name, shown)
+			}
+		}
 	}
 }

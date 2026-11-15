@@ -20,8 +20,26 @@ func TestBuildRejectsInvalidInputWithoutOutput(t *testing.T) {
 		"invalid program": func(t *testing.T, m *module, c *releasebuild.Config, o *releasebuild.Options) {
 			o.Program, o.Namespace = "Sample", "Sample-release"
 		},
-		"foreign namespace": func(t *testing.T, m *module, c *releasebuild.Config, o *releasebuild.Options) {
-			o.Namespace = "other-release"
+		"namespace with uppercase": func(t *testing.T, m *module, c *releasebuild.Config, o *releasebuild.Options) {
+			o.Namespace = "Sample-tool-release"
+		},
+		"namespace without release suffix": func(t *testing.T, m *module, c *releasebuild.Config, o *releasebuild.Options) {
+			o.Namespace = program
+		},
+		"namespace with empty name": func(t *testing.T, m *module, c *releasebuild.Config, o *releasebuild.Options) {
+			o.Namespace = "-release"
+		},
+		"namespace too long": func(t *testing.T, m *module, c *releasebuild.Config, o *releasebuild.Options) {
+			o.Namespace = strings.Repeat("a", 65) + "-release"
+		},
+		"namespace with underscore": func(t *testing.T, m *module, c *releasebuild.Config, o *releasebuild.Options) {
+			o.Namespace = "sample_tool-release"
+		},
+		"namespace starting with a digit": func(t *testing.T, m *module, c *releasebuild.Config, o *releasebuild.Options) {
+			o.Namespace = "1sample-release"
+		},
+		"namespace on two lines": func(t *testing.T, m *module, c *releasebuild.Config, o *releasebuild.Options) {
+			o.Namespace = "x y\nsample-release"
 		},
 		"version without v": func(t *testing.T, m *module, c *releasebuild.Config, o *releasebuild.Options) { o.Version = "1.2.3" },
 		"version with leading zero": func(t *testing.T, m *module, c *releasebuild.Config, o *releasebuild.Options) {

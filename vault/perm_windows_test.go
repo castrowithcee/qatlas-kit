@@ -47,6 +47,30 @@ func currentSID(t *testing.T) *windows.SID {
 	return user.User.Sid
 }
 
+// widen lets everyone read path.
+func widen(t *testing.T, path string) {
+	t.Helper()
+	sd, err := windows.SecurityDescriptorFromString(fmt.Sprintf("D:P(A;;FA;;;%s)(A;;FR;;;WD)", currentSID(t).String()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	dacl, _, err := sd.DACL()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := windows.SetNamedSecurityInfo(path, windows.SE_FILE_OBJECT,
+		windows.DACL_SECURITY_INFORMATION|windows.PROTECTED_DACL_SECURITY_INFORMATION, nil, nil, dacl, nil); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func wantPrivate(t *testing.T, path string) {
+	t.Helper()
+	if dacl, ok := onlyThisUser(t, path, currentSID(t)); !ok {
+		t.Errorf("the DACL of %s is %s, want this user alone", path, dacl)
+	}
+}
+
 func TestVaultFilesArePrivate(t *testing.T) {
 	v, _ := created(t, nil)
 	name := addPending(t, v, testEntry{Name: "writer", Value: "example-1"})
