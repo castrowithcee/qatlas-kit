@@ -35,8 +35,9 @@ type ExplanationKeys struct {
 	Back, Info ActionID
 	// Copy hands the text of the explanation to the application, which puts it on the clipboard.
 	Copy ActionID
-	// Up and Down scroll a text longer than the room.
-	Up, Down ActionID
+	// Up and Down scroll a text longer than the room. PageUp and PageDown, where the table has them, scroll a
+	// page, and First and Last jump to the ends; every one of them stops there.
+	Up, Down, PageUp, PageDown, First, Last ActionID
 	// Link, where the table has it, hands the address to the application, which opens it; a click on the
 	// address does the same.
 	Link ActionID
@@ -67,8 +68,8 @@ type Explanation struct {
 }
 
 // NewExplanation checks spec and returns the explanation from its top. It rejects a missing key of Back,
-// Info, Copy, Up or Down, a key that names no action of keys or that two keys share, and an explanation that
-// SetItem rejects.
+// Info, Copy, Up or Down, a key or optional key that names no action of keys or that two keys share, and an
+// explanation that SetItem rejects.
 func NewExplanation(spec ExplanationSpec, keys *Keymap, text Translator) (*Explanation, error) {
 	if keys == nil || text == nil {
 		return nil, errors.New("the explanation needs a key table and a translator")
@@ -76,7 +77,8 @@ func NewExplanation(spec ExplanationSpec, keys *Keymap, text Translator) (*Expla
 	k := spec.Keys
 	errs := checkKeys("explanation", keys, []namedKey{
 		{"back", k.Back, true}, {"info", k.Info, true}, {"copy", k.Copy, true}, {"up", k.Up, true},
-		{"down", k.Down, true}, {"link", k.Link, false},
+		{"down", k.Down, true}, {"page up", k.PageUp, false}, {"page down", k.PageDown, false},
+		{"first", k.First, false}, {"last", k.Last, false}, {"link", k.Link, false},
 	})
 	errs = append(errs, checkExplanation(spec.Item))
 	if err := errors.Join(errs...); err != nil {
@@ -154,6 +156,11 @@ func (e *Explanation) Update(msg tea.KeyPressMsg) (act ActionID, handled bool) {
 func (e *Explanation) navKeys() []ActionID {
 	k := e.spec.Keys
 	ids := []ActionID{k.Back, k.Info, k.Copy, k.Up, k.Down}
+	for _, id := range []ActionID{k.PageUp, k.PageDown, k.First, k.Last} {
+		if id != "" {
+			ids = append(ids, id)
+		}
+	}
 	if k.Link != "" && e.spec.Item.URL != "" {
 		ids = append(ids, k.Link)
 	}
@@ -170,6 +177,14 @@ func (e *Explanation) Act(id ActionID) (act ActionID, handled bool) {
 		e.scroll.by(-1)
 	case id == k.Down:
 		e.scroll.by(1)
+	case id == k.PageUp:
+		e.scroll.by(-e.scroll.step())
+	case id == k.PageDown:
+		e.scroll.by(e.scroll.step())
+	case id == k.First:
+		e.scroll.offset = 0
+	case id == k.Last:
+		e.scroll.offset = e.scroll.last
 	case slices.Contains(e.navKeys(), id):
 		return id, true
 	default:
@@ -202,6 +217,13 @@ func (e *Explanation) Hints() []Hint {
 	var hints []Hint
 	if e.scroll.last > 0 {
 		hints = append(hints, Hint{Action: k.Up, Label: TextHelpScroll}, Hint{Action: k.Down, Label: TextHelpScroll})
+		// Navigation drops out before Link, Copy and the closing keys where the line is short.
+		for _, h := range []Hint{{Action: k.PageUp, Label: TextHelpPage, Priority: 3}, {Action: k.PageDown, Label: TextHelpPage, Priority: 3},
+			{Action: k.First, Label: TextKeyFirst, Priority: 4}, {Action: k.Last, Label: TextKeyLast, Priority: 4}} {
+			if h.Action != "" {
+				hints = append(hints, h)
+			}
+		}
 	}
 	if k.Link != "" && e.spec.Item.URL != "" {
 		hints = append(hints, Hint{Action: k.Link, Label: TextInfoOpenLink, Priority: 1})

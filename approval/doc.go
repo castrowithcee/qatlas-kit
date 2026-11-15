@@ -28,12 +28,15 @@
 //
 // # Only a person approves
 //
-// Approve and Adopt add approved uses, so they need an Admin of the store's vault, and only Authorize
-// creates one. Authorize refuses an agent and a process none of whose standard streams is a terminal before
-// it asks for anything, then reads the passphrase from the terminal and verifies it against the vault, also
-// when the vault is unlocked already. An application may give the Admin a validity (see AuthorizeOptions);
-// Approve and Adopt then refuse it once it has expired, and only Admin.Extend renews it, and only while it is
-// still valid. Without a validity an Admin holds as long as the application keeps it.
+// Approve and Adopt add approved uses, so they need an Admin of the store's vault, and only Authorize creates
+// one. Authorize refuses an agent and a process none of whose standard streams is a terminal before it asks
+// for anything, then reads the passphrase from the terminal and verifies it against the vault, also when the
+// vault is unlocked already. An application without a terminal, such as one with a web interface, may instead
+// name a PersonChannel (see AuthorizeOptions); it then guarantees that the passphrase comes from a person,
+// and Authorize still refuses an agent and verifies the passphrase. An application may give the Admin a
+// validity (see AuthorizeOptions); Approve and Adopt then refuse it once it has expired, and only
+// Admin.Extend renews it, and only while it is still valid. Without a validity an Admin holds as long as the
+// application keeps it.
 //
 // Revoke, Move and Undo add no approved use and need no Admin. Revoke removes approvals. Move files an
 // approval under another name with the same state, fingerprint and approval time; the fingerprint covers
