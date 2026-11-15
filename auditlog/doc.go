@@ -31,9 +31,11 @@
 // Verify reports a changed, deleted, inserted or reordered line, a day file removed from the middle or the
 // start without a retention cut, a first line that does not chain from the genesis hash, and, given a
 // Checker, a check value that is malformed or does not match. A line signed under a previous label after
-// the first line signed under the current one breaks the chain as well, with or without a Checker; a
-// previous label only checks and never signs. An unsigned line counts as unverified and does not break the
-// chain by itself. A check that cannot be made fails Verify instead of passing a line.
+// the first line signed under the current one breaks the chain as well, with or without a Checker, and is
+// named ProblemKeyIDChange; a previous label only checks and never signs. A signed line whose mac_key is
+// not once, spelled literally, right before mac breaks it too, with or without a Checker, and is named
+// ProblemMAC before any other check value problem of the line. An unsigned line counts as unverified and
+// does not break the chain by itself. A check that cannot be made fails Verify instead of passing a line.
 // A line that does not parse breaks the chain, unless Options.TornLine documents torn lines and a
 // damaged-line marker that holds follows it.
 //
