@@ -25,11 +25,10 @@ func endpointPath(e Endpoint) (string, error) {
 	if !component(e.SocketBase) {
 		return "", errInvalidEndpoint(e)
 	}
-	root, err := endpointRoot(e)
+	dir, err := endpointDir(e)
 	if err != nil {
 		return "", err
 	}
-	dir := filepath.Join(root, e.RuntimeDirName)
 	if err := privateExistingDir(dir); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return "", fmt.Errorf("%s: %w", e.label(), err)
 	}
@@ -44,29 +43,32 @@ func endpointPath(e Endpoint) (string, error) {
 }
 
 func errInvalidEndpoint(e Endpoint) error {
-	return fmt.Errorf("%s: runtime directory name, socket base, absolute fallback directory, or absolute runtime root is invalid", e.label())
+	return fmt.Errorf("%s: runtime directory name, fallback directory name, socket base, absolute fallback directory, absolute runtime root, or runtime access is invalid", e.label())
 }
 
-// endpointRoot validates the fields shared by every operation and returns the
-// directory that holds the runtime directory.
-func endpointRoot(e Endpoint) (string, error) {
+// endpointDir validates the fields shared by every operation and returns the
+// runtime directory that holds the socket.
+func endpointDir(e Endpoint) (string, error) {
 	fallbackOK := filepath.IsAbs(e.FallbackDir) || (e.RuntimeRoot != "" && e.FallbackDir == "")
-	if !component(e.RuntimeDirName) || !fallbackOK || (e.RuntimeRoot != "" && !filepath.IsAbs(e.RuntimeRoot)) {
+	if !component(e.RuntimeDirName) || (e.FallbackDirName != "" && !component(e.FallbackDirName)) || !fallbackOK || (e.RuntimeRoot != "" && !filepath.IsAbs(e.RuntimeRoot)) || !e.RuntimeAccess.valid() {
 		return "", errInvalidEndpoint(e)
 	}
 	if e.RuntimeRoot != "" {
 		// An explicit root replaces the search and never falls back to a
 		// shorter location.
-		if err := privateExistingDir(e.RuntimeRoot); err != nil {
+		if err := e.RuntimeAccess.checkRoot(e.RuntimeRoot); err != nil {
 			return "", fmt.Errorf("%s: runtime root: %w", e.label(), err)
 		}
-		return e.RuntimeRoot, nil
+		return filepath.Join(e.RuntimeRoot, e.RuntimeDirName), nil
 	}
-	root, err := runtimeRoot(e.FallbackDir)
+	root, fellBack, err := runtimeRoot(e.FallbackDir, e.RuntimeAccess)
 	if err != nil {
 		return "", fmt.Errorf("%s: %w", e.label(), err)
 	}
-	return root, nil
+	if fellBack && e.FallbackDirName != "" {
+		return filepath.Join(root, e.FallbackDirName), nil
+	}
+	return filepath.Join(root, e.RuntimeDirName), nil
 }
 
 func component(s string) bool {
@@ -81,6 +83,25 @@ func privateExistingDir(dir string) error {
 	}
 	if !info.IsDir() || !ownedByMe(info) || info.Mode().Perm()&0o077 != 0 {
 		return fmt.Errorf("%w: runtime directory %q is not a private directory of this user", ErrRefused, dir)
+	}
+	return nil
+}
+
+func (a RuntimeAccess) valid() bool { return a == RuntimePrivate || a == RuntimeReadable }
+
+// checkRoot checks a runtime root, the parent of the private directory that
+// holds the socket. A root that others can write to lets them replace that
+// directory, so it is refused even with the sticky bit.
+func (a RuntimeAccess) checkRoot(dir string) error {
+	if a != RuntimeReadable {
+		return privateExistingDir(dir)
+	}
+	info, err := os.Lstat(dir)
+	if err != nil {
+		return err
+	}
+	if !info.IsDir() || !ownedByMe(info) || info.Mode().Perm()&0o022 != 0 {
+		return fmt.Errorf("%w: runtime directory %q is not a directory of this user that only this user can write", ErrRefused, dir)
 	}
 	return nil
 }
@@ -142,11 +163,11 @@ func dial(ctx context.Context, e Endpoint) (net.Conn, error) {
 }
 
 func running(e Endpoint) ([]string, error) {
-	root, err := endpointRoot(e)
+	dir, err := endpointDir(e)
 	if err != nil {
 		return nil, err
 	}
-	dirs := []string{filepath.Join(root, e.RuntimeDirName)}
+	dirs := []string{dir}
 	if e.RuntimeRoot == "" {
 		dirs = append(dirs, fallbackRuntimeDirs(e)...)
 	}

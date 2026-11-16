@@ -25,9 +25,9 @@
 // <VersionVariable>=<version>", so the same source, Go version and source date give byte-identical assets.
 // The manpage command of the Config runs first, once per program name with "{program}" replaced by it, with
 // SOURCE_DATE_EPOCH set, and must write at least one <name>.1 file and nothing else. The version must be a
-// SemVer tag such as v1.2.3 or v1.2.3-rc.1, the signature namespace must be <program>-release, and the
-// allowed signers file must list only Ed25519 keys for that namespace, without options; the installers
-// embed these keys.
+// SemVer tag such as v1.2.3 or v1.2.3-rc.1, the signature namespace must have the form <name>-release that
+// Options.Namespace describes, independent of the program name, and the allowed signers file must list
+// only Ed25519 keys for that namespace, without options; the installers embed these keys.
 //
 // # System service
 //
@@ -70,6 +70,36 @@
 // (default release.json) and allowed-signers (default .github/release-allowed-signers) name the files in
 // the application repository.
 //
+// # Dry run
+//
+// The input dry-run runs only the build job, on any ref, so a release can be tried on a branch before its
+// tag exists. It needs the input version, a SemVer tag name such as v1.2.3, which replaces the tag name as
+// the release version, and takes the source date from HEAD. The sign and publish jobs are skipped: a
+// skipped job neither enters the protected environment nor receives the secret, and no signature or
+// release exists afterwards. Without dry-run the workflow still refuses a ref that is not a tag and a set
+// version. The assets of a dry run are the artifact release-dist. An application starts it from a workflow
+// of its own, which grants the same permissions as for a release because the jobs of a called workflow may
+// not request more than the caller grants, whether or not they run:
+//
+//	on:
+//	  workflow_dispatch:
+//	    inputs:
+//	      version:
+//	        description: Version to build, such as v1.2.3
+//	        required: true
+//	permissions: {}
+//	jobs:
+//	  dry-run:
+//	    uses: castrowithcee/qatlas-kit/.github/workflows/release.yml@<commit>
+//	    permissions:
+//	      contents: write
+//	    with:
+//	      dry-run: true
+//	      version: ${{ inputs.version }}
+//	      program: tool
+//	      namespace: tool-release
+//	      signature-asset: checksums.txt.example.sig
+//
 // # Previous signature
 //
 // An application that renamed its signature namespace and signature file keeps the updaters of earlier
@@ -77,5 +107,5 @@
 // Options.PreviousSignature). The sign job then signs checksums.txt a second time with the same key under
 // the former namespace and publishes that signature as the former file; the allowed signers file keeps
 // listing the key under the current namespace only. The installers verify the current signature only. The
-// former namespace is not bound to <program>-release.
+// former namespace is not bound to the <name>-release form.
 package releasebuild

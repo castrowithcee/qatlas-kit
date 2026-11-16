@@ -3,6 +3,7 @@ package vault
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 )
 
 // Encrypt turns an unencrypted vault into an encrypted one with passphrase. The plain document is removed
@@ -28,7 +29,12 @@ func (v *Vault) Encrypt(passphrase string) error {
 		return err
 	}
 	defer clear(doc)
-	if err := v.encryptNew(passphrase, doc); err != nil {
+	out, err := v.filterDocument(v.plainPath(), doc)
+	if err != nil {
+		return err
+	}
+	defer clear(out)
+	if err := v.encryptNew(passphrase, out); err != nil {
 		return err
 	}
 	if err := removeAll(v.plainPath()); err != nil {
@@ -64,19 +70,34 @@ func (v *Vault) Decrypt(passphrase string) error {
 	if err != nil {
 		return err
 	}
-	doc, _, err = v.mergePending(id, doc, true)
+	// The merge stays in memory: the encrypted files are removed anyway, and every failure before the plain
+	// document is written leaves them untouched.
+	merged, done, err := v.planMerge(id, doc, true)
 	if err != nil {
+		clear(doc)
 		return err
+	}
+	if len(done) > 0 {
+		clear(doc)
+		doc = merged
 	}
 	defer clear(doc)
 	if doc == nil {
 		return fmt.Errorf("%s is missing: %w", v.documentPath(), ErrDamaged)
 	}
-	if err := v.write(v.plainPath(), doc); err != nil {
+	out, err := v.filterDocument(v.plainPath(), doc)
+	if err != nil {
+		return err
+	}
+	defer clear(out)
+	if err := v.write(v.plainPath(), out); err != nil {
 		return err
 	}
 	v.forget()
 	paths := []string{}
+	for _, name := range done {
+		paths = append(paths, filepath.Join(v.pendingPath(), name))
+	}
 	for _, name := range v.opts.Files.Sealed {
 		paths = append(paths, v.path(name))
 	}

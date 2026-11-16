@@ -27,6 +27,10 @@ var (
 	ErrDeviates = errors.New("the state differs from the approved state")
 	// ErrChanged reports a state that changed after it was shown to the person; nothing was approved.
 	ErrChanged = errors.New("the state changed since it was shown")
+	// ErrExists reports a name that already holds an approval; nothing was moved onto it.
+	ErrExists = errors.New("a state is already approved under this name")
+	// ErrModified reports approvals that changed after the change an Undo reverts; nothing was undone.
+	ErrModified = errors.New("the approvals changed since the change to undo")
 )
 
 // fileSchema is the version of the approvals file.
@@ -88,6 +92,11 @@ type Deviation struct {
 	Changes  []Change
 }
 
+// Undo reverts one change of the approvals file to the bytes it replaced, under the same lock, and only
+// while the file still holds exactly the bytes that change wrote. Otherwise, including a second call, it
+// fails with ErrModified and writes nothing.
+type Undo func() error
+
 // Store keeps the approvals of an application in a sealed file of its vault. A Store is safe for
 // concurrent use as far as its vault is; it reads the file anew for every call.
 type Store struct {
@@ -148,21 +157,34 @@ func previousLabels(kind, current string, previous []string) error {
 // vault.ErrMACMismatch for a file that was not written with the vault key, and with vault.ErrDamaged for
 // one that does not decode or whose fingerprints do not match their states.
 func (s *Store) Approvals() (map[string]Approval, error) {
+	approvals, data, err := s.read()
+	clear(data)
+	return approvals, err
+}
+
+// read returns the verified approvals and the exact bytes of the file they were read from, nil for a
+// missing file. The caller owns the bytes.
+func (s *Store) read() (map[string]Approval, []byte, error) {
 	state, err := s.opts.Vault.State()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if err := encrypted(state); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	data, err := s.opts.Vault.ReadSealed(s.opts.File)
 	if errors.Is(err, fs.ErrNotExist) {
-		return map[string]Approval{}, nil
+		return map[string]Approval{}, nil, nil
 	}
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	defer clear(data)
+	approvals, err := s.verified(data)
+	return approvals, data, err
+}
+
+// verified decodes the approvals file data and checks its schema, check value and fingerprints.
+func (s *Store) verified(data []byte) (map[string]Approval, error) {
 	var file approvalsFile
 	if err := strictDecode(data, &file); err != nil {
 		return nil, fmt.Errorf("approval: the approvals file does not decode: %w", vault.ErrDamaged)
@@ -239,6 +261,11 @@ func (s *Store) Approve(admin Admin, items ...Item) error {
 	if err := s.authorized(admin); err != nil {
 		return err
 	}
+	return s.approve(nil, items)
+}
+
+// approve is the writing of Approve; covers, when set, is asked for every item before anything is written.
+func (s *Store) approve(covers coverage, items []Item) error {
 	now := time.Now().UTC()
 	next := map[string]Approval{}
 	for _, item := range items {
@@ -255,33 +282,62 @@ func (s *Store) Approve(admin Admin, items ...Item) error {
 		if item.Shown != fingerprint {
 			return fmt.Errorf("%s: %w", item.Name, ErrChanged)
 		}
+		if err := covers.check(item.Name, state); err != nil {
+			return err
+		}
 		next[item.Name] = Approval{Fingerprint: fingerprint, State: state, Approved: now}
 	}
-	return s.update(func(approvals map[string]Approval) bool {
+	_, err := s.update(func(approvals map[string]Approval) (bool, error) {
 		maps.Copy(approvals, next)
-		return len(next) > 0
+		return len(next) > 0, nil
 	})
+	return err
 }
 
-// Revoke removes the approvals of names and reports how many it removed.
-func (s *Store) Revoke(admin Admin, names ...string) (int, error) {
-	if err := s.authorized(admin); err != nil {
-		return 0, err
-	}
+// Revoke removes the approvals of names and reports how many it removed, with an Undo that puts them
+// back. It adds no approved use, so it needs no Admin; an application decides when to offer it. The Undo is
+// nil when nothing was removed.
+func (s *Store) Revoke(names ...string) (int, Undo, error) {
 	removed := 0
-	err := s.update(func(approvals map[string]Approval) bool {
+	undo, err := s.update(func(approvals map[string]Approval) (bool, error) {
 		for _, name := range names {
 			if _, ok := approvals[name]; ok {
 				delete(approvals, name)
 				removed++
 			}
 		}
-		return removed > 0
+		return removed > 0, nil
 	})
 	if err != nil {
-		return 0, err
+		return 0, nil, err
 	}
-	return removed, nil
+	return removed, undo, nil
+}
+
+// Move files the approval under from under to, with the same state, fingerprint and approval time, and
+// removes it from from in the same write. It fails with ErrNotApproved when nothing is approved under
+// from and with ErrExists when something is approved under to, and then writes nothing. The fingerprint
+// covers the state only, never the name, so a moved approval holds exactly for the state it was given
+// for. Like Revoke, it adds no approved state and needs no Admin.
+func (s *Store) Move(from, to string) (Undo, error) {
+	if from == "" || to == "" {
+		return nil, errors.New("approval: a name is empty")
+	}
+	return s.update(func(approvals map[string]Approval) (bool, error) {
+		a, ok := approvals[from]
+		switch {
+		case !ok:
+			return false, fmt.Errorf("%s: %w", from, ErrNotApproved)
+		case from == to:
+			return false, nil
+		}
+		if _, taken := approvals[to]; taken {
+			return false, fmt.Errorf("%s: %w", to, ErrExists)
+		}
+		delete(approvals, from)
+		approvals[to] = a
+		return true, nil
+	})
 }
 
 // Adopt takes over approvals a person gave before, such as those an application kept elsewhere, and
@@ -292,6 +348,11 @@ func (s *Store) Adopt(admin Admin, approvals map[string]Approval) error {
 	if err := s.authorized(admin); err != nil {
 		return err
 	}
+	return s.adopt(nil, approvals)
+}
+
+// adopt is the writing of Adopt; covers, when set, is asked for every approval before anything is written.
+func (s *Store) adopt(covers coverage, approvals map[string]Approval) error {
 	next := make(map[string]Approval, len(approvals))
 	for name, a := range approvals {
 		if name == "" {
@@ -309,18 +370,25 @@ func (s *Store) Adopt(admin Admin, approvals map[string]Approval) error {
 		if err := s.consistent(name, a); err != nil {
 			return err
 		}
+		if err := covers.check(name, a.State); err != nil {
+			return err
+		}
 		next[name] = a
 	}
-	return s.update(func(current map[string]Approval) bool {
+	_, err := s.update(func(current map[string]Approval) (bool, error) {
 		maps.Copy(current, next)
-		return len(next) > 0
+		return len(next) > 0, nil
 	})
+	return err
 }
 
-// authorized refuses a change without the admin proof for this store's vault.
+// authorized refuses a change without a valid admin proof for this store's vault.
 func (s *Store) authorized(admin Admin) error {
 	if admin.vault == nil || admin.vault != s.opts.Vault {
 		return ErrNotAdmin
+	}
+	if admin.expired() {
+		return ErrAdminExpired
 	}
 	return nil
 }
@@ -364,56 +432,108 @@ func (s *Store) consistent(name string, a Approval) error {
 }
 
 // update applies change to the approvals and, when it reports a change, writes them with a new check
-// value.
-func (s *Store) update(change func(map[string]Approval) bool) error {
+// value. It returns an Undo for that write, nil when nothing was written.
+func (s *Store) update(change func(map[string]Approval) (bool, error)) (Undo, error) {
 	state, err := s.opts.Vault.State()
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if err := encrypted(state); err != nil {
-		return err
+		return nil, err
 	}
 	unlock, err := s.lock()
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer unlock()
-	approvals, err := s.Approvals()
+	approvals, before, err := s.read()
 	if err != nil {
-		return err
+		clear(before)
+		return nil, err
 	}
-	if !change(approvals) {
-		return nil
+	changed, err := change(approvals)
+	if err != nil || !changed {
+		clear(before)
+		return nil, err
 	}
 	// Only the current label writes: an approval that holds under a previous label is renewed from its own
 	// state, which consistent has verified.
 	for name, a := range approvals {
 		_, fingerprint, err := encode(s.opts.FingerprintLabel, a.State)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		if fingerprint != a.Fingerprint {
 			a.Fingerprint = fingerprint
 			approvals[name] = a
 		}
 	}
+	data, err := s.seal(approvals)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.opts.Vault.WriteSealed(s.opts.File, data); err != nil {
+		return nil, err
+	}
+	if before == nil {
+		// There was no file; undoing means a file that holds no approvals.
+		if before, err = s.seal(map[string]Approval{}); err != nil {
+			return nil, err
+		}
+	}
+	return s.undo(before, data), nil
+}
+
+// seal encodes approvals as the approvals file with a check value under the current label.
+func (s *Store) seal(approvals map[string]Approval) ([]byte, error) {
 	body, err := json.Marshal(approvals)
 	if err != nil {
-		return fmt.Errorf("approval: cannot encode the approvals: %w", err)
+		return nil, fmt.Errorf("approval: cannot encode the approvals: %w", err)
 	}
 	key, err := s.opts.Vault.Identity()
 	if err != nil {
-		return err
+		return nil, err
 	}
 	mac, err := vault.MAC(key, s.opts.MACLabel, macData(fileSchema, body))
 	if err != nil {
-		return err
+		return nil, err
 	}
 	data, err := json.Marshal(approvalsFile{Schema: fileSchema, Approvals: body, MAC: mac})
 	if err != nil {
-		return fmt.Errorf("approval: cannot encode the approvals: %w", err)
+		return nil, fmt.Errorf("approval: cannot encode the approvals: %w", err)
 	}
-	return s.opts.Vault.WriteSealed(s.opts.File, data)
+	return data, nil
+}
+
+// undo returns the Undo of a change that replaced before with written. It compares bytes rather than
+// times, so any other write, even one that restores the same approvals, is detected.
+func (s *Store) undo(before, written []byte) Undo {
+	return func() error {
+		state, err := s.opts.Vault.State()
+		if err != nil {
+			return err
+		}
+		if err := encrypted(state); err != nil {
+			return err
+		}
+		unlock, err := s.lock()
+		if err != nil {
+			return err
+		}
+		defer unlock()
+		current, err := s.opts.Vault.ReadSealed(s.opts.File)
+		defer clear(current)
+		if errors.Is(err, fs.ErrNotExist) {
+			return ErrModified
+		}
+		if err != nil {
+			return err
+		}
+		if !bytes.Equal(current, written) {
+			return ErrModified
+		}
+		return s.opts.Vault.WriteSealed(s.opts.File, before)
+	}
 }
 
 // lock opens, creating if needed, and exclusively locks the lock file.

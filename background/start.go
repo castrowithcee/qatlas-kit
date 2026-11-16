@@ -3,7 +3,6 @@ package background
 import (
 	"context"
 	"errors"
-	"fmt"
 	"os"
 )
 
@@ -15,7 +14,7 @@ func Start(ctx context.Context, cmd Command, handover []byte, opts Options) (Res
 	if cmd.Program == "" {
 		program, err := os.Executable()
 		if err != nil {
-			return Result{}, fmt.Errorf("cannot find this program to start it in the background: %w", err)
+			return Result{}, &causeError{kind: ErrProgramNotFound, cause: err}
 		}
 		cmd.Program = program
 	}

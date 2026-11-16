@@ -49,6 +49,23 @@ type Config struct {
 	// Handover lets the process hand the vault over to a successor started from the program an update
 	// installed. Nil means every handover request locks the process.
 	Handover *HandoverConfig
+	// OnHandover, when set, is told the result of every handover this process prepared, at the moment it is
+	// known: after a successor took the vault over, before the client is answered, and after a failed
+	// handover locked the process and before the client is told. A request refused because another
+	// handover is under way or the process is locking reports nothing. The hook reaches the vault through
+	// Held as a handler does, runs alone, and must be short. A panic or an error never changes what happens
+	// next; Serve returns ErrHook afterwards. The result quotes nothing of a request.
+	OnHandover func(held *Held, result HandoverResult) error
+	// OnLock, when set, is called once for every lock of a process that served, after the requests in
+	// flight ended and before the process overwrites what it holds, so the application can overwrite its
+	// own state derived from the vault. It reaches the vault through Held as a handler does. The process
+	// overwrites what it holds even if the hook fails or panics, and Serve then returns ErrHook. It is not
+	// called if Serve never ran.
+	OnLock func(held *Held, event LockEvent) error
+	// ReplacedProgram chooses when a process whose program was replaced without a handover locks. The zero
+	// value is ReplacedLocksEarly. Either way the process refuses every client once its program was
+	// replaced, and the first refused client locks it.
+	ReplacedProgram ReplacedProgramLock
 }
 
 func (c Config) validate() error {
@@ -64,6 +81,9 @@ func (c Config) validate() error {
 	if c.MaxUnlock < 0 || c.RequestTimeout < 0 {
 		return errors.New("vaultproc: a duration must not be negative")
 	}
+	if c.ReplacedProgram != ReplacedLocksEarly && c.ReplacedProgram != ReplacedLocksOnClient {
+		return errors.New("vaultproc: unknown ReplacedProgram value")
+	}
 	for op, h := range c.Handlers {
 		if !wordPattern.MatchString(op) || op == OpStatus || op == OpLock || op == OpHandover {
 			return fmt.Errorf("vaultproc: %q is not an operation name an application can register", op)
@@ -78,7 +98,7 @@ func (c Config) validate() error {
 	return nil
 }
 
-// Held is the vault a handler serves from. It is valid only while the handler runs.
+// Held is the vault a handler or a hook serves from. It is valid only while that call runs.
 type Held struct{ s *Server }
 
 // Identity returns the vault's key, for example to derive a key with vault.DeriveKey or to reopen the
@@ -122,6 +142,10 @@ type Server struct {
 	handingOver bool
 	inFlight    int
 	pending     net.Conn
+	// lock is why the server stopped; it is set before stopped is closed. hookFailed is set when a hook
+	// failed or panicked.
+	lock       LockEvent
+	hookFailed bool
 
 	listener net.Listener
 	stopOnce sync.Once
@@ -179,7 +203,7 @@ func (s *Server) Refused(conn net.Conn, _ error) {
 	var h hello
 	_ = readMessage(conn, &h)
 	code := codeRefused
-	switch s.programState() {
+	switch s.programState(TriggerRefusedClient) {
 	case replacedHandover:
 		code = codeReplaced
 	case replacedLocked:
@@ -193,18 +217,31 @@ func (s *Server) Refused(conn net.Conn, _ error) {
 // longer its own, when its program was replaced without a handover, after a handover, or through Close. It
 // then closes l, waits for the requests in flight, overwrites what it holds and returns nil. It returns an
 // error only if l fails otherwise.
-func (s *Server) Serve(l net.Listener) error {
+func (s *Server) Serve(l net.Listener) (err error) {
 	s.mu.Lock()
 	s.listener = l
-	s.timer = time.AfterFunc(time.Until(s.locksAt), s.stop)
+	s.timer = time.AfterFunc(time.Until(s.locksAt), s.expire)
 	s.mu.Unlock()
 	if s.stopping() {
 		_ = l.Close()
 	}
 	defer func() {
-		s.stop()
+		// wipe is registered first so it runs even if the hook machinery itself fails.
+		defer s.wipe()
+		s.stop(LockListenerFailed)
 		s.handlers.Wait()
-		s.wipe()
+		s.callHook(func(h *Held) error {
+			if s.cfg.OnLock == nil {
+				return nil
+			}
+			return s.cfg.OnLock(h, s.lock)
+		})
+		s.mu.Lock()
+		failed := s.hookFailed
+		s.mu.Unlock()
+		if failed && err == nil {
+			err = ErrHook
+		}
 	}()
 	go s.watch()
 	for {
@@ -229,7 +266,7 @@ func (s *Server) Serve(l net.Listener) error {
 
 // Close locks the server as OpLock would.
 func (s *Server) Close() error {
-	s.stop()
+	s.stop(LockClosed)
 	return nil
 }
 
@@ -242,9 +279,13 @@ func (s *Server) stopping() bool {
 	}
 }
 
-// stop ends Serve once: no further connection is accepted and a prepared handover is ended.
-func (s *Server) stop() {
+// stop ends Serve once: no further connection is accepted and a prepared handover is ended. The first call
+// decides the reason.
+func (s *Server) stop(reason LockReason) { s.stopWith(LockEvent{Reason: reason}) }
+
+func (s *Server) stopWith(event LockEvent) {
 	s.stopOnce.Do(func() {
+		s.lock = event
 		close(s.stopped)
 		s.mu.Lock()
 		defer s.mu.Unlock()
@@ -260,6 +301,40 @@ func (s *Server) stop() {
 	})
 }
 
+// expire is the idle timer: the hard deadline governs once the lock time reached it.
+func (s *Server) expire() {
+	s.mu.Lock()
+	hard := !s.hardAt.IsZero() && !s.locksAt.Before(s.hardAt)
+	s.mu.Unlock()
+	if hard {
+		s.stop(LockMaxUnlock)
+		return
+	}
+	s.stop(LockIdle)
+}
+
+// callHook runs a hook with the server's lock, as a handler runs, and records its failure or panic.
+func (s *Server) callHook(hook func(*Held) error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	defer func() {
+		if recover() != nil {
+			s.hookFailed = true
+		}
+	}()
+	if hook(&Held{s: s}) != nil {
+		s.hookFailed = true
+	}
+}
+
+// reportHandover tells OnHandover the result of a handover.
+func (s *Server) reportHandover(result HandoverResult) {
+	if s.cfg.OnHandover == nil {
+		return
+	}
+	s.callHook(func(h *Held) error { return s.cfg.OnHandover(h, result) })
+}
+
 // wipe overwrites the document and drops the key. The key's own bytes belong to the age library and can
 // only be dropped.
 func (s *Server) wipe() {
@@ -269,12 +344,12 @@ func (s *Server) wipe() {
 	s.doc, s.key, s.locked = nil, nil, true
 }
 
-// watch locks the server once its socket is gone or another file, or its program was replaced while no
-// handover is under way.
+// watch locks the server once its socket is gone or another file, or, unless Config.ReplacedProgram defers
+// that to the first refused client, its program was replaced while no handover is under way.
 func (s *Server) watch() {
 	path, err := s.cfg.Endpoint.Path()
 	if err != nil {
-		s.stop()
+		s.stop(LockSocketGone)
 		return
 	}
 	var own os.FileInfo
@@ -282,7 +357,7 @@ func (s *Server) watch() {
 	if socketFile {
 		own, ownErr = os.Lstat(path)
 		if ownErr != nil {
-			s.stop()
+			s.stop(LockSocketGone)
 			return
 		}
 	}
@@ -294,7 +369,7 @@ func (s *Server) watch() {
 			return
 		case <-ticker.C:
 		}
-		if s.programState() == replacedLocked {
+		if s.cfg.ReplacedProgram == ReplacedLocksEarly && s.programState(TriggerWatch) == replacedLocked {
 			return
 		}
 		if ownErr == nil {
@@ -303,7 +378,7 @@ func (s *Server) watch() {
 				handedOver := s.handingOver
 				s.mu.Unlock()
 				if !handedOver {
-					s.stop()
+					s.stop(LockSocketGone)
 				}
 				return
 			}
@@ -319,8 +394,8 @@ const (
 )
 
 // programState tells whether this process's program was replaced and locks the server if no handover
-// would take the vault over. A program that cannot be told counts as replaced.
-func (s *Server) programState() int {
+// would take the vault over; trigger says what asked. A program that cannot be told counts as replaced.
+func (s *Server) programState(trigger LockTrigger) int {
 	_, replaced, err := s.program()
 	if err == nil && !replaced {
 		return replacedNot
@@ -331,7 +406,7 @@ func (s *Server) programState() int {
 	if handover {
 		return replacedHandover
 	}
-	s.stop()
+	s.stopWith(LockEvent{Reason: LockProgramReplaced, Trigger: trigger})
 	return replacedLocked
 }
 
@@ -402,7 +477,7 @@ func (s *Server) serveConn(conn net.Conn) {
 	resp := s.dispatch(req)
 	// A lock is answered after the server stopped, so a client told it is locked finds no listener.
 	if req.Op == OpLock && resp.Error == "" {
-		s.stop()
+		s.stop(LockCommand)
 	}
 	_ = writeMessage(conn, resp)
 }

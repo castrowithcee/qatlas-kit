@@ -305,3 +305,160 @@ func texts(groups []HintGroup) []string {
 	}
 	return out
 }
+
+func pagedExplanation(t *testing.T) *Explanation {
+	t.Helper()
+	item := sampleExplanation()
+	item.Body = strings.Repeat("Water the bed in the morning. ", 120)
+	keys := explanationKeymap(t)
+	spec := ExplanationSpec{Item: item, Keys: sampleExplanationKeys()}
+	spec.Keys.PageUp, spec.Keys.PageDown, spec.Keys.First, spec.Keys.Last = "pageup", "pagedown", "first", "last"
+	e, err := NewExplanation(spec, keys, newTranslator(t, i18n.English, nil, keys))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return e
+}
+
+// Page keys move by step() and stop at both ends; first and last jump; every drawing reads the same scroll.
+func TestExplanationPagesAndJumps(t *testing.T) {
+	st := looks(t)["noneascii"]
+	draws := map[string]func(e *Explanation){
+		"overlay": func(e *Explanation) { e.Overlay(st, sampleScreen(60, 30), 60, 30, Rect{Y: 2, Width: 60, Height: 20}) },
+		"view":    func(e *Explanation) { e.View(st, 40, 10) },
+		"pane":    func(e *Explanation) { e.Pane(st, 40, 12) },
+	}
+	for name, draw := range draws {
+		e := pagedExplanation(t)
+		draw(e)
+		step := e.scroll.step()
+		if step < 2 || e.scroll.last < 3*step {
+			t.Fatalf("%s: text too short for the test: step %d, last %d", name, step, e.scroll.last)
+		}
+		if act, handled := e.Update(press("pgdown")); !handled || act != "" || e.scroll.offset != step {
+			t.Errorf("%s: pgdown: %q %v offset %d, want %d", name, act, handled, e.scroll.offset, step)
+		}
+		e.Update(press("pgdown"))
+		e.Update(press("pgup"))
+		if e.scroll.offset != step {
+			t.Errorf("%s: pgup: offset %d, want %d", name, e.scroll.offset, step)
+		}
+		e.Update(press("pgup"))
+		e.Update(press("pgup"))
+		if e.scroll.offset != 0 {
+			t.Errorf("%s: pgup did not stop at the top: %d", name, e.scroll.offset)
+		}
+		e.Update(press("end"))
+		if e.scroll.offset != e.scroll.last {
+			t.Errorf("%s: end: offset %d, want %d", name, e.scroll.offset, e.scroll.last)
+		}
+		e.Update(press("pgdown"))
+		if e.scroll.offset != e.scroll.last {
+			t.Errorf("%s: pgdown did not stop at the end: %d", name, e.scroll.offset)
+		}
+		e.Update(press("home"))
+		if e.scroll.offset != 0 {
+			t.Errorf("%s: home: offset %d", name, e.scroll.offset)
+		}
+		if act, handled := e.Act("last"); !handled || act != "" || e.scroll.offset != e.scroll.last {
+			t.Errorf("%s: Act(last): %q %v offset %d", name, act, handled, e.scroll.offset)
+		}
+	}
+}
+
+// Without the four actions the explanation does not take their keys.
+func TestExplanationWithoutPageKeys(t *testing.T) {
+	e := newSampleExplanation(t, sampleExplanation(), i18n.English)
+	for _, key := range []string{"pgup", "pgdown", "home", "end"} {
+		if act, handled := e.Update(press(key)); handled || act != "" {
+			t.Errorf("%s was taken: %q", key, act)
+		}
+	}
+	for _, id := range []ActionID{"pageup", "pagedown", "first", "last"} {
+		if act, handled := e.Act(id); handled || act != "" {
+			t.Errorf("Act(%s) was taken: %q", id, act)
+		}
+	}
+}
+
+func TestNewExplanationRejectsBadPageKeys(t *testing.T) {
+	keys := explanationKeymap(t)
+	text := newTranslator(t, i18n.English, nil, keys)
+	cases := []struct {
+		name string
+		edit func(*ExplanationKeys)
+		want string
+	}{
+		{"unknown page up", func(k *ExplanationKeys) { k.PageUp = "nowhere" }, "page up key"},
+		{"unknown page down", func(k *ExplanationKeys) { k.PageDown = "nowhere" }, "page down key"},
+		{"unknown first", func(k *ExplanationKeys) { k.First = "nowhere" }, "first key"},
+		{"unknown last", func(k *ExplanationKeys) { k.Last = "nowhere" }, "last key"},
+		{"shared with up", func(k *ExplanationKeys) { k.PageUp = "up" }, "also the up key"},
+		{"page keys shared", func(k *ExplanationKeys) { k.PageUp, k.PageDown = "pageup", "pageup" }, "also the page up key"},
+		{"first shared with last", func(k *ExplanationKeys) { k.First, k.Last = "first", "first" }, "also the first key"},
+	}
+	for _, tt := range cases {
+		spec := ExplanationSpec{Item: sampleExplanation(), Keys: sampleExplanationKeys()}
+		tt.edit(&spec.Keys)
+		if _, err := NewExplanation(spec, keys, text); err == nil || !strings.Contains(err.Error(), tt.want) {
+			t.Errorf("%s: %v, want %q", tt.name, err, tt.want)
+		}
+	}
+}
+
+// The page and jump hints appear only while the text scrolls and fall away before copy, back and info.
+func TestExplanationPageHints(t *testing.T) {
+	st := looks(t)["noneascii"]
+	hintText := func(e *Explanation) string {
+		return strings.Join(texts(e.keys.Hints(e.Hints(), InputNavigation, e.text)), " ")
+	}
+	e := pagedExplanation(t)
+	e.View(st, 60, 40)
+	e.scroll.last = 0
+	if s := hintText(e); strings.Contains(s, "page") || strings.Contains(s, "first") {
+		t.Errorf("a text that fits names page keys: %s", s)
+	}
+	e.View(st, 60, 8)
+	if s := hintText(e); !strings.Contains(s, "pgup/pgdown page") || !strings.Contains(s, "home") || !strings.Contains(s, "end") {
+		t.Errorf("a text that scrolls lacks the page keys: %s", s)
+	}
+	for _, h := range e.Hints() {
+		if h.Action == "pageup" || h.Action == "first" {
+			if h.Priority <= 2 {
+				t.Errorf("hint %s has priority %d, not behind copy", h.Action, h.Priority)
+			}
+		}
+	}
+	line, _ := st.footer(e.keys.Hints(e.Hints(), InputNavigation, e.text), "", 30)
+	plain := ansi.Strip(line)
+	if strings.Contains(plain, "page") || !strings.Contains(plain, "close") {
+		t.Errorf("the short key line keeps navigation before close: %q", plain)
+	}
+}
+
+// A click on a page or jump hint of the footer line acts as its key.
+func TestExplanationClickOnPageHints(t *testing.T) {
+	st := looks(t)["noneascii"]
+	e := pagedExplanation(t)
+	e.View(st, 60, 8)
+	line, ts := st.footer(e.keys.Hints(e.Hints(), InputNavigation, e.text), "", 100)
+	plain := ansi.Strip(line)
+	m := NewMouseMap(ts, true)
+	step := e.scroll.step()
+	at := func(text string) int {
+		i := strings.Index(plain, text)
+		if i < 0 {
+			t.Fatalf("%q is not in the key line %q", text, plain)
+		}
+		return ansi.StringWidth(plain[:i])
+	}
+	if _, handled := e.Click(m.Handle(click(at("pgdown"), 0))); !handled || e.scroll.offset != step {
+		t.Errorf("a click on the page hint: offset %d, want %d", e.scroll.offset, step)
+	}
+	if _, handled := e.Click(m.Handle(click(at("end"), 0))); !handled || e.scroll.offset != e.scroll.last {
+		t.Errorf("a click on the end hint: offset %d, want %d", e.scroll.offset, e.scroll.last)
+	}
+	if _, handled := e.Click(m.Handle(click(at("home"), 0))); !handled || e.scroll.offset != 0 {
+		t.Errorf("a click on the home hint: offset %d", e.scroll.offset)
+	}
+}

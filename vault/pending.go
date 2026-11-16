@@ -88,57 +88,55 @@ func (v *Vault) RemovePending(name string) error {
 	return removeAll(filepath.Join(v.pendingPath(), name))
 }
 
-// mergePending hands every pending entry to the MergeFunc and, when it merged any, writes the merged
-// document and only then removes the merged files, so a failed write loses nothing. With all, an entry
-// left pending is an error and nothing is written. It returns the document and how many entries were
-// merged. The caller holds the mutex.
-func (v *Vault) mergePending(id *identity, doc []byte, all bool) ([]byte, int, error) {
+// planMerge hands every pending entry to the MergeFunc and returns the merged document and the names of the
+// entries it merged, writing and removing nothing. With all, an entry left pending is an error. When it
+// merged none, it returns doc itself and no names; otherwise doc is left for the caller to clear. The
+// caller holds the mutex.
+func (v *Vault) planMerge(id *identity, doc []byte, all bool) ([]byte, []string, error) {
 	names, err := v.pendingFiles()
 	if err != nil || len(names) == 0 {
-		return doc, 0, err
+		return doc, nil, err
 	}
 	if v.opts.Merge == nil {
-		return nil, 0, ErrPendingUnmerged
+		return nil, nil, ErrPendingUnmerged
 	}
-	pending := make([]Pending, 0, len(names))
-	defer func() {
-		for _, p := range pending {
-			clear(p.Payload)
-		}
-	}()
-	for _, name := range names {
-		path := filepath.Join(v.pendingPath(), name)
-		data, err := readFile(path)
-		if err != nil {
-			return nil, 0, fmt.Errorf("cannot read %s: %w", path, err)
-		}
-		payload, err := decryptFrom(data, id.key)
-		if err != nil {
-			return nil, 0, fmt.Errorf("cannot decrypt %s: %w", path, ErrDamaged)
-		}
-		pending = append(pending, Pending{Name: name, Payload: payload})
+	pending, _, err := v.readPending(id, names)
+	if err != nil {
+		return nil, nil, err
 	}
+	defer clearPending(pending)
 	merged, done, err := v.opts.Merge(slices.Clone(doc), pending)
 	if err != nil {
-		return nil, 0, err
+		return nil, nil, err
 	}
 	for _, name := range done {
 		if !slices.Contains(names, name) {
-			return nil, 0, fmt.Errorf("vault: the merge reported %q, which is not a pending entry", name)
+			return nil, nil, fmt.Errorf("vault: the merge reported %q, which is not a pending entry", name)
 		}
 	}
+	done = slices.Clone(done)
 	slices.Sort(done)
 	done = slices.Compact(done)
 	if all && len(done) != len(names) {
-		return nil, 0, ErrPendingUnmerged
+		return nil, nil, ErrPendingUnmerged
 	}
 	if len(done) == 0 {
-		return doc, 0, nil
+		return doc, nil, nil
 	}
-	if err := checkSchema(merged, v.opts.Schemas); err != nil {
-		return nil, 0, fmt.Errorf("the merged document: %w", err)
+	if err := checkSchema(v.documentPath(), merged, v.opts.Schemas); err != nil {
+		return nil, nil, err
 	}
-	merged = slices.Clone(merged)
+	return slices.Clone(merged), done, nil
+}
+
+// mergePending merges like planMerge and, when it merged any entry, writes the merged document and only
+// then removes the merged files, so a failed write loses nothing. It returns the document and how many
+// entries were merged. The caller holds the mutex.
+func (v *Vault) mergePending(id *identity, doc []byte, all bool) ([]byte, int, error) {
+	merged, done, err := v.planMerge(id, doc, all)
+	if err != nil || len(done) == 0 {
+		return merged, 0, err
+	}
 	if err := v.writeDocument(id, merged); err != nil {
 		clear(merged)
 		return nil, 0, err
@@ -149,4 +147,33 @@ func (v *Vault) mergePending(id *identity, doc []byte, all bool) ([]byte, int, e
 	}
 	clear(doc)
 	return merged, len(done), nil
+}
+
+// readPending reads and decrypts the pending entries names and returns each entry's file content beside
+// it. On error no decrypted payload is left in memory. The caller holds the mutex and clears the payloads.
+func (v *Vault) readPending(id *identity, names []string) ([]Pending, [][]byte, error) {
+	pending := make([]Pending, 0, len(names))
+	raw := make([][]byte, 0, len(names))
+	for _, name := range names {
+		path := filepath.Join(v.pendingPath(), name)
+		data, err := readFile(path)
+		if err != nil {
+			clearPending(pending)
+			return nil, nil, fmt.Errorf("cannot read %s: %w", path, err)
+		}
+		payload, err := decryptFrom(data, id.key)
+		if err != nil {
+			clearPending(pending)
+			return nil, nil, decryptFailure(path, data, err)
+		}
+		pending = append(pending, Pending{Name: name, Payload: payload})
+		raw = append(raw, data)
+	}
+	return pending, raw, nil
+}
+
+func clearPending(pending []Pending) {
+	for _, p := range pending {
+		clear(p.Payload)
+	}
 }

@@ -157,6 +157,17 @@ func TestHandoverToSuccessor(t *testing.T) {
 	}
 }
 
+// refusalReasons is the reason a client reads for each refusal that the process answers with an error.
+func refusalReasons() map[string]HandoverReason {
+	return map[string]HandoverReason{
+		"untrusted key": HandoverNotVerified, "other namespace": HandoverNotVerified, "other program": HandoverNotVerified,
+		"tampered archive": HandoverNotVerified, "archive by link": HandoverNotVerified, "relative path": HandoverNotVerified,
+		"archive path": HandoverNotVerified, "rollback": HandoverRollback, "no handover": HandoverUnsupported,
+		"program unchanged": HandoverProgramUnchanged, "program mismatch": HandoverProgramMismatch,
+		"successor fails": HandoverNoSuccessor,
+	}
+}
+
 func TestHandoverRefusalsLock(t *testing.T) {
 	ctx := context.Background()
 	prepare := func(t *testing.T, h *handoverSetup) *Handover {
@@ -238,8 +249,15 @@ func TestHandoverRefusalsLock(t *testing.T) {
 					return err
 				}
 			}
-			if err := run(t, h); !errors.Is(err, ErrHandover) || strings.Contains(err.Error(), h.program) {
+			err := run(t, h)
+			if !errors.Is(err, ErrHandover) || strings.Contains(err.Error(), h.program) {
 				t.Fatalf("handover = %v, want ErrHandover without a path", err)
+			}
+			if reason, ok := refusalReasons()[name]; ok {
+				var he *HandoverError
+				if !errors.As(err, &he) || he.Reason != reason || !strings.HasPrefix(err.Error(), handoverPrefix) {
+					t.Fatalf("handover = %v, want reason %q with the unchanged text", err, reason)
+				}
 			}
 			awaitStopped(t, h.running)
 			if _, err := h.client.Status(ctx); !errors.Is(err, ErrNotRunning) {
@@ -314,7 +332,7 @@ func TestReleaseFilesAreOpenedSafely(t *testing.T) {
 	if data, err := readReleaseFile(file, 5); err != nil || string(data) != "12345" {
 		t.Errorf("readReleaseFile = %q, %v", data, err)
 	}
-	if _, err := programHash(filepath.Join(dir, "missing")); err == nil {
+	if _, err := programHash(filepath.Join(dir, "missing"), 1<<20); err == nil {
 		t.Error("a missing program was hashed")
 	}
 }

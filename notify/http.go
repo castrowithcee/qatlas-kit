@@ -131,9 +131,72 @@ func (c Telegram) base() string {
 }
 
 func (c Telegram) deliver(ctx context.Context, s *Sender, m prepared) error {
+	_, err := c.sendMessage(ctx, s, m)
+	return err
+}
+
+func (c Telegram) sendMessage(ctx context.Context, s *Sender, m prepared) ([]byte, error) {
 	body, _ := json.Marshal(map[string]string{"chat_id": c.ChatID, "text": m.chatText()})
 	target := c.base() + "/bot" + url.PathEscape(c.Token) + "/sendMessage"
-	return s.post(ctx, target, body, nil, "Telegram", httpx.OriginalFields{Message: "description", Code: "error_code"})
+	return s.postRead(ctx, target, body, nil, "Telegram", telegramFields)
+}
+
+var telegramFields = httpx.OriginalFields{Message: "description", Code: "error_code"}
+
+// SendTelegram delivers m like Send and returns the message_id Telegram assigned to the sent message,
+// for example to match a reply to it. It follows the same rules as Send. An answer without ok and a
+// message_id is an error and is not repeated, because the message may already be delivered.
+func (s *Sender) SendTelegram(ctx context.Context, c Telegram, m Message) (int64, error) {
+	var id int64
+	err := s.send(ctx, c, m, func(ctx context.Context, s *Sender, p prepared) error {
+		answer, err := c.sendMessage(ctx, s, p)
+		if err != nil {
+			return err
+		}
+		id, err = sentMessageID(answer)
+		return err
+	})
+	if err != nil {
+		return 0, err
+	}
+	return id, nil
+}
+
+// telegramReply is the envelope of every Bot API answer. Result depends on the method.
+type telegramReply struct {
+	OK          bool            `json:"ok"`
+	Result      json.RawMessage `json:"result"`
+	Description string          `json:"description"`
+	ErrorCode   int             `json:"error_code"`
+	Parameters  struct {
+		RetryAfter int `json:"retry_after"`
+	} `json:"parameters"`
+}
+
+// parseTelegramReply decodes the envelope and returns Result of a successful answer.
+func parseTelegramReply(answer []byte) (json.RawMessage, error) {
+	var reply telegramReply
+	if err := json.Unmarshal(answer, &reply); err != nil {
+		return nil, &Error{Code: output.CodeRuntime, Message: "Telegram sent an answer that is not valid JSON"}
+	}
+	if !reply.OK {
+		return nil, &Error{Code: output.CodeRuntime, Message: "Telegram did not report success"}
+	}
+	return reply.Result, nil
+}
+
+func sentMessageID(answer []byte) (int64, error) {
+	result, err := parseTelegramReply(answer)
+	if err != nil {
+		return 0, err
+	}
+	var sent struct {
+		MessageID int64 `json:"message_id"`
+	}
+	if err := json.Unmarshal(result, &sent); err != nil || sent.MessageID <= 0 {
+		return 0, &Error{Code: output.CodeRuntime, Message: "Telegram's answer carries no message_id"}
+	}
+	return sent.MessageID, nil
 }
 
 func configError(message string) *Error {
@@ -177,9 +240,30 @@ func isLoopback(host string) bool {
 // names the address, which may carry a credential.
 func (s *Sender) post(ctx context.Context, target string, body []byte, headers map[string]string,
 	subject string, fields httpx.OriginalFields) error {
+	_, err := s.postRead(ctx, target, body, headers, subject, fields)
+	return err
+}
+
+// postRead is post that also returns the successful answer, read up to maxAnswer.
+func (s *Sender) postRead(ctx context.Context, target string, body []byte, headers map[string]string,
+	subject string, fields httpx.OriginalFields) ([]byte, error) {
+	answer, _, err := s.exchange(ctx, target, body, headers, httpx.StatusTexts{
+		Subject:    subject,
+		Auth:       subject + " refused the credential",
+		Permission: subject + " does not allow this message",
+		NotFound:   subject + " does not know the address or the chat",
+	}, fields, maxAnswer)
+	return answer, err
+}
+
+// exchange posts one JSON request and returns the successful answer, read up to limit. A failure is an
+// *Error, returned with the first bytes of the failed answer for a caller that reads more of it.
+func (s *Sender) exchange(ctx context.Context, target string, body []byte, headers map[string]string,
+	texts httpx.StatusTexts, fields httpx.OriginalFields, limit int) (answer, failed []byte, err error) {
+	subject := texts.Subject
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, target, bytes.NewReader(body))
 	if err != nil {
-		return configError("the " + subject + " address is not a valid URL")
+		return nil, nil, configError("the " + subject + " address is not a valid URL")
 	}
 	req.Header.Set("Content-Type", "application/json")
 	if s.opts.UserAgent != "" {
@@ -190,25 +274,21 @@ func (s *Sender) post(ctx context.Context, target string, body []byte, headers m
 	}
 	resp, err := s.client.Do(req)
 	if err != nil {
-		return transportError(err, subject)
+		return nil, nil, transportError(err, subject)
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
-		n, err := io.Copy(io.Discard, io.LimitReader(resp.Body, maxAnswer+1))
+		answer, err := io.ReadAll(io.LimitReader(resp.Body, int64(limit)+1))
 		if err != nil {
-			return transportError(err, subject)
+			return nil, nil, transportError(err, subject)
 		}
-		if n > maxAnswer {
-			return &Error{Code: output.CodeRuntime, Message: subject + " answered with more than the size limit"}
+		if len(answer) > limit {
+			return nil, nil, &Error{Code: output.CodeRuntime, Message: subject + " answered with more than the size limit"}
 		}
-		return nil
+		return answer, nil, nil
 	}
-	failure := httpx.ClassifyStatusBody("send", resp.StatusCode, httpx.StatusTexts{
-		Subject:    subject,
-		Auth:       subject + " refused the credential",
-		Permission: subject + " does not allow this message",
-		NotFound:   subject + " does not know the address or the chat",
-	}, resp.Body, fields)
+	failed = httpx.ReadErrorBody(resp.Body)
+	failure := httpx.ClassifyStatusBody("send", resp.StatusCode, texts, bytes.NewReader(failed), fields)
 	out := &Error{Code: codeOf(failure.Class), Message: failure.Message, Original: failure.Original}
 	switch resp.StatusCode {
 	case http.StatusTooManyRequests:
@@ -218,7 +298,7 @@ func (s *Sender) post(ctx context.Context, target string, body []byte, headers m
 	default:
 		out.retry = resp.StatusCode >= 500
 	}
-	return out
+	return nil, failed, out
 }
 
 func codeOf(class httpx.Class) output.Code {

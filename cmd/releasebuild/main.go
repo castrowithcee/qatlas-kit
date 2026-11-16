@@ -32,7 +32,7 @@ func run() error {
 	config := flags.String("config", "", "release configuration file (JSON)")
 	var o releasebuild.Options
 	flags.StringVar(&o.Program, "program", "", "program file name without .exe")
-	flags.StringVar(&o.Namespace, "namespace", "", "signature namespace, <program>-release")
+	flags.StringVar(&o.Namespace, "namespace", "", "signature namespace, <name>-release")
 	flags.StringVar(&o.SignatureAsset, "signature-asset", "", "release file name of the signature over checksums.txt")
 	var previous releasebuild.PreviousSignature
 	flags.StringVar(&previous.Namespace, "previous-namespace", "", "former signature namespace for an additional signature (optional)")

@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"os/exec"
@@ -71,6 +72,18 @@ func (h *holderHelper) wantEnded(t *testing.T) {
 	}
 }
 
+// holdWait bounds how long holdUntilClosed keeps a connection open.
+const holdWait = 5 * time.Second
+
+// holdUntilClosed keeps an accepted connection open until the client closes it
+// or holdWait has passed: macOS cannot report the peer of a connection whose
+// server side has already closed.
+func holdUntilClosed(c net.Conn) {
+	defer c.Close()
+	_ = c.SetReadDeadline(time.Now().Add(holdWait))
+	_, _ = io.Copy(io.Discard, c)
+}
+
 func holderContext(t *testing.T) context.Context {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -81,10 +94,19 @@ func holderContext(t *testing.T) context.Context {
 // wantNoHolder checks that both calls fail with want and report no process.
 func wantNoHolder(t *testing.T, e Endpoint, want error) {
 	t.Helper()
+	wantNoHolderFor(t, e, want, "")
+}
+
+// wantNoHolderFor is wantNoHolder that also wants reason in the error text.
+func wantNoHolderFor(t *testing.T, e Endpoint, want error, reason string) {
+	t.Helper()
 	ctx := holderContext(t)
 	for name, call := range map[string]func(context.Context) (int, error){"Holder": e.Holder, "EndHolder": e.EndHolder} {
-		if pid, err := call(ctx); pid != 0 || !errors.Is(err, want) {
+		pid, err := call(ctx)
+		if pid != 0 || !errors.Is(err, want) {
 			t.Errorf("%s() = %d, %v; want 0, %v", name, pid, err, want)
+		} else if !strings.Contains(err.Error(), reason) {
+			t.Errorf("%s() = %v; want the reason %q", name, err, reason)
 		}
 	}
 }
@@ -123,11 +145,11 @@ func TestHolderRefusesOwnProcess(t *testing.T) {
 				return
 			}
 			if c != nil {
-				_ = c.Close()
+				go holdUntilClosed(c)
 			}
 		}
 	}()
-	wantNoHolder(t, e, ErrRefused)
+	wantNoHolderFor(t, e, ErrRefused, "this process serves the channel")
 }
 
 func TestHolderHelperProcess(t *testing.T) {
@@ -172,7 +194,7 @@ func TestHolderHelperProcess(t *testing.T) {
 			os.Exit(2)
 		}
 		if c != nil {
-			_ = c.Close()
+			go holdUntilClosed(c)
 		}
 	}
 }

@@ -10,6 +10,25 @@ import (
 	"testing"
 )
 
+// widen lets other users read path.
+func widen(t *testing.T, path string) {
+	t.Helper()
+	if err := os.Chmod(path, 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func wantPrivate(t *testing.T, path string) {
+	t.Helper()
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if info.Mode().Perm() != fileMode {
+		t.Errorf("%s has mode %04o, want %04o", path, info.Mode().Perm(), fileMode)
+	}
+}
+
 func TestVaultFilesArePrivate(t *testing.T) {
 	v, _ := created(t, nil)
 	addPending(t, v, testEntry{Name: "writer", Value: "example-1"})
@@ -63,5 +82,26 @@ func TestWidenedModeIsRefused(t *testing.T) {
 	var perm *PermissionError
 	if _, err := v.Document(); !errors.As(err, &perm) {
 		t.Fatalf("Document() of a widened plain file error = %v, want a PermissionError", err)
+	}
+}
+
+func TestReadSealedWithIdentityRefusesWidenedMode(t *testing.T) {
+	v, _ := created(t, nil)
+	if err := v.WriteSealed(sealedName, []byte("example settings")); err != nil {
+		t.Fatal(err)
+	}
+	snap, _ := v.Snapshot()
+	for _, path := range []string{v.path(sealedName), v.recipientPath()} {
+		if err := os.Chmod(path, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		_, err := ReadSealedWithIdentity(v.opts, snap.Identity, sealedName)
+		var perm *PermissionError
+		if !errors.As(err, &perm) || perm.Path != path {
+			t.Fatalf("error = %v, want a PermissionError for %s", err, path)
+		}
+		if err := os.Chmod(path, 0o600); err != nil {
+			t.Fatal(err)
+		}
 	}
 }

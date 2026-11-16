@@ -30,9 +30,18 @@
 //
 // Unix places the socket at <root>/<RuntimeDirName>/<SocketBase>.sock. The
 // root is Endpoint.RuntimeRoot when set; otherwise it is XDG_RUNTIME_DIR, then
-// /run/user/<uid> on Linux, then FallbackDir, and on macOS a path too long for
-// a socket moves to TMPDIR. Unix also uses a private runtime directory, socket
-// permissions, and a lock; Close removes the socket and the lock file. Windows
+// /run/user/<uid> on Linux, then FallbackDir, where Endpoint.FallbackDirName,
+// when set, takes the place of RuntimeDirName; on macOS a path too long for a
+// socket moves to TMPDIR. A runtime root must be a private directory of the
+// user. RuntimeReadable (Endpoint.RuntimeAccess) also accepts one that group
+// and others may read but not write; it never applies to FallbackDir, TMPDIR,
+// or ServiceEndpoint, and Windows ignores it. A root that is a symbolic link,
+// belongs to another user, or is writable by group or others (even with the
+// sticky bit) is refused, because whoever can write there can replace the
+// directory below it. That directory <RuntimeDirName> stays private (mode
+// 0700, the user's own, not a link) in every case and is never corrected when
+// it exists with other permissions. Unix also uses socket permissions and a
+// lock; Close removes the socket and the lock file. Windows
 // uses a protected named pipe that rejects network clients and another first
 // instance. On Unix a running listener can hand its channel to a successor
 // that listens beside it (ListenOptions.Successor, HandOver, AwaitHandover):

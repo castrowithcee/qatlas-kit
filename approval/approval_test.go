@@ -305,9 +305,6 @@ func TestChangesRefusedWithoutAdmin(t *testing.T) {
 		if err := s.Approve(a, item); !errors.Is(err, ErrNotAdmin) {
 			t.Fatalf("Approve() with the %s admin error = %v, want ErrNotAdmin", name, err)
 		}
-		if _, err := s.Revoke(a, "example"); !errors.Is(err, ErrNotAdmin) {
-			t.Fatalf("Revoke() with the %s admin error = %v, want ErrNotAdmin", name, err)
-		}
 		if err := s.Adopt(a, record); !errors.Is(err, ErrNotAdmin) {
 			t.Fatalf("Adopt() with the %s admin error = %v, want ErrNotAdmin", name, err)
 		}
@@ -323,7 +320,7 @@ func TestRevoke(t *testing.T) {
 	a := admin(t, v)
 	approve(t, s, a, "example", exampleState)
 	approve(t, s, a, "kept", exampleState)
-	if n, err := s.Revoke(a, "example", "unknown"); n != 1 || err != nil {
+	if n, _, err := s.Revoke("example", "unknown"); n != 1 || err != nil {
 		t.Fatalf("Revoke() = %d, %v, want 1", n, err)
 	}
 	if err := s.Check("example", exampleState); !errors.Is(err, ErrNotApproved) {
@@ -618,7 +615,7 @@ func TestPreviousFingerprintLabelRenewedByRevoke(t *testing.T) {
 	body = body[:len(body)-1] + "," + legacyBody(t, previousFingerprintLabel, exampleState, "gone")[1:]
 	writeFile(t, v, signed(t, v, testMACLabel, fileSchema, body))
 	s := storeWith(t, v, withPrevious)
-	if n, err := s.Revoke(admin(t, v), "gone"); err != nil || n != 1 {
+	if n, _, err := s.Revoke("gone"); err != nil || n != 1 {
 		t.Fatalf("Revoke() = %d, %v", n, err)
 	}
 	if err := newStore(t, v).Check("old", exampleState); err != nil {

@@ -28,11 +28,34 @@
 //
 // # Only a person approves
 //
-// Approve, Revoke and Adopt need an Admin of the store's vault, and only Authorize creates one. Authorize
-// refuses an agent and a process none of whose standard streams is a terminal before it asks for
-// anything, then reads the passphrase from the terminal and verifies it against the vault, also when the
-// vault is unlocked already. Checking and comparing need no Admin, so a process that holds the vault
-// open, such as a background process, checks every use against the approvals.
+// Approve and Adopt add approved uses, so they need an Admin of the store's vault, and only Authorize creates
+// one. By default Authorize refuses an agent and a process none of whose standard streams is a terminal
+// before it asks for anything, then reads the passphrase from the terminal and verifies it against the vault,
+// also when the vault is unlocked already. An application may give the Admin a validity (see
+// AuthorizeOptions); Approve and Adopt then refuse it once it has expired, and only Admin.Extend renews it,
+// and only while it is still valid. Without a validity an Admin holds as long as the application keeps it.
+//
+// An application chooses explicitly where it departs from that. With a PersonChannel it authorizes without a
+// terminal, for instance through a form of its web interface; it guarantees that the passphrase comes from a
+// person, and Authorize still refuses an agent and verifies the passphrase. With a DelegatedProof it
+// approves through ApproveDelegated and AdoptDelegated on a proof a person gave earlier; it guarantees that
+// the proof is genuine, was established by a person and is presented only by whom it was given to. The kit
+// checks that the proof names the store's vault, has an expiry or states explicitly that it has none, has
+// not expired, and covers every state before it writes. Nothing is approved without one of these proofs.
+//
+// Revoke, Move, Rename and Undo add no approved use and need no Admin. Revoke removes approvals. Move files an
+// approval under another name with the same state, fingerprint and approval time; the fingerprint covers
+// the state only, so the approval holds for exactly the state it was given for. Rename carries approvals
+// over to a state that differs only in a name: the kit replaces the old name by the new one in the stored,
+// verified state, only at the paths the application names and only where the old name stands, and refuses
+// with ErrChanged unless the result equals the new state it was handed, so no right is added. Lists keep
+// their order unless the application names them as unordered, and then only whole items may move. The
+// approvals get the fingerprint of the new state and keep their approval time. Each returns an Undo that
+// writes back the bytes it replaced, only while the file still holds the bytes that change wrote, and
+// otherwise fails without writing. They use the same lock, check value and consistency checks as every
+// other change, and a damaged file is refused. The application decides whether and when to offer them,
+// and whether to ask the person first. Checking and comparing need no Admin either, so a process that
+// holds the vault open, such as a background process, checks every use against the approvals.
 //
 // # Boundary
 //

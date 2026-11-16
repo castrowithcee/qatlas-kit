@@ -8,6 +8,7 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -229,8 +230,32 @@ func TestStartFailureAndTimeout(t *testing.T) {
 		t.Fatalf("Start() with a canceled context = %v", err)
 	}
 
-	if _, err := Start(context.Background(), Command{Program: "/nonexistent/program"}, nil, Options{}); err == nil {
-		t.Fatal("Start() of a missing program succeeded")
+	_, err = Start(context.Background(), Command{Program: filepath.Join(t.TempDir(), "missing-program")}, nil, Options{})
+	if !errors.Is(err, ErrStartFailed) || !strings.HasPrefix(err.Error(), "cannot start the background process: ") {
+		t.Fatalf("Start() of a missing program = %v", err)
+	}
+	if !errors.Is(err, os.ErrNotExist) && !errors.Is(err, exec.ErrNotFound) {
+		t.Fatalf("Start() of a missing program lost its cause: %v", err)
+	}
+	if cause := errors.Unwrap(err); cause == nil || err.Error() != "cannot start the background process: "+cause.Error() {
+		t.Fatalf("errors.Unwrap(%v) = %v, want the cause", err, cause)
+	}
+}
+
+func TestStartReportsAHandoverNobodyTook(t *testing.T) {
+	// The test binary ends at once without reading the handover.
+	cmd := Command{Program: os.Args[0], Args: []string{"-test.run=^$"}}
+	_, err := Start(context.Background(), cmd, bytes.Repeat([]byte("x"), 4<<20), Options{})
+	if !errors.Is(err, ErrHandoverNotTaken) || err.Error() != "the background process did not take the handover" {
+		t.Fatalf("Start() = %v, want ErrHandoverNotTaken", err)
+	}
+}
+
+func TestStartWaitErrorsAreSentinels(t *testing.T) {
+	e := testEndpoint(t)
+	_, err := Start(context.Background(), helperCommand("silent", e), nil, Options{Timeout: 700 * time.Millisecond})
+	if !errors.Is(err, ErrTimeout) {
+		t.Fatalf("Start() of a silent process = %v, want ErrTimeout", err)
 	}
 }
 
@@ -281,11 +306,13 @@ func TestOutcomeAndReason(t *testing.T) {
 	if outcome("ready\n", nil) != nil || outcome(" running ", nil) != nil {
 		t.Fatal("success words rejected")
 	}
-	if err := outcome("", context.DeadlineExceeded); err == nil || !strings.Contains(err.Error(), "in time") {
+	if err := outcome("", context.DeadlineExceeded); !errors.Is(err, ErrTimeout) ||
+		err.Error() != "the background process did not report in time" {
 		t.Fatalf("outcome() = %v", err)
 	}
-	if err := outcome("", nil); err == nil {
-		t.Fatal("empty report accepted")
+	if err := outcome("", nil); !errors.Is(err, ErrEnded) ||
+		err.Error() != "the background process ended before it reported" {
+		t.Fatalf("outcome() of an empty report = %v", err)
 	}
 	if got := cleanReason("a\r\nb\tc"); got != "a b c" {
 		t.Fatalf("cleanReason() = %q", got)

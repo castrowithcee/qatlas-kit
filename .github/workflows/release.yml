@@ -10,7 +10,7 @@ on:
         type: string
         required: true
       namespace:
-        description: SSH signature namespace, <program>-release.
+        description: SSH signature namespace, <name>-release with a lowercase name of at most 64 letters, digits and hyphens.
         type: string
         required: true
       signature-asset:
@@ -37,6 +37,14 @@ on:
         description: Protected environment of the signing job.
         type: string
         default: release
+      dry-run:
+        description: Run only the build job, on any ref; nothing is signed or published and the signing job's environment and secret stay untouched. Requires version.
+        type: boolean
+        default: false
+      version:
+        description: Release version of a dry run, a SemVer tag name such as v1.2.3 or v1.2.3-rc.1; set only with dry-run.
+        type: string
+        default: ''
     secrets:
       RELEASE_SIGNING_KEY:
         description: Private Ed25519 release key; passed by the caller or set in the environment.
@@ -58,11 +66,20 @@ jobs:
           PREVIOUS_NAMESPACE: ${{ inputs.previous-namespace }}
           PREVIOUS_SIGNATURE_ASSET: ${{ inputs.previous-signature-asset }}
           ENVIRONMENT: ${{ inputs.environment }}
+          DRY_RUN: ${{ inputs.dry-run }}
+          VERSION: ${{ inputs.version }}
         run: |
           set -euo pipefail
-          [ "$GITHUB_REF_TYPE" = tag ] || { echo "a release runs on a tag, not on $GITHUB_REF_TYPE $GITHUB_REF_NAME"; exit 1; }
+          if [ "${DRY_RUN:-false}" = true ]; then
+            # The same pattern as the version check of releasebuild; bash matches the whole string, also with newlines.
+            version_pattern='^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$'
+            [[ "${VERSION:-}" =~ $version_pattern ]] || { echo "a dry run needs version, a SemVer tag name such as v1.2.3"; exit 1; }
+          else
+            [ "$GITHUB_REF_TYPE" = tag ] || { echo "a release runs on a tag, not on $GITHUB_REF_TYPE $GITHUB_REF_NAME"; exit 1; }
+            [ -z "${VERSION:-}" ] || { echo "version is only for a dry run"; exit 1; }
+          fi
           printf '%s\n' "$PROGRAM" | grep -Eqx '[a-z][a-z0-9-]{0,63}' || { echo "invalid program name"; exit 1; }
-          [ "$NAMESPACE" = "$PROGRAM-release" ] || { echo "namespace must be $PROGRAM-release"; exit 1; }
+          [[ "$NAMESPACE" =~ ^[a-z][a-z0-9-]{0,63}-release$ ]] || { echo "namespace must be <name>-release"; exit 1; }
           printf '%s\n' "$SIGNATURE_ASSET" | grep -Eqx '[A-Za-z0-9][A-Za-z0-9._-]{0,127}' || { echo "invalid signature asset name"; exit 1; }
           case "$SIGNATURE_ASSET" in checksums.txt|allowed-signers|install.sh|install.ps1) echo "signature asset name is reserved"; exit 1 ;; esac
           if [ -n "$PREVIOUS_NAMESPACE$PREVIOUS_SIGNATURE_ASSET" ]; then
@@ -101,9 +118,17 @@ jobs:
           PREVIOUS_SIGNATURE_ASSET: ${{ inputs.previous-signature-asset }}
           CONFIG: ${{ inputs.config }}
           ALLOWED_SIGNERS: ${{ inputs.allowed-signers }}
+          DRY_RUN: ${{ inputs.dry-run }}
+          VERSION: ${{ inputs.version }}
         run: |
           set -euo pipefail
-          SOURCE_DATE_EPOCH=$(git show -s --format=%ct "refs/tags/$GITHUB_REF_NAME^{commit}")
+          if [ "${DRY_RUN:-false}" = true ]; then
+            release_version=$VERSION
+            SOURCE_DATE_EPOCH=$(git show -s --format=%ct HEAD)
+          else
+            release_version=$GITHUB_REF_NAME
+            SOURCE_DATE_EPOCH=$(git show -s --format=%ct "refs/tags/$GITHUB_REF_NAME^{commit}")
+          fi
           export SOURCE_DATE_EPOCH
           previous=()
           if [ -n "$PREVIOUS_NAMESPACE" ]; then
@@ -111,7 +136,7 @@ jobs:
           fi
           go run github.com/castrowithcee/qatlas-kit/cmd/releasebuild \
             "${previous[@]}" -config "$CONFIG" -program "$PROGRAM" -namespace "$NAMESPACE" -signature-asset "$SIGNATURE_ASSET" -allowed-signers "$ALLOWED_SIGNERS" \
-            -releases-url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases" -version "$GITHUB_REF_NAME" -out dist
+            -releases-url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/releases" -version "$release_version" -out dist
       - name: Collect signing input
         env:
           ALLOWED_SIGNERS: ${{ inputs.allowed-signers }}
@@ -131,9 +156,11 @@ jobs:
           if-no-files-found: error
 
   # The only job that sees the signing key. It checks out and runs no application code and receives only
-  # checksums.txt and the allowed signers file the build job took from the tagged state.
+  # checksums.txt and the allowed signers file the build job took from the tagged state. Its if: keeps a dry
+  # run out of the environment, because a skipped job enters none.
   sign:
     needs: build
+    if: ${{ !inputs.dry-run }}
     runs-on: ubuntu-latest
     environment: ${{ inputs.environment }}
     permissions:
@@ -199,6 +226,7 @@ jobs:
 
   publish:
     needs: sign
+    if: ${{ !inputs.dry-run }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -216,6 +244,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+          [ "$GITHUB_REF_TYPE" = tag ] || { echo "a release is published from a tag, not from $GITHUB_REF_TYPE $GITHUB_REF_NAME"; exit 1; }
           prerelease=()
           if [[ "$GITHUB_REF_NAME" == *-* ]]; then
             prerelease=(--prerelease)

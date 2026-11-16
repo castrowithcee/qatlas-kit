@@ -12,17 +12,38 @@ import (
 // documentation gives where the channel lives. RuntimeDirName and SocketBase
 // must each be a single path component on Unix. RuntimeRoot, when set, must be
 // an absolute, existing, private directory of the user. FallbackDir must be
-// absolute, and may be empty only with RuntimeRoot. On Windows, PipePrefix and
-// SocketBase form the pipe name with the user's SID, and RuntimeRoot and
-// FallbackDir are ignored. Running needs every field except SocketBase.
+// absolute, and may be empty only with RuntimeRoot. FallbackDirName, when set,
+// must be a single path component on Unix. On Windows, PipePrefix and
+// SocketBase form the pipe name with the user's SID, and RuntimeRoot,
+// FallbackDir and FallbackDirName are ignored. Running needs every field
+// except SocketBase.
 type Endpoint struct {
 	RuntimeDirName string
 	SocketBase     string
 	FallbackDir    string
-	RuntimeRoot    string
-	ErrorName      string
-	PipePrefix     string
+	// FallbackDirName names the directory under FallbackDir that holds the
+	// socket when no runtime directory exists. Empty means RuntimeDirName.
+	FallbackDirName string
+	RuntimeRoot     string
+	// RuntimeAccess selects which runtime root the Unix channel accepts. The
+	// zero value is RuntimePrivate. Windows ignores it.
+	RuntimeAccess RuntimeAccess
+	ErrorName     string
+	PipePrefix    string
 }
+
+// RuntimeAccess selects how much access an existing runtime root may allow.
+// The directory that holds the socket stays private in every case.
+type RuntimeAccess int
+
+const (
+	// RuntimePrivate accepts only a private runtime root: a directory of this
+	// user without access for group and others.
+	RuntimePrivate RuntimeAccess = iota
+	// RuntimeReadable also accepts a runtime root of this user that group and
+	// others may read but not write.
+	RuntimeReadable
+)
 
 // ErrRunning means a listener already owns this endpoint.
 var ErrRunning = errors.New("local channel is already running")

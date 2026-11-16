@@ -4,11 +4,14 @@ package vaultproc
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"strings"
 	"testing"
 	"time"
+
+	"filippo.io/age"
 
 	"github.com/castrowithcee/qatlas-kit/background"
 	"github.com/castrowithcee/qatlas-kit/localipc"
@@ -51,11 +54,80 @@ func TestVaultProcessHelper(t *testing.T) {
 		earlier := earlierEndpoint(e)
 		opts.Earlier = &earlier
 	}
+	switch args[0] {
+	case "successor-foreign", "successor-foreign-earlier", "serve-earlier":
+		opts.Config = Config{Endpoint: e}
+		opts.DecodeEarlier = decodeForeign
+		if args[0] == "serve-earlier" {
+			opts.Successor, opts.DecodeEarlier = false, nil
+		}
+		withEarlier := args[0] != "successor-foreign"
+		opts.Configure = func(key *age.X25519Identity, base Config, _ *localipc.Endpoint) (Config, *localipc.Endpoint, error) {
+			if !processHardened() {
+				return Config{}, nil, errors.New("not hardened")
+			}
+			base.Version, base.ProofLabel, base.IdleTimeout = 1, testLabel, 90*time.Minute
+			base.Handlers = testHandlers()
+			base.Handlers["recipient"] = func(context.Context, *Held, json.RawMessage) (any, error) {
+				return key.Recipient().String(), nil
+			}
+			if !withEarlier {
+				return base, nil, nil
+			}
+			earlier := earlierEndpoint(e)
+			return base, &earlier, nil
+		}
+	case "successor-bad-config":
+		opts.Config = Config{Endpoint: e}
+		opts.DecodeEarlier = decodeForeign
+		opts.Configure = func(*age.X25519Identity, Config, *localipc.Endpoint) (Config, *localipc.Endpoint, error) {
+			return Config{}, nil, errors.New("example-secret settings failed")
+		}
+	}
 	err := Run(context.Background(), opts)
 	if err != nil && !errors.Is(err, ErrRunning) {
 		os.Exit(1)
 	}
 	os.Exit(0)
+}
+
+// foreignState is a state in the format of an earlier application version: another shape than the kit's.
+type foreignState struct {
+	Identity   string    `json:"identity"`
+	Document   string    `json:"document"`
+	LocksAt    time.Time `json:"locks_at"`
+	UnlockedAt time.Time `json:"unlocked_at"`
+	MaxUnlock  int64     `json:"max_unlock"`
+}
+
+func encodeForeign(t *testing.T, f foreignState) []byte {
+	t.Helper()
+	data, err := json.Marshal(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return data
+}
+
+// decodeForeign is the DecodeEarlier of the helper modes. It checks that Run hardened the process first.
+func decodeForeign(data []byte) (State, error) {
+	if !processHardened() {
+		return State{}, errors.New("not hardened")
+	}
+	return parseForeign(data)
+}
+
+func parseForeign(data []byte) (State, error) {
+	var f foreignState
+	if err := json.Unmarshal(data, &f); err != nil {
+		return State{}, errors.New("example-secret cannot be read")
+	}
+	id, err := age.ParseX25519Identity(f.Identity)
+	if err != nil {
+		return State{}, errors.New("example-secret key cannot be read")
+	}
+	return State{Identity: id, Document: []byte(f.Document), UnlockedAt: f.UnlockedAt, LocksAt: f.LocksAt,
+		MaxUnlock: time.Duration(f.MaxUnlock)}, nil
 }
 
 func TestStartRunAndLock(t *testing.T) {
@@ -102,5 +174,27 @@ func TestStartRunAndLock(t *testing.T) {
 	}
 	if _, err := Start(ctx, client, helperCommand("serve", e), vault.Snapshot{}, background.Options{}); !errors.Is(err, vault.ErrLocked) {
 		t.Fatalf("Start without a key = %v", err)
+	}
+}
+
+func TestStartReportsAProcessThatDoesNotAnswer(t *testing.T) {
+	e := testEndpoint(t)
+	id := newIdentity(t)
+	// The process serves e, but the client asks at another name and never reaches it.
+	other := e
+	other.SocketBase = "other"
+	client := &Client{Endpoint: other, Recipient: id.Recipient().String(), Version: 1, ProofLabel: testLabel}
+	t.Cleanup(func() {
+		served := &Client{Endpoint: e, Recipient: id.Recipient().String(), Version: 1, ProofLabel: testLabel}
+		_ = served.Lock(context.Background())
+	})
+	_, err := Start(context.Background(), client, helperCommand("serve", e),
+		vault.Snapshot{Identity: id, Document: []byte(testDocument)}, background.Options{Timeout: time.Second})
+	if !errors.Is(err, ErrNoAnswer) || !errors.Is(err, ErrNotRunning) ||
+		!strings.HasPrefix(err.Error(), "the vault process does not answer: ") {
+		t.Fatalf("Start() = %v, want ErrNoAnswer", err)
+	}
+	if cause := errors.Unwrap(err); !errors.Is(cause, ErrNotRunning) || errors.Is(cause, ErrNoAnswer) {
+		t.Fatalf("errors.Unwrap(%v) = %v, want the cause", err, cause)
 	}
 }

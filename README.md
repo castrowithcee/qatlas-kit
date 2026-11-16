@@ -26,9 +26,9 @@ One line per package, in alphabetical order. The package documentation holds the
 - [`jsonschema`](jsonschema): checks JSON values against a strict subset of JSON Schema and names the first violation.
 - [`localipc`](localipc): provides a local channel between processes with checked peer identity.
 - [`manpage`](manpage): adds help topics to a manpage generated from a command tree.
-- [`notify`](notify): delivers notifications over a signed webhook, Slack, Telegram and SMTP with retries, spacing and redaction, and verifies webhook signatures.
+- [`notify`](notify): delivers notifications over a signed webhook, Slack, Telegram and SMTP with retries, spacing and redaction, receives replies to a Telegram bot by long polling, and verifies webhook signatures.
 - [`output`](output): renders ordered results in the CLI output formats and defines the shared error codes.
-- [`projectpath`](projectpath): expands, resolves and compares paths and finds Git working tree roots.
+- [`projectpath`](projectpath): expands, resolves and compares paths, finds Git working tree roots and suggests completions for a typed path.
 - [`ptytest`](ptytest): runs a program at a pseudo-terminal or pseudo console in tests, types input and waits for its output.
 - [`ratelimit`](ratelimit): spaces the requests of one credential and holds them when the remote side asks to wait.
 - [`redact`](redact): replaces registered secret values, also quoted or JSON-escaped, in text, errors and writers.

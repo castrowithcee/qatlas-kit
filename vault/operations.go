@@ -13,7 +13,7 @@ func (v *Vault) Create(passphrase string, document []byte) error {
 	if passphrase == "" {
 		return ErrEmptyPassphrase
 	}
-	if err := checkSchema(document, v.opts.Schemas); err != nil {
+	if err := checkSchema(v.documentPath(), document, v.opts.Schemas); err != nil {
 		return err
 	}
 	v.mu.Lock()
@@ -59,7 +59,7 @@ func (v *Vault) CreateUnencrypted(document []byte) error {
 	if v.opts.Files.Plain == "" {
 		return ErrUnencryptedDisabled
 	}
-	if err := checkSchema(document, v.opts.Schemas); err != nil {
+	if err := checkSchema(v.plainPath(), document, v.opts.Schemas); err != nil {
 		return err
 	}
 	v.mu.Lock()
@@ -137,13 +137,9 @@ func (v *Vault) loadDocument(id *identity) ([]byte, error) {
 	}
 	plain, err := decryptFrom(data, id.key)
 	if err != nil {
-		return nil, fmt.Errorf("cannot decrypt %s: %w", v.documentPath(), ErrDamaged)
+		return nil, decryptFailure(v.documentPath(), data, err)
 	}
-	if err := checkSchema(plain, v.opts.Schemas); err != nil {
-		clear(plain)
-		return nil, fmt.Errorf("%s: %w", v.documentPath(), err)
-	}
-	return plain, nil
+	return v.readDocument(v.documentPath(), plain)
 }
 
 // Document returns a copy of the document: the one held by an unlocked vault, or the plain file of an
@@ -171,19 +167,12 @@ func (v *Vault) loadPlain() ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("cannot read %s: %w", v.plainPath(), err)
 	}
-	if err := checkSchema(data, v.opts.Schemas); err != nil {
-		clear(data)
-		return nil, fmt.Errorf("%s: %w", v.plainPath(), err)
-	}
-	return data, nil
+	return v.readDocument(v.plainPath(), data)
 }
 
 // Write replaces the document of an unlocked or unencrypted vault. The vault keeps holding the previous
 // document when the write fails.
 func (v *Vault) Write(document []byte) error {
-	if err := checkSchema(document, v.opts.Schemas); err != nil {
-		return err
-	}
 	v.mu.Lock()
 	defer v.mu.Unlock()
 	state, err := v.state()
@@ -196,7 +185,13 @@ func (v *Vault) Write(document []byte) error {
 	case StateLocked:
 		return ErrLocked
 	case StateUnencrypted:
+		if err := checkSchema(v.plainPath(), document, v.opts.Schemas); err != nil {
+			return err
+		}
 		return v.write(v.plainPath(), document)
+	}
+	if err := checkSchema(v.documentPath(), document, v.opts.Schemas); err != nil {
+		return err
 	}
 	if err := v.writeDocument(v.identity, document); err != nil {
 		return err

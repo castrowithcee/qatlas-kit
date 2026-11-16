@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -104,6 +105,13 @@ type Options struct {
 	// Schemas are the schema versions of the document the application accepts. The document is a JSON
 	// object whose integer member "schema" is one of them.
 	Schemas []int
+	// EmptyDocument is the document a document file of 0 bytes, plain or decrypted, reads as. It must pass
+	// the schema check, or New fails. Without it such a file is ErrDamaged. Writes never accept 0 bytes.
+	EmptyDocument []byte
+	// SwitchFilter, when set, receives the document on Encrypt (plain to encrypted) and Decrypt (encrypted
+	// to plain) and returns what is carried over. It runs on a copy that is cleared afterwards and may
+	// return it. A filter error or a result that fails the schema check writes nothing.
+	SwitchFilter func(document []byte) ([]byte, error)
 	// Merge merges pending entries on unlock. Without it, a vault with pending entries does not unlock.
 	Merge MergeFunc
 	// WorkFactor is the scrypt work factor of a newly wrapped key. Zero is DefaultWorkFactor. Values below
@@ -125,6 +133,8 @@ type Vault struct {
 
 	// rename replaces a file atomically; a test replaces it to simulate an interrupted write.
 	rename func(oldpath, newpath string) error
+	// remove deletes a pending entry an Update merged; a test replaces it to simulate a failed removal.
+	remove func(path string) error
 
 	mu       sync.Mutex
 	unlocked bool
@@ -139,10 +149,11 @@ func New(opts Options) (*Vault, error) {
 	}
 	opts.Files.Sealed = append([]string(nil), opts.Files.Sealed...)
 	opts.Schemas = append([]int(nil), opts.Schemas...)
+	opts.EmptyDocument = slices.Clone(opts.EmptyDocument)
 	if opts.WorkFactor == 0 {
 		opts.WorkFactor = DefaultWorkFactor
 	}
-	return &Vault{opts: opts, rename: os.Rename}, nil
+	return &Vault{opts: opts, rename: os.Rename, remove: os.Remove}, nil
 }
 
 func (o Options) check() error {
@@ -178,6 +189,11 @@ func (o Options) check() error {
 		return fmt.Errorf("vault: work factor %d is outside 1 to %d", o.WorkFactor, MaxWorkFactor)
 	case o.WorkFactor > 0 && o.WorkFactor < DefaultWorkFactor && !testing.Testing():
 		return fmt.Errorf("vault: work factor %d is below %d", o.WorkFactor, DefaultWorkFactor)
+	}
+	if o.EmptyDocument != nil {
+		if err := checkSchema("", o.EmptyDocument, o.Schemas); err != nil {
+			return errors.New("vault: the empty document is not a valid document")
+		}
 	}
 	return nil
 }

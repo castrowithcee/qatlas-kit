@@ -54,7 +54,8 @@ type Message struct {
 type Options struct {
 	// Attempts is the number of tries per Send; zero is three. Only a failure that may pass is repeated.
 	Attempts int
-	// Backoff is the wait before the second try, doubled for each further one; zero is two seconds.
+	// Backoff is the wait before the second try, doubled for each further one; zero is two seconds. A
+	// Receiver starts its waits after failed polls with it as well.
 	Backoff time.Duration
 	// Timeout bounds one try; zero is 15 seconds.
 	Timeout time.Duration
@@ -166,6 +167,16 @@ func (s *Sender) Send(ctx context.Context, ch Channel, m Message) error {
 	if ch == nil {
 		return &Error{Code: output.CodeInvalidRequest, Message: "no channel was given"}
 	}
+	return s.send(ctx, ch, m, ch.deliver)
+}
+
+// send runs the shared path of every send: check, clean, redact, space, deliver and retry. The caller
+// supplies the delivery of one try.
+func (s *Sender) send(ctx context.Context, ch Channel, m Message,
+	deliver func(ctx context.Context, s *Sender, m prepared) error) error {
+	if ch == nil {
+		return &Error{Code: output.CodeInvalidRequest, Message: "no channel was given"}
+	}
 	var local redact.Redactor
 	local.Add(ch.secrets()...)
 	redactText := func(text string) string { return local.Apply(s.opts.Redactor.Apply(text)) }
@@ -194,7 +205,7 @@ func (s *Sender) Send(ctx context.Context, ch Channel, m Message) error {
 			return contextError(err)
 		}
 		try, cancel := context.WithTimeout(ctx, s.opts.Timeout)
-		err := ch.deliver(try, s, p)
+		err := deliver(try, s, p)
 		cancel()
 		if err == nil {
 			return nil

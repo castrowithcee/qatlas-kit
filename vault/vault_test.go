@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"slices"
@@ -847,5 +848,70 @@ func TestRecipientAndStatus(t *testing.T) {
 	}
 	if _, err := locked.Identity(); !errors.Is(err, ErrLocked) {
 		t.Fatalf("Identity() of a locked vault error = %v, want ErrLocked", err)
+	}
+}
+
+func TestReadSealedWithIdentity(t *testing.T) {
+	v, _ := created(t, map[string]string{"reader": "example-1"})
+	if err := v.WriteSealed(sealedName, []byte("example settings")); err != nil {
+		t.Fatal(err)
+	}
+	snap, err := v.Snapshot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	opts := v.opts
+
+	got, err := ReadSealedWithIdentity(opts, snap.Identity, sealedName)
+	if err != nil || string(got) != "example settings" {
+		t.Fatalf("ReadSealedWithIdentity() = %q, %v", got, err)
+	}
+
+	// A damaged document does not stop it, and the key still opens the sealed file.
+	overwrite(t, v, v.documentPath(), []byte("not an age file"))
+	if _, err := OpenWithIdentity(opts, snap.Identity); !errors.Is(err, ErrDamaged) {
+		t.Fatalf("OpenWithIdentity() with a damaged document error = %v, want ErrDamaged", err)
+	}
+	got, err = ReadSealedWithIdentity(opts, snap.Identity, sealedName)
+	if err != nil || string(got) != "example settings" {
+		t.Fatalf("ReadSealedWithIdentity() with a damaged document = %q, %v", got, err)
+	}
+}
+
+func TestReadSealedWithIdentityRefusals(t *testing.T) {
+	v, _ := created(t, map[string]string{"reader": "example-1"})
+	if err := v.WriteSealed(sealedName, []byte("example settings")); err != nil {
+		t.Fatal(err)
+	}
+	snap, _ := v.Snapshot()
+	opts := v.opts
+
+	if _, err := ReadSealedWithIdentity(opts, foreignIdentity(t), sealedName); !errors.Is(err, ErrKeyMismatch) {
+		t.Errorf("foreign key error = %v, want ErrKeyMismatch", err)
+	}
+	if _, err := ReadSealedWithIdentity(opts, nil, sealedName); !errors.Is(err, ErrLocked) {
+		t.Errorf("nil key error = %v, want ErrLocked", err)
+	}
+	if _, err := ReadSealedWithIdentity(opts, snap.Identity, "other.age"); err == nil {
+		t.Error("undeclared name error = nil")
+	}
+	if _, err := ReadSealedWithIdentity(testOptions(t.TempDir()), snap.Identity, sealedName); !errors.Is(err, ErrAbsent) {
+		t.Errorf("absent recipient error = %v, want ErrAbsent", err)
+	}
+
+	overwrite(t, v, v.path(sealedName), []byte("example settings that are not age data"))
+	_, err := ReadSealedWithIdentity(opts, snap.Identity, sealedName)
+	if !errors.Is(err, ErrDamaged) {
+		t.Fatalf("damaged file error = %v, want ErrDamaged", err)
+	}
+	if strings.Contains(err.Error(), "example settings") || strings.Contains(err.Error(), "failed to") {
+		t.Errorf("error leaks content or library text: %v", err)
+	}
+
+	if err := os.Remove(v.path(sealedName)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ReadSealedWithIdentity(opts, snap.Identity, sealedName); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("missing sealed file error = %v, want fs.ErrNotExist", err)
 	}
 }

@@ -211,10 +211,10 @@ func TestCheckBindingRejectsWithReason(t *testing.T) {
 		{"lock", "f1", "terminals take"},
 		{"info", "f21", "F1 to F20"},
 		{"info", "f0", "F1 to F20"},
-		{"info", "ctrl+a", "free are ctrl+l and ctrl+x"},
+		{"info", "ctrl+a", "free are ctrl+l, ctrl+x, ctrl+] and ctrl+\\"},
 		{"lock", "ctrl+r", "already the key of reload"},
-		{"save", "ctrl+g", "free are ctrl+l and ctrl+x"},
-		{"save", "ctrl+o", "free are ctrl+l and ctrl+x"},
+		{"save", "ctrl+g", "free are ctrl+l, ctrl+x, ctrl+] and ctrl+\\"},
+		{"save", "ctrl+o", "free are ctrl+l, ctrl+x, ctrl+] and ctrl+\\"},
 		{"save", "f8", "already the key of remove"},
 		{"info", "j", "already the key of vim.down"},
 		{"help", "z", "letters"},
@@ -330,6 +330,48 @@ func TestBindChangesMatchLabelAndTextTogether(t *testing.T) {
 	}
 	if k.Label("save") != "F2" || k.Label("help") != "?" || k.Label("info") != "i" || k.Label("lock") != "ctrl+x" {
 		t.Errorf("labels = %s %s %s %s", k.Label("save"), k.Label("help"), k.Label("info"), k.Label("lock"))
+	}
+}
+
+func TestKeysAreTheBoundKeysInForce(t *testing.T) {
+	k := sampleKeymap(t, CharsetUnicode)
+	if got := k.Keys("info"); !slices.Equal(got, []string{"i"}) {
+		t.Errorf("default keys of info = %q", got)
+	}
+	if err := k.Bind(map[ActionID]string{"save": "f4", "info": "f3"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := k.Keys("save"); !slices.Equal(got, []string{"f4"}) {
+		t.Errorf("replaced key of save = %q, want f4", got)
+	}
+	got := k.Keys("info")
+	if !slices.Equal(got, []string{"i", "f3"}) {
+		t.Errorf("keys of info = %q, want the letter and the extra key", got)
+	}
+	got[0] = "x"
+	if k.Label("info") != "i/F3" || !slices.Equal(k.Keys("info"), []string{"i", "f3"}) {
+		t.Error("a change to the returned keys reached the table")
+	}
+	if got := k.Keys("gone"); len(got) != 0 {
+		t.Errorf("an unknown action has the keys %q", got)
+	}
+}
+
+func TestKeyNameLabelSpellsOneKey(t *testing.T) {
+	uni, ascii := sampleKeymap(t, CharsetUnicode), sampleKeymap(t, CharsetASCII)
+	for _, c := range []struct{ key, unicode, ascii string }{
+		{"f2", "F2", "F2"},
+		{"up", "↑", "up"},
+		{"left", "←", "left"},
+		{"ctrl+x", "ctrl+x", "ctrl+x"},
+		{"q", "q", "q"},
+	} {
+		if got := uni.KeyNameLabel(c.key); got != c.unicode {
+			t.Errorf("Unicode label of %s = %q, want %q", c.key, got, c.unicode)
+		}
+		if got := ascii.KeyNameLabel(c.key); got != c.ascii {
+			t.Errorf("ASCII label of %s = %q, want %q", c.key, got, c.ascii)
+		}
 	}
 }
 
@@ -519,5 +561,80 @@ func TestKeyNameGivesShiftedFunctionKeysTheirStoredName(t *testing.T) {
 	}
 	if !k.Is(tea.KeyPressMsg{Code: tea.KeyF1, Mod: tea.ModShift}, "save", InputText) {
 		t.Error("shift+F1 does not reach the binding f13")
+	}
+}
+
+// ctrl+] and ctrl+\ are free for replaceable actions: as the default key of a RebindReplace action and as the
+// replacement or extra key of a user's binding.
+func TestCtrlPunctuationKeysCanBeBound(t *testing.T) {
+	for _, key := range []string{"ctrl+]", `ctrl+\`} {
+		table := sampleActions()
+		table[3].DefaultKeys = []string{key}
+		k, err := NewKeymap(table, CharsetUnicode)
+		if err != nil {
+			t.Fatalf("NewKeymap with %s as the key of a replaceable action: %v", key, err)
+		}
+		if id, ok := k.Match(press(key), InputNavigation); !ok || id != "lock" {
+			t.Errorf("%s matches %q, %v; want lock", key, id, ok)
+		}
+
+		k = sampleKeymap(t, CharsetUnicode)
+		for _, action := range []ActionID{"save", "lock", "info"} {
+			if got, err := k.CheckBinding(action, key, nil); err != nil || got != key {
+				t.Errorf("CheckBinding(%s, %s) = %q, %v; want it accepted", action, key, got, err)
+			}
+		}
+		for _, action := range []ActionID{"save", "info"} {
+			if got, errs := k.Resolve(map[ActionID]string{action: key}); len(errs) != 0 || got[action] != key {
+				t.Errorf("Resolve(%s: %s) = %v, %v; want it kept", action, key, got, errs)
+			}
+		}
+
+		// A key another action holds is refused, as is the key an action gives up for it.
+		_, err = k.CheckBinding("save", key, map[ActionID]string{"lock": key})
+		if err == nil || !strings.Contains(err.Error(), "already the key of lock") {
+			t.Errorf("CheckBinding(save, %s) while lock holds it: %v", key, err)
+		}
+	}
+}
+
+// Two entries that end on one control punctuation key are both dropped.
+func TestResolveDropsCollidingCtrlPunctuationKeys(t *testing.T) {
+	k := sampleKeymap(t, CharsetUnicode)
+	got, errs := k.Resolve(map[ActionID]string{"save": `ctrl+\`, "lock": `ctrl+\`, "help": "ctrl+]"})
+	if want := map[ActionID]string{"help": "ctrl+]"}; !maps.Equal(got, want) {
+		t.Errorf("Resolve = %v, want %v", got, want)
+	}
+	if len(errs) != 2 {
+		t.Fatalf("errors = %v, want one per dropped entry", errs)
+	}
+	for _, e := range errs {
+		if !strings.Contains(e.Reason, "already the key of") {
+			t.Errorf("reason = %q", e.Reason)
+		}
+	}
+}
+
+// The control keys that share a byte with another key stay refused, each with its own reason.
+func TestCtrlPunctuationKeysThatStayRefused(t *testing.T) {
+	k := sampleKeymap(t, CharsetUnicode)
+	for key, reason := range map[string]string{
+		"ctrl+[": "same as esc", "ctrl+^": "ctrl+6, which vim uses", "ctrl+_": "readline uses to undo",
+		"ctrl+/": "readline uses to undo", "ctrl+a": "free are", "ctrl+e": "free are", "ctrl+w": "free are",
+		"ctrl+m": "free are", "ctrl+z": "free are", "ctrl+s": "free are",
+	} {
+		for _, action := range []ActionID{"save", "info"} {
+			if _, err := k.CheckBinding(action, key, nil); err == nil || !strings.Contains(err.Error(), reason) {
+				t.Errorf("CheckBinding(%s, %s) = %v, want a refusal with %q", action, key, err, reason)
+			}
+		}
+		if got, errs := k.Resolve(map[ActionID]string{"save": key}); got != nil || len(errs) != 1 {
+			t.Errorf("Resolve(%s) = %v, %v; want the key dropped", key, got, errs)
+		}
+		table := sampleActions()
+		table[3].DefaultKeys = []string{key}
+		if _, err := NewKeymap(table, CharsetUnicode); err == nil || !strings.Contains(err.Error(), reason) {
+			t.Errorf("NewKeymap with %s as a default: %v, want %q", key, err, reason)
+		}
 	}
 }

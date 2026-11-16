@@ -23,13 +23,13 @@ func listCatalogs() i18n.Catalogs[TextID] {
 		i18n.English: {
 			"col.name": "Name", "col.kind": "Kind", "col.state": "State", "col.size": "Size", "col.note": "Note",
 			"list.empty": "No plants yet; {new} adds one.", "list.nogroup": "unsorted",
-			"bar.group": "Group", "bar.group.kind": "Kind", "bar.group.none": "None",
+			"bar.date": "Date", "bar.group": "Group", "bar.group.kind": "Kind", "bar.group.none": "None",
 			"bar.state": "State", "bar.state.all": "All", "bar.state.on": "Active", "bar.state.off": "Inactive",
 		},
 		i18n.German: {
 			"col.name": "Name", "col.kind": "Art", "col.state": "Zustand", "col.size": "Größe", "col.note": "Notiz",
 			"list.empty": "Noch keine Pflanzen; {new} legt eine an.", "list.nogroup": "unsortiert",
-			"bar.group": "Gruppe", "bar.group.kind": "Art", "bar.group.none": "Keine",
+			"bar.date": "Datum", "bar.group": "Gruppe", "bar.group.kind": "Art", "bar.group.none": "Keine",
 			"bar.state": "Zustand", "bar.state.all": "Alle", "bar.state.on": "Aktiv", "bar.state.off": "Inaktiv",
 		},
 	}
@@ -563,6 +563,58 @@ func TestEmptyListAndFilterWithoutMatch(t *testing.T) {
 	}
 }
 
+// SetEmpty sets the sentence of the empty list for its state; an empty text restores ListSpec.Empty, and the
+// sentence of a filter without match stays the list's own.
+func TestSetEmptyReplacesTheSentenceOfTheEmptyList(t *testing.T) {
+	l, _ := newSampleList(t, Styles{}, i18n.English, nil)
+	before, _ := l.View(Styles{}, 60, 4)
+	l.SetEmpty("")
+	if view, _ := l.View(Styles{}, 60, 4); view != before {
+		t.Errorf("an empty text changed the view:\n%s\nwas\n%s", view, before)
+	}
+	l.SetEmpty("The vault is locked; u unlocks it.")
+	view, _ := l.View(Styles{}, 60, 4)
+	if !strings.Contains(view, "The vault is locked; u unlocks it.") || strings.Contains(view, "No plants") {
+		t.Errorf("the set sentence:\n%s", view)
+	}
+	screen, _, ok := l.Overlay(Styles{}, sampleScreen(100, 30), 100, 30, Rect{Width: 100, Height: 30})
+	if !ok || !strings.Contains(screen, "The vault is locked; u unlocks it.") {
+		t.Errorf("the set sentence in the modal (ok %v):\n%s", ok, screen)
+	}
+	l.SetEmpty("Nothing\x1b[2J here\a")
+	view, _ = l.View(Styles{}, 60, 4)
+	if plain := ansi.Strip(view); strings.ContainsAny(plain, "\x1b\a") || !strings.Contains(plain, `Nothing\x1b[2J here\a`) {
+		t.Errorf("control characters reached the screen: %q", plain)
+	}
+	long := strings.Repeat("The filter bar hides every entry; clear the period or the level. ", 3)
+	l.SetEmpty(long)
+	view, _ = l.View(Styles{}, 30, 12)
+	if n := strings.Count(ansi.Strip(view), "filter bar"); n != 3 {
+		t.Errorf("the long sentence was not wrapped:\n%s", view)
+	}
+	for _, line := range strings.Split(view, "\n") {
+		if w := lipgloss.Width(line); w > 30 {
+			t.Errorf("line of width %d > 30: %q", w, line)
+		}
+	}
+	if err := l.SetItems(samplePlants()); err != nil {
+		t.Fatal(err)
+	}
+	l.SetFilter("zzz")
+	view, _ = l.View(Styles{}, 80, 5)
+	if !strings.Contains(view, `No entry matches "zzz"; esc clears the filter.`) || strings.Contains(view, "filter bar hides") {
+		t.Errorf("a filter without match:\n%s", view)
+	}
+	if err := l.SetItems(nil); err != nil {
+		t.Fatal(err)
+	}
+	l.SetFilter("")
+	l.SetEmpty("")
+	if view, _ = l.View(Styles{}, 60, 4); view != before {
+		t.Errorf("SetEmpty(\"\") did not restore ListSpec.Empty:\n%s", view)
+	}
+}
+
 // Control characters in cells, group keys and the typed filter never reach the terminal.
 func TestListEscapesControlCharacters(t *testing.T) {
 	for look, st := range looks(t) {
@@ -574,7 +626,7 @@ func TestListEscapesControlCharacters(t *testing.T) {
 		l.SetGrouped(true)
 		keysTo(l, "/")
 		typeList(l, "x")
-		l.query = append(l.query, '\x1b')
+		l.query.runes = append(l.query.runes, '\x1b')
 		view, _ := l.View(st, 80, 6)
 		plain := ansi.Strip(view)
 		if strings.ContainsAny(plain, "\x1b\x07") {
@@ -634,6 +686,84 @@ func TestRowClickMarksThenOpens(t *testing.T) {
 	}
 	if _, handled := clickFocused(l, MouseResult{Item: "gone", Zone: ZoneRows, Action: "enter", Handled: true}, true); handled {
 		t.Error("a target of an entry no longer shown acted")
+	}
+}
+
+// Only a list with the focus draws the selection mark; the marked row stays and returns with the focus, the
+// rows stay clickable, and the modal always draws the mark.
+func TestSelectionMarkOnlyWithFocus(t *testing.T) {
+	for name, st := range map[string]Styles{"dark": looks(t)["dark"], "noneascii": looks(t)["noneascii"], "asciidark": looks(t)["asciidark"]} {
+		l, _ := newSampleList(t, st, i18n.English, nil)
+		if err := l.SetItems(samplePlants()); err != nil {
+			t.Fatal(err)
+		}
+		mark := st.SelectionMark()
+		markedLine := func(width, height int) int {
+			view, _ := l.View(st, width, height)
+			at := -1
+			for i, line := range strings.Split(ansi.Strip(view), "\n") {
+				if strings.HasPrefix(line, ansi.Strip(mark)) {
+					if at >= 0 {
+						t.Fatalf("%s: two marks", name)
+					}
+					at = i
+				}
+			}
+			return at
+		}
+		keysTo(l, "down")
+		on := markedLine(70, 12)
+		if on < 0 {
+			t.Fatalf("%s: no mark with focus", name)
+		}
+		sel := selected(t, l)
+		l.SetFocused(false)
+		if markedLine(70, 12) != -1 {
+			t.Errorf("%s: mark without focus", name)
+		}
+		if selected(t, l) != sel {
+			t.Errorf("%s: selection lost without focus", name)
+		}
+		l.SetFocused(true)
+		if got := markedLine(70, 12); got != on {
+			t.Errorf("%s: mark at %d after focus, was %d", name, got, on)
+		}
+	}
+}
+
+// Rows without focus are clickable and markable; the first click marks and takes no action beyond that.
+func TestRowClickWithoutFocusMarks(t *testing.T) {
+	l := filledList(t, nil)
+	l.SetFocused(false)
+	_, targets := l.View(Styles{}, 60, 10)
+	for _, tg := range targets {
+		if tg.Item == "mint" {
+			m := NewMouseMap(targets, true)
+			if open, handled := l.Click(m.Handle(click(tg.Rect.X+1, tg.Rect.Y))); open != "" || !handled || selected(t, l) != "mint" {
+				t.Fatalf("click without focus: open %q handled %v marked %q", open, handled, selected(t, l))
+			}
+			return
+		}
+	}
+	t.Fatal("no target for mint")
+}
+
+// The selection stays inside the window without focus, and a new list has the focus.
+func TestUnfocusedKeepsSelectionInView(t *testing.T) {
+	l := filledList(t, nil)
+	if !l.focused {
+		t.Fatal("a new list has no focus")
+	}
+	l.SetFocused(false)
+	keysTo(l, "down", "down", "down")
+	view, _ := l.View(Styles{}, 60, 3)
+	if strings.Count(view, "\n") != 2 || !strings.Contains(view, string(selected(t, l))) {
+		t.Fatalf("the marked row %q is not in the unfocused view: %q", selected(t, l), view)
+	}
+	l.SetFocused(true)
+	view, _ = l.View(Styles{}, 60, 3)
+	if !strings.Contains(view, string(selected(t, l))) {
+		t.Errorf("the marked row %q is not in view: %q", selected(t, l), view)
 	}
 }
 
@@ -1317,6 +1447,17 @@ func frameRows(view string) (rows []string, top, bottom int) {
 	return rows, top, bottom
 }
 
+// The modal draws the selection mark whether or not SetFocused was called with false.
+func TestListModalAlwaysDrawsMark(t *testing.T) {
+	st := looks(t)["noneascii"]
+	l := newModalList(t, st, 5, nil)
+	l.SetFocused(false)
+	view, _, ok := l.Overlay(st, sampleScreen(100, 30), 100, 30, Rect{Y: 3, Width: 100, Height: 26})
+	if !ok || !strings.Contains(ansi.Strip(view), ansi.Strip(st.SelectionMark())) {
+		t.Fatalf("the modal draws no mark (ok %v)", ok)
+	}
+}
+
 func TestListModalIsCentredWithTitleAndSearchFirst(t *testing.T) {
 	st := looks(t)["dark"]
 	l := newModalList(t, st, 5, nil)
@@ -1847,4 +1988,203 @@ func TestGoldenListKeptGroup(t *testing.T) {
 	l.Select("mint")
 	out, _ := l.View(st, 100, 14)
 	checkGolden(t, "listgroups.kept.golden", out+"\n")
+}
+
+func fruitList(t *testing.T, edit func(*ListSpec)) *List {
+	t.Helper()
+	l, _ := newSampleList(t, Styles{}, i18n.English, edit)
+	var items []ListItem
+	for _, id := range []string{"apple", "apricot", "grape", "maple", "pear"} {
+		items = append(items, ListItem{ID: ItemID(id), Cells: []string{id, "", "", ""}})
+	}
+	if err := l.SetItems(items); err != nil {
+		t.Fatal(err)
+	}
+	return l
+}
+
+func typedList(t *testing.T) *List {
+	return fruitList(t, func(s *ListSpec) { s.Search, s.Keys.Search = SearchAsTyped, "" })
+}
+
+var (
+	altKey      = func(r rune) tea.KeyPressMsg { return tea.KeyPressMsg{Code: r, Mod: tea.ModAlt} }
+	ctrlKey     = func(r rune) tea.KeyPressMsg { return tea.KeyPressMsg{Code: r, Mod: tea.ModCtrl} }
+	ctrlLeftKey = tea.KeyPressMsg{Code: tea.KeyLeft, Mod: tea.ModCtrl}
+)
+
+// Typing and deleting in the middle of the filter text filter at once, and the selection stays on its entry
+// while the entry shows.
+func TestFilterEditsInTheMiddleAndKeepsTheSelection(t *testing.T) {
+	l := typedList(t)
+	l.Select("maple")
+	typeList(l, "ap")
+	if got := shownRows(l); got != "apple,apricot,grape,maple" || selected(t, l) != "maple" {
+		t.Fatalf("ap shows %s, marks %q", got, selected(t, l))
+	}
+	l.Update(keyOf("left"))
+	l.Update(keyOf("backspace"))
+	if l.Query() != "p" || shownRows(l) != "apple,apricot,grape,maple,pear" || selected(t, l) != "maple" {
+		t.Fatalf("backspace in the middle: %q shows %s", l.Query(), shownRows(l))
+	}
+	typeList(l, "a")
+	if l.Query() != "ap" || shownRows(l) != "apple,apricot,grape,maple" || selected(t, l) != "maple" {
+		t.Fatalf("typing at the start: %q shows %s", l.Query(), shownRows(l))
+	}
+	l.Update(ctrlKey('a'))
+	l.Update(tea.KeyPressMsg{Code: tea.KeyDelete})
+	if l.Query() != "p" || len(l.rows) != 5 {
+		t.Fatalf("delete at the start: %q", l.Query())
+	}
+	l.Update(ctrlKey('e'))
+	l.Update(ctrlKey('u'))
+	typeList(l, "apple pie")
+	if len(l.rows) != 0 {
+		t.Fatalf("apple pie shows %s", shownRows(l))
+	}
+	// A word jump to the start of the word, then the deletion of the word to its right.
+	l.Update(ctrlLeftKey)
+	l.Update(altKey('d'))
+	if l.Query() != "apple " || shownRows(l) != "apple" {
+		t.Fatalf("alt+d: %q shows %s", l.Query(), shownRows(l))
+	}
+	typeList(l, "tree")
+	l.Update(ctrlKey('w'))
+	if l.Query() != "apple " {
+		t.Fatalf("ctrl+w: %q", l.Query())
+	}
+	l.Update(ctrlKey('a'))
+	l.Update(ctrlKey('k'))
+	if l.Query() != "" || len(l.rows) != 5 {
+		t.Fatalf("ctrl+k from the start: %q", l.Query())
+	}
+}
+
+// Up, down, page up, page down, home and end move the rows while the filter takes text; the cursor in the
+// text stays where it is.
+func TestRowKeysMoveTheRowsNotTheCursor(t *testing.T) {
+	l := typedList(t)
+	typeList(l, "p")
+	l.View(Styles{}, 40, 8)
+	l.Update(keyOf("left"))
+	if l.query.cursor != 0 {
+		t.Fatalf("left leaves the cursor at %d", l.query.cursor)
+	}
+	for _, step := range []struct {
+		key  string
+		want ItemID
+	}{{"down", "apricot"}, {"end", "pear"}, {"home", "apple"}, {"pgdown", "pear"}, {"pgup", "apple"}} {
+		l.Update(keyOf(step.key))
+		if got := selected(t, l); got != step.want {
+			t.Errorf("%s marks %q, want %q", step.key, got, step.want)
+		}
+		if l.query.cursor != 0 || l.Query() != "p" {
+			t.Errorf("%s moved the cursor to %d or changed the text to %q", step.key, l.query.cursor, l.Query())
+		}
+	}
+	l.Update(tea.KeyPressMsg{Code: tea.KeyRight})
+	if l.query.cursor != 1 {
+		t.Errorf("right leaves the cursor at %d", l.query.cursor)
+	}
+}
+
+// Left and right move the cursor in the filter text; where a group is left to fold, they fold as before.
+func TestLeftAndRightFoldGroupsOnlyWithoutFilterText(t *testing.T) {
+	l := filledList(t, func(s *ListSpec) { s.Search, s.Keys.Search = SearchAsTyped, "" })
+	l.SetGrouped(true)
+	l.Update(keyOf("down"))
+	l.Update(keyOf("left"))
+	if got := shownRows(l); !strings.HasPrefix(got, "[herbs],[trees]") {
+		t.Fatalf("left on an empty filter does not fold herbs: %s", got)
+	}
+	if l.query.cursor != 0 {
+		t.Errorf("folding moved the cursor to %d", l.query.cursor)
+	}
+	typeList(l, "ar")
+	before := shownRows(l)
+	l.Update(keyOf("left"))
+	if l.query.cursor != 1 || shownRows(l) != before {
+		t.Errorf("left with filter text: cursor %d, rows %s then %s", l.query.cursor, before, shownRows(l))
+	}
+}
+
+// A long filter scrolls sideways, the line is never wider than the width and the cursor stays in view.
+func TestLongFilterScrollsAndKeepsTheCursorInView(t *testing.T) {
+	const text = "abcdefghijklmnopqrstuvwxyz"
+	l := typedList(t)
+	typeList(l, text)
+	first := func(st Styles, width int) string {
+		view, _ := l.View(st, width, 4)
+		return strings.Split(view, "\n")[0]
+	}
+	if got := first(Styles{}, 12); got != text[len(text)-11:]+"_" {
+		t.Errorf("end of the text: %q", got)
+	}
+	l.Update(ctrlKey('a'))
+	if got := first(Styles{}, 12); got != text[:12] {
+		t.Errorf("start of the text: %q", got)
+	}
+	for range 13 {
+		l.Update(tea.KeyPressMsg{Code: tea.KeyRight})
+	}
+	if got := first(Styles{}, 12); !strings.Contains(got, string(text[13])) {
+		t.Errorf("the cell of the cursor left the view: %q", got)
+	}
+	for look, st := range looks(t) {
+		for width := 0; width <= 30; width++ {
+			if w := ansi.StringWidth(first(st, width)); w != width {
+				t.Errorf("%s: the filter line is %d cells at width %d", look, w, width)
+			}
+		}
+	}
+}
+
+// Pasted text goes in at the cursor by the rule of the text line, and only where the filter takes text.
+func TestPasteIntoTheFilter(t *testing.T) {
+	l := fruitList(t, nil)
+	if l.Paste("ap") || l.Query() != "" {
+		t.Fatal("a paste without an open filter changed the list")
+	}
+	keysTo(l, "/")
+	typeList(l, "ar")
+	l.Update(keyOf("left"))
+	if !l.Paste("p") || l.Query() != "apr" || shownRows(l) != "apricot" {
+		t.Fatalf("paste in the middle: %q shows %s", l.Query(), shownRows(l))
+	}
+	if l.Paste("\x1b\x07‮") || l.Query() != "apr" {
+		t.Errorf("control characters were taken: %q", l.Query())
+	}
+	l.Update(ctrlKey('e'))
+	l.Update(ctrlKey('u'))
+	if !l.Paste("ap\r\nple\tx\n\n") || l.Query() != "ap ple x" {
+		t.Errorf("breaks and tabs: %q", l.Query())
+	}
+	keysTo(l, "enter")
+	if l.Paste("y") || l.Query() != "ap ple x" {
+		t.Error("a paste after the filter was kept changed it")
+	}
+	typed := typedList(t)
+	if !typed.Paste("gr") || shownRows(typed) != "grape" {
+		t.Errorf("paste into a filter that filters as typed: shows %s", shownRows(typed))
+	}
+}
+
+// SetFilter puts the cursor at the end, and the search key does so for a kept filter, so typing goes on at the end.
+func TestFilterTypingContinuesAtTheEnd(t *testing.T) {
+	l := fruitList(t, nil)
+	l.SetFilter("ap")
+	keysTo(l, "/")
+	typeList(l, "r")
+	if l.Query() != "apr" {
+		t.Errorf("after SetFilter: %q", l.Query())
+	}
+	keysTo(l, "enter")
+	l.Update(keyOf("left"))
+	keysTo(l, "/", "enter")
+	l.Update(ctrlKey('a'))
+	keysTo(l, "enter", "/")
+	typeList(l, "i")
+	if l.Query() != "apri" {
+		t.Errorf("after a kept filter: %q", l.Query())
+	}
 }

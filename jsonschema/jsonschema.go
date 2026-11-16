@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"regexp"
+	"regexp/syntax"
 	"sort"
 	"strconv"
 	"strings"
@@ -62,23 +63,130 @@ func Validate(schema json.RawMessage, value any, mode Mode) error {
 // constraint is never skipped in silence. The errors are joined in a fixed order, depth first, each naming
 // its schema path.
 func CheckSchema(schema json.RawMessage) error {
-	var node map[string]json.RawMessage
-	if json.Unmarshal(schema, &node) != nil || node == nil {
+	if json.Valid(schema) && knownValid(schema, nil) {
+		return nil
+	}
+	return checkSchemaTree(schema)
+}
+
+// checkSchemaTree decodes the schema into a tree and checks it. It is the reference for every verdict and
+// error text; knownValid only spares it for schemas it would accept.
+func checkSchemaTree(schema json.RawMessage) error {
+	if !json.Valid(schema) {
 		return fmt.Errorf("schema is invalid")
 	}
-	return errors.Join(checkNode(node, "$")...)
-}
-
-// asSchema reads raw as a schema object; null and anything but an object is not one.
-func asSchema(raw json.RawMessage) (map[string]json.RawMessage, bool) {
-	var child map[string]json.RawMessage
-	if json.Unmarshal(raw, &child) != nil || child == nil {
-		return nil, false
+	d := decoder{data: schema}
+	d.space()
+	if d.pos == len(schema) || schema[d.pos] != '{' {
+		return fmt.Errorf("schema is invalid")
 	}
-	return child, true
+	return errors.Join(checkNode(d.object(), "$")...)
 }
 
-func sortedKeys(m map[string]json.RawMessage) []string {
+// object is a decoded JSON object. Its members hold nil, bool, string, json.Number, []any or *object, and
+// the last of duplicate members wins, as with encoding/json.
+type object struct {
+	members map[string]any
+	// enumOverflows records that the last enum member holds a number outside the float64 range anywhere in
+	// its text, even in a member a later duplicate replaces. encoding/json refuses such an enum when it
+	// decodes it into an any, which is how CheckSchema holds enum.
+	enumOverflows bool
+}
+
+// decoder reads a schema that json.Valid accepted, so it does not check the syntax again.
+type decoder struct {
+	data      []byte
+	pos       int
+	overflows int
+}
+
+func (d *decoder) space() {
+	for d.pos < len(d.data) && strings.IndexByte(" \t\r\n", d.data[d.pos]) >= 0 {
+		d.pos++
+	}
+}
+
+func (d *decoder) value() any {
+	d.space()
+	switch d.data[d.pos] {
+	case '{':
+		return d.object()
+	case '[':
+		d.pos++
+		items := []any{}
+		for d.space(); d.data[d.pos] != ']'; d.space() {
+			items = append(items, d.value())
+			d.space()
+			if d.data[d.pos] == ',' {
+				d.pos++
+			}
+		}
+		d.pos++
+		return items
+	case '"':
+		return d.string()
+	case 't':
+		d.pos += len("true")
+		return true
+	case 'f':
+		d.pos += len("false")
+		return false
+	case 'n':
+		d.pos += len("null")
+		return nil
+	}
+	start := d.pos
+	for d.pos < len(d.data) && strings.IndexByte("+-.0123456789Ee", d.data[d.pos]) >= 0 {
+		d.pos++
+	}
+	literal := string(d.data[start:d.pos])
+	if _, err := strconv.ParseFloat(literal, 64); err != nil {
+		d.overflows++
+	}
+	return json.Number(literal)
+}
+
+func (d *decoder) object() *object {
+	d.pos++
+	node := &object{members: map[string]any{}}
+	for d.space(); d.data[d.pos] != '}'; d.space() {
+		name := d.string()
+		d.space()
+		d.pos++ // the colon
+		overflows := d.overflows
+		node.members[name] = d.value()
+		if name == "enum" {
+			node.enumOverflows = d.overflows > overflows
+		}
+		d.space()
+		if d.data[d.pos] == ',' {
+			d.pos++
+		}
+	}
+	d.pos++
+	return node
+}
+
+func (d *decoder) string() string {
+	start, plain := d.pos, true
+	for d.pos++; d.data[d.pos] != '"'; d.pos++ {
+		if d.data[d.pos] == '\\' {
+			plain = false
+			d.pos++
+		}
+	}
+	d.pos++
+	quoted := d.data[start:d.pos]
+	if plain && utf8.Valid(quoted) {
+		return string(quoted[1 : len(quoted)-1])
+	}
+	// encoding/json resolves escapes, unpaired surrogates and invalid UTF-8; its result is the reference.
+	var s string
+	_ = json.Unmarshal(quoted, &s)
+	return s
+}
+
+func sortedKeys(m map[string]any) []string {
 	names := make([]string, 0, len(m))
 	for name := range m {
 		names = append(names, name)
@@ -99,139 +207,142 @@ var nullMessages = map[string]string{
 	"format": "has an invalid format", "propertyNames": "has invalid propertyNames",
 }
 
-func checkNode(node map[string]json.RawMessage, path string) []error {
+func checkNode(node *object, path string) []error {
 	var errs []error
 	bad := func(format string, args ...any) {
 		errs = append(errs, fmt.Errorf("schema at %s %s", path, fmt.Sprintf(format, args...)))
 	}
-	for _, name := range sortedKeys(node) {
+	names := sortedKeys(node.members)
+	for _, name := range names {
 		if !knownKeyword(name) {
 			bad("uses the unsupported keyword %s", name)
 		}
 	}
 
 	// A literal null is malformed for every checked keyword, though encoding/json decodes it into a bool or
-	// a string without error. Past this point node holds no null checked keyword.
-	trimmed := make(map[string]json.RawMessage, len(node))
-	for name, raw := range node {
-		trimmed[name] = raw
+	// a string without error. Past this point a checked keyword that is present is not null.
+	present := func(name string) (any, bool) {
+		v, ok := node.members[name]
+		return v, ok && v != nil
 	}
-	for _, name := range sortedKeys(node) {
-		if message, checked := nullMessages[name]; checked && string(node[name]) == "null" {
+	for _, name := range names {
+		if message, checked := nullMessages[name]; checked && node.members[name] == nil {
 			bad("%s", message)
-			delete(trimmed, name)
 		}
 	}
-	node = trimmed
 
-	if raw := node["type"]; len(raw) > 0 {
-		var kind string
-		if json.Unmarshal(raw, &kind) != nil || !knownType(kind) {
+	if v, ok := present("type"); ok {
+		if kind, isString := v.(string); !isString || !knownType(kind) {
 			bad("has an invalid type")
 		}
 	}
-	if raw := node["enum"]; len(raw) > 0 {
-		var allowed []any
-		if json.Unmarshal(raw, &allowed) != nil || len(allowed) == 0 {
+	if v, ok := present("enum"); ok {
+		if allowed, isArray := v.([]any); !isArray || len(allowed) == 0 || node.enumOverflows {
 			bad("has an invalid enum")
 		}
 	}
-	if raw := node["required"]; len(raw) > 0 {
-		var required []string
-		if json.Unmarshal(raw, &required) != nil || required == nil {
+	if v, ok := present("required"); ok {
+		if !isStringArray(v) {
 			bad("has invalid required fields")
 		}
 	}
 	for _, pair := range [][2]string{
 		{"minProperties", "maxProperties"}, {"minItems", "maxItems"}, {"minLength", "maxLength"},
 	} {
-		valid := true
-		for _, name := range pair {
-			if len(node[name]) > 0 {
-				if _, ok := countBound(node[name]); !ok {
-					bad("has an invalid %s", name)
-					valid = false
-				}
+		var bounds [2]int
+		valid, both := true, true
+		for i, name := range pair {
+			v, ok := present(name)
+			if !ok {
+				both = false
+				continue
+			}
+			if bounds[i], ok = countBound(v); !ok {
+				bad("has an invalid %s", name)
+				valid = false
 			}
 		}
-		if valid && len(node[pair[0]]) > 0 && len(node[pair[1]]) > 0 {
-			lower, _ := countBound(node[pair[0]])
-			upper, _ := countBound(node[pair[1]])
-			if lower > upper {
-				bad("has %s greater than %s", pair[0], pair[1])
-			}
+		if valid && both && bounds[0] > bounds[1] {
+			bad("has %s greater than %s", pair[0], pair[1])
 		}
 	}
-	if raw := node["pattern"]; len(raw) > 0 {
-		var pattern string
-		if json.Unmarshal(raw, &pattern) != nil {
+	if v, ok := present("pattern"); ok {
+		// regexp.Compile fails only where syntax.Parse does, and Parse costs a fraction of it.
+		if pattern, isString := v.(string); !isString {
 			bad("has an invalid pattern")
-		} else if _, err := regexp.Compile(pattern); err != nil {
+		} else if _, err := syntax.Parse(pattern, syntax.Perl); err != nil {
 			bad("has an invalid pattern")
 		}
 	}
 	for _, name := range []string{"minimum", "maximum"} {
-		if raw := node[name]; len(raw) > 0 {
-			if _, err := strconv.ParseFloat(string(raw), 64); err != nil {
+		if v, ok := present(name); ok {
+			if n, isNumber := v.(json.Number); !isNumber {
+				bad("has an invalid %s", name)
+			} else if _, err := strconv.ParseFloat(string(n), 64); err != nil {
 				bad("has an invalid %s", name)
 			}
 		}
 	}
-	if raw := node["uniqueItems"]; len(raw) > 0 && json.Unmarshal(raw, new(bool)) != nil {
-		bad("has an invalid uniqueItems")
+	if v, ok := present("uniqueItems"); ok {
+		if _, isBool := v.(bool); !isBool {
+			bad("has an invalid uniqueItems")
+		}
 	}
-	if raw := node["format"]; len(raw) > 0 {
-		var format string
-		switch {
-		case json.Unmarshal(raw, &format) != nil:
+	if v, ok := present("format"); ok {
+		switch format, isString := v.(string); {
+		case !isString:
 			bad("has an invalid format")
 		case format != "uuid" && format != "date-time":
 			bad("uses the unsupported format %s", format)
 		}
 	}
 
-	if raw := node["properties"]; len(raw) > 0 {
-		var properties map[string]json.RawMessage
-		if json.Unmarshal(raw, &properties) != nil || properties == nil {
+	if v, ok := present("properties"); ok {
+		var members map[string]any
+		if properties, isObject := v.(*object); isObject {
+			members = properties.members
+		} else {
 			bad("has invalid properties")
 		}
-		for _, name := range sortedKeys(properties) {
+		for _, name := range sortedKeys(members) {
 			at := path + "." + name
-			if child, ok := asSchema(properties[name]); ok {
+			if child, ok := members[name].(*object); ok {
 				errs = append(errs, checkNode(child, at)...)
 			} else {
 				errs = append(errs, fmt.Errorf("schema at %s is invalid", at))
 			}
 		}
 	}
-	if raw := node["additionalProperties"]; len(raw) > 0 && json.Unmarshal(raw, new(bool)) != nil {
-		if child, ok := asSchema(raw); ok {
-			errs = append(errs, checkNode(child, path+".*")...)
-		} else {
-			bad("has invalid additionalProperties")
+	if v, ok := present("additionalProperties"); ok {
+		if _, isBool := v.(bool); !isBool {
+			if child, ok := v.(*object); ok {
+				errs = append(errs, checkNode(child, path+".*")...)
+			} else {
+				bad("has invalid additionalProperties")
+			}
 		}
 	}
-	if raw := node["items"]; len(raw) > 0 {
-		if child, ok := asSchema(raw); ok {
+	if v, ok := present("items"); ok {
+		if child, ok := v.(*object); ok {
 			errs = append(errs, checkNode(child, path+"[]")...)
 		} else {
 			bad("has invalid items")
 		}
 	}
-	if raw := node["propertyNames"]; len(raw) > 0 {
-		if child, ok := asSchema(raw); ok {
+	if v, ok := present("propertyNames"); ok {
+		if child, ok := v.(*object); ok {
 			errs = append(errs, checkNode(child, path+"{}")...)
 		} else {
 			bad("has invalid propertyNames")
 		}
 	}
-	if raw := node["anyOf"]; len(raw) > 0 {
-		var branches []json.RawMessage
-		if json.Unmarshal(raw, &branches) != nil || len(branches) == 0 {
+	if v, ok := present("anyOf"); ok {
+		branches, isArray := v.([]any)
+		if !isArray || len(branches) == 0 {
 			bad("has an invalid anyOf")
 		}
 		for _, branch := range branches {
-			if child, ok := asSchema(branch); ok {
+			if child, ok := branch.(*object); ok {
 				errs = append(errs, checkNode(child, path)...)
 			} else {
 				bad("has an invalid anyOf")
@@ -241,13 +352,33 @@ func checkNode(node map[string]json.RawMessage, path string) []error {
 	return errs
 }
 
-// countBound reads a count bound: a non-negative whole number.
-func countBound(raw json.RawMessage) (int, bool) {
-	var n int
-	if string(raw) == "null" || json.Unmarshal(raw, &n) != nil || n < 0 {
+// countBound reads a count bound: a non-negative whole number literal that fits an int, as encoding/json
+// requires to decode it into one.
+func countBound(v any) (int, bool) {
+	literal, isNumber := v.(json.Number)
+	if !isNumber {
 		return 0, false
 	}
-	return n, true
+	n, err := strconv.ParseInt(string(literal), 10, strconv.IntSize)
+	if err != nil || n < 0 {
+		return 0, false
+	}
+	return int(n), true
+}
+
+// isStringArray reports whether v decodes into a []string. encoding/json leaves a string unchanged for a
+// null item, so null is accepted as an item.
+func isStringArray(v any) bool {
+	items, isArray := v.([]any)
+	if !isArray {
+		return false
+	}
+	for _, item := range items {
+		if _, isString := item.(string); !isString && item != nil {
+			return false
+		}
+	}
+	return true
 }
 
 // knownKeyword reports whether this package checks a keyword or the keyword only annotates a schema. An

@@ -869,3 +869,52 @@ func TestGoldenLogView(t *testing.T) {
 		})
 	}
 }
+
+func TestLogViewSearchEditsWithTheLineKeys(t *testing.T) {
+	l := newLog(t, LogViewSpec{}, i18n.English)
+	for _, text := range []string{"disk full", "disk ok", "net down", "disk full again"} {
+		l.Append(LogLine{Text: text})
+	}
+	viewLines(t, l, 60, 8)
+	if l.Paste("x") {
+		t.Fatal("a paste is taken without a search")
+	}
+	l.Update(typed('/'))
+	keys := func(names ...string) {
+		t.Helper()
+		for _, n := range names {
+			if !l.Update(lineKey(n)) {
+				t.Fatalf("%s is not taken", n)
+			}
+		}
+	}
+	if !l.Paste("disk\nfull\r\n") || l.Query() != "disk full" {
+		t.Fatalf("a paste gives %q", l.Query())
+	}
+	keys("ctrl+a", "alt+d")
+	if l.Query() != " full" || len(l.hits) != 2 {
+		t.Fatalf("alt+d gives %q with %d matches", l.Query(), len(l.hits))
+	}
+	keys("ctrl+k")
+	if l.Query() != "" {
+		t.Fatalf("ctrl+k gives %q", l.Query())
+	}
+	typeText(l, "disk ok")
+	keys("left", "left", "ctrl+left", "ctrl+w", "ctrl+e", "backspace", "alt+backspace", "ctrl+u")
+	if l.Query() != "" {
+		t.Fatalf("the edits give %q", l.Query())
+	}
+	typeText(l, "net")
+	keys("ctrl+a")
+	l.Paste("x\x1b‮\x00")
+	if l.Query() != "xnet" {
+		t.Errorf("a paste at the start gives %q", l.Query())
+	}
+	if l.Update(lineKey("ctrl+z")) {
+		t.Error("a key that edits nothing is taken")
+	}
+	l.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	if l.Paste("y") || l.Query() != "xnet" {
+		t.Errorf("a paste after the search gives %q", l.Query())
+	}
+}

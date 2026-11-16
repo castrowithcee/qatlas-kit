@@ -36,7 +36,7 @@ var takenKeys = func() map[string]string {
 	add("is no meta key on macOS and taken by GNOME Terminal",
 		"alt+0", "alt+1", "alt+2", "alt+3", "alt+4", "alt+5", "alt+6", "alt+7", "alt+8", "alt+9")
 	add("edits text in a text line", "ctrl+e", "ctrl+w", "ctrl+u", "ctrl+d", "alt+b", "alt+d", "ctrl+left",
-		"ctrl+right", "backspace", "delete")
+		"ctrl+right", "backspace", "delete", "alt+backspace", "alt+delete")
 	add("sends the text of a text area", textAreaSend)
 	return m
 }()
@@ -47,6 +47,55 @@ const textAreaSend = "ctrl+enter"
 
 // sendsText reports whether a key press is the key that sends the text of a multi-line field.
 func sendsText(msg tea.KeyPressMsg) bool { return KeyName(msg) == textAreaSend }
+
+// lineEdit is what a key does in a one-line text field.
+type lineEdit int
+
+const (
+	editLeft lineEdit = iota + 1
+	editRight
+	editWordLeft
+	editWordRight
+	editStart
+	editEnd
+	editDeleteLeft
+	editDeleteRight
+	editDeleteWordLeft
+	editDeleteWordRight
+	editDeleteToStart
+	editDeleteToEnd
+)
+
+// lineEdits is the fixed table of the keys that edit a one-line text field. The keys that move the cursor by
+// a character or to an end of the line are also actions of some screens, which are asked first. Every other
+// key in it is in takenKeys, so no action can hold it.
+var lineEdits = func() map[string]lineEdit {
+	m := map[string]lineEdit{}
+	add := func(op lineEdit, keys ...string) {
+		for _, k := range keys {
+			m[k] = op
+		}
+	}
+	add(editLeft, "left", "ctrl+b")
+	add(editRight, "right", "ctrl+f")
+	add(editWordLeft, "ctrl+left", "alt+left", "alt+b")
+	add(editWordRight, "ctrl+right", "alt+right", "alt+f")
+	add(editStart, "home", "ctrl+a")
+	add(editEnd, "end", "ctrl+e")
+	add(editDeleteLeft, "backspace", "ctrl+h")
+	add(editDeleteRight, "delete", "ctrl+d")
+	add(editDeleteWordLeft, "ctrl+w", "alt+backspace")
+	add(editDeleteWordRight, "alt+d", "alt+delete")
+	add(editDeleteToStart, "ctrl+u")
+	add(editDeleteToEnd, "ctrl+k")
+	return m
+}()
+
+// lineEditOf returns the edit a key press makes in a text field, if it is one.
+func lineEditOf(msg tea.KeyPressMsg) (lineEdit, bool) {
+	op, ok := lineEdits[KeyName(msg)]
+	return op, ok
+}
 
 // fixedKeys keep their meaning on every screen, so no binding may take them.
 var fixedKeys = map[string]string{
@@ -60,8 +109,19 @@ var fixedKeys = map[string]string{
 // captureExits are the keys that keep their action while a key is captured as a new binding.
 var captureExits = map[string]bool{"ctrl+c": true, "esc": true}
 
-// freeCtrl are the control keys no text line, terminal, multiplexer or screen needs.
-var freeCtrl = map[string]bool{"ctrl+l": true, "ctrl+x": true}
+// freeCtrl are the control keys no text line, terminal, multiplexer or screen needs. ctrl+] and ctrl+\ are
+// the bytes 0x1d and 0x1c, which tmux, GNU screen, zellij and the VS Code terminal pass on in their default
+// setup.
+var freeCtrl = map[string]bool{"ctrl+l": true, "ctrl+x": true, "ctrl+]": true, "ctrl+\\": true}
+
+// refusedCtrlPunct are the control keys with a punctuation mark that stay refused, with the reason. Each is
+// the same byte as another key, so a terminal cannot tell them apart.
+var refusedCtrlPunct = map[string]string{
+	"ctrl+[": "ctrl+[ is the same as esc",
+	"ctrl+^": "ctrl+^ is the same as ctrl+6, which vim uses",
+	"ctrl+_": "ctrl+_ is the same as ctrl+/ and ctrl+7, which readline uses to undo",
+	"ctrl+/": "ctrl+/ is the same as ctrl+_, which readline uses to undo",
+}
 
 // interceptedF are the function keys terminals and window systems take for themselves.
 var interceptedF = map[int]bool{1: true, 5: true, 10: true, 11: true, 12: true}
@@ -288,11 +348,14 @@ func checkKeyRules(a Action, key string) (string, error) {
 		}
 		return key, nil
 	}
-	if ctrlLetter.MatchString(key) {
+	if reason, ok := refusedCtrlPunct[key]; ok {
+		return refuse("%s", reason)
+	}
+	if ctrlLetter.MatchString(key) || freeCtrl[key] {
 		if !freeCtrl[key] {
-			return refuse("text lines, the terminal, a multiplexer or a screen use it; free are ctrl+l and ctrl+x")
+			return refuse("text lines, the terminal, a multiplexer or a screen use it; free are ctrl+l, ctrl+x, ctrl+] and ctrl+\\")
 		}
 		return key, nil
 	}
-	return refuse("not a single key; use a character, F2 to F20, or ctrl with a letter")
+	return refuse("not a single key; use a character, F2 to F20, ctrl+l, ctrl+x, ctrl+] or ctrl+\\")
 }

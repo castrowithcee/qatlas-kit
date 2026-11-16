@@ -341,7 +341,7 @@ func (h *Handover) Commit(ctx context.Context) (int, error) {
 	}
 	var result handoverResult
 	if json.Unmarshal(resp.Result, &result) != nil || result.PID <= 0 {
-		return 0, fmt.Errorf("%w: the answer cannot be read", ErrHandover)
+		return 0, &HandoverError{Reason: HandoverAnswerUnreadable}
 	}
 	return result.PID, nil
 }
