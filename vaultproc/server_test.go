@@ -387,6 +387,23 @@ func TestInheritedLockTimeIsKept(t *testing.T) {
 	awaitStopped(t, r)
 }
 
+// refuse hands the server a refused connection and returns the code it answered.
+func refuse(t *testing.T, server *Server) string {
+	t.Helper()
+	a, b := net.Pipe()
+	defer a.Close()
+	go func() {
+		defer b.Close()
+		server.Refused(b, localipc.ErrRefused)
+	}()
+	_ = writeMessage(a, hello{V: ProtocolVersion, App: 1})
+	var resp response
+	if err := readMessage(a, &resp); err != nil {
+		t.Fatal(err)
+	}
+	return resp.Error
+}
+
 func TestRefusedPeersAndReplacedProgram(t *testing.T) {
 	cfg := testConfig(t)
 	server, err := NewServer(cfg, State{Identity: newIdentity(t)}, false)
@@ -395,20 +412,7 @@ func TestRefusedPeersAndReplacedProgram(t *testing.T) {
 	}
 	replaced := false
 	server.program = func() (string, bool, error) { return "/example/tool", replaced, nil }
-	refusal := func() string {
-		a, b := net.Pipe()
-		defer a.Close()
-		go func() {
-			defer b.Close()
-			server.Refused(b, localipc.ErrRefused)
-		}()
-		_ = writeMessage(a, hello{V: ProtocolVersion, App: 1})
-		var resp response
-		if err := readMessage(a, &resp); err != nil {
-			t.Fatal(err)
-		}
-		return resp.Error
-	}
+	refusal := func() string { return refuse(t, server) }
 	if code := refusal(); code != codeRefused || server.stopping() {
 		t.Fatalf("refusal = %q, stopping %v", code, server.stopping())
 	}
@@ -421,8 +425,11 @@ func TestRefusedPeersAndReplacedProgram(t *testing.T) {
 	if code := refusal(); code != codeLocked || !server.stopping() {
 		t.Fatalf("refusal after a replacement = %q, stopping %v", code, server.stopping())
 	}
+	if want := (LockEvent{Reason: LockProgramReplaced, Trigger: TriggerRefusedClient}); server.lock != want {
+		t.Fatalf("lock event = %+v, want %+v", server.lock, want)
+	}
 	server.program = func() (string, bool, error) { return "", false, errors.New("cannot be told") }
-	if programState := server.programState(); programState != replacedLocked {
+	if programState := server.programState(TriggerWatch); programState != replacedLocked {
 		t.Fatalf("an unknown program state = %d, want locked", programState)
 	}
 }
@@ -449,6 +456,48 @@ func TestWatchLocksWhenTheProgramIsReplaced(t *testing.T) {
 	}
 	close(replaced)
 	awaitStopped(t, r)
+	if want := (LockEvent{Reason: LockProgramReplaced, Trigger: TriggerWatch}); server.lock != want {
+		t.Fatalf("lock event = %+v, want %+v", server.lock, want)
+	}
+}
+
+func TestReplacedLocksOnClientRefusesAndWipes(t *testing.T) {
+	cfg := testConfig(t)
+	cfg.ReplacedProgram = ReplacedLocksOnClient
+	server, err := NewServer(cfg, State{Identity: newIdentity(t), Document: []byte(testDocument)}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server.watchEvery = 20 * time.Millisecond
+	replaced := make(chan struct{})
+	server.program = func() (string, bool, error) {
+		select {
+		case <-replaced:
+			return "/example/tool", true, nil
+		default:
+			return "/example/tool", false, nil
+		}
+	}
+	doc := server.doc
+	r := serveWith(t, server, cfg, server.key, false)
+	if _, err := r.client.Status(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	close(replaced)
+	time.Sleep(200 * time.Millisecond)
+	if server.stopping() {
+		t.Fatal("the process locked without a client")
+	}
+	if code := refuse(t, server); code != codeLocked {
+		t.Fatalf("refusal = %q, want %q", code, codeLocked)
+	}
+	awaitStopped(t, r)
+	if want := (LockEvent{Reason: LockProgramReplaced, Trigger: TriggerRefusedClient}); server.lock != want {
+		t.Fatalf("lock event = %+v, want %+v", server.lock, want)
+	}
+	if doc.bytes() != nil {
+		t.Fatal("the copy of the document was not overwritten")
+	}
 }
 
 func TestMessagesNeverEchoInput(t *testing.T) {
