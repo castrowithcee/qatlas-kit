@@ -837,7 +837,7 @@ func TestEveryControlHasATarget(t *testing.T) {
 	}
 	bar.Focus(false)
 	keysTo2(bar, "enter")
-	list, listTargets := bar.ValueList(st)
+	list, listTargets := bar.ValueList(st, 80, 24)
 	if len(listTargets) != 2 || !strings.Contains(list, "Kind") || !strings.Contains(list, "None") {
 		t.Errorf("the value list has %d targets:\n%s", len(listTargets), list)
 	}

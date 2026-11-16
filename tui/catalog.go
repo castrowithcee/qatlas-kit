@@ -54,6 +54,7 @@ const (
 	TextFilterButton   TextID = "tui.filter.button"
 	TextFilterTitle    TextID = "tui.filter.title"
 	TextFilterApply    TextID = "tui.filter.apply"
+	TextFilterNoValue  TextID = "tui.filter.novalue"
 
 	TextCommandTitle   TextID = "tui.command.title"
 	TextCommandPrompt  TextID = "tui.command.prompt"
@@ -249,6 +250,7 @@ func ModuleCatalog() i18n.Catalogs[TextID] {
 			TextFilterButton:   "Filter (%d)",
 			TextFilterTitle:    "Filter",
 			TextFilterApply:    "apply",
+			TextFilterNoValue:  "No value matches %q; delete the search or press %s to close.",
 
 			TextCommandTitle:   "Commands",
 			TextCommandPrompt:  "search or run a command…",
@@ -437,6 +439,7 @@ func ModuleCatalog() i18n.Catalogs[TextID] {
 			TextFilterButton:   "Filter (%d)",
 			TextFilterTitle:    "Filter",
 			TextFilterApply:    "übernehmen",
+			TextFilterNoValue:  "Kein Wert passt zu %q; Suche löschen oder mit %s schließen.",
 
 			TextCommandTitle:   "Befehle",
 			TextCommandPrompt:  "Befehl suchen oder ausführen…",
