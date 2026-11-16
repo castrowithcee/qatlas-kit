@@ -22,10 +22,11 @@ import (
 )
 
 const (
-	maxArchiveBytes    = 128 << 20
-	maxExecutableBytes = 64 << 20
+	maxExecutableBytes = 256 << 20
 	maxCompanionBytes  = 2 << 20
-	stallTimeout       = 30 * time.Second
+	// An archive may store the program uncompressed, next to its companions and entry headers.
+	maxArchiveBytes = maxExecutableBytes + 64<<20
+	stallTimeout    = 30 * time.Second
 )
 
 // Prepared holds a downloaded and verified release and can only be made by Prepare outside this package.
