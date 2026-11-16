@@ -336,13 +336,13 @@ func TestUpdateRejections(t *testing.T) {
 			},
 			func(err error) bool { return err != nil },
 		},
-		"not a versioned document": {
+		"document without schema": {
 			func(_ *testing.T, v, _ *Vault, entries []string) (*Vault, UpdateFunc) {
 				return v, func([]byte, []Pending) ([]byte, []string, error) {
 					return []byte(`{"values":{}}`), entries, nil
 				}
 			},
-			func(err error) bool { return errors.Is(err, ErrDamaged) },
+			func(err error) bool { return errors.Is(err, ErrUnsupportedSchema) },
 		},
 		"unsupported schema": {
 			func(_ *testing.T, v, _ *Vault, entries []string) (*Vault, UpdateFunc) {
@@ -505,7 +505,7 @@ func TestWriteWithUndo(t *testing.T) {
 			want     error
 		}{
 			"locked":           {locked, changed, nil, ErrLocked},
-			"invalid document": {v, []byte(`{}`), nil, ErrDamaged},
+			"invalid document": {v, []byte(`[]`), nil, ErrDamaged},
 			"absent":           {newVault(t, testOptions(t.TempDir())), changed, nil, ErrAbsent},
 			"write fails":      {v, changed, func() { v.rename = failRename(v.opts.Files.Document) }, errExample},
 			"plain write fails": {plain, changed, func() { plain.rename = failRename(plain.opts.Files.Plain) },

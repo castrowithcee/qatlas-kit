@@ -69,7 +69,7 @@ func Start(ctx context.Context, client *Client, cmd background.Command, snap vau
 			return status, nil
 		}
 		if !errors.Is(err, ErrNotRunning) || time.Now().After(deadline) || ctx.Err() != nil {
-			return Status{}, fmt.Errorf("the vault process does not answer: %w", err)
+			return Status{}, &causeError{kind: ErrNoAnswer, cause: err}
 		}
 		time.Sleep(50 * time.Millisecond)
 	}

@@ -36,14 +36,18 @@
 // The process locks itself, overwrites what it holds and ends: after Config.IdleTimeout without a touch,
 // at the end of the maximum unlock time counted from the unlock, on OpLock, on a stop signal, when its
 // socket is gone or replaced, and when its program was replaced without a handover under way. A process
-// whose program was replaced refuses every client.
+// whose program was replaced refuses every client, and the first refused client locks it. By default the
+// process also finds the replacement itself within seconds and locks without a client; an application that
+// wants only the refused client to lock sets Config.ReplacedProgram to ReplacedLocksOnClient, which leaves
+// the watch of the socket on.
 //
 // Config.OnLock lets the application overwrite state it derived from the vault. It runs once for every lock
 // of a process that served, after the requests in flight ended and before the process overwrites what it
 // holds, with the vault through Held as a handler has it, and says why in a LockEvent: LockIdle,
 // LockMaxUnlock, LockCommand, LockClosed (Close, a stop signal, the end of Run's context), LockSocketGone,
-// LockProgramReplaced, LockHandedOver, LockHandoverFailed with the reason of the handover, LockHandoverDeclined
-// or LockListenerFailed. The first cause is the reason. The process overwrites what it holds even if the
+// LockProgramReplaced (LockEvent.Trigger tells whether the watch or a refused client found it),
+// LockHandedOver, LockHandoverFailed with the reason of the handover, LockHandoverDeclined or
+// LockListenerFailed. The first cause is the reason. The process overwrites what it holds even if the
 // hook fails or panics; Serve then returns ErrHook, which carries nothing of the hook's error. A process
 // that never served calls nothing.
 //

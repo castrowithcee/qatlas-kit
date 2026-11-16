@@ -6,7 +6,6 @@ import (
 	"bufio"
 	"context"
 	"errors"
-	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -54,7 +53,7 @@ func startProcess(ctx context.Context, c Command, handover []byte) (Result, erro
 	_ = handoverRead.Close()
 	_ = reportWrite.Close()
 	if err != nil {
-		return Result{}, fmt.Errorf("cannot start the background process: %w", err)
+		return Result{}, &causeError{kind: ErrStartFailed, cause: err}
 	}
 	pid := cmd.Process.Pid
 
@@ -95,7 +94,7 @@ func startProcess(ctx context.Context, c Command, handover []byte) (Result, erro
 		if ctx.Err() != nil {
 			return Result{}, outcome("", ctx.Err())
 		}
-		return Result{}, errors.New("the background process did not take the handover")
+		return Result{}, ErrHandoverNotTaken
 	}
 
 	report, _ := bufio.NewReader(io.LimitReader(reportRead, maxReport)).ReadString('\n')

@@ -36,6 +36,10 @@ var (
 	// ErrHandover means a handover did not happen; the vault process locked itself. It wraps the reason.
 	ErrHandover = errors.New("the vault process did not hand the vault over and locked itself")
 
+	// ErrNoAnswer means the vault process did not answer in time after Start began it. It is followed by
+	// the cause, which errors.Is and errors.As still reach.
+	ErrNoAnswer = errors.New("the vault process does not answer")
+
 	// ErrHook means a hook of Config failed or panicked; Serve returns it after the process locked and
 	// overwrote what it held. It carries nothing of the hook's error.
 	ErrHook = errors.New("a vault process hook failed")
@@ -67,6 +71,53 @@ type Error struct{ Code string }
 
 func (e *Error) Error() string { return "the vault process answered " + e.Code }
 
+// causeError is kind followed by its cause. Unwrap returns the cause, as before the kinds existed, and
+// errors.Is also matches kind.
+type causeError struct{ kind, cause error }
+
+func (e *causeError) Error() string        { return e.kind.Error() + ": " + e.cause.Error() }
+func (e *causeError) Unwrap() error        { return e.cause }
+func (e *causeError) Is(target error) bool { return target == e.kind }
+
+// HandoverError is the error of a handover that did not happen. It wraps ErrHandover, so
+// errors.Is(err, ErrHandover) holds, and Reason tells why without the text. Reason is a fixed word; the
+// error carries nothing else.
+type HandoverError struct{ Reason HandoverReason }
+
+func (e *HandoverError) Error() string {
+	detail, ok := handoverDetail(e.Reason)
+	if !ok {
+		return ErrHandover.Error()
+	}
+	return ErrHandover.Error() + ": " + detail
+}
+
+// Unwrap returns ErrHandover.
+func (e *HandoverError) Unwrap() error { return ErrHandover }
+
+// handoverDetail is the text that follows ErrHandover for the reasons a client reports.
+func handoverDetail(reason HandoverReason) (string, bool) {
+	switch reason {
+	case HandoverNotVerified:
+		return "it could not verify the release", true
+	case HandoverRollback:
+		return "a rollback always locks", true
+	case HandoverProgramUnchanged:
+		return "its program was not replaced", true
+	case HandoverProgramMismatch:
+		return "the installed program is not the one the release holds", true
+	case HandoverNoSuccessor:
+		return "no successor took the vault over", true
+	case HandoverUnsupported:
+		return "this platform or process does not hand over", true
+	case HandoverAnswerUnreadable:
+		return "the answer cannot be read", true
+	case HandoverNotReplaced:
+		return "the update did not replace the program", true
+	}
+	return "", false
+}
+
 // answerError turns an answer's code into the error a client returns.
 func answerError(code string) error {
 	switch code {
@@ -89,17 +140,17 @@ func answerError(code string) error {
 	case codeFailed:
 		return ErrFailed
 	case codeUnverified:
-		return fmt.Errorf("%w: it could not verify the release", ErrHandover)
+		return &HandoverError{Reason: HandoverNotVerified}
 	case codeRollback:
-		return fmt.Errorf("%w: a rollback always locks", ErrHandover)
+		return &HandoverError{Reason: HandoverRollback}
 	case codeUnchanged:
-		return fmt.Errorf("%w: its program was not replaced", ErrHandover)
+		return &HandoverError{Reason: HandoverProgramUnchanged}
 	case codeMismatch:
-		return fmt.Errorf("%w: the installed program is not the one the release holds", ErrHandover)
+		return &HandoverError{Reason: HandoverProgramMismatch}
 	case codeHandoverFailed:
-		return fmt.Errorf("%w: no successor took the vault over", ErrHandover)
+		return &HandoverError{Reason: HandoverNoSuccessor}
 	case codeNoHandover:
-		return fmt.Errorf("%w: this platform or process does not hand over", ErrHandover)
+		return &HandoverError{Reason: HandoverUnsupported}
 	}
 	if wordPattern.MatchString(code) {
 		return &Error{Code: code}

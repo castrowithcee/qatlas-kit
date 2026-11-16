@@ -176,3 +176,25 @@ func TestStartRunAndLock(t *testing.T) {
 		t.Fatalf("Start without a key = %v", err)
 	}
 }
+
+func TestStartReportsAProcessThatDoesNotAnswer(t *testing.T) {
+	e := testEndpoint(t)
+	id := newIdentity(t)
+	// The process serves e, but the client asks at another name and never reaches it.
+	other := e
+	other.SocketBase = "other"
+	client := &Client{Endpoint: other, Recipient: id.Recipient().String(), Version: 1, ProofLabel: testLabel}
+	t.Cleanup(func() {
+		served := &Client{Endpoint: e, Recipient: id.Recipient().String(), Version: 1, ProofLabel: testLabel}
+		_ = served.Lock(context.Background())
+	})
+	_, err := Start(context.Background(), client, helperCommand("serve", e),
+		vault.Snapshot{Identity: id, Document: []byte(testDocument)}, background.Options{Timeout: time.Second})
+	if !errors.Is(err, ErrNoAnswer) || !errors.Is(err, ErrNotRunning) ||
+		!strings.HasPrefix(err.Error(), "the vault process does not answer: ") {
+		t.Fatalf("Start() = %v, want ErrNoAnswer", err)
+	}
+	if cause := errors.Unwrap(err); !errors.Is(cause, ErrNotRunning) || errors.Is(cause, ErrNoAnswer) {
+		t.Fatalf("errors.Unwrap(%v) = %v, want the cause", err, cause)
+	}
+}
