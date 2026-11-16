@@ -43,9 +43,14 @@
 // checks that the proof names the store's vault, has an expiry or states explicitly that it has none, has
 // not expired, and covers every state before it writes. Nothing is approved without one of these proofs.
 //
-// Revoke, Move and Undo add no approved use and need no Admin. Revoke removes approvals. Move files an
+// Revoke, Move, Rename and Undo add no approved use and need no Admin. Revoke removes approvals. Move files an
 // approval under another name with the same state, fingerprint and approval time; the fingerprint covers
-// the state only, so the approval holds for exactly the state it was given for. Each returns an Undo that
+// the state only, so the approval holds for exactly the state it was given for. Rename carries approvals
+// over to a state that differs only in a name: the kit replaces the old name by the new one in the stored,
+// verified state, only at the paths the application names and only where the old name stands, and refuses
+// with ErrChanged unless the result equals the new state it was handed, so no right is added. Lists keep
+// their order unless the application names them as unordered, and then only whole items may move. The
+// approvals get the fingerprint of the new state and keep their approval time. Each returns an Undo that
 // writes back the bytes it replaced, only while the file still holds the bytes that change wrote, and
 // otherwise fails without writing. They use the same lock, check value and consistency checks as every
 // other change, and a damaged file is refused. The application decides whether and when to offer them,
