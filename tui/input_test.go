@@ -428,3 +428,103 @@ func TestOneNotchIsOneStepWhateverTheTerminalReports(t *testing.T) {
 		t.Errorf("notches up and at another cell are %d steps", n)
 	}
 }
+
+// fakeTimers is a clock with timers that fire only when the test advances it.
+type fakeTimers struct {
+	now   time.Time
+	queue []fakeTimer
+}
+
+type fakeTimer struct {
+	at time.Time
+	fn func()
+}
+
+func (c *fakeTimers) clock() time.Time { return c.now }
+
+func (c *fakeTimers) afterFunc(d time.Duration, fn func()) {
+	c.queue = append(c.queue, fakeTimer{c.now.Add(d), fn})
+}
+
+func (c *fakeTimers) advance(d time.Duration) {
+	c.now = c.now.Add(d)
+	var due []func()
+	rest := c.queue[:0]
+	for _, t := range c.queue {
+		if t.at.After(c.now) {
+			rest = append(rest, t)
+		} else {
+			due = append(due, t.fn)
+		}
+	}
+	c.queue = rest
+	for _, fn := range due {
+		fn()
+	}
+}
+
+// With an injected timer a held "[" is released by advancing the clock alone, never by the wall clock.
+func TestInjectedTimerReleasesTheHeldBracketOnAdvance(t *testing.T) {
+	c := &fakeTimers{now: time.Unix(1000, 0)}
+	var sent []tea.Msg
+	f := NewInputFilter(c.clock)
+	f.SetAfterFunc(c.afterFunc)
+	f.Attach(func(msg tea.Msg) { sent = append(sent, msg) })
+	if got := f.Filter(nil, tea.KeyPressMsg{Code: '[', Mod: tea.ModAlt}); got != nil {
+		t.Fatalf("alt+[ passed at once: %v", keyTexts(got))
+	}
+	time.Sleep(2 * bracketHold)
+	c.advance(bracketHold - time.Millisecond)
+	if len(sent) != 0 {
+		t.Fatalf("released before the hold ended: %v", sent)
+	}
+	c.advance(time.Millisecond)
+	if len(sent) != 1 {
+		t.Fatalf("release messages %v, want one", sent)
+	}
+	if got := keyTexts(f.Filter(nil, sent[0])); len(got) != 1 || got[0] != "alt+[" {
+		t.Errorf("keys %v, want alt+[", got)
+	}
+}
+
+// Within the hold of an injected timer the rest of a report is still swallowed, however long the test runs.
+func TestInjectedTimerKeepsTheReportTogether(t *testing.T) {
+	c := &fakeTimers{now: time.Unix(1000, 0)}
+	var sent []tea.Msg
+	f := NewInputFilter(c.clock)
+	f.SetAfterFunc(c.afterFunc)
+	f.Attach(func(msg tea.Msg) { sent = append(sent, msg) })
+	f.Filter(nil, tea.KeyPressMsg{Code: tea.KeyEscape})
+	f.Filter(nil, textKey("["))
+	c.advance(bracketHold / 2)
+	if got := f.Filter(nil, textKey("<65;12;5M")); got != nil {
+		t.Errorf("the rest made keys %v", keyTexts(got))
+	}
+	c.advance(bracketHold)
+	if len(sent) != 1 {
+		t.Fatalf("release messages %v, want one", sent)
+	}
+	for _, msg := range sent {
+		if got := f.Filter(nil, msg); got != nil {
+			t.Errorf("the release made keys %v", keyTexts(got))
+		}
+	}
+}
+
+// SetAfterFunc(nil) restores the real timer.
+func TestSetAfterFuncNilRestoresTheRealTimer(t *testing.T) {
+	sent := make(chan tea.Msg, 1)
+	f := NewInputFilter(nil)
+	f.SetAfterFunc(func(time.Duration, func()) {})
+	f.SetAfterFunc(nil)
+	f.Attach(func(msg tea.Msg) { sent <- msg })
+	f.Filter(nil, tea.KeyPressMsg{Code: '[', Mod: tea.ModAlt})
+	select {
+	case msg := <-sent:
+		if got := keyTexts(f.Filter(nil, msg)); len(got) != 1 || got[0] != "alt+[" {
+			t.Errorf("keys %v, want alt+[", got)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the real timer never ended the hold")
+	}
+}
