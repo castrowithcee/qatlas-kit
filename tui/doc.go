@@ -129,8 +129,9 @@
 // the free text column gives way first, then the short labels of a column, then the optional columns from the
 // right, and then the widest values, never below their title, for group rows as for entries; the first column
 // and the group head are never cut, and the widths come from every entry and described group, so they stay
-// while a filter is typed. An empty list shows the application's sentence with the next step, and a filter
-// without match names the key that clears it. Cells, group keys, titles and the typed filter are escaped.
+// while a filter is typed. An empty list shows the application's sentence with the next step, which SetEmpty
+// sets for each state, and a filter without match names the key that clears it. Cells, group keys, titles,
+// the empty sentence and the typed filter are escaped.
 //
 // A List with Ticks picks any number of entries: a tick box before the first column, "[ ]", "[x]" and for a
 // group with some of its entries ticked "[-]", so the three states differ without colour, and Ticked and
