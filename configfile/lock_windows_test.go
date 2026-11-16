@@ -56,6 +56,38 @@ func TestOwnLockFileOpenToEveryoneIsMadePrivate(t *testing.T) {
 	assertLockAdopted(t, path)
 }
 
+func TestOwnLockFileOwnedByAdministratorsIsMadePrivate(t *testing.T) {
+	admins, err := windows.CreateWellKnownSid(windows.WinBuiltinAdministratorsSid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, err := currentLockIdentity()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !windows.GetCurrentProcessToken().IsElevated() || !id.owners[1].Equals(admins) {
+		// The hosted CI runs elevated with Administrators as default owner and must cover this case.
+		if os.Getenv("CI") != "" {
+			t.Fatal("CI token is not elevated with Administrators as default owner")
+		}
+		t.Skip("needs an elevated token whose default owner is Administrators")
+	}
+	path := filepath.Join(t.TempDir(), "settings")
+	lock := path + ".lock"
+	if err := os.WriteFile(lock, []byte("4242"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := windows.SetNamedSecurityInfo(lock, windows.SE_FILE_OBJECT, windows.OWNER_SECURITY_INFORMATION,
+		admins, nil, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	if got := securityDescriptor(t, lock, windows.OWNER_SECURITY_INFORMATION); got != "O:BA" {
+		t.Fatalf("prepared lock owner = %s", got)
+	}
+	assertNotPrivateLock(t, lock)
+	assertLockAdopted(t, path)
+}
+
 // assertNotPrivateLock proves that the lock file fails the private ACL check, so a later success can
 // only come from making it private.
 func assertNotPrivateLock(t *testing.T, lock string) {
