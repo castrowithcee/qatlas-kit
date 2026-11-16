@@ -62,8 +62,9 @@ type heldKeyMsg struct{ id int }
 //
 // The filter is the function of tea.WithFilter and runs in the event loop, one message at a time.
 type InputFilter struct {
-	now  func() time.Time
-	send func(tea.Msg)
+	now   func() time.Time
+	after func(time.Duration, func())
+	send  func(tea.Msg)
 
 	state fragmentState
 	at    time.Time
@@ -81,7 +82,20 @@ func NewInputFilter(now func() time.Time) *InputFilter {
 	if now == nil {
 		now = time.Now
 	}
-	return &InputFilter{now: now}
+	return &InputFilter{now: now, after: afterFunc}
+}
+
+// afterFunc schedules fn on a real timer.
+func afterFunc(d time.Duration, fn func()) { time.AfterFunc(d, fn) }
+
+// SetAfterFunc replaces how the filter schedules the end of a hold: after calls fn once d has passed on the
+// clock it stands for, as time.AfterFunc does. A test passes a fake so the hold ends only when it advances its
+// clock; nil restores time.AfterFunc.
+func (f *InputFilter) SetAfterFunc(after func(d time.Duration, fn func())) {
+	if after == nil {
+		after = afterFunc
+	}
+	f.after = after
 }
 
 // Attach gives the filter the function that delivers a message to the event loop, the Send of the program.
@@ -205,7 +219,7 @@ func (f *InputFilter) key(key tea.KeyPressMsg) tea.Msg {
 		f.held = &key
 		f.id++
 		if send, id := f.send, f.id; send != nil {
-			time.AfterFunc(bracketHold, func() { send(heldKeyMsg{id}) })
+			f.after(bracketHold, func() { send(heldKeyMsg{id}) })
 		}
 		if held != nil {
 			return InputBatch{*held}
