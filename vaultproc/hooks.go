@@ -87,6 +87,12 @@ const (
 	HandoverNoSuccessor HandoverReason = "no-successor"
 	// HandoverLocked: the process was locking when the handover reached its commit.
 	HandoverLocked HandoverReason = "locked"
+	// HandoverAnswerUnreadable: the client could not read the answer to its commit. It arises in the client
+	// only; the process never reports it.
+	HandoverAnswerUnreadable HandoverReason = "answer-unreadable"
+	// HandoverNotReplaced: the update did not replace the program, so the client never committed. It arises
+	// in the client only; the process never reports it.
+	HandoverNotReplaced HandoverReason = "not-replaced"
 )
 
 // HandoverResult is what OnHandover is told.
