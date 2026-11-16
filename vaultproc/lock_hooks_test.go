@@ -106,8 +106,43 @@ func TestOnLockProgramReplaced(t *testing.T) {
 	}
 	replaced.Store(true)
 	awaitStopped(t, r)
-	if event := log.lockEvent(t); event != (LockEvent{Reason: LockProgramReplaced}) {
+	if event := log.lockEvent(t); event != (LockEvent{Reason: LockProgramReplaced, Trigger: TriggerWatch}) {
 		t.Fatalf("OnLock = %+v", event)
+	}
+}
+
+func TestOnLockProgramReplacedByRefusedClient(t *testing.T) {
+	cfg := testConfig(t)
+	cfg.ReplacedProgram = ReplacedLocksOnClient
+	log := attachHooks(&cfg)
+	server, err := NewServer(cfg, State{Identity: newIdentity(t), Document: []byte(testDocument)}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server.watchEvery = 20 * time.Millisecond
+	var replaced atomic.Bool
+	server.program = func() (string, bool, error) { return "/example/tool", replaced.Load(), nil }
+	r := serveWith(t, server, cfg, server.key, false)
+	if _, err := r.client.Status(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	replaced.Store(true)
+	time.Sleep(200 * time.Millisecond) // many watch ticks: none may lock
+	if server.stopping() {
+		t.Fatal("the watch locked although the program check is off")
+	}
+	refuse(t, server)
+	awaitStopped(t, r)
+	if event := log.lockEvent(t); event != (LockEvent{Reason: LockProgramReplaced, Trigger: TriggerRefusedClient}) {
+		t.Fatalf("OnLock = %+v", event)
+	}
+}
+
+func TestReplacedProgramRejectsUnknownValue(t *testing.T) {
+	cfg := testConfig(t)
+	cfg.ReplacedProgram = ReplacedProgramLock(99)
+	if _, err := NewServer(cfg, State{Identity: newIdentity(t)}, false); err == nil {
+		t.Fatal("NewServer accepted an unknown ReplacedProgram")
 	}
 }
 
