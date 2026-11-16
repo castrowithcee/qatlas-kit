@@ -23,13 +23,13 @@ func listCatalogs() i18n.Catalogs[TextID] {
 		i18n.English: {
 			"col.name": "Name", "col.kind": "Kind", "col.state": "State", "col.size": "Size", "col.note": "Note",
 			"list.empty": "No plants yet; {new} adds one.", "list.nogroup": "unsorted",
-			"bar.group": "Group", "bar.group.kind": "Kind", "bar.group.none": "None",
+			"bar.date": "Date", "bar.group": "Group", "bar.group.kind": "Kind", "bar.group.none": "None",
 			"bar.state": "State", "bar.state.all": "All", "bar.state.on": "Active", "bar.state.off": "Inactive",
 		},
 		i18n.German: {
 			"col.name": "Name", "col.kind": "Art", "col.state": "Zustand", "col.size": "Größe", "col.note": "Notiz",
 			"list.empty": "Noch keine Pflanzen; {new} legt eine an.", "list.nogroup": "unsortiert",
-			"bar.group": "Gruppe", "bar.group.kind": "Art", "bar.group.none": "Keine",
+			"bar.date": "Datum", "bar.group": "Gruppe", "bar.group.kind": "Art", "bar.group.none": "Keine",
 			"bar.state": "Zustand", "bar.state.all": "Alle", "bar.state.on": "Aktiv", "bar.state.off": "Inaktiv",
 		},
 	}
