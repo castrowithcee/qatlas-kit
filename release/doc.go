@@ -9,5 +9,5 @@
 // path. None of the checks can be relaxed: the signature must use version 1, the caller's namespace, an
 // empty reserved field, sha256 or sha512, and an Ed25519 key, and must carry no surplus bytes; an archive
 // must be listed exactly once; archive entries must have safe, unique paths, and the program must be a
-// single regular file of at most 64 MiB.
+// single regular file of at most 256 MiB.
 package release

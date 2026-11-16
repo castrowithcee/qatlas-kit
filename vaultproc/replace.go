@@ -21,7 +21,9 @@ const (
 	// for the lock.
 	OutcomeLocked
 	// OutcomeUnreached means a process answered but could not be asked to lock; ReplacementResult.Err says
-	// why, with its process id where known. It locks itself once it finds its program replaced.
+	// why, with its process id where known. It locks itself once it finds its program replaced: soon after
+	// with the default Config.ReplacedProgram, otherwise when the first client is refused or at the latest
+	// when it idles.
 	OutcomeUnreached
 )
 
@@ -47,7 +49,7 @@ type Replacement struct {
 func NewReplacement(client *Client) *Replacement { return &Replacement{client: client} }
 
 // BeforeReplace prepares the handover or locks the vault process. It never stops the installation: a
-// process that is left running locks itself once its program is replaced.
+// process that is left running locks itself once it finds its program replaced, as for OutcomeUnreached.
 func (r *Replacement) BeforeReplace(ctx context.Context, files selfupdate.ReleaseFiles) error {
 	r.result, r.handover = ReplacementResult{}, nil
 	if files.Rollback || !handoverSupported {

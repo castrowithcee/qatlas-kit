@@ -32,7 +32,33 @@ type LockEvent struct {
 	Reason LockReason
 	// Handover is the reason of the failed handover when Reason is LockHandoverFailed, and empty otherwise.
 	Handover HandoverReason
+	// Trigger says what found the program replaced when Reason is LockProgramReplaced, and is empty
+	// otherwise.
+	Trigger LockTrigger
 }
+
+// LockTrigger says what found a program replaced.
+type LockTrigger string
+
+// The triggers of LockProgramReplaced.
+const (
+	// TriggerWatch: the watch of the process found its program replaced.
+	TriggerWatch LockTrigger = "watch"
+	// TriggerRefusedClient: a client was refused because the program was replaced.
+	TriggerRefusedClient LockTrigger = "refused-client"
+)
+
+// ReplacedProgramLock chooses when a process locks after its program was replaced without a handover.
+type ReplacedProgramLock int
+
+const (
+	// ReplacedLocksEarly, the zero value: the watch locks the process soon after the replacement, without
+	// a client.
+	ReplacedLocksEarly ReplacedProgramLock = iota
+	// ReplacedLocksOnClient: the watch does not look at the program. The process locks when the first
+	// client is refused, or by another reason first. The watch of the socket stays on.
+	ReplacedLocksOnClient
+)
 
 // HandoverReason says why a handover did not happen. Each reason is a fixed word; none quotes a request,
 // a file or an error.

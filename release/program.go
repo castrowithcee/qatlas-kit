@@ -14,7 +14,7 @@ import (
 	"strings"
 )
 
-const maxProgramBytes = 64 << 20
+const maxProgramBytes = 256 << 20
 
 // ProgramSHA256 returns the lowercase hex SHA-256 of the regular file programPath, a slash-separated
 // path such as "bin/tool", inside archive. The suffix of archiveName selects .tar.gz or .zip.
@@ -99,15 +99,15 @@ func (p *programScan) entry(raw string, regular bool, body io.Reader) error {
 	if !regular {
 		return fmt.Errorf("%s is not a regular file", name)
 	}
-	data, err := io.ReadAll(io.LimitReader(body, maxProgramBytes+1))
+	hash := sha256.New()
+	n, err := io.Copy(hash, io.LimitReader(body, maxProgramBytes+1))
 	if err != nil {
 		return fmt.Errorf("read %s: %w", name, err)
 	}
-	if len(data) > maxProgramBytes {
+	if n > maxProgramBytes {
 		return fmt.Errorf("%s exceeds %d bytes", name, maxProgramBytes)
 	}
-	sum := sha256.Sum256(data)
-	p.sum = sum[:]
+	p.sum = hash.Sum(nil)
 	return nil
 }
 

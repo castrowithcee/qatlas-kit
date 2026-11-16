@@ -62,6 +62,10 @@ type Config struct {
 	// overwrites what it holds even if the hook fails or panics, and Serve then returns ErrHook. It is not
 	// called if Serve never ran.
 	OnLock func(held *Held, event LockEvent) error
+	// ReplacedProgram chooses when a process whose program was replaced without a handover locks. The zero
+	// value is ReplacedLocksEarly. Either way the process refuses every client once its program was
+	// replaced, and the first refused client locks it.
+	ReplacedProgram ReplacedProgramLock
 }
 
 func (c Config) validate() error {
@@ -76,6 +80,9 @@ func (c Config) validate() error {
 	}
 	if c.MaxUnlock < 0 || c.RequestTimeout < 0 {
 		return errors.New("vaultproc: a duration must not be negative")
+	}
+	if c.ReplacedProgram != ReplacedLocksEarly && c.ReplacedProgram != ReplacedLocksOnClient {
+		return errors.New("vaultproc: unknown ReplacedProgram value")
 	}
 	for op, h := range c.Handlers {
 		if !wordPattern.MatchString(op) || op == OpStatus || op == OpLock || op == OpHandover {
@@ -196,7 +203,7 @@ func (s *Server) Refused(conn net.Conn, _ error) {
 	var h hello
 	_ = readMessage(conn, &h)
 	code := codeRefused
-	switch s.programState() {
+	switch s.programState(TriggerRefusedClient) {
 	case replacedHandover:
 		code = codeReplaced
 	case replacedLocked:
@@ -337,8 +344,8 @@ func (s *Server) wipe() {
 	s.doc, s.key, s.locked = nil, nil, true
 }
 
-// watch locks the server once its socket is gone or another file, or its program was replaced while no
-// handover is under way.
+// watch locks the server once its socket is gone or another file, or, unless Config.ReplacedProgram defers
+// that to the first refused client, its program was replaced while no handover is under way.
 func (s *Server) watch() {
 	path, err := s.cfg.Endpoint.Path()
 	if err != nil {
@@ -362,7 +369,7 @@ func (s *Server) watch() {
 			return
 		case <-ticker.C:
 		}
-		if s.programState() == replacedLocked {
+		if s.cfg.ReplacedProgram == ReplacedLocksEarly && s.programState(TriggerWatch) == replacedLocked {
 			return
 		}
 		if ownErr == nil {
@@ -387,8 +394,8 @@ const (
 )
 
 // programState tells whether this process's program was replaced and locks the server if no handover
-// would take the vault over. A program that cannot be told counts as replaced.
-func (s *Server) programState() int {
+// would take the vault over; trigger says what asked. A program that cannot be told counts as replaced.
+func (s *Server) programState(trigger LockTrigger) int {
 	_, replaced, err := s.program()
 	if err == nil && !replaced {
 		return replacedNot
@@ -399,7 +406,7 @@ func (s *Server) programState() int {
 	if handover {
 		return replacedHandover
 	}
-	s.stop(LockProgramReplaced)
+	s.stopWith(LockEvent{Reason: LockProgramReplaced, Trigger: trigger})
 	return replacedLocked
 }
 

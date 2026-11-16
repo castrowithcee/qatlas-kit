@@ -7,6 +7,7 @@ import (
 	"compress/gzip"
 	"crypto/sha256"
 	"encoding/hex"
+	"io"
 	"strings"
 	"testing"
 
@@ -102,7 +103,6 @@ func TestProgramSHA256(t *testing.T) {
 		"symlink program":    {"sample.tar.gz", tarArchive(t, tarEntry{"bin/tool", tar.TypeSymlink, nil}), "bin/tool", "not a regular file"},
 		"directory program":  {"sample.tar.gz", tarArchive(t, tarEntry{"bin/tool/", tar.TypeDir, nil}), "bin/tool", "not a regular file"},
 		"zip directory":      {"sample.zip", dirZip.Bytes(), "bin/tool", "not a regular file"},
-		"oversized program":  {"sample.tar.gz", releasetest.Archive(t, "sample.tar.gz", releasetest.File{Name: "bin/tool", Body: make([]byte, maxProgramBytes+1)}), "bin/tool", "exceeds"},
 		"unknown format":     {"sample.tar.xz", releasetest.Archive(t, "sample.tar.gz", tool("bin/tool")), "bin/tool", "unsupported"},
 		"corrupt tar":        {"sample.tar.gz", []byte("not gzip"), "bin/tool", "open archive"},
 		"corrupt zip":        {"sample.zip", []byte("not zip"), "bin/tool", "open archive"},
@@ -121,5 +121,53 @@ func TestProgramSHA256(t *testing.T) {
 				t.Fatalf("error = %v, want it to contain %q", err, tc.want)
 			}
 		})
+	}
+}
+
+type zeros struct{}
+
+func (zeros) Read(p []byte) (int, error) {
+	clear(p)
+	return len(p), nil
+}
+
+// zeroProgram returns a .tar.gz holding bin/tool of size zero bytes, without holding the program in memory.
+func zeroProgram(t *testing.T, size int64) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	gz, err := gzip.NewWriterLevel(&buf, gzip.BestSpeed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := tar.NewWriter(gz)
+	if err := w.WriteHeader(&tar.Header{Name: "bin/tool", Mode: 0o755, Size: size, Typeflag: tar.TypeReg}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := io.CopyN(w, zeros{}, size); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := gz.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return buf.Bytes()
+}
+
+func TestProgramSHA256SizeLimit(t *testing.T) {
+	if maxProgramBytes != 256<<20 {
+		t.Fatalf("program limit = %d, want 256 MiB", maxProgramBytes)
+	}
+	hash := sha256.New()
+	if _, err := io.CopyN(hash, zeros{}, maxProgramBytes); err != nil {
+		t.Fatal(err)
+	}
+	got, err := ProgramSHA256("sample.tar.gz", zeroProgram(t, maxProgramBytes), "bin/tool")
+	if want := hex.EncodeToString(hash.Sum(nil)); err != nil || got != want {
+		t.Fatalf("program at the limit: %s, %v, want %s", got, err, want)
+	}
+	if _, err := ProgramSHA256("sample.tar.gz", zeroProgram(t, maxProgramBytes+1), "bin/tool"); err == nil || !strings.Contains(err.Error(), "exceeds") {
+		t.Fatalf("program above the limit: %v", err)
 	}
 }
