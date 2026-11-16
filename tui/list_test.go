@@ -563,6 +563,58 @@ func TestEmptyListAndFilterWithoutMatch(t *testing.T) {
 	}
 }
 
+// SetEmpty sets the sentence of the empty list for its state; an empty text restores ListSpec.Empty, and the
+// sentence of a filter without match stays the list's own.
+func TestSetEmptyReplacesTheSentenceOfTheEmptyList(t *testing.T) {
+	l, _ := newSampleList(t, Styles{}, i18n.English, nil)
+	before, _ := l.View(Styles{}, 60, 4)
+	l.SetEmpty("")
+	if view, _ := l.View(Styles{}, 60, 4); view != before {
+		t.Errorf("an empty text changed the view:\n%s\nwas\n%s", view, before)
+	}
+	l.SetEmpty("The vault is locked; u unlocks it.")
+	view, _ := l.View(Styles{}, 60, 4)
+	if !strings.Contains(view, "The vault is locked; u unlocks it.") || strings.Contains(view, "No plants") {
+		t.Errorf("the set sentence:\n%s", view)
+	}
+	screen, _, ok := l.Overlay(Styles{}, sampleScreen(100, 30), 100, 30, Rect{Width: 100, Height: 30})
+	if !ok || !strings.Contains(screen, "The vault is locked; u unlocks it.") {
+		t.Errorf("the set sentence in the modal (ok %v):\n%s", ok, screen)
+	}
+	l.SetEmpty("Nothing\x1b[2J here\a")
+	view, _ = l.View(Styles{}, 60, 4)
+	if plain := ansi.Strip(view); strings.ContainsAny(plain, "\x1b\a") || !strings.Contains(plain, `Nothing\x1b[2J here\a`) {
+		t.Errorf("control characters reached the screen: %q", plain)
+	}
+	long := strings.Repeat("The filter bar hides every entry; clear the period or the level. ", 3)
+	l.SetEmpty(long)
+	view, _ = l.View(Styles{}, 30, 12)
+	if n := strings.Count(ansi.Strip(view), "filter bar"); n != 3 {
+		t.Errorf("the long sentence was not wrapped:\n%s", view)
+	}
+	for _, line := range strings.Split(view, "\n") {
+		if w := lipgloss.Width(line); w > 30 {
+			t.Errorf("line of width %d > 30: %q", w, line)
+		}
+	}
+	if err := l.SetItems(samplePlants()); err != nil {
+		t.Fatal(err)
+	}
+	l.SetFilter("zzz")
+	view, _ = l.View(Styles{}, 80, 5)
+	if !strings.Contains(view, `No entry matches "zzz"; esc clears the filter.`) || strings.Contains(view, "filter bar hides") {
+		t.Errorf("a filter without match:\n%s", view)
+	}
+	if err := l.SetItems(nil); err != nil {
+		t.Fatal(err)
+	}
+	l.SetFilter("")
+	l.SetEmpty("")
+	if view, _ = l.View(Styles{}, 60, 4); view != before {
+		t.Errorf("SetEmpty(\"\") did not restore ListSpec.Empty:\n%s", view)
+	}
+}
+
 // Control characters in cells, group keys and the typed filter never reach the terminal.
 func TestListEscapesControlCharacters(t *testing.T) {
 	for look, st := range looks(t) {
