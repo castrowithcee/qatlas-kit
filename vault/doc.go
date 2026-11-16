@@ -49,7 +49,8 @@
 // A wrong passphrase reports ErrWrongPassphrase, a key file that does not match the recipient file
 // ErrKeyMismatch, and a file that does not decrypt or decode ErrDamaged. A problem with the document, on
 // read or write, is a *DocumentError that names the file and tells Kind (DocumentDecrypt, DocumentDecode or
-// DocumentSchema) and, for DocumentSchema, the Version found; it wraps ErrDamaged or ErrUnsupportedSchema.
+// DocumentSchema) and, for DocumentSchema, the Version found, 0 for a JSON object without a schema; it
+// wraps ErrDamaged or ErrUnsupportedSchema.
 // A file that does not decrypt, whether the document, a sealed file or a pending entry, is a
 // *DocumentError of Kind DocumentDecrypt whose Cause is CauseWrongKey (an age file for another key),
 // CauseNotAge (not an age file, such as a plain text file) or CauseDamaged (a damaged or altered age
