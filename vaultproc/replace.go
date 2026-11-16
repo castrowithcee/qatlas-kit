@@ -3,7 +3,6 @@ package vaultproc
 import (
 	"context"
 	"errors"
-	"fmt"
 
 	"github.com/castrowithcee/qatlas-kit/selfupdate"
 )
@@ -93,7 +92,7 @@ func (r *Replacement) Finish() ReplacementResult {
 		_ = r.handover.Close()
 		r.handover = nil
 		r.result = ReplacementResult{Outcome: OutcomeLocked,
-			Err: fmt.Errorf("%w: the update did not replace the program", ErrHandover)}
+			Err: &HandoverError{Reason: HandoverNotReplaced}}
 	}
 	return r.result
 }
