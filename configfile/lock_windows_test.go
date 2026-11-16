@@ -4,18 +4,41 @@ package configfile
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
+	"strings"
 	"testing"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
 )
 
-func TestExistingOpenLockACLIsRejectedWithoutChangingIt(t *testing.T) {
+func TestOwnLockFileWithInheritedACLIsMadePrivate(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "app", "settings")
+	lock := path + ".lock"
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	f, err := os.OpenFile(lock, os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.WriteString("4242"); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
+	assertNotPrivateLock(t, lock)
+	assertLockAdopted(t, path)
+}
+
+func TestOwnLockFileOpenToEveryoneIsMadePrivate(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "settings")
 	lock := path + ".lock"
-	if err := os.WriteFile(lock, nil, 0o600); err != nil {
+	if err := os.WriteFile(lock, []byte("4242"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	open, err := windows.SecurityDescriptorFromString("D:P(A;;FA;;;WD)")
@@ -30,35 +53,240 @@ func TestExistingOpenLockACLIsRejectedWithoutChangingIt(t *testing.T) {
 		windows.DACL_SECURITY_INFORMATION|windows.PROTECTED_DACL_SECURITY_INFORMATION, nil, nil, dacl, nil); err != nil {
 		t.Fatal(err)
 	}
+	assertNotPrivateLock(t, lock)
+	assertLockAdopted(t, path)
+}
+
+func TestOwnLockFileOwnedByAdministratorsIsMadePrivate(t *testing.T) {
+	admins, err := windows.CreateWellKnownSid(windows.WinBuiltinAdministratorsSid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "settings")
+	lock := path + ".lock"
+	if err := os.WriteFile(lock, []byte("4242"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := windows.SetNamedSecurityInfo(lock, windows.SE_FILE_OBJECT, windows.OWNER_SECURITY_INFORMATION,
+		admins, nil, nil, nil); err != nil {
+		// Only a token with the Administrators group enabled can hand a file to it. The hosted CI runs as an
+		// administrator without UAC, so it must cover this case.
+		if os.Getenv("CI") != "" {
+			t.Fatalf("set Administrators as owner: %v", err)
+		}
+		t.Skipf("set Administrators as owner: %v", err)
+	}
+	if got := securityDescriptor(t, lock, windows.OWNER_SECURITY_INFORMATION); got != "O:BA" {
+		t.Fatalf("prepared lock owner = %s", got)
+	}
+	assertNotPrivateLock(t, lock)
+	id, err := currentLockIdentity()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if slices.ContainsFunc(id.owners, admins.Equals) {
+		assertLockAdopted(t, path)
+		return
+	}
+	// This token's default owner is not Administrators, so take the identity currentLockIdentity reads from
+	// an elevated token whose default owner is.
+	elevated := lockIdentity{user: id.user, owners: []*windows.SID{id.user, admins}}
+	f, err := openLockFileAs(lock, elevated, setLockDACL)
+	if err != nil {
+		t.Fatalf("lock file owned by Administrators was not taken over: %v", err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
+	assertUserOnlyACL(t, lock)
+	if got := securityDescriptor(t, lock, windows.DACL_SECURITY_INFORMATION); !strings.HasPrefix(got, "D:P") {
+		t.Fatalf("lock ACL is not protected: %s", got)
+	}
+	if got := securityDescriptor(t, lock, windows.OWNER_SECURITY_INFORMATION); got != "O:BA" {
+		t.Fatalf("lock owner changed to %s", got)
+	}
+	if got, err := os.ReadFile(lock); err != nil || string(got) != "4242" {
+		t.Fatalf("lock content = %q, %v", got, err)
+	}
+}
+
+// assertNotPrivateLock proves that the lock file fails the private ACL check, so a later success can
+// only come from making it private.
+func assertNotPrivateLock(t *testing.T, lock string) {
+	t.Helper()
+	id, err := currentLockIdentity()
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, err := windows.SecurityDescriptorFromString(fmt.Sprintf(privateFileSDDL, id.user.String()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := openForSecurity(t, lock)
+	defer windows.CloseHandle(h)
+	if err := checkPrivateLockACL(h, want, id.user); err == nil {
+		t.Fatal("prepared lock file already passes the private ACL check")
+	}
+}
+
+func assertLockAdopted(t *testing.T, path string) {
+	t.Helper()
+	lock := path + ".lock"
+	owner := securityDescriptor(t, lock, windows.OWNER_SECURITY_INFORMATION)
+	store := numberStore(t, path)
+	if _, err := store.SaveIfUnchanged(1, RevisionAbsent); err != nil {
+		t.Fatalf("own lock file was not taken over: %v", err)
+	}
+	if got := readNumberFile(t, path); string(got) != "1" {
+		t.Fatalf("configuration = %q", got)
+	}
+	assertUserOnlyACL(t, lock)
+	if got := securityDescriptor(t, lock, windows.DACL_SECURITY_INFORMATION); !strings.HasPrefix(got, "D:P") {
+		t.Fatalf("lock ACL is not protected: %s", got)
+	}
+	if got := securityDescriptor(t, lock, windows.OWNER_SECURITY_INFORMATION); got != owner {
+		t.Fatalf("lock owner changed from %s to %s", owner, got)
+	}
+	if got, err := os.ReadFile(lock); err != nil || string(got) != "4242" {
+		t.Fatalf("lock content = %q, %v", got, err)
+	}
+}
+
+func TestLockDirectoryIsRejectedWithoutChange(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "settings")
+	lock := path + ".lock"
+	if err := os.Mkdir(lock, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	before := securityDescriptor(t, lock, allSecurityInfo)
+	assertSaveRejected(t, path)
+	if got := securityDescriptor(t, lock, allSecurityInfo); got != before {
+		t.Fatalf("directory security changed from %s to %s", before, got)
+	}
+}
+
+func TestLockSymlinkIsRejectedWithoutChange(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "settings")
+	lock := path + ".lock"
+	target := filepath.Join(dir, "target")
+	if err := os.WriteFile(target, []byte("4242"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(target, lock); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	link, dest := securityDescriptor(t, lock, allSecurityInfo), securityDescriptor(t, target, allSecurityInfo)
+	assertSaveRejected(t, path)
+	if got := securityDescriptor(t, lock, allSecurityInfo); got != link {
+		t.Fatalf("link security changed from %s to %s", link, got)
+	}
+	if got := securityDescriptor(t, target, allSecurityInfo); got != dest {
+		t.Fatalf("link target security changed from %s to %s", dest, got)
+	}
+	if got, err := os.ReadFile(target); err != nil || string(got) != "4242" {
+		t.Fatalf("link target content = %q, %v", got, err)
+	}
+}
+
+func TestForeignOwnedLockFileIsRejectedWithoutChange(t *testing.T) {
+	lock := filepath.Join(t.TempDir(), "settings.lock")
+	if err := os.WriteFile(lock, []byte("4242"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// Creating a file owned by someone else needs privileges, so the lock is opened as another user.
+	other, err := windows.CreateWellKnownSid(windows.WinLocalServiceSid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := lockIdentity{user: other, owners: []*windows.SID{other}}
+	before := securityDescriptor(t, lock, allSecurityInfo)
+	f, err := openLockFileAs(lock, id, setLockDACL)
+	if err == nil {
+		_ = f.Close()
+		t.Fatal("took over a lock file owned by another user")
+	}
+	assertFileUnchanged(t, lock, before)
+}
+
+func TestLockDACLFailureIsRejectedWithoutChange(t *testing.T) {
+	for name, set := range map[string]func(windows.Handle, *windows.ACL) error{
+		"set fails":     func(windows.Handle, *windows.ACL) error { return errors.New("access denied") },
+		"set no effect": func(windows.Handle, *windows.ACL) error { return nil },
+	} {
+		t.Run(name, func(t *testing.T) {
+			lock := filepath.Join(t.TempDir(), "settings.lock")
+			if err := os.WriteFile(lock, []byte("4242"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			id, err := currentLockIdentity()
+			if err != nil {
+				t.Fatal(err)
+			}
+			before := securityDescriptor(t, lock, allSecurityInfo)
+			f, err := openLockFileAs(lock, id, set)
+			if err == nil {
+				_ = f.Close()
+				t.Fatal("used a lock file that was not made private")
+			}
+			assertFileUnchanged(t, lock, before)
+		})
+	}
+}
+
+const allSecurityInfo = windows.OWNER_SECURITY_INFORMATION | windows.GROUP_SECURITY_INFORMATION |
+	windows.DACL_SECURITY_INFORMATION
+
+func assertSaveRejected(t *testing.T, path string) {
+	t.Helper()
 	store := numberStore(t, path)
 	if _, err := store.SaveIfUnchanged(1, RevisionAbsent); err == nil {
-		t.Fatal("accepted a lock file open to everyone")
+		t.Fatal("accepted a lock that is not a regular file")
 	}
-	if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
+	if _, err := os.Lstat(path); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("configuration was written: %v", err)
 	}
-	got, err := windows.GetNamedSecurityInfo(lock, windows.SE_FILE_OBJECT, windows.DACL_SECURITY_INFORMATION)
+}
+
+func assertFileUnchanged(t *testing.T, name, security string) {
+	t.Helper()
+	if got := securityDescriptor(t, name, allSecurityInfo); got != security {
+		t.Fatalf("security changed from %s to %s", security, got)
+	}
+	if got, err := os.ReadFile(name); err != nil || string(got) != "4242" {
+		t.Fatalf("content = %q, %v", got, err)
+	}
+}
+
+// openForSecurity opens the entry itself, not a link target, with just enough access to read its security.
+func openForSecurity(t *testing.T, name string) windows.Handle {
+	t.Helper()
+	p, err := windows.UTF16PtrFromString(name)
 	if err != nil {
 		t.Fatal(err)
 	}
-	actual, _, err := got.DACL()
+	h, err := windows.CreateFile(p, windows.READ_CONTROL,
+		windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE|windows.FILE_SHARE_DELETE, nil, windows.OPEN_EXISTING,
+		windows.FILE_FLAG_OPEN_REPARSE_POINT|windows.FILE_FLAG_BACKUP_SEMANTICS, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
-	var ace *windows.ACCESS_ALLOWED_ACE
-	if actual == nil || actual.AceCount != 1 {
-		t.Fatalf("existing ACL changed: %v", actual)
-	}
-	if err := windows.GetAce(actual, 0, &ace); err != nil {
-		t.Fatal(err)
-	}
-	everyone, err := windows.CreateWellKnownSid(windows.WinWorldSid)
+	return h
+}
+
+func securityDescriptor(t *testing.T, name string, info windows.SECURITY_INFORMATION) string {
+	t.Helper()
+	h := openForSecurity(t, name)
+	defer windows.CloseHandle(h)
+	sd, err := windows.GetSecurityInfo(h, windows.SE_FILE_OBJECT, info)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !(*windows.SID)(unsafe.Pointer(&ace.SidStart)).Equals(everyone) {
-		t.Fatal("existing ACL was changed")
+	s := sd.String()
+	if s == "" {
+		t.Fatalf("cannot format security of %s", name)
 	}
+	return s
 }
 
 func TestNewPrivateFileAndBackupCopyHaveUserOnlyACL(t *testing.T) {
@@ -109,7 +337,7 @@ func TestNewBackupAndDirectoryHaveUserOnlyACL(t *testing.T) {
 	if err != nil || len(backups) != 1 {
 		t.Fatalf("backups = %v, %v", backups, err)
 	}
-	for _, name := range []string{store.backupDir(), filepath.Join(store.backupDir(), backups[0].Name)} {
+	for _, name := range []string{store.backupDir(), filepath.Join(store.backupDir(), backups[0].Name), path + ".lock"} {
 		assertUserOnlyACL(t, name)
 	}
 }
