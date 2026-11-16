@@ -17,9 +17,10 @@ type DocumentErrorKind string
 const (
 	// DocumentDecrypt means the document file does not decrypt with the vault key.
 	DocumentDecrypt DocumentErrorKind = "decrypt"
-	// DocumentDecode means the document is not a JSON object with an integer schema version.
+	// DocumentDecode means the document is not a JSON object, or its schema is neither an integer nor null.
 	DocumentDecode DocumentErrorKind = "decode"
-	// DocumentSchema means the document's schema version is not one of Options.Schemas.
+	// DocumentSchema means the document's schema version is not one of Options.Schemas; a JSON object
+	// without a schema has version 0.
 	DocumentSchema DocumentErrorKind = "schema"
 )
 
@@ -100,19 +101,31 @@ func (e *DocumentError) Unwrap() error {
 	return ErrDamaged
 }
 
-// checkSchema refuses a document that is not a JSON object with an accepted integer schema version. path
-// names the file for the error.
+// checkSchema refuses a document that is not a JSON object with an accepted integer schema version. A JSON
+// object without a schema, or with a null one, counts as version 0, which is never accepted. path names the
+// file for the error.
 func checkSchema(path string, document []byte, schemas []int) error {
 	var envelope struct {
 		Schema *int `json:"schema"`
 	}
-	if err := json.Unmarshal(document, &envelope); err != nil || envelope.Schema == nil {
+	// The JSON literal null decodes into the struct without error, so the object is checked by its first byte.
+	if err := json.Unmarshal(document, &envelope); err != nil || !isJSONObject(document) {
 		return &DocumentError{Path: path, Kind: DocumentDecode}
 	}
-	if !slices.Contains(schemas, *envelope.Schema) {
-		return &DocumentError{Path: path, Kind: DocumentSchema, Version: *envelope.Schema}
+	version := 0
+	if envelope.Schema != nil {
+		version = *envelope.Schema
+	}
+	if !slices.Contains(schemas, version) {
+		return &DocumentError{Path: path, Kind: DocumentSchema, Version: version}
 	}
 	return nil
+}
+
+// isJSONObject reports whether valid JSON starts as an object.
+func isJSONObject(document []byte) bool {
+	trimmed := bytes.TrimLeft(document, " \t\r\n")
+	return len(trimmed) > 0 && trimmed[0] == '{'
 }
 
 // readDocument validates a document just read from path. A file of 0 bytes becomes Options.EmptyDocument

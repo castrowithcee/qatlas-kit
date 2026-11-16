@@ -330,6 +330,63 @@ func TestDocumentErrorKinds(t *testing.T) {
 	}
 }
 
+func TestDocumentWithoutSchemaIsVersionZero(t *testing.T) {
+	versionZero := []string{`{}`, `{"schema":null}`, ` {"values":{}}`}
+	decode := []string{`[]`, `null`, `{"schema":"x"}`, `{"schema":1.5}`, `not json`}
+
+	check := func(name, doc string, err error, schemaErr bool) {
+		t.Helper()
+		var de *DocumentError
+		if !errors.As(err, &de) {
+			t.Fatalf("%s %q: error = %v, want a *DocumentError", name, doc, err)
+		}
+		if schemaErr {
+			if de.Kind != DocumentSchema || de.Version != 0 || !errors.Is(err, ErrUnsupportedSchema) || errors.Is(err, ErrDamaged) {
+				t.Errorf("%s %q: error = %v (%+v), want DocumentSchema version 0", name, doc, err, *de)
+			}
+		} else if de.Kind != DocumentDecode || !errors.Is(err, ErrDamaged) {
+			t.Errorf("%s %q: error = %v (%+v), want DocumentDecode", name, doc, err, *de)
+		}
+		if strings.Contains(err.Error(), "values") || strings.Contains(err.Error(), "not json") {
+			t.Errorf("%s %q: error leaks content: %v", name, doc, err)
+		}
+	}
+
+	for _, withEmpty := range []bool{false, true} {
+		mutate := func(o *Options) {
+			if withEmpty {
+				o.EmptyDocument = []byte(`{"schema":1}`)
+			}
+		}
+		opts := optionsWith(t, mutate)
+		v, locked := newVault(t, opts), newVault(t, opts)
+		if err := v.Create(testPassphrase, encodeDoc(t, nil)); err != nil {
+			t.Fatal(err)
+		}
+		recipient, _ := age.ParseX25519Recipient(strings.TrimSpace(string(readBytes(t, locked.recipientPath()))))
+		run := func(doc string, schemaErr bool) {
+			name := "read"
+			if withEmpty {
+				name = "read with EmptyDocument"
+			}
+			overwrite(t, v, v.documentPath(), encryptFor(t, recipient, []byte(doc)))
+			_, err := locked.Unlock(testPassphrase)
+			check(name, doc, err, schemaErr)
+			before := readBytes(t, v.documentPath())
+			check(strings.Replace(name, "read", "write", 1), doc, v.Write([]byte(doc)), schemaErr)
+			if string(readBytes(t, v.documentPath())) != string(before) {
+				t.Errorf("Write(%q) changed the document file", doc)
+			}
+		}
+		for _, doc := range versionZero {
+			run(doc, true)
+		}
+		for _, doc := range decode {
+			run(doc, false)
+		}
+	}
+}
+
 func testOptionsAt(v *Vault) Options { return v.opts }
 
 // dirState returns every file below dir by relative path, for byte-exact comparisons.
