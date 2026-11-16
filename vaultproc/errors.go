@@ -36,6 +36,10 @@ var (
 	// ErrHandover means a handover did not happen; the vault process locked itself. It wraps the reason.
 	ErrHandover = errors.New("the vault process did not hand the vault over and locked itself")
 
+	// ErrNoAnswer means the vault process did not answer in time after Start began it. It is followed by
+	// the cause, which errors.Is and errors.As still reach.
+	ErrNoAnswer = errors.New("the vault process does not answer")
+
 	// ErrHook means a hook of Config failed or panicked; Serve returns it after the process locked and
 	// overwrote what it held. It carries nothing of the hook's error.
 	ErrHook = errors.New("a vault process hook failed")
@@ -66,6 +70,14 @@ var (
 type Error struct{ Code string }
 
 func (e *Error) Error() string { return "the vault process answered " + e.Code }
+
+// causeError is kind followed by its cause. Unwrap returns the cause, as before the kinds existed, and
+// errors.Is also matches kind.
+type causeError struct{ kind, cause error }
+
+func (e *causeError) Error() string        { return e.kind.Error() + ": " + e.cause.Error() }
+func (e *causeError) Unwrap() error        { return e.cause }
+func (e *causeError) Is(target error) bool { return target == e.kind }
 
 // answerError turns an answer's code into the error a client returns.
 func answerError(code string) error {
