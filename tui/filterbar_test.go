@@ -2,9 +2,11 @@ package tui
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 
+	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
@@ -149,7 +151,7 @@ func TestFilterBarClicks(t *testing.T) {
 	if _, handled := b.Click(m.Handle(click(state.Rect.X+3, 0))); !handled || !b.Open() || !b.Focused() {
 		t.Fatal("a click on a field does not open its values")
 	}
-	_, values := b.ValueList(st)
+	_, values := b.ValueList(st, 80, 24)
 	vm := NewMouseMap(values, true)
 	if changed, _ := b.Click(vm.Handle(click(values[1].Rect.X, values[1].Rect.Y))); firstField(changed).Selected != "on" || b.Open() {
 		t.Errorf("a click on a value: %+v", changed)
@@ -551,7 +553,7 @@ func opts(ids ...string) []Choice {
 // snapshot is everything a rejected SetOptions must leave as it was.
 func snapshot(b *FilterBar, st Styles) string {
 	view, _ := b.View(st, 80)
-	list, _ := b.ValueList(st)
+	list, _ := b.ValueList(st, 80, 24)
 	modal, _ := b.ModalView(st, 40, 8)
 	return fmt.Sprintf("%v|%+v|%d %v %d %v %v %d|%s|%s|%s", b.Fields(), b.nav, b.focus, b.open, b.choice, b.modal, b.draft, b.mfocus, view, list, modal)
 }
@@ -1008,6 +1010,294 @@ func TestFilterBarActionFieldSweeps(t *testing.T) {
 					t.Errorf("%dx%d: target %+v outside", width, height, tg.Rect)
 				}
 			}
+		}
+	}
+}
+
+// longBar is a bar with one field of twenty values, "Value 01" and so on, the fifteenth in force, and one
+// value with a control character in its label. SetOptions changes them later.
+func longBar(t *testing.T, lang i18n.Lang, keys FilterBarKeys) (*FilterBar, *Keymap) {
+	t.Helper()
+	km := sampleKeymap(t, CharsetASCII)
+	cat := listCatalogs()
+	var options []Choice
+	for n := 1; n <= 20; n++ {
+		id := fmt.Sprintf("v%02d", n)
+		cat[i18n.English][TextID("val."+id)] = fmt.Sprintf("Value %02d", n)
+		cat[i18n.German][TextID("val."+id)] = fmt.Sprintf("Wert %02d", n)
+		options = append(options, Choice{ID: ChoiceID(id), Label: TextID("val." + id)})
+	}
+	cat[i18n.English]["val.raw"], cat[i18n.German]["val.raw"] = "Raw\x1b[31mred", "Roh\x1b[31mrot"
+	options = append(options, Choice{ID: "raw", Label: "val.raw"})
+	spec := FilterBarSpec{Keys: keys, Fields: []FilterField{{ID: "city", Label: "bar.state", Selected: "v15", Options: options}}}
+	b, err := NewFilterBar(spec, km, newTranslator(t, lang, cat, km))
+	if err != nil {
+		t.Fatal(err)
+	}
+	b.Focus(false)
+	return b, km
+}
+
+func typeBar(b *FilterBar, text string) {
+	for _, r := range text {
+		b.Update(tea.KeyPressMsg{Code: r, Text: string(r)})
+	}
+}
+
+func pagedKeys() FilterBarKeys {
+	k := sampleFilterKeys
+	k.PageUp, k.PageDown = "pageup", "pagedown"
+	return k
+}
+
+// The list opens on the value in force even where it lies below the first window, shows its position, the
+// check mark that stands without colour, and scrolls with the cursor.
+func TestFilterBarValueListOpensOnValueInForce(t *testing.T) {
+	for _, look := range []string{"noneascii", "mono", "dark"} {
+		st := looks(t)[look]
+		b, _ := longBar(t, i18n.English, pagedKeys())
+		keysTo2(b, "enter")
+		view, targets := b.ValueList(st, 60, 24)
+		plain := ansi.Strip(view)
+		if !strings.Contains(plain, "Value 15") || !strings.Contains(plain, "15/21") {
+			t.Fatalf("%s: the value in force is not in the window:\n%s", look, plain)
+		}
+		if strings.Contains(plain, "Value 01") {
+			t.Errorf("%s: the window did not scroll to the cursor:\n%s", look, plain)
+		}
+		if len(targets) > maxValueRows {
+			t.Errorf("%s: %d values at once", look, len(targets))
+		}
+		mark := st.Glyph(GlyphOK) + " Value 15"
+		if !strings.Contains(plain, mark) || strings.Count(plain, st.Glyph(GlyphOK)+" ") != 1 {
+			t.Errorf("%s: the value in force has no mark %q:\n%s", look, mark, plain)
+		}
+	}
+}
+
+// Typing filters by part of the shown text in any case, the position names the shown values and the total,
+// and the search line is the first row.
+func TestFilterBarValueListSearch(t *testing.T) {
+	st := looks(t)["noneascii"]
+	b, _ := longBar(t, i18n.English, pagedKeys())
+	keysTo2(b, "enter")
+	typeBar(b, "VALUE 1")
+	view, targets := b.ValueList(st, 60, 24)
+	plain := ansi.Strip(view)
+	lines := strings.Split(plain, "\n")
+	if !strings.Contains(lines[1], "VALUE 1") {
+		t.Errorf("the search line is not the first row:\n%s", plain)
+	}
+	if !strings.Contains(plain, "(21 total)") || !strings.Contains(plain, "/10 (21 total)") || len(targets) != 8 {
+		t.Errorf("filtered position, %d targets:\n%s", len(targets), plain)
+	}
+	if strings.Contains(plain, "Value 05") {
+		t.Errorf("a value that does not match is shown:\n%s", plain)
+	}
+	keysTo2(b, "backspace", "backspace", "backspace", "backspace", "backspace", "backspace", "backspace")
+	view, _ = b.ValueList(st, 60, 24)
+	if !strings.Contains(ansi.Strip(view), "/21") || strings.Contains(ansi.Strip(view), "total") {
+		t.Errorf("unfiltered position:\n%s", view)
+	}
+	typeBar(b, "zzz")
+	keysTo2(b, "enter")
+	if b.Value("city") != "v15" || !b.Open() {
+		t.Error("enter without match took a value or closed the list")
+	}
+	keysTo2(b, "backspace", "backspace", "backspace")
+	typeBar(b, "value 2")
+	keysTo2(b, "enter")
+	if b.Value("city") != "v20" || b.Open() {
+		t.Errorf("enter takes the first match: %q", b.Value("city"))
+	}
+}
+
+// A search without match names the way out, in both languages.
+func TestFilterBarValueListNoMatch(t *testing.T) {
+	st := looks(t)["noneascii"]
+	for lang, want := range map[i18n.Lang][]string{
+		i18n.English: {`No value matches "zz"`, "delete the search", "esc to close", "0/0"},
+		i18n.German:  {`Kein Wert passt zu "zz"`, "Suche", "esc", "(21 gesamt)"},
+	} {
+		b, _ := longBar(t, lang, pagedKeys())
+		keysTo2(b, "enter")
+		typeBar(b, "zz")
+		view, _ := b.ValueList(st, 80, 24)
+		plain := strings.Join(strings.Fields(ansi.Strip(view)), " ")
+		for _, w := range want {
+			if !strings.Contains(plain, w) {
+				t.Errorf("%s: %q is not in\n%s", lang, w, view)
+			}
+		}
+	}
+}
+
+// Back closes without change, also with a search typed.
+func TestFilterBarValueListBack(t *testing.T) {
+	b, _ := longBar(t, i18n.English, pagedKeys())
+	keysTo2(b, "enter", "down")
+	typeBar(b, "value 0")
+	if _, handled := keysTo2(b, "esc"); !handled || b.Open() || b.Value("city") != "v15" {
+		t.Errorf("back: open %v, value %q", b.Open(), b.Value("city"))
+	}
+	keysTo2(b, "enter")
+	st := looks(t)["noneascii"]
+	if view, _ := b.ValueList(st, 60, 24); strings.Contains(view, "value 0") {
+		t.Error("the search outlives the list")
+	}
+}
+
+// Page keys move by the shown values, up and down by one, and both stop at the ends of the matches.
+func TestFilterBarValueListMoves(t *testing.T) {
+	st := looks(t)["noneascii"]
+	b, _ := longBar(t, i18n.English, pagedKeys())
+	keysTo2(b, "enter")
+	b.ValueList(st, 60, 24)
+	keysTo2(b, "pgup")
+	if b.fields[0].Options[b.choice].ID != "v07" {
+		t.Errorf("page up from 15: %q", b.fields[0].Options[b.choice].ID)
+	}
+	keysTo2(b, "pgup", "pgup", "up")
+	if b.choice != 0 {
+		t.Errorf("up stops at the first value: %d", b.choice)
+	}
+	keysTo2(b, "pgdown", "pgdown", "pgdown", "pgdown", "down")
+	if b.choice != 20 {
+		t.Errorf("down stops at the last value: %d", b.choice)
+	}
+	// Without page keys, the key table of the bar gives a page to no key.
+	b2, _ := longBar(t, i18n.English, sampleFilterKeys)
+	keysTo2(b2, "enter", "pgup")
+	if b2.choice != 14 {
+		t.Errorf("an unbound page key moved the cursor: %d", b2.choice)
+	}
+}
+
+// A click takes the value it hits, also after the list scrolled: every target lies on the row that shows its
+// value, inside the panel.
+func TestFilterBarValueListClicks(t *testing.T) {
+	st := looks(t)["noneascii"]
+	for _, steps := range [][]string{{}, {"pgdown"}, {"pgup", "pgup"}, {"pgdown", "pgdown", "pgdown"}} {
+		b, _ := longBar(t, i18n.English, pagedKeys())
+		keysTo2(b, "enter")
+		b.ValueList(st, 60, 24)
+		keysTo2(b, steps...)
+		view, targets := b.ValueList(st, 60, 24)
+		lines := strings.Split(ansi.Strip(view), "\n")
+		if len(targets) == 0 {
+			t.Fatal("no targets")
+		}
+		for _, tg := range targets {
+			id := strings.SplitN(tg.Item, "\x00", 3)[2]
+			label := Escape(b.text.Lookup(TextID("val." + id)))
+			if tg.Rect.Y < 2 || tg.Rect.Y >= len(lines)-1 || !strings.Contains(lines[tg.Rect.Y], label) {
+				t.Errorf("%v: target %+v is not on the row of %q:\n%s", steps, tg, label, view)
+			}
+		}
+		last := targets[len(targets)-1]
+		if strings.HasSuffix(last.Item, "v15") {
+			last = targets[0]
+		}
+		m := NewMouseMap(targets, true)
+		changed, handled := b.Click(m.Handle(click(last.Rect.X+1, last.Rect.Y)))
+		if !handled || firstField(changed).ID != "city" || b.Open() ||
+			string(b.Value("city")) != strings.SplitN(last.Item, "\x00", 3)[2] {
+			t.Errorf("%v: click took %q", steps, b.Value("city"))
+		}
+	}
+}
+
+// Values are drawn escaped and the panel never exceeds the room it is given.
+func TestFilterBarValueListFitsRoom(t *testing.T) {
+	for look, st := range looks(t) {
+		b, _ := longBar(t, i18n.English, pagedKeys())
+		keysTo2(b, "enter")
+		for _, query := range []string{"", "raw", "zz"} {
+			b.query.clear()
+			typeBar(b, query)
+			for w := 0; w <= 44; w += 3 {
+				for h := 0; h <= 14; h++ {
+					view, targets := b.ValueList(st, w, h)
+					lines := strings.Split(view, "\n")
+					if view == "" {
+						lines = nil
+					}
+					if len(lines) > h {
+						t.Fatalf("%s %q %dx%d: %d lines", look, query, w, h, len(lines))
+					}
+					for _, l := range lines {
+						if lipgloss.Width(l) > w {
+							t.Fatalf("%s %q %dx%d: a line of %d cells", look, query, w, h, lipgloss.Width(l))
+						}
+					}
+					for _, tg := range targets {
+						if tg.Rect.Y+tg.Rect.Height > len(lines) || tg.Rect.X+tg.Rect.Width > w {
+							t.Fatalf("%s %q %dx%d: target %+v outside", look, query, w, h, tg.Rect)
+						}
+					}
+					if strings.ContainsRune(view, 0x07) || (look == "noneascii" && strings.Contains(view, "\x1b")) {
+						t.Fatalf("%s: a control character is drawn raw: %q", look, view)
+					}
+				}
+			}
+		}
+		view, _ := b.ValueList(st, 60, 24)
+		b.query.clear()
+		typeBar(b, "raw")
+		view, _ = b.ValueList(st, 60, 24)
+		if !strings.Contains(ansi.Strip(view), `Raw\x1b[31mred`) {
+			t.Errorf("%s: the value is not escaped:\n%s", look, view)
+		}
+	}
+}
+
+// SetOptions on an open, filtered list keeps the search and the cursor on its ID, and moves the cursor to a
+// match where its value is gone.
+func TestFilterBarValueListSetOptions(t *testing.T) {
+	st := looks(t)["noneascii"]
+	b, _ := longBar(t, i18n.English, pagedKeys())
+	keysTo2(b, "enter")
+	typeBar(b, "value 1")
+	keysTo2(b, "down", "down")
+	id := b.fields[0].Options[b.choice].ID
+	reversed := slices.Clone(b.fields[0].Options)
+	slices.Reverse(reversed)
+	if err := b.SetOptions("city", reversed); err != nil {
+		t.Fatal(err)
+	}
+	if b.fields[0].Options[b.choice].ID != id || b.query.String() != "value 1" {
+		t.Errorf("cursor %q, search %q", b.fields[0].Options[b.choice].ID, b.query.String())
+	}
+	view, _ := b.ValueList(st, 60, 24)
+	if !strings.Contains(ansi.Strip(view), "Value "+string(id[1:])) || !strings.Contains(ansi.Strip(view), "value 1") {
+		t.Errorf("the list lost its place:\n%s", view)
+	}
+	var kept []Choice
+	for _, o := range b.fields[0].Options {
+		if o.ID != id {
+			kept = append(kept, o)
+		}
+	}
+	if err := b.SetOptions("city", kept); err != nil {
+		t.Fatal(err)
+	}
+	if b.fields[0].Options[b.choice].ID == id || !strings.Contains(strings.ToLower(b.text.Lookup(b.fields[0].Options[b.choice].Label)), "value 1") {
+		t.Errorf("the cursor stands on %q, no match", b.fields[0].Options[b.choice].ID)
+	}
+}
+
+func TestNewFilterBarChecksPageKeys(t *testing.T) {
+	keys := sampleKeymap(t, CharsetUnicode)
+	text := newTranslator(t, i18n.English, listCatalogs(), keys)
+	for name, edit := range map[string]func(*FilterBarKeys){
+		"unknown": func(k *FilterBarKeys) { k.PageUp = "gone" },
+		"twice":   func(k *FilterBarKeys) { k.PageUp, k.PageDown = "pageup", "pageup" },
+		"reused":  func(k *FilterBarKeys) { k.PageDown = k.Down },
+	} {
+		nav := sampleFilterKeys
+		edit(&nav)
+		if _, err := NewFilterBar(FilterBarSpec{Fields: sampleFields(), Keys: nav}, keys, text); err == nil {
+			t.Errorf("%s: accepted", name)
 		}
 	}
 }
