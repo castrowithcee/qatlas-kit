@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"unsafe"
@@ -61,17 +62,6 @@ func TestOwnLockFileOwnedByAdministratorsIsMadePrivate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	id, err := currentLockIdentity()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !windows.GetCurrentProcessToken().IsElevated() || !id.owners[1].Equals(admins) {
-		// The hosted CI runs elevated with Administrators as default owner and must cover this case.
-		if os.Getenv("CI") != "" {
-			t.Fatal("CI token is not elevated with Administrators as default owner")
-		}
-		t.Skip("needs an elevated token whose default owner is Administrators")
-	}
 	path := filepath.Join(t.TempDir(), "settings")
 	lock := path + ".lock"
 	if err := os.WriteFile(lock, []byte("4242"), 0o600); err != nil {
@@ -79,13 +69,45 @@ func TestOwnLockFileOwnedByAdministratorsIsMadePrivate(t *testing.T) {
 	}
 	if err := windows.SetNamedSecurityInfo(lock, windows.SE_FILE_OBJECT, windows.OWNER_SECURITY_INFORMATION,
 		admins, nil, nil, nil); err != nil {
-		t.Fatal(err)
+		// Only a token with the Administrators group enabled can hand a file to it. The hosted CI runs as an
+		// administrator without UAC, so it must cover this case.
+		if os.Getenv("CI") != "" {
+			t.Fatalf("set Administrators as owner: %v", err)
+		}
+		t.Skipf("set Administrators as owner: %v", err)
 	}
 	if got := securityDescriptor(t, lock, windows.OWNER_SECURITY_INFORMATION); got != "O:BA" {
 		t.Fatalf("prepared lock owner = %s", got)
 	}
 	assertNotPrivateLock(t, lock)
-	assertLockAdopted(t, path)
+	id, err := currentLockIdentity()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if slices.ContainsFunc(id.owners, admins.Equals) {
+		assertLockAdopted(t, path)
+		return
+	}
+	// This token's default owner is not Administrators, so take the identity currentLockIdentity reads from
+	// an elevated token whose default owner is.
+	elevated := lockIdentity{user: id.user, owners: []*windows.SID{id.user, admins}}
+	f, err := openLockFileAs(lock, elevated, setLockDACL)
+	if err != nil {
+		t.Fatalf("lock file owned by Administrators was not taken over: %v", err)
+	}
+	if err := f.Close(); err != nil {
+		t.Fatal(err)
+	}
+	assertUserOnlyACL(t, lock)
+	if got := securityDescriptor(t, lock, windows.DACL_SECURITY_INFORMATION); !strings.HasPrefix(got, "D:P") {
+		t.Fatalf("lock ACL is not protected: %s", got)
+	}
+	if got := securityDescriptor(t, lock, windows.OWNER_SECURITY_INFORMATION); got != "O:BA" {
+		t.Fatalf("lock owner changed to %s", got)
+	}
+	if got, err := os.ReadFile(lock); err != nil || string(got) != "4242" {
+		t.Fatalf("lock content = %q, %v", got, err)
+	}
 }
 
 // assertNotPrivateLock proves that the lock file fails the private ACL check, so a later success can
