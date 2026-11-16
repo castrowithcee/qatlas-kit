@@ -23,6 +23,33 @@ const maxReport = 4096
 // ErrUnsupported means the platform cannot run detached background processes.
 var ErrUnsupported = fmt.Errorf("background processes are unsupported on this platform: %w", errors.ErrUnsupported)
 
+var (
+	// ErrTimeout means the started process did not report before the timeout passed.
+	ErrTimeout = errors.New("the background process did not report in time")
+
+	// ErrEnded means the started process ended before it reported.
+	ErrEnded = errors.New("the background process ended before it reported")
+
+	// ErrHandoverNotTaken means the started process did not take the handover.
+	ErrHandoverNotTaken = errors.New("the background process did not take the handover")
+
+	// ErrStartFailed means the system could not start the process. It is followed by the cause, which
+	// errors.Is and errors.As still reach.
+	ErrStartFailed = errors.New("cannot start the background process")
+
+	// ErrProgramNotFound means the running program could not be found to start it again. It is followed by
+	// the cause, which errors.Is and errors.As still reach.
+	ErrProgramNotFound = errors.New("cannot find this program to start it in the background")
+)
+
+// causeError is kind followed by its cause. Unwrap returns the cause, as before the kinds existed, and
+// errors.Is also matches kind.
+type causeError struct{ kind, cause error }
+
+func (e *causeError) Error() string        { return e.kind.Error() + ": " + e.cause.Error() }
+func (e *causeError) Unwrap() error        { return e.cause }
+func (e *causeError) Is(target error) bool { return target == e.kind }
+
 // Command describes the process to start. The zero value starts the running program without arguments.
 type Command struct {
 	// Program is the file to run. Empty means the running program (os.Executable).
@@ -91,11 +118,11 @@ func outcome(report string, ctxErr error) error {
 	case report != "":
 		return &ReportError{Reason: report}
 	case errors.Is(ctxErr, context.DeadlineExceeded):
-		return errors.New("the background process did not report in time")
+		return ErrTimeout
 	case ctxErr != nil:
 		return fmt.Errorf("the background process did not report: %w", ctxErr)
 	default:
-		return errors.New("the background process ended before it reported")
+		return ErrEnded
 	}
 }
 
