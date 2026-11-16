@@ -190,6 +190,7 @@ type List struct {
 	query     textLine
 	searching bool
 	focused   bool
+	empty     string
 }
 
 // NewList checks spec and returns an empty list. It rejects a list without columns, a column without title,
@@ -375,6 +376,12 @@ func (l *List) Reset() {
 // focus. The modal always draws it. A new list has the focus. The application sets it when the focus enters
 // or leaves the rows.
 func (l *List) SetFocused(on bool) { l.focused = on }
+
+// SetEmpty replaces the sentence of the empty list with text, so it can name the state the list is in and
+// the next step. text is final: the application resolves it from its own catalogue with its Translator,
+// arguments and key placeholders included. The list escapes, dims and wraps it as it does ListSpec.Empty; an
+// empty text restores ListSpec.Empty. The sentence of a filter without match stays the list's own.
+func (l *List) SetEmpty(text string) { l.empty = text }
 
 // SetGrouped shows the entries under their groups or as one flat list.
 func (l *List) SetGrouped(on bool) {
@@ -734,7 +741,11 @@ func (l *List) view(styles Styles, width, height int, modal bool) (string, []Tar
 	layout := l.layout(room, styles)
 	switch {
 	case len(l.items) == 0:
-		lines = append(lines, l.note(l.text.Lookup(l.spec.Empty), width, styles)...)
+		empty := l.empty
+		if empty == "" {
+			empty = l.text.Lookup(l.spec.Empty)
+		}
+		lines = append(lines, l.note(empty, width, styles)...)
 	default:
 		lines = append(lines, "  "+indent+strings.Repeat(" ", tick)+styles.Render(StyleHint, l.header(layout, styles)))
 		if len(l.rows) == 0 {
