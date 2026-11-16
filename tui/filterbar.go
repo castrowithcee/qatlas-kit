@@ -10,14 +10,18 @@ import (
 	"charm.land/lipgloss/v2"
 )
 
-// FilterField is one choice field of a filter bar, such as the grouping, a state or the sort order. A field
-// has at least one value; SetOptions replaces them later. Selected is the ID of the value in force; empty takes
-// the first.
+// FilterField is one field of a filter bar: a choice field, such as the grouping, a state or the sort order,
+// or an action field. A choice field has at least one value; SetOptions replaces them later. Selected is the
+// ID of the value in force; empty takes the first. An action field has an Action and no Options: it shows
+// Text, which SetActionText replaces, and reports its action when it is pressed, for the application to run,
+// as with a dialog for a date. It never counts as a changed filter. A field has Options or an Action, not both.
 type FilterField struct {
 	ID       FieldID
 	Label    TextID
 	Options  []Choice
 	Selected ChoiceID
+	Action   ActionID
+	Text     string
 }
 
 // FilterBarKeys are the actions of the key table a filter bar reads: Left and Right change the value of the
@@ -65,6 +69,8 @@ type FilterBar struct {
 	focus  int
 	open   bool
 	choice int
+	// pending is the action of an action field pressed and not yet taken.
+	pending ActionID
 
 	// compact is set by View while the fields do not fit and a button stands for them.
 	compact bool
@@ -75,7 +81,8 @@ type FilterBar struct {
 
 // NewFilterBar checks spec and returns a bar without focus. It rejects a bar without fields, a field
 // or value without ID or label, an ID with a control character or listed twice, a field without a value, a
-// selected value that is no value of its field, and a key that names no action of keys or is named
+// selected value that is no value of its field, a field with both values and an action or neither, an action
+// that names no action of keys, text on a choice field, and a key that names no action of keys or is named
 // twice.
 func NewFilterBar(spec FilterBarSpec, keys *Keymap, text Translator) (*FilterBar, error) {
 	if keys == nil || text == nil {
@@ -112,6 +119,20 @@ func NewFilterBar(spec FilterBarSpec, keys *Keymap, text Translator) (*FilterBar
 		seen[f.ID] = true
 		if f.Label == "" {
 			fail("no label")
+		}
+		if f.Action != "" {
+			if _, ok := keys.index[f.Action]; !ok {
+				fail("action %q is no action of the key table", f.Action)
+			}
+			if len(f.Options) > 0 || f.Selected != "" {
+				fail("has an action and values; a field has one of them")
+			}
+			f.Options = nil
+			list[i] = f
+			continue
+		}
+		if f.Text != "" {
+			fail("text belongs to an action field")
 		}
 		values := map[ChoiceID]bool{}
 		for _, o := range f.Options {
@@ -180,6 +201,9 @@ func (b *FilterBar) SetOptions(id FieldID, options []Choice) error {
 		return -1
 	}
 	f := &b.fields[i]
+	if f.Action != "" {
+		return fmt.Errorf("filter field %q is an action field and has no values", id)
+	}
 	if at(f.Selected) < 0 {
 		return fmt.Errorf("filter field %q: the value in force %q is no value of the new list", id, f.Selected)
 	}
@@ -202,6 +226,33 @@ func (b *FilterBar) SetOptions(id FieldID, options []Choice) error {
 	}
 	f.Options = append([]Choice(nil), options...)
 	return nil
+}
+
+// SetActionText replaces the text of the action field id. It rejects an unknown field and a choice field. The
+// text is drawn masked, so it may hold any characters.
+func (b *FilterBar) SetActionText(id FieldID, text string) error {
+	i := b.field(id)
+	if i < 0 {
+		return fmt.Errorf("filter field %q is unknown", id)
+	}
+	if b.fields[i].Action == "" {
+		return fmt.Errorf("filter field %q is no action field", id)
+	}
+	b.fields[i].Text = text
+	return nil
+}
+
+// TakeAction returns the action of an action field the user pressed with enter, left, right or a click, and
+// true once after each press, and then false until the next; the application runs it. The bar runs nothing.
+// Where the field was pressed in the filter modal, the modal has taken its pending changes first, as its
+// confirmation does, and Update or Click has reported them.
+func (b *FilterBar) TakeAction() (ActionID, bool) {
+	if b.pending == "" {
+		return "", false
+	}
+	a := b.pending
+	b.pending = ""
+	return a, true
 }
 
 // Fields are the fields with the values in force.
@@ -280,6 +331,8 @@ func (b *FilterBar) Update(msg tea.KeyPressMsg) (changed []FilterField, handled 
 		return nil, false
 	}
 	switch {
+	case f.Action != "" && (is(b.nav.Left) || is(b.nav.Right) || is(b.nav.Enter)):
+		b.pending = f.Action
 	case is(b.nav.Left), is(b.nav.Right):
 		step := 1
 		if is(b.nav.Left) {
@@ -308,7 +361,9 @@ func (b *FilterBar) Update(msg tea.KeyPressMsg) (changed []FilterField, handled 
 // field focuses it and opens its list of values, as enter does, a second one closes it, and a click on a
 // value of the open list takes it. A click on the filter button opens the modal; in the modal a click on a
 // field focuses it, one on its value takes the next value, and one on a key of the key line acts as the key.
-// A click on the search field is the search key of the list; List.Click runs it.
+// A click on an action field focuses it and reports its action, as enter does; in the modal a click on its
+// value does, after the pending changes are taken. A click on the search field is the search key of the list;
+// List.Click runs it.
 func (b *FilterBar) Click(r MouseResult) (changed []FilterField, handled bool) {
 	if !r.Handled {
 		return nil, false
@@ -328,6 +383,10 @@ func (b *FilterBar) Click(r MouseResult) (changed []FilterField, handled bool) {
 		i := b.field(FieldID(id))
 		if i < 0 {
 			return nil, false
+		}
+		if f := b.fields[i]; f.Action != "" {
+			b.focus, b.open, b.pending = i, false, f.Action
+			return nil, true
 		}
 		if b.open && b.focus == i {
 			b.open = false
@@ -366,11 +425,19 @@ func (b *FilterBar) updateModal(is func(ActionID) bool) []FilterField {
 		b.mfocus = max(b.mfocus-1, 0)
 	case is(b.nav.Down):
 		b.mfocus = min(b.mfocus+1, len(b.fields)-1)
-	case is(b.nav.Left):
-		b.step(b.mfocus, -1)
-	case is(b.nav.Right):
-		b.step(b.mfocus, 1)
+	case is(b.nav.Left), is(b.nav.Right):
+		if b.fields[b.mfocus].Action != "" {
+			return b.fire(b.mfocus)
+		}
+		if is(b.nav.Left) {
+			b.step(b.mfocus, -1)
+		} else {
+			b.step(b.mfocus, 1)
+		}
 	case is(b.nav.Enter):
+		if b.fields[b.mfocus].Action != "" {
+			return b.fire(b.mfocus)
+		}
 		return b.apply()
 	case is(b.nav.Back):
 		b.modal = false
@@ -393,6 +460,9 @@ func (b *FilterBar) clickModal(r MouseResult) ([]FilterField, bool) {
 	if id, ok := strings.CutPrefix(r.Item, modalValueRef); ok {
 		if i := b.field(FieldID(id)); i >= 0 {
 			b.mfocus = i
+			if b.fields[i].Action != "" {
+				return b.fire(i), true
+			}
 			b.step(i, 1)
 			return nil, true
 		}
@@ -408,12 +478,20 @@ func (b *FilterBar) clickModal(r MouseResult) ([]FilterField, bool) {
 	return nil, false
 }
 
+// fire takes every pending value of the modal as apply does and then reports the action of field i, so no
+// pending change is lost; it returns the fields whose value changed.
+func (b *FilterBar) fire(i int) []FilterField {
+	changed := b.apply()
+	b.pending = b.fields[i].Action
+	return changed
+}
+
 // apply takes every pending value of the modal and closes it; it returns the fields whose value changed.
 func (b *FilterBar) apply() []FilterField {
 	b.modal = false
 	var changed []FilterField
 	for i := range b.fields {
-		if b.draft[i] == b.selected(i) {
+		if b.fields[i].Action != "" || b.draft[i] == b.selected(i) {
 			continue
 		}
 		f := &b.fields[i]
@@ -456,11 +534,12 @@ func (b *FilterBar) choose(i, j int) []FilterField {
 	return []FilterField{out}
 }
 
-// differing is the number of fields whose value is not the first one of the field.
+// differing is the number of choice fields whose value is not the first one of the field; an action field
+// never counts.
 func (b *FilterBar) differing() int {
 	n := 0
 	for _, f := range b.fields {
-		if f.Selected != f.Options[0].ID {
+		if f.Action == "" && f.Selected != f.Options[0].ID {
 			n++
 		}
 	}
@@ -469,6 +548,9 @@ func (b *FilterBar) differing() int {
 
 func (b *FilterBar) label(i int) (label, value string) {
 	f := b.fields[i]
+	if f.Action != "" {
+		return Escape(b.text.Lookup(f.Label)), Escape(f.Text)
+	}
 	return Escape(b.text.Lookup(f.Label)), Escape(b.text.Lookup(f.Options[b.selected(i)].Label))
 }
 
@@ -576,8 +658,12 @@ func (b *FilterBar) View(styles Styles, width int) (string, []Target) {
 			text := fieldText(styles, labels[i], values[i], widths[i])
 			line.WriteString(barMarker(i == b.focus) + fieldStyle(styles, i == b.focus).Render(text))
 			w := 2 + lipgloss.Width(text)
+			action := b.nav.Enter
+			if a := b.fields[i].Action; a != "" {
+				action = a
+			}
 			targets = append(targets, Target{Rect: Rect{X: x, Width: w, Height: 1}, Zone: ZoneFilters,
-				Action: b.nav.Enter, Item: fieldRef + string(b.fields[i].ID)})
+				Action: action, Item: fieldRef + string(b.fields[i].ID)})
 			x += w
 		}
 		if searchWidth > 0 {
@@ -666,8 +752,10 @@ func (b *FilterBar) modalRows(styles Styles, width int) ([]string, []Target) {
 	labels, values := make([]string, n), make([]string, n)
 	lw := 0
 	for i, f := range b.fields {
-		labels[i], _ = b.label(i)
-		values[i] = Escape(b.text.Lookup(f.Options[b.draft[i]].Label))
+		labels[i], values[i] = b.label(i)
+		if f.Action == "" {
+			values[i] = Escape(b.text.Lookup(f.Options[b.draft[i]].Label))
+		}
 		lw = max(lw, lipgloss.Width(labels[i]))
 	}
 	rows := make([]string, n)
@@ -692,8 +780,11 @@ func (b *FilterBar) modalRows(styles Styles, width int) ([]string, []Target) {
 func (b *FilterBar) modalWidth(styles Styles) (want, least int) {
 	lw, vw := 0, 0
 	for i, f := range b.fields {
-		label, _ := b.label(i)
+		label, text := b.label(i)
 		lw = max(lw, lipgloss.Width(label))
+		if f.Action != "" {
+			vw = max(vw, lipgloss.Width(text))
+		}
 		for _, o := range f.Options {
 			vw = max(vw, lipgloss.Width(Escape(b.text.Lookup(o.Label))))
 		}
