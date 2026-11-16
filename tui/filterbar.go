@@ -3,6 +3,7 @@ package tui
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"unicode"
 
@@ -26,10 +27,12 @@ type FilterField struct {
 
 // FilterBarKeys are the actions of the key table a filter bar reads: Left and Right change the value of the
 // field, Next and Prev step through the fields, Enter opens the list of values and takes one, Up and Down
-// move in it, and Back closes it without change. In the filter modal Up and Down choose the field, Left and
-// Right change its value, Enter takes all changes and Back drops them.
+// move in it, PageUp and PageDown move it by a page, text typed there searches the values, and Back closes it
+// without change. PageUp and PageDown are optional; empty leaves a page to no key. In the filter modal Up and
+// Down choose the field, Left and Right change its value, Enter takes all changes and Back drops them.
 type FilterBarKeys struct {
 	Left, Right, Next, Prev, Up, Down, Enter, Back ActionID
+	PageUp, PageDown                               ActionID
 }
 
 // FilterBarSpec is what a filter bar holds and the keys it reads.
@@ -69,6 +72,11 @@ type FilterBar struct {
 	focus  int
 	open   bool
 	choice int
+	// query is the search text of the open list of values, scroll the first value it shows among the matches
+	// and page the number of values it showed last, which a page key moves by.
+	query  textLine
+	scroll int
+	page   int
 	// pending is the action of an action field pressed and not yet taken.
 	pending ActionID
 
@@ -91,7 +99,13 @@ func NewFilterBar(spec FilterBarSpec, keys *Keymap, text Translator) (*FilterBar
 	fields, nav := spec.Fields, spec.Keys
 	var errs []error
 	used := map[ActionID]bool{}
-	for _, id := range []ActionID{nav.Left, nav.Right, nav.Next, nav.Prev, nav.Up, nav.Down, nav.Enter, nav.Back} {
+	named := []ActionID{nav.Left, nav.Right, nav.Next, nav.Prev, nav.Up, nav.Down, nav.Enter, nav.Back}
+	for _, id := range []ActionID{nav.PageUp, nav.PageDown} {
+		if id != "" {
+			named = append(named, id)
+		}
+	}
+	for _, id := range named {
 		if _, ok := keys.index[id]; !ok {
 			errs = append(errs, fmt.Errorf("filter bar key %q is no action of the key table", id))
 		}
@@ -225,6 +239,11 @@ func (b *FilterBar) SetOptions(id FieldID, options []Choice) error {
 		b.draft[i] = draft
 	}
 	f.Options = append([]Choice(nil), options...)
+	if b.open && b.focus == i {
+		if m := b.matches(); len(m) > 0 && !slices.Contains(m, b.choice) {
+			b.choice = m[0]
+		}
+	}
 	return nil
 }
 
@@ -311,17 +330,7 @@ func (b *FilterBar) Update(msg tea.KeyPressMsg) (changed []FilterField, handled 
 	}
 	f := &b.fields[b.focus]
 	if b.open {
-		switch {
-		case is(b.nav.Up):
-			b.choice = max(b.choice-1, 0)
-		case is(b.nav.Down):
-			b.choice = min(b.choice+1, len(f.Options)-1)
-		case is(b.nav.Enter):
-			return b.choose(b.focus, b.choice), true
-		case is(b.nav.Back):
-			b.open = false
-		}
-		return nil, true
+		return b.updateList(msg), true
 	}
 	if b.compact {
 		if is(b.nav.Enter) {
@@ -350,7 +359,7 @@ func (b *FilterBar) Update(msg tea.KeyPressMsg) (changed []FilterField, handled 
 		}
 		b.focus--
 	case is(b.nav.Enter):
-		b.open, b.choice = true, b.selected(b.focus)
+		b.openList(b.focus)
 	default:
 		return nil, false
 	}
@@ -392,7 +401,8 @@ func (b *FilterBar) Click(r MouseResult) (changed []FilterField, handled bool) {
 			b.open = false
 			return nil, true
 		}
-		b.focus, b.open, b.choice = i, true, b.selected(i)
+		b.focus = i
+		b.openList(i)
 		return nil, true
 	}
 	if rest, ok := strings.CutPrefix(r.Item, optionRef); ok {
@@ -408,6 +418,67 @@ func (b *FilterBar) Click(r MouseResult) (changed []FilterField, handled bool) {
 		}
 	}
 	return nil, false
+}
+
+// openList opens the list of values of field i with an empty search and the cursor on the value in force.
+func (b *FilterBar) openList(i int) {
+	b.open, b.choice, b.scroll = true, b.selected(i), 0
+	b.query.clear()
+}
+
+// matches are the places of the values of the focused field whose shown text holds the search text, in any
+// case, in their order.
+func (b *FilterBar) matches() []int {
+	f := b.fields[b.focus]
+	needle := strings.ToLower(b.query.String())
+	var out []int
+	for j, o := range f.Options {
+		if needle == "" || strings.Contains(strings.ToLower(b.text.Lookup(o.Label)), needle) {
+			out = append(out, j)
+		}
+	}
+	return out
+}
+
+// updateList handles a key while the list of values is open: the cursor keys move among the matches, enter
+// takes the value under the cursor, back closes without change, and any other key edits the search text.
+func (b *FilterBar) updateList(msg tea.KeyPressMsg) []FilterField {
+	is := func(id ActionID) bool { return id != "" && b.keys.Is(msg, id, InputText) }
+	match := b.matches()
+	at := slices.Index(match, b.choice)
+	page := b.page
+	if page <= 0 {
+		page = maxValueRows
+	}
+	move := func(to int) {
+		if len(match) > 0 {
+			b.choice = match[max(min(to, len(match)-1), 0)]
+		}
+	}
+	switch {
+	case is(b.nav.Up):
+		move(max(at, 1) - 1)
+	case is(b.nav.Down):
+		move(at + 1)
+	case is(b.nav.PageUp):
+		move(max(at, 0) - page)
+	case is(b.nav.PageDown):
+		move(max(at, 0) + page)
+	case is(b.nav.Enter):
+		if at < 0 {
+			return nil
+		}
+		return b.choose(b.focus, b.choice)
+	case is(b.nav.Back):
+		b.open = false
+	default:
+		if _, changed := b.query.edit(msg, false); changed {
+			if match = b.matches(); !slices.Contains(match, b.choice) && len(match) > 0 {
+				b.choice = match[0]
+			}
+		}
+	}
+	return nil
 }
 
 func (b *FilterBar) openModal() {
@@ -706,29 +777,78 @@ func (b *FilterBar) View(styles Styles, width int) (string, []Target) {
 	return Pad(Clip(line, width), width), targets
 }
 
-// ValueList draws the open list of values of the focused field as a panel, the label as its title and the
-// value under the cursor marked, to place under the field; empty while no list is open. It returns one target
-// per value, counted from the top left of the panel.
-func (b *FilterBar) ValueList(styles Styles) (string, []Target) {
-	if !b.open || b.focus < 0 {
+// The most values the open list shows at once; it scrolls beyond.
+const maxValueRows = 8
+
+// ValueList draws the open list of values of the focused field as a panel to place under the field: the
+// label as its title, the position of the cursor among the matches at the right of the top edge, the search
+// line as the first row and below it at most eight values, which scroll with the cursor in view. The value in
+// force carries a check mark, which shows without colour, the value under the cursor is marked as a selected
+// row, and a search without match shows a sentence with the way out in place of the values. It is empty while
+// no list is open and never larger than width by height cells, the room the application leaves for it. It
+// returns one target per drawn value, counted from the top left of the panel.
+func (b *FilterBar) ValueList(styles Styles, width, height int) (string, []Target) {
+	if !b.open || b.focus < 0 || width < 5 || height < 3 {
 		return "", nil
 	}
 	f := b.fields[b.focus]
-	title, _ := b.label(b.focus)
-	inner := lipgloss.Width(title) + 2
+	title := b.text.Lookup(f.Label)
+	match := b.matches()
+	noteOf := func(pos, shown int) string {
+		if len(b.query.runes) > 0 {
+			return b.text.Lookup(TextListFiltered, pos, shown, len(f.Options))
+		}
+		return fmt.Sprintf("%d/%d", pos, len(f.Options))
+	}
+	mark, blank := styles.Glyph(GlyphOK)+" ", strings.Repeat(" ", lipgloss.Width(styles.Glyph(GlyphOK)+" "))
+	inner := lipgloss.Width(Escape(title)) + lipgloss.Width(noteOf(len(match), len(match))) + 6
 	labels := make([]string, len(f.Options))
 	for j, o := range f.Options {
 		labels[j] = Escape(b.text.Lookup(o.Label))
-		inner = max(inner, lipgloss.Width(labels[j])+2)
+		inner = max(inner, lipgloss.Width(labels[j])+2+lipgloss.Width(blank))
 	}
-	lines := make([]string, len(labels))
+	inner = max(min(inner, width-4), 1)
+	// The rows below the search line: the values, or the wrapped sentence of a search without match.
+	var sentence []string
+	rows := min(len(match), maxValueRows, height-3)
+	if len(match) == 0 {
+		back := b.keys.Label(b.nav.Back)
+		sentence = Wrap(Escape(b.text.Lookup(TextFilterNoValue, b.query.String(), back)), max(inner-2, 1))
+		rows = min(len(sentence), maxValueRows, height-3)
+	}
+	rows = max(rows, 0)
+	b.page = max(rows, 1)
+	at := max(slices.Index(match, b.choice), 0)
+	b.scroll = max(min(b.scroll, at, len(match)-rows), 0)
+	if rows > 0 && at >= b.scroll+rows {
+		b.scroll = at - rows + 1
+	}
+	query := Pad(Clip("  "+b.query.view(max(inner-2, 0), styles, true, ""), inner), inner)
+	if len(b.query.runes) == 0 {
+		query = Pad("  "+styles.Render(StyleHint, styles.Truncate(Escape(b.text.Lookup(TextSearchPrompt)), max(inner-2, 0))), inner)
+	}
+	lines := []string{query}
 	var targets []Target
-	for j, label := range labels {
-		lines[j] = styles.Row(label, inner, j == b.choice)
-		targets = append(targets, Target{Rect: Rect{X: 2, Y: 1 + j, Width: inner, Height: 1}, Zone: ZoneFilters,
+	for k := 0; k < rows; k++ {
+		if len(match) == 0 {
+			lines = append(lines, Pad("  "+styles.Render(StyleHint, sentence[k]), inner))
+			continue
+		}
+		j := match[b.scroll+k]
+		lead := blank
+		if f.Options[j].ID == f.Selected {
+			lead = mark
+		}
+		lines = append(lines, styles.Row(lead+labels[j], inner, j == b.choice))
+		targets = append(targets, Target{Rect: Rect{X: 2, Y: 2 + k, Width: inner, Height: 1}, Zone: ZoneFilters,
 			Action: b.nav.Enter, Item: optionRef + string(f.ID) + "\x00" + string(f.Options[j].ID)})
 	}
-	return strings.Join(styles.Panel(title, "", lines, inner+4, len(lines)+2, true), "\n"), targets
+	pos := at + 1
+	if len(match) == 0 {
+		pos = 0
+	}
+	box := styles.Panel(title, noteOf(pos, len(match)), lines, inner+4, len(lines)+2, true)
+	return strings.Join(box, "\n"), targets
 }
 
 // Hints are the keys of the open modal for the key line: the answers, which stand in the modal itself where it
