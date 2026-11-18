@@ -76,10 +76,12 @@
 // installed program, never raise it; a file over the limit locks with HandoverTooLarge. Config.OnHandover is
 // told the result of each handover as a HandoverResult, with a HandoverReason when none happened: after the
 // successor took the vault over and before the client is answered, or after a failure locked the process
-// and before the client is told. A request refused because another handover is under way or the process
-// is locking reports nothing. Like OnLock it reaches the vault through Held, and a panic or an error in it
-// changes nothing about the handover. Every failure locks, and so do a rollback, a user's setting that asks
-// for it, a process without HandoverConfig, and Windows, which has no handover.
+// and before the client is told. A request refused because another handover is under way (HandoverBusy) or
+// the process is locking reports nothing. A client reads each refusal as a *HandoverError, and
+// ReplacementResult.Reason names the reason of every OutcomeLocked. Like OnLock it reaches the vault through
+// Held, and a panic or an error in it changes nothing about the handover. Every failure locks, and so do a
+// rollback, a user's setting that asks for it, a process without HandoverConfig, and Windows, which has no
+// handover.
 //
 // # Boundary
 //

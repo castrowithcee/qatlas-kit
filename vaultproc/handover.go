@@ -85,14 +85,14 @@ func (s *Server) serveHandover(conn net.Conn, body json.RawMessage) {
 	defer s.releaseHandover()
 	var req handoverRequest
 	if json.Unmarshal(body, &req) != nil || req.Phase != phasePrepare || req.Release == nil {
-		s.failHandover(conn, codeBadRequest, "")
+		s.failHandover(conn, codeHandoverBadRequest)
 		return
 	}
 	_ = conn.SetDeadline(time.Now().Add(HandoverTimeout))
-	hash, handsOver, code, reason := s.prepare(*req.Release)
+	hash, handsOver, code := s.prepare(*req.Release)
 	switch {
 	case code != "":
-		s.failHandover(conn, code, reason)
+		s.failHandover(conn, code)
 		return
 	case !handsOver:
 		// The user's setting asks an update to lock the vault.
@@ -102,7 +102,7 @@ func (s *Server) serveHandover(conn net.Conn, body json.RawMessage) {
 		return
 	}
 	if writeMessage(conn, s.answer("", handoverResult{HandOver: true})) != nil {
-		s.failHandover(conn, codeHandoverFailed, "")
+		s.failHandover(conn, codeHandoverFailed)
 		return
 	}
 
@@ -111,19 +111,19 @@ func (s *Server) serveHandover(conn net.Conn, body json.RawMessage) {
 	_ = conn.SetDeadline(time.Now().Add(HandoverTimeout))
 	var commit request
 	if err := readMessage(conn, &commit); err != nil {
-		s.failHandover(conn, codeHandoverFailed, "")
+		s.failHandover(conn, codeHandoverFailed)
 		return
 	}
 	var phase handoverRequest
 	if commit.V != ProtocolVersion || commit.App != s.cfg.Version || commit.Op != OpHandover ||
 		json.Unmarshal(commit.Body, &phase) != nil || phase.Phase != phaseCommit {
-		s.failHandover(conn, codeBadRequest, "")
+		s.failHandover(conn, codeHandoverBadRequest)
 		return
 	}
 	_ = conn.SetDeadline(time.Now().Add(HandoverTimeout))
-	pid, code, reason := s.commit(hash)
+	pid, code := s.commit(hash)
 	if code != "" {
-		s.failHandover(conn, code, reason)
+		s.failHandover(conn, code)
 		return
 	}
 	s.reportHandover(HandoverResult{HandedOver: true})
@@ -138,9 +138,10 @@ func (s *Server) claimHandover(conn net.Conn) string {
 	case s.handingOver:
 		return codeReplaced
 	case s.locked || s.stopping():
-		return codeLocked
+		return codeHandoverLocked
 	case s.pending != nil:
-		return codeHandoverFailed
+		// The first handover goes on; this one neither locks nor reports.
+		return codeHandoverBusy
 	}
 	s.pending = conn
 	return ""
@@ -153,11 +154,9 @@ func (s *Server) releaseHandover() {
 }
 
 // failHandover locks the server and then answers with code, so no client hears of the failure while the
-// server still accepts connections. reason is why, or empty for the one that code stands for.
-func (s *Server) failHandover(conn net.Conn, code string, reason HandoverReason) {
-	if reason == "" {
-		reason = handoverReason(code)
-	}
+// server still accepts connections. The reason is the one code stands for.
+func (s *Server) failHandover(conn net.Conn, code string) {
+	reason := handoverReason(code)
 	s.mu.Lock()
 	s.handingOver = false
 	s.mu.Unlock()
@@ -169,39 +168,39 @@ func (s *Server) failHandover(conn net.Conn, code string, reason HandoverReason)
 
 // prepare verifies the release files and reads the user's update setting, both by the server itself. It
 // returns the SHA-256 of the program in the release.
-func (s *Server) prepare(files releaseFiles) (hash string, handsOver bool, code string, reason HandoverReason) {
+func (s *Server) prepare(files releaseFiles) (hash string, handsOver bool, code string) {
 	s.mu.Lock()
 	key, locked := s.key, s.locked || s.stopping()
 	s.mu.Unlock()
 	config := s.cfg.Handover
 	switch {
 	case locked:
-		return "", false, codeLocked, ""
+		return "", false, codeHandoverLocked
 	case !handoverSupported || config == nil:
-		return "", false, codeNoHandover, ""
+		return "", false, codeNoHandover
 	case files.Rollback:
 		// An older program cannot be trusted with the vault.
-		return "", false, codeRollback, ""
+		return "", false, codeRollback
 	}
 	hash, err := verifyRelease(files, config)
 	if errors.Is(err, errTooLarge) {
-		return "", false, codeUnverified, HandoverTooLarge
+		return "", false, codeHandoverTooLarge
 	}
 	if err != nil {
-		return "", false, codeUnverified, ""
+		return "", false, codeUnverified
 	}
-	return hash, config.HandsOver(key), "", ""
+	return hash, config.HandsOver(key), ""
 }
 
 // commit hands the vault over to a successor started from the program that replaced this one, which must
 // be the program of the verified release. From its start, new requests are answered replaced; those already
 // read are answered first, so the successor's state holds their changes. Any failure before the successor
 // took the socket over ends the successor.
-func (s *Server) commit(hash string) (int, string, HandoverReason) {
+func (s *Server) commit(hash string) (int, string) {
 	s.mu.Lock()
 	if s.locked || s.stopping() {
 		s.mu.Unlock()
-		return 0, codeLocked, ""
+		return 0, codeHandoverLocked
 	}
 	s.handingOver = true
 	// The successor takes the lock time over; no timer is needed here until then.
@@ -211,23 +210,23 @@ func (s *Server) commit(hash string) (int, string, HandoverReason) {
 	l := s.listener
 	s.mu.Unlock()
 	if !s.drain() {
-		return 0, codeHandoverFailed, ""
+		return 0, codeHandoverFailed
 	}
 
 	program, replaced, err := s.program()
 	if err != nil || !replaced || !filepath.IsAbs(program) {
-		return 0, codeUnchanged, ""
+		return 0, codeUnchanged
 	}
 	got, err := programHash(program, s.cfg.Handover.fileLimit())
 	if errors.Is(err, errTooLarge) {
-		return 0, codeMismatch, HandoverTooLarge
+		return 0, codeHandoverTooLarge
 	}
 	if err != nil || got != hash {
-		return 0, codeMismatch, ""
+		return 0, codeMismatch
 	}
 	state, ok := s.snapshot()
 	if !ok {
-		return 0, codeHandoverFailed, ""
+		return 0, codeHandoverFailed
 	}
 	defer clear(state)
 
@@ -242,7 +241,7 @@ func (s *Server) commit(hash string) (int, string, HandoverReason) {
 	}()
 	pid, end, err := s.start(ctx, program, state)
 	if err != nil {
-		return 0, codeHandoverFailed, ""
+		return 0, codeHandoverFailed
 	}
 	// The socket changes hands under s.mu, which stop takes as well: a lock that comes first ends the
 	// successor, and one that comes after finds the socket handed over.
@@ -255,9 +254,9 @@ func (s *Server) commit(hash string) (int, string, HandoverReason) {
 	s.mu.Unlock()
 	if err != nil {
 		end()
-		return 0, codeHandoverFailed, ""
+		return 0, codeHandoverFailed
 	}
-	return pid, "", ""
+	return pid, ""
 }
 
 // startSuccessor starts program as the successor and hands it state; it returns once the successor

@@ -15,9 +15,9 @@ const (
 	OutcomeNone Outcome = iota
 	// OutcomeHandedOver means the successor holds the vault; ReplacementResult.PID names it.
 	OutcomeHandedOver
-	// OutcomeLocked means the vault process locked itself. ReplacementResult.Err says why when the
-	// handover was refused or failed; it is nil when the user's setting, a rollback or the platform asked
-	// for the lock.
+	// OutcomeLocked means the vault process locked itself, or, for HandoverBusy, that another handover is
+	// under way. ReplacementResult.Reason says why no handover happened. Err is set when the handover was
+	// refused or failed; it is nil when the user's setting, a rollback or the platform asked for the lock.
 	OutcomeLocked
 	// OutcomeUnreached means a process answered but could not be asked to lock; ReplacementResult.Err says
 	// why, with its process id where known. It locks itself once it finds its program replaced: soon after
@@ -30,7 +30,11 @@ const (
 type ReplacementResult struct {
 	Outcome Outcome
 	PID     int
-	Err     error
+	// Reason is why no handover happened, set with every OutcomeLocked: HandoverDeclined, HandoverRollback
+	// and HandoverUnsupported when no error is reported, otherwise the Reason of the *HandoverError in Err.
+	// It is empty when the process was locked after an error that is no handover refusal.
+	Reason HandoverReason
+	Err    error
 }
 
 // Replacement carries a vault process through one selfupdate installation. Its BeforeReplace and
@@ -51,23 +55,33 @@ func NewReplacement(client *Client) *Replacement { return &Replacement{client: c
 // process that is left running locks itself once it finds its program replaced, as for OutcomeUnreached.
 func (r *Replacement) BeforeReplace(ctx context.Context, files selfupdate.ReleaseFiles) error {
 	r.result, r.handover = ReplacementResult{}, nil
-	if files.Rollback || !handoverSupported {
-		r.lock(ctx, nil)
+	switch {
+	case files.Rollback:
+		r.lock(ctx, nil, HandoverRollback)
+		return nil
+	case !handoverSupported:
+		r.lock(ctx, nil, HandoverUnsupported)
 		return nil
 	}
 	handover, err := r.client.PrepareHandover(ctx, files)
+	r.settle(ctx, handover, err)
+	return nil
+}
+
+// settle records what PrepareHandover returned.
+func (r *Replacement) settle(ctx context.Context, handover *Handover, err error) {
 	switch {
-	case errors.Is(err, ErrNotRunning):
+	// A refusal comes first: HandoverLocked also matches ErrNotRunning, but the process was there.
 	case errors.Is(err, ErrHandover):
-		r.result = ReplacementResult{Outcome: OutcomeLocked, Err: err}
+		r.result = ReplacementResult{Outcome: OutcomeLocked, Reason: reasonOf(err), Err: err}
+	case errors.Is(err, ErrNotRunning):
 	case err != nil:
-		r.lock(ctx, err)
+		r.lock(ctx, err, "")
 	case handover == nil:
-		r.result = ReplacementResult{Outcome: OutcomeLocked}
+		r.result = ReplacementResult{Outcome: OutcomeLocked, Reason: HandoverDeclined}
 	default:
 		r.handover = handover
 	}
-	return nil
 }
 
 // AfterReplace commits a prepared handover.
@@ -79,7 +93,7 @@ func (r *Replacement) AfterReplace(ctx context.Context, _ selfupdate.ReleaseFile
 	r.handover = nil
 	pid, err := handover.Commit(ctx)
 	if err != nil {
-		r.result = ReplacementResult{Outcome: OutcomeLocked, Err: err}
+		r.result = ReplacementResult{Outcome: OutcomeLocked, Reason: reasonOf(err), Err: err}
 		return
 	}
 	r.result = ReplacementResult{Outcome: OutcomeHandedOver, PID: pid}
@@ -91,14 +105,23 @@ func (r *Replacement) Finish() ReplacementResult {
 	if r.handover != nil {
 		_ = r.handover.Close()
 		r.handover = nil
-		r.result = ReplacementResult{Outcome: OutcomeLocked,
+		r.result = ReplacementResult{Outcome: OutcomeLocked, Reason: HandoverNotReplaced,
 			Err: &HandoverError{Reason: HandoverNotReplaced}}
 	}
 	return r.result
 }
 
-// lock locks the process; cause is why it was not handed over, if that failed.
-func (r *Replacement) lock(ctx context.Context, cause error) {
+// reasonOf is the reason of a handover error, or empty for any other error.
+func reasonOf(err error) HandoverReason {
+	var he *HandoverError
+	if errors.As(err, &he) {
+		return he.Reason
+	}
+	return ""
+}
+
+// lock locks the process; cause is why it was not handed over if that failed, reason otherwise.
+func (r *Replacement) lock(ctx context.Context, cause error, reason HandoverReason) {
 	err := r.client.Lock(ctx)
 	switch {
 	case errors.Is(err, ErrNotRunning) && cause == nil:
@@ -106,6 +129,6 @@ func (r *Replacement) lock(ctx context.Context, cause error) {
 	case err != nil && !errors.Is(err, ErrNotRunning):
 		r.result = ReplacementResult{Outcome: OutcomeUnreached, Err: err}
 	default:
-		r.result = ReplacementResult{Outcome: OutcomeLocked, Err: cause}
+		r.result = ReplacementResult{Outcome: OutcomeLocked, Reason: reason, Err: cause}
 	}
 }
