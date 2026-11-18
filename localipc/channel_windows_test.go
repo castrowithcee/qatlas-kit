@@ -68,9 +68,9 @@ func TestWindowsHardenedDialAndChallenge(t *testing.T) {
 	_ = conn.Close()
 	_, err = e.DialWith(context.Background(), DialOptions{Server: CheckHardened,
 		Challenge: windowsChallenge("proof:other")})
+	requireRefusal(t, err, RefusedChallenge)
 	var pe *PeerError
-	if !errors.Is(err, ErrRefused) || !errors.As(err, &pe) || pe.PID != os.Getpid() ||
-		!strings.Contains(err.Error(), "wrong proof") {
+	if !errors.As(err, &pe) || pe.PID != os.Getpid() || !strings.Contains(err.Error(), "wrong proof") {
 		t.Fatalf("wrong challenge = %v", err)
 	}
 }

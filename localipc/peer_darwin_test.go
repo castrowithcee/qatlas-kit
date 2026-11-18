@@ -43,15 +43,16 @@ func TestMacProcessIdentityFailsClosed(t *testing.T) {
 	if err := checkProcess(os.Getpid(), uint32(os.Getuid())); err != nil {
 		t.Fatalf("own process refused: %v", err)
 	}
-	if err := checkProcess(2147483647, uint32(os.Getuid())); !errors.Is(err, ErrRefused) {
-		t.Fatalf("unreadable peer process accepted: %v", err)
+	err := checkProcess(2147483647, uint32(os.Getuid()))
+	requireRefusal(t, err, RefusedUnidentified)
+	if got, want := err.Error(), "local channel refused: peer program cannot be read"; got != want {
+		t.Fatalf("text = %q, want %q", got, want)
 	}
 	old := ownProgramErr
 	ownProgramErr = errors.New("unreadable")
 	t.Cleanup(func() { ownProgramErr = old })
-	if err := checkProcess(os.Getpid(), uint32(os.Getuid())); !errors.Is(err, ErrRefused) {
-		t.Fatalf("unreadable own program accepted: %v", err)
-	}
+	err = checkProcess(os.Getpid(), uint32(os.Getuid()))
+	requireRefusal(t, err, RefusedOwnUnreadable)
 }
 
 func TestMacLongSocketPathUsesPrivateTempDir(t *testing.T) {
@@ -84,16 +85,14 @@ func TestMacLongSocketPathUsesPrivateTempDir(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Setenv("TMPDIR", linked)
-	if _, err := e.Path(); !errors.Is(err, ErrRefused) {
-		t.Fatalf("symlink temporary directory accepted: %v", err)
-	}
+	_, err = e.Path()
+	requireRefusal(t, err, RefusedNotPrivate)
 	if err := os.Chmod(tmp, 0o755); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("TMPDIR", tmp)
-	if _, err := e.Path(); !errors.Is(err, ErrRefused) {
-		t.Fatalf("open temporary directory accepted: %v", err)
-	}
+	_, err = e.Path()
+	requireRefusal(t, err, RefusedNotPrivate)
 }
 
 func TestMacHardenDisablesCoreDumps(t *testing.T) {

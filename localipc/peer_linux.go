@@ -61,32 +61,32 @@ func checkPeer(conn net.Conn, program bool) (int, error) {
 func peerCred(conn net.Conn) (*syscall.Ucred, error) {
 	unix, ok := conn.(*net.UnixConn)
 	if !ok {
-		return nil, fmt.Errorf("%w: not a Unix socket connection", ErrRefused)
+		return nil, refusal(RefusedUnidentified, "not a Unix socket connection")
 	}
 	raw, err := unix.SyscallConn()
 	if err != nil {
-		return nil, fmt.Errorf("%w: cannot inspect peer: %v", ErrRefused, err)
+		return nil, refusal(RefusedUnidentified, "cannot inspect peer: %v", err)
 	}
 	var cred *syscall.Ucred
 	var credErr error
 	if err := raw.Control(func(fd uintptr) {
 		cred, credErr = syscall.GetsockoptUcred(int(fd), syscall.SOL_SOCKET, syscall.SO_PEERCRED)
 	}); err != nil {
-		return nil, fmt.Errorf("%w: cannot inspect peer: %v", ErrRefused, err)
+		return nil, refusal(RefusedUnidentified, "cannot inspect peer: %v", err)
 	}
 	if credErr != nil {
-		return nil, fmt.Errorf("%w: cannot inspect peer: %v", ErrRefused, credErr)
+		return nil, refusal(RefusedUnidentified, "cannot inspect peer: %v", credErr)
 	}
 	return cred, nil
 }
 
 func checkUser(pid int, uid uint32) error {
 	if uid != uint32(os.Getuid()) {
-		return fmt.Errorf("%w: peer has another user ID", ErrRefused)
+		return refusal(RefusedOtherUser, "peer has another user ID")
 	}
 	// A peer in another PID namespace is reported as 0.
 	if pid <= 0 {
-		return fmt.Errorf("%w: peer process cannot be identified", ErrRefused)
+		return refusal(RefusedUnidentified, "peer process cannot be identified")
 	}
 	return nil
 }
@@ -97,22 +97,31 @@ func checkProcess(pid int, uid uint32) error {
 	}
 	own, ownInfo, err := programOf("/proc/self/exe")
 	if errors.Is(err, errProgramGone) {
-		return fmt.Errorf("%w: %w", ErrRefused, ErrProgramReplaced)
+		return refusal(RefusedProgramReplaced, "%w", ErrProgramReplaced)
 	}
 	if err != nil {
-		return fmt.Errorf("%w: this program %w", ErrRefused, err)
+		return refusal(RefusedOwnUnreadable, "this program %w", err)
 	}
 	peer, peerInfo, err := programOf(filepath.Join("/proc", strconv.Itoa(pid), "exe"))
 	if err != nil {
-		return fmt.Errorf("%w: peer program %w", ErrRefused, err)
+		return refusal(peerProgramReason(err), "peer program %w", err)
 	}
 	if peer != own || !os.SameFile(peerInfo, ownInfo) {
-		return fmt.Errorf("%w: peer runs another program", ErrRefused)
+		return refusal(RefusedOtherProgram, "peer runs another program")
 	}
 	return nil
 }
 
 var errProgramGone = errors.New("was removed or replaced since it started")
+
+// peerProgramReason classifies a failure to read the peer's program file: a
+// program file that is gone means the peer runs another program.
+func peerProgramReason(err error) RefusalReason {
+	if errors.Is(err, errProgramGone) {
+		return RefusedOtherProgram
+	}
+	return RefusedUnidentified
+}
 
 func programOf(link string) (string, fs.FileInfo, error) {
 	path, replaced, err := readProgramLink(link)

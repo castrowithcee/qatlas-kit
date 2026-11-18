@@ -20,7 +20,7 @@ func holder(ctx context.Context, e Endpoint) (int, error) {
 	case errors.Is(err, fs.ErrNotExist), errors.Is(err, os.ErrDeadlineExceeded):
 		return 0, fmt.Errorf("%s: %w", e.label(), ErrNotServed)
 	case errors.Is(err, fs.ErrPermission):
-		return 0, fmt.Errorf("%s: %w: %w", e.label(), ErrRefused, err)
+		return 0, fmt.Errorf("%s: %w", e.label(), refusal(RefusedNotPrivate, "%w", err))
 	default:
 		return 0, fmt.Errorf("%s: %w", e.label(), err)
 	}
@@ -28,11 +28,11 @@ func holder(ctx context.Context, e Endpoint) (int, error) {
 	pipe := conn.(*pipeConn)
 	var pid uint32
 	if err := windows.GetNamedPipeServerProcessId(pipe.h, &pid); err != nil {
-		return 0, fmt.Errorf("%s: %w: the serving process is unavailable", e.label(), ErrRefused)
+		return 0, fmt.Errorf("%s: %w", e.label(), refusal(RefusedUnidentified, "the serving process is unavailable"))
 	}
 	err = checkPipeOwner(pipe.h)
 	if err == nil && pid == windows.GetCurrentProcessId() {
-		err = fmt.Errorf("%w: this process serves the channel", ErrRefused)
+		err = refusal(RefusedOwnProcess, "this process serves the channel")
 	}
 	if err == nil {
 		err = checkPeerUser(pid)
@@ -58,7 +58,7 @@ func endHolder(ctx context.Context, e Endpoint) (int, error) {
 	defer windows.CloseHandle(process)
 	again, err := holder(ctx, e)
 	if err == nil && again != pid {
-		err = fmt.Errorf("%s: %w: another process serves the channel now", e.label(), ErrRefused)
+		err = fmt.Errorf("%s: %w", e.label(), refusal(RefusedServerChanged, "another process serves the channel now"))
 	}
 	if err != nil {
 		return 0, err
@@ -78,15 +78,15 @@ func endHolder(ctx context.Context, e Endpoint) (int, error) {
 func checkPipeOwner(h windows.Handle) error {
 	sd, err := windows.GetSecurityInfo(h, windows.SE_KERNEL_OBJECT, windows.OWNER_SECURITY_INFORMATION)
 	if err != nil {
-		return fmt.Errorf("%w: the pipe's owner cannot be read", ErrRefused)
+		return refusal(RefusedUnidentified, "the pipe's owner cannot be read")
 	}
 	owner, _, err := sd.Owner()
 	if err != nil || owner == nil {
-		return fmt.Errorf("%w: the pipe's owner cannot be read", ErrRefused)
+		return refusal(RefusedUnidentified, "the pipe's owner cannot be read")
 	}
 	user, err := currentUserSID()
 	if err != nil {
-		return fmt.Errorf("%w: this process's user cannot be read", ErrRefused)
+		return refusal(RefusedOwnUnreadable, "this process's user cannot be read")
 	}
 	if owner.Equals(user) {
 		return nil
@@ -94,7 +94,7 @@ func checkPipeOwner(h windows.Handle) error {
 	if def, err := defaultOwner(); err == nil && owner.Equals(def) {
 		return nil
 	}
-	return fmt.Errorf("%w: the pipe has another owner", ErrRefused)
+	return refusal(RefusedNotPrivate, "the pipe has another owner")
 }
 
 func defaultOwner() (*windows.SID, error) {

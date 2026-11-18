@@ -64,9 +64,11 @@ const (
 // a file or an error.
 type HandoverReason string
 
-// The reasons a handover fails. A handover that fails always locks the process.
+// The reasons a handover does not happen. A handover that fails locks the process, except HandoverBusy,
+// which leaves the process and the handover under way as they were.
 const (
-	// HandoverBadRequest: the request or its commit could not be read.
+	// HandoverBadRequest: the request or its commit could not be read. A client that finds it also matches
+	// ErrBadRequest with errors.Is.
 	HandoverBadRequest HandoverReason = "bad-request"
 	// HandoverUnsupported: the process has no HandoverConfig, or the platform does not hand over.
 	HandoverUnsupported HandoverReason = "unsupported"
@@ -85,10 +87,14 @@ const (
 	HandoverProgramMismatch HandoverReason = "program-mismatch"
 	// HandoverNoSuccessor: no successor took the vault over, or the connection ended first.
 	HandoverNoSuccessor HandoverReason = "no-successor"
-	// HandoverLocked: the process was locking when the handover reached its commit.
+	// HandoverLocked: the process was already locking when the handover reached it or its commit. A client
+	// that finds it also matches ErrNotRunning with errors.Is.
 	HandoverLocked HandoverReason = "locked"
-	// HandoverAnswerUnreadable: the client could not read the answer to its commit. It arises in the client
-	// only; the process never reports it.
+	// HandoverBusy: another handover is under way. The process neither locks nor reports it to
+	// Config.OnHandover, and the first handover goes on.
+	HandoverBusy HandoverReason = "busy"
+	// HandoverAnswerUnreadable: the client could not read the answer to its prepare or its commit. It arises
+	// in the client only; the process never reports it.
 	HandoverAnswerUnreadable HandoverReason = "answer-unreadable"
 	// HandoverNotReplaced: the update did not replace the program, so the client never committed. It arises
 	// in the client only; the process never reports it.
@@ -106,8 +112,12 @@ type HandoverResult struct {
 // handoverReason is the reason of an answer code of a failed handover.
 func handoverReason(code string) HandoverReason {
 	switch code {
-	case codeBadRequest:
+	case codeHandoverBadRequest:
 		return HandoverBadRequest
+	case codeHandoverTooLarge:
+		return HandoverTooLarge
+	case codeHandoverBusy:
+		return HandoverBusy
 	case codeNoHandover:
 		return HandoverUnsupported
 	case codeRollback:
@@ -118,7 +128,7 @@ func handoverReason(code string) HandoverReason {
 		return HandoverProgramUnchanged
 	case codeMismatch:
 		return HandoverProgramMismatch
-	case codeLocked:
+	case codeHandoverLocked:
 		return HandoverLocked
 	}
 	return HandoverNoSuccessor

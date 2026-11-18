@@ -293,8 +293,9 @@ type Handover struct {
 // an update is about to install, which files describes as selfupdate.Client.BeforeReplace receives them.
 // The process verifies the release itself and reads the user's update setting itself. It returns the
 // Handover to commit once the program is replaced, or nil once the process locked itself as the setting
-// asks. ErrHandover means it refused and locked itself; ErrNotRunning that there is nothing to hand over.
-// The caller closes a Handover it does not commit, and the process locks itself then.
+// asks, which is HandoverDeclined and no error. A *HandoverError means the handover did not happen, and
+// its Reason says why; the process locked itself, except for HandoverBusy. ErrNotRunning means there is
+// nothing to hand over. The caller closes a Handover it does not commit, and the process locks itself then.
 func (c *Client) PrepareHandover(ctx context.Context, files selfupdate.ReleaseFiles) (*Handover, error) {
 	body, err := json.Marshal(handoverRequest{Phase: phasePrepare, Release: &releaseFiles{
 		Checksums: files.Checksums, Signature: files.Signature, Archive: files.Archive,
@@ -308,6 +309,11 @@ func (c *Client) PrepareHandover(ctx context.Context, files selfupdate.ReleaseFi
 	if err != nil {
 		return nil, err
 	}
+	return c.prepareOn(ctx, conn, body)
+}
+
+// prepareOn sends the prepare on conn and reads its answer. It closes conn unless it returns a Handover.
+func (c *Client) prepareOn(ctx context.Context, conn net.Conn, body []byte) (*Handover, error) {
 	resp, err := c.exchange(ctx, conn, request{Op: OpHandover, Body: body})
 	if err != nil {
 		_ = conn.Close()
@@ -316,7 +322,7 @@ func (c *Client) PrepareHandover(ctx context.Context, files selfupdate.ReleaseFi
 	var result handoverResult
 	if json.Unmarshal(resp.Result, &result) != nil {
 		_ = conn.Close()
-		return nil, errors.New("vaultproc: the handover answer cannot be read")
+		return nil, &HandoverError{Reason: HandoverAnswerUnreadable}
 	}
 	if !result.HandOver {
 		_ = conn.Close()

@@ -184,25 +184,30 @@ func TestWindowsRejectsForeignUserAndUnreadableIdentity(t *testing.T) {
 	saved := currentUserSID
 	currentUserSID = func() (*windows.SID, error) { return windows.CreateWellKnownSid(windows.WinNetworkSid) }
 	defer func() { currentUserSID = saved }()
-	if err := checkProcess(uint32(os.Getpid())); !errors.Is(err, ErrRefused) {
-		t.Fatalf("foreign SID accepted: %v", err)
+	err := checkProcess(uint32(os.Getpid()))
+	requireRefusal(t, err, RefusedOtherUser)
+	if got, want := err.Error(), "local channel refused: it runs as another user"; got != want {
+		t.Fatalf("text = %q, want %q", got, want)
 	}
 	currentUserSID = saved
-	if err := checkProcess(0); !errors.Is(err, ErrRefused) {
-		t.Fatalf("unidentifiable peer accepted: %v", err)
+	err = checkProcess(0)
+	requireRefusal(t, err, RefusedUnidentified)
+	if got, want := err.Error(), "local channel refused: its process cannot be identified"; got != want {
+		t.Fatalf("text = %q, want %q", got, want)
 	}
 	savedErr := ownProgramErr
 	ownProgramErr = errors.New("cannot be read")
 	defer func() { ownProgramErr = savedErr }()
-	if err := checkProcess(uint32(os.Getpid())); !errors.Is(err, ErrRefused) || !strings.Contains(err.Error(), "cannot be read") {
+	err = checkProcess(uint32(os.Getpid()))
+	requireRefusal(t, err, RefusedOwnUnreadable)
+	if !strings.Contains(err.Error(), "cannot be read") {
 		t.Fatalf("unreadable program accepted: %v", err)
 	}
 	a, b := net.Pipe()
 	defer a.Close()
 	defer b.Close()
-	if err := VerifyPeer(a); !errors.Is(err, ErrRefused) {
-		t.Fatalf("non-pipe connection accepted: %v", err)
-	}
+	err = VerifyPeer(a)
+	requireRefusal(t, err, RefusedUnidentified)
 }
 
 func TestWindowsRejectsForeignProgramOnBothEnds(t *testing.T) {
@@ -225,7 +230,8 @@ func TestWindowsRejectsForeignProgramOnBothEnds(t *testing.T) {
 	defer stopWindowsHelper(cmd)
 	select {
 	case err := <-accepted:
-		if !errors.Is(err, ErrRefused) || !strings.Contains(err.Error(), "another program") {
+		requireRefusal(t, err, RefusedOtherProgram)
+		if !strings.Contains(err.Error(), "another program") {
 			t.Fatalf("server accepted foreign program: %v", err)
 		}
 	case <-time.After(3 * time.Second):
@@ -235,7 +241,9 @@ func TestWindowsRejectsForeignProgramOnBothEnds(t *testing.T) {
 	e = windowsEndpoint(t)
 	cmd = startWindowsHelper(t, other, "listen", windowsPath(t, e))
 	defer stopWindowsHelper(cmd)
-	if _, err := e.Dial(context.Background()); !errors.Is(err, ErrRefused) || !strings.Contains(err.Error(), "another program") {
+	_, err = e.Dial(context.Background())
+	requireRefusal(t, err, RefusedOtherProgram)
+	if !strings.Contains(err.Error(), "another program") {
 		t.Fatalf("client accepted foreign program: %v", err)
 	}
 }

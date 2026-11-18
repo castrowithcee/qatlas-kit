@@ -36,7 +36,7 @@ func holder(ctx context.Context, e Endpoint) (int, error) {
 	defer conn.Close()
 	pid, err := checkPeer(conn, false)
 	if err == nil && pid == os.Getpid() {
-		err = fmt.Errorf("%w: this process serves the channel", ErrRefused)
+		err = refusal(RefusedOwnProcess, "this process serves the channel")
 	}
 	if err != nil {
 		return 0, fmt.Errorf("%s: %w", e.label(), err)
@@ -52,7 +52,7 @@ func endHolder(ctx context.Context, e Endpoint) (int, error) {
 	recheck := func() error {
 		again, err := holder(ctx, e)
 		if err == nil && again != pid {
-			err = fmt.Errorf("%s: %w: another process serves the channel now", e.label(), ErrRefused)
+			err = fmt.Errorf("%s: %w", e.label(), refusal(RefusedServerChanged, "another process serves the channel now"))
 		}
 		return err
 	}

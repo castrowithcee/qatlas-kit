@@ -161,9 +161,8 @@ func TestFailedListenRemovesItsLockButRunningDoesNot(t *testing.T) {
 	if err := os.WriteFile(path, nil, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := e.Listen(); !errors.Is(err, ErrRefused) {
-		t.Fatalf("listen over a regular file = %v; want ErrRefused", err)
-	}
+	_, err := e.Listen()
+	requireRefusal(t, err, RefusedNotPrivate)
 	if _, err := os.Lstat(path + lockSuffix); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("failed listen left its lock: %v", err)
 	}

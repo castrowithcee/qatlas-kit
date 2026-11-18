@@ -59,9 +59,8 @@ func TestCrossVersionRejectsShortSecretBeforeSocket(t *testing.T) {
 }
 
 func TestCrossVersionChecksUserBeforeChallenge(t *testing.T) {
-	if err := checkUser(os.Getpid(), uint32(os.Getuid())+1); !errors.Is(err, ErrRefused) {
-		t.Fatalf("foreign UID accepted by the user check: %v", err)
-	}
+	err := checkUser(os.Getpid(), uint32(os.Getuid())+1)
+	requireRefusal(t, err, RefusedOtherUser)
 	verify, err := ListenOptions{CrossVersion: &CrossVersion{Secret: testSecret(1)}}.peerCheck()
 	if err != nil {
 		t.Fatal(err)
@@ -75,7 +74,9 @@ func TestCrossVersionChecksUserBeforeChallenge(t *testing.T) {
 		_, err := b.Read(make([]byte, 1))
 		done <- err
 	}()
-	if _, err := verify(a); !errors.Is(err, ErrRefused) || strings.Contains(err.Error(), "cross-version") {
+	_, err = verify(a)
+	requireRefusal(t, err, RefusedUnidentified)
+	if strings.Contains(err.Error(), "cross-version") {
 		t.Fatalf("unidentified peer = %v; want a refusal before the challenge", err)
 	}
 	if err := <-done; !errors.Is(err, os.ErrDeadlineExceeded) {
@@ -99,13 +100,13 @@ func TestCrossVersionAcceptBoundsSilentClient(t *testing.T) {
 	defer silent.Close()
 	started := time.Now()
 	_, err = l.Accept()
-	wantPeerError(t, err, os.Getpid(), "cross-version check failed")
+	wantPeerError(t, err, os.Getpid(), RefusedVersionCheck, "cross-version check failed")
 	if waited := time.Since(started); waited > crossVersionWait+2*time.Second {
 		t.Fatalf("a silent client held Accept for %v", waited)
 	}
 	select {
 	case err := <-refused:
-		wantPeerError(t, err, os.Getpid(), "cross-version check failed")
+		wantPeerError(t, err, os.Getpid(), RefusedVersionCheck, "cross-version check failed")
 	default:
 		t.Fatal("refused callback did not run")
 	}
@@ -134,7 +135,7 @@ func TestCrossVersionDialBoundsSilentListener(t *testing.T) {
 	defer cancel()
 	started := time.Now()
 	_, err = e.DialWith(ctx, DialOptions{CrossVersion: &CrossVersion{Secret: testSecret(1)}})
-	wantPeerError(t, err, os.Getpid(), "cross-version check failed")
+	wantPeerError(t, err, os.Getpid(), RefusedVersionCheck, "cross-version check failed")
 	if time.Since(started) > 3*time.Second {
 		t.Fatalf("a silent listener held the dial for %v", time.Since(started))
 	}

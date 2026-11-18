@@ -81,7 +81,7 @@ func (e *causeError) Is(target error) bool { return target == e.kind }
 
 // HandoverError is the error of a handover that did not happen. It wraps ErrHandover, so
 // errors.Is(err, ErrHandover) holds, and Reason tells why without the text. Reason is a fixed word; the
-// error carries nothing else.
+// error carries nothing else. Every reason a client reads arrives as its own Reason.
 type HandoverError struct{ Reason HandoverReason }
 
 func (e *HandoverError) Error() string {
@@ -95,9 +95,28 @@ func (e *HandoverError) Error() string {
 // Unwrap returns ErrHandover.
 func (e *HandoverError) Unwrap() error { return ErrHandover }
 
+// Is also matches ErrBadRequest for HandoverBadRequest and ErrNotRunning for HandoverLocked.
+func (e *HandoverError) Is(target error) bool {
+	switch e.Reason {
+	case HandoverBadRequest:
+		return target == ErrBadRequest
+	case HandoverLocked:
+		return target == ErrNotRunning
+	}
+	return false
+}
+
 // handoverDetail is the text that follows ErrHandover for the reasons a client reports.
 func handoverDetail(reason HandoverReason) (string, bool) {
 	switch reason {
+	case HandoverBadRequest:
+		return "the handover request cannot be read", true
+	case HandoverLocked:
+		return "it was already locking", true
+	case HandoverTooLarge:
+		return "a release file or the installed program is over the size limit", true
+	case HandoverBusy:
+		return "another handover is under way", true
 	case HandoverNotVerified:
 		return "it could not verify the release", true
 	case HandoverRollback:
@@ -139,6 +158,8 @@ func answerError(code string) error {
 		return ErrUnknownOperation
 	case codeFailed:
 		return ErrFailed
+	case codeHandoverBadRequest, codeHandoverLocked, codeHandoverTooLarge, codeHandoverBusy:
+		return &HandoverError{Reason: handoverReason(code)}
 	case codeUnverified:
 		return &HandoverError{Reason: HandoverNotVerified}
 	case codeRollback:
