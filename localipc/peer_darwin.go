@@ -19,6 +19,15 @@ const hardenedProgramCheck = true
 
 var errProgramGone = errors.New("was removed or replaced since it started")
 
+// peerProgramReason classifies a failure to read the peer's program file: a
+// program file that is gone means the peer runs another program.
+func peerProgramReason(err error) RefusalReason {
+	if errors.Is(err, errProgramGone) {
+		return RefusedOtherProgram
+	}
+	return RefusedUnidentified
+}
+
 type programFile struct {
 	path string
 	info fs.FileInfo
@@ -64,11 +73,11 @@ func checkPeer(conn net.Conn, program bool) (int, error) {
 func peerCred(conn net.Conn) (uint32, int, error) {
 	unixConn, ok := conn.(*net.UnixConn)
 	if !ok {
-		return 0, 0, fmt.Errorf("%w: not a Unix socket connection", ErrRefused)
+		return 0, 0, refusal(RefusedUnidentified, "not a Unix socket connection")
 	}
 	raw, err := unixConn.SyscallConn()
 	if err != nil {
-		return 0, 0, fmt.Errorf("%w: cannot inspect peer: %v", ErrRefused, err)
+		return 0, 0, refusal(RefusedUnidentified, "cannot inspect peer: %v", err)
 	}
 	var cred *unix.Xucred
 	var pid int
@@ -79,20 +88,20 @@ func peerCred(conn net.Conn) (uint32, int, error) {
 			pid, credErr = unix.GetsockoptInt(int(fd), unix.SOL_LOCAL, unix.LOCAL_PEERPID)
 		}
 	}); err != nil {
-		return 0, 0, fmt.Errorf("%w: cannot inspect peer: %v", ErrRefused, err)
+		return 0, 0, refusal(RefusedUnidentified, "cannot inspect peer: %v", err)
 	}
 	if credErr != nil || cred == nil || cred.Version != 0 {
-		return 0, 0, fmt.Errorf("%w: peer credentials cannot be read: %v", ErrRefused, credErr)
+		return 0, 0, refusal(RefusedUnidentified, "peer credentials cannot be read: %v", credErr)
 	}
 	return cred.Uid, pid, nil
 }
 
 func checkUser(pid int, uid uint32) error {
 	if uid != uint32(os.Getuid()) {
-		return fmt.Errorf("%w: peer has another user ID", ErrRefused)
+		return refusal(RefusedOtherUser, "peer has another user ID")
 	}
 	if pid <= 0 {
-		return fmt.Errorf("%w: peer process cannot be identified", ErrRefused)
+		return refusal(RefusedUnidentified, "peer process cannot be identified")
 	}
 	return nil
 }
@@ -102,21 +111,21 @@ func checkProcess(pid int, uid uint32) error {
 		return err
 	}
 	if ownProgramErr != nil {
-		return fmt.Errorf("%w: this program cannot be read: %v", ErrRefused, ownProgramErr)
+		return refusal(RefusedOwnUnreadable, "this program cannot be read: %v", ownProgramErr)
 	}
 	replaced, err := ownProgramReplaced()
 	if err != nil {
-		return fmt.Errorf("%w: this program cannot be read: %v", ErrRefused, err)
+		return refusal(RefusedOwnUnreadable, "this program cannot be read: %v", err)
 	}
 	if replaced {
-		return fmt.Errorf("%w: %w", ErrRefused, ErrProgramReplaced)
+		return refusal(RefusedProgramReplaced, "%w", ErrProgramReplaced)
 	}
 	peer, err := programOf(pid)
 	if err != nil {
-		return fmt.Errorf("%w: peer program %w", ErrRefused, err)
+		return refusal(peerProgramReason(err), "peer program %w", err)
 	}
 	if peer.path != ownProgram.path || !os.SameFile(peer.info, ownProgram.info) {
-		return fmt.Errorf("%w: peer runs another program", ErrRefused)
+		return refusal(RefusedOtherProgram, "peer runs another program")
 	}
 	return nil
 }

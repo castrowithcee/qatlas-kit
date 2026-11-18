@@ -55,7 +55,7 @@ func TestHolderRefusesOpenDirectory(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer os.Chmod(dir, dirMode)
-	wantNoHolder(t, e, ErrRefused)
+	wantHolderRefusal(t, e, RefusedNotPrivate, "")
 	h.wantAlive(t)
 }
 
@@ -65,7 +65,7 @@ func TestHolderRefusesSocketNotPrivate(t *testing.T) {
 	if err := os.Chmod(mustPath(t, e), 0o660); err != nil {
 		t.Fatal(err)
 	}
-	wantNoHolder(t, e, ErrRefused)
+	wantHolderRefusal(t, e, RefusedNotPrivate, "")
 	h.wantAlive(t)
 }
 
@@ -81,7 +81,7 @@ func TestHolderRefusesLinkToServedSocket(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	wantNoHolder(t, link, ErrRefused)
+	wantHolderRefusal(t, link, RefusedNotPrivate, "")
 	h.wantAlive(t)
 }
 
@@ -102,7 +102,7 @@ func TestHolderRefusesFileWithHeldLock(t *testing.T) {
 	if err := syscall.Flock(int(lock.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
 		t.Fatal(err)
 	}
-	wantNoHolder(t, e, ErrRefused)
+	wantHolderRefusal(t, e, RefusedNotPrivate, "")
 }
 
 // A process of another user cannot be started without root, so only a socket
@@ -116,6 +116,6 @@ func TestHolderRefusesSocketOfAnotherOwner(t *testing.T) {
 	if err := os.Lchown(mustPath(t, e), 65534, -1); err != nil {
 		t.Fatal(err)
 	}
-	wantNoHolder(t, e, ErrRefused)
+	wantHolderRefusal(t, e, RefusedNotPrivate, "")
 	h.wantAlive(t)
 }

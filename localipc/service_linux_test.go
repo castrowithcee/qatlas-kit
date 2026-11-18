@@ -92,9 +92,8 @@ func TestServiceRejectsInvalidNamesAndOpenDirectory(t *testing.T) {
 			t.Errorf("%s accepted", name)
 		}
 	}
-	if err := checkServiceDir(e.Dir, uint32(os.Getgid())+1); !errors.Is(err, ErrRefused) {
-		t.Fatalf("directory of another group accepted: %v", err)
-	}
+	err := checkServiceDir(e.Dir, uint32(os.Getgid())+1)
+	requireRefusal(t, err, RefusedNotPrivate)
 	l, err := e.Listen()
 	if err != nil {
 		t.Fatal(err)
@@ -103,13 +102,11 @@ func TestServiceRejectsInvalidNamesAndOpenDirectory(t *testing.T) {
 	if err := os.Chmod(e.Dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := e.Dial(context.Background()); !errors.Is(err, ErrRefused) {
-		t.Fatalf("client accepted a directory open to others: %v", err)
-	}
+	_, err = e.Dial(context.Background())
+	requireRefusal(t, err, RefusedNotPrivate)
 	_ = l.Close()
-	if _, err := e.Listen(); !errors.Is(err, ErrRefused) {
-		t.Fatalf("service listened in a directory open to others: %v", err)
-	}
+	_, err = e.Listen()
+	requireRefusal(t, err, RefusedNotPrivate)
 }
 
 func TestServiceClientRejectsForeignServer(t *testing.T) {
@@ -122,16 +119,17 @@ func TestServiceClientRejectsForeignServer(t *testing.T) {
 	accepted := acceptHeld(l, nil)
 	path, _ := e.Path()
 	stranger := []uint32{uint32(os.Getuid()) + 1}
-	if err := checkServiceFiles(path, stranger); !errors.Is(err, ErrRefused) {
-		t.Fatalf("socket of a stranger accepted: %v", err)
-	}
+	err = checkServiceFiles(path, stranger)
+	requireRefusal(t, err, RefusedNotPrivate)
 	conn, err := net.Dial("unix", path)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer conn.Close()
-	if pid, err := checkServer(conn, stranger); !errors.Is(err, ErrRefused) || pid != os.Getpid() {
-		t.Fatalf("server of a stranger accepted: %d, %v", pid, err)
+	pid, err := checkServer(conn, stranger)
+	requireRefusal(t, err, RefusedOtherUser)
+	if pid != os.Getpid() {
+		t.Fatalf("server of a stranger refused with process %d, want %d", pid, os.Getpid())
 	}
 	if err := <-accepted; err != nil {
 		t.Fatal(err)
@@ -147,18 +145,24 @@ func TestServiceAdmission(t *testing.T) {
 		cred   syscall.Ucred
 		groups groupsReader
 		ok     bool
+		reason RefusalReason
 	}{
-		"root":                {syscall.Ucred{Pid: 10, Uid: 0, Gid: 0}, unreadable, true},
-		"primary group":       {syscall.Ucred{Pid: 10, Uid: 1000, Gid: group}, unreadable, true},
-		"supplementary group": {syscall.Ucred{Pid: 10, Uid: 1000, Gid: 1000}, member, true},
-		"outsider":            {syscall.Ucred{Pid: 10, Uid: 1000, Gid: 1000}, outsider, false},
-		"unreadable groups":   {syscall.Ucred{Pid: 10, Uid: 1000, Gid: 1000}, unreadable, false},
-		"unknown process":     {syscall.Ucred{Pid: 0, Uid: 1000, Gid: 1000}, member, false},
+		"root":                {syscall.Ucred{Pid: 10, Uid: 0, Gid: 0}, unreadable, true, ""},
+		"primary group":       {syscall.Ucred{Pid: 10, Uid: 1000, Gid: group}, unreadable, true, ""},
+		"supplementary group": {syscall.Ucred{Pid: 10, Uid: 1000, Gid: 1000}, member, true, ""},
+		"outsider":            {syscall.Ucred{Pid: 10, Uid: 1000, Gid: 1000}, outsider, false, RefusedOtherUser},
+		"unreadable groups":   {syscall.Ucred{Pid: 10, Uid: 1000, Gid: 1000}, unreadable, false, RefusedUnidentified},
+		"unknown process":     {syscall.Ucred{Pid: 0, Uid: 1000, Gid: 1000}, member, false, RefusedUnidentified},
 	} {
 		err := admit(&tc.cred, group, tc.groups)
-		if tc.ok && err != nil || !tc.ok && !errors.Is(err, ErrRefused) {
-			t.Errorf("%s: admit() = %v", name, err)
+		if tc.ok {
+			if err != nil {
+				t.Errorf("%s: admit() = %v", name, err)
+			}
+			continue
 		}
+		t.Logf("case %s", name)
+		requireRefusal(t, err, tc.reason)
 	}
 }
 

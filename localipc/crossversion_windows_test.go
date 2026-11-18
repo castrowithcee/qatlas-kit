@@ -68,21 +68,17 @@ func TestWindowsCrossVersionChecksOnlyUser(t *testing.T) {
 	currentUserSID = func() (*windows.SID, error) { return windows.CreateWellKnownSid(windows.WinNetworkSid) }
 	err := checkPeerUser(pid)
 	currentUserSID = saved
-	if !errors.Is(err, ErrRefused) {
-		t.Fatalf("foreign SID accepted: %v", err)
-	}
-	if err := checkPeerUser(0); !errors.Is(err, ErrRefused) {
-		t.Fatalf("unidentifiable peer accepted: %v", err)
-	}
+	requireRefusal(t, err, RefusedOtherUser)
+	err = checkPeerUser(0)
+	requireRefusal(t, err, RefusedUnidentified)
 	savedErr := ownProgramErr
 	ownProgramErr = errors.New("cannot be read")
 	defer func() { ownProgramErr = savedErr }()
 	if err := checkPeerUser(pid); err != nil {
 		t.Fatalf("the user check looked at the program: %v", err)
 	}
-	if err := checkProcess(pid); !errors.Is(err, ErrRefused) {
-		t.Fatalf("the program check accepted an unreadable program: %v", err)
-	}
+	err = checkProcess(pid)
+	requireRefusal(t, err, RefusedOwnUnreadable)
 }
 
 func TestWindowsCrossVersionAcceptBoundsSilentClient(t *testing.T) {
@@ -106,6 +102,7 @@ func TestWindowsCrossVersionAcceptBoundsSilentClient(t *testing.T) {
 	defer windows.CloseHandle(silent)
 	started := time.Now()
 	_, err = l.Accept()
+	requireRefusal(t, err, RefusedVersionCheck)
 	var pe *PeerError
 	if !errors.As(err, &pe) || pe.PID != os.Getpid() || !strings.Contains(err.Error(), "cross-version check failed") {
 		t.Fatalf("Accept() = %v", err)
@@ -115,6 +112,7 @@ func TestWindowsCrossVersionAcceptBoundsSilentClient(t *testing.T) {
 	}
 	select {
 	case err := <-refused:
+		requireRefusal(t, err, RefusedVersionCheck)
 		if !errors.As(err, &pe) || pe.PID != os.Getpid() {
 			t.Fatalf("callback got %v", err)
 		}
@@ -138,9 +136,9 @@ func TestWindowsCrossVersionDialBoundsSilentListener(t *testing.T) {
 	defer cancel()
 	started := time.Now()
 	_, err = e.DialWith(ctx, DialOptions{CrossVersion: &CrossVersion{Secret: testSecret(1)}})
+	requireRefusal(t, err, RefusedVersionCheck)
 	var pe *PeerError
-	if !errors.Is(err, ErrRefused) || !errors.As(err, &pe) || pe.PID != os.Getpid() ||
-		!strings.Contains(err.Error(), "cross-version check failed") {
+	if !errors.As(err, &pe) || pe.PID != os.Getpid() || !strings.Contains(err.Error(), "cross-version check failed") {
 		t.Fatalf("DialWith() = %v", err)
 	}
 	if time.Since(started) > 3*time.Second {

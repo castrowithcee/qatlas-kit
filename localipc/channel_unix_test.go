@@ -46,11 +46,12 @@ func hardenedHelper(t *testing.T, program, mode string) (Endpoint, *exec.Cmd) {
 	return e, cmd
 }
 
-func wantPeerError(t *testing.T, err error, pid int, reason string) {
+func wantPeerError(t *testing.T, err error, pid int, reason RefusalReason, text string) {
 	t.Helper()
+	requireRefusal(t, err, reason)
 	var pe *PeerError
-	if !errors.Is(err, ErrRefused) || !errors.As(err, &pe) || pe.PID != pid || !strings.Contains(err.Error(), reason) {
-		t.Fatalf("got %v; want a refusal of process %d with %q", err, pid, reason)
+	if !errors.As(err, &pe) || pe.PID != pid || !strings.Contains(err.Error(), text) {
+		t.Fatalf("got %v; want a refusal of process %d with %q", err, pid, text)
 	}
 }
 
@@ -84,14 +85,14 @@ func TestHardenedServerRejectsWrongAndSilentChallenge(t *testing.T) {
 	e, cmd := hardenedHelper(t, os.Args[0], "harden-echo")
 	_, err := e.DialWith(context.Background(), DialOptions{Server: CheckHardened,
 		Challenge: echoChallenge("proof:other", nil)})
-	wantPeerError(t, err, cmd.Process.Pid, "wrong proof")
+	wantPeerError(t, err, cmd.Process.Pid, RefusedChallenge, "wrong proof")
 
 	e, cmd = hardenedHelper(t, os.Args[0], "harden-listen")
 	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
 	defer cancel()
 	started := time.Now()
 	_, err = e.DialWith(ctx, DialOptions{Server: CheckHardened, Challenge: echoChallenge("proof:nonce", nil)})
-	wantPeerError(t, err, cmd.Process.Pid, "challenge failed")
+	wantPeerError(t, err, cmd.Process.Pid, RefusedChallenge, "challenge failed")
 	if time.Since(started) > 3*time.Second {
 		t.Fatalf("silent peer held the challenge for %v", time.Since(started))
 	}
@@ -103,37 +104,36 @@ func TestHardenedServerRejectsForeignProgram(t *testing.T) {
 	_, err := e.DialWith(context.Background(), DialOptions{Server: CheckHardened,
 		Challenge: echoChallenge("proof:other", &called)})
 	if hardenedProgramCheck {
-		wantPeerError(t, err, cmd.Process.Pid, "another program")
+		wantPeerError(t, err, cmd.Process.Pid, RefusedOtherProgram, "another program")
 		if called {
 			t.Fatal("challenge ran for another program")
 		}
 		return
 	}
 	// Linux cannot see the hardened program; the challenge is the gate.
-	wantPeerError(t, err, cmd.Process.Pid, "challenge failed")
+	wantPeerError(t, err, cmd.Process.Pid, RefusedChallenge, "challenge failed")
 	if !called {
 		t.Fatal("hardened server accepted without its challenge")
 	}
 }
 
 func TestRejectsForeignUser(t *testing.T) {
-	if err := checkUser(os.Getpid(), uint32(os.Getuid())+1); !errors.Is(err, ErrRefused) {
-		t.Fatalf("foreign UID accepted by the user check: %v", err)
+	err := checkUser(os.Getpid(), uint32(os.Getuid())+1)
+	requireRefusal(t, err, RefusedOtherUser)
+	if got, want := err.Error(), "local channel refused: peer has another user ID"; got != want {
+		t.Fatalf("text = %q, want %q", got, want)
 	}
-	if err := checkUser(0, uint32(os.Getuid())); !errors.Is(err, ErrRefused) {
-		t.Fatalf("unidentifiable process accepted by the user check: %v", err)
-	}
+	err = checkUser(0, uint32(os.Getuid()))
+	requireRefusal(t, err, RefusedUnidentified)
 	a, b := net.Pipe()
 	defer a.Close()
 	defer b.Close()
 	for _, program := range []bool{true, false} {
-		if _, err := checkPeer(a, program); !errors.Is(err, ErrRefused) {
-			t.Fatalf("non-socket connection accepted: %v", err)
-		}
+		_, err := checkPeer(a, program)
+		requireRefusal(t, err, RefusedUnidentified)
 	}
-	if _, err := PeerPID(a); !errors.Is(err, ErrRefused) {
-		t.Fatalf("PeerPID() of a non-socket connection = %v", err)
-	}
+	_, err = PeerPID(a)
+	requireRefusal(t, err, RefusedUnidentified)
 }
 
 func TestRefusedCallbackGetsPeer(t *testing.T) {
@@ -161,13 +161,13 @@ func TestRefusedCallbackGetsPeer(t *testing.T) {
 	}()
 	cmd := startHelper(t, copyTestProgram(t), "dial", mustPath(t, e))
 	defer stopHelper(cmd)
-	wantPeerError(t, <-accepted, cmd.Process.Pid, "another program")
+	wantPeerError(t, <-accepted, cmd.Process.Pid, RefusedOtherProgram, "another program")
 	select {
 	case r := <-got:
 		if r.pid != cmd.Process.Pid {
 			t.Fatalf("callback saw process %d; want %d", r.pid, cmd.Process.Pid)
 		}
-		wantPeerError(t, r.err, cmd.Process.Pid, "another program")
+		wantPeerError(t, r.err, cmd.Process.Pid, RefusedOtherProgram, "another program")
 	default:
 		t.Fatal("refused callback did not run")
 	}
@@ -236,9 +236,8 @@ func TestHandOverRejectsMissingDeadOrOpenSuccessor(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer l.Close()
-	if err := HandOver(l); !errors.Is(err, ErrRefused) {
-		t.Fatalf("handover without successor = %v", err)
-	}
+	err = HandOver(l)
+	requireRefusal(t, err, RefusedSuccessor)
 	next := mustPath(t, e) + nextSuffix
 	dead, err := net.ListenUnix("unix", &net.UnixAddr{Name: next, Net: "unix"})
 	if err != nil {
@@ -250,7 +249,9 @@ func TestHandOverRejectsMissingDeadOrOpenSuccessor(t *testing.T) {
 	if err := os.WriteFile(next+lockSuffix, nil, lockMode); err != nil {
 		t.Fatal(err)
 	}
-	if err := HandOver(l); !errors.Is(err, ErrRefused) || !strings.Contains(err.Error(), "no successor holds") {
+	err = HandOver(l)
+	requireRefusal(t, err, RefusedSuccessor)
+	if !strings.Contains(err.Error(), "no successor holds") {
 		t.Fatalf("handover to a dead successor = %v", err)
 	}
 	successor, err := e.ListenWith(ListenOptions{Successor: true})
@@ -261,7 +262,9 @@ func TestHandOverRejectsMissingDeadOrOpenSuccessor(t *testing.T) {
 	if err := os.Chmod(next, 0o666); err != nil {
 		t.Fatal(err)
 	}
-	if err := HandOver(l); !errors.Is(err, ErrRefused) || !strings.Contains(err.Error(), "not private") {
+	err = HandOver(l)
+	requireRefusal(t, err, RefusedSuccessor)
+	if !strings.Contains(err.Error(), "not private") {
 		t.Fatalf("handover to an open successor socket = %v", err)
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)

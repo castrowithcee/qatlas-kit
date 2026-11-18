@@ -4,7 +4,6 @@ package localipc
 
 import (
 	"context"
-	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -18,7 +17,9 @@ func TestUnreadableProgramFailsClosed(t *testing.T) {
 	}
 	cmd := startHelper(t, os.Args[0], "harden-listen", mustPath(t, e))
 	defer stopHelper(cmd)
-	if _, err := e.Dial(context.Background()); !errors.Is(err, ErrRefused) || !strings.Contains(err.Error(), "cannot be read") {
+	_, err := e.Dial(context.Background())
+	requireRefusal(t, err, RefusedUnidentified)
+	if !strings.Contains(err.Error(), "cannot be read") {
 		t.Fatalf("client accepted a hardened peer: %v", err)
 	}
 }

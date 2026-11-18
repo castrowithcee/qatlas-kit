@@ -48,7 +48,9 @@ const (
 // ErrRunning means a listener already owns this endpoint.
 var ErrRunning = errors.New("local channel is already running")
 
-// ErrRefused means the peer or the channel's filesystem permissions failed a check.
+// ErrRefused means the peer or the channel's filesystem permissions failed a
+// check. Such an error from this package carries a *RefusalError that names
+// the reason; one without it comes from another package.
 var ErrRefused = errors.New("local channel refused")
 
 // ErrProgramReplaced means the program file this process started from was
@@ -78,8 +80,60 @@ func (e *PathTooLongError) Error() string {
 
 const maxSocketPath = 103
 
+// RefusalReason names why the local channel refused a peer or a channel.
+type RefusalReason string
+
+const (
+	// RefusedOtherUser means the peer runs as another user than this package admits.
+	RefusedOtherUser RefusalReason = "other-user"
+	// RefusedOtherProgram means the peer runs another program than this one.
+	RefusedOtherProgram RefusalReason = "other-program"
+	// RefusedProgramReplaced means this process's own program file was removed
+	// or replaced since it started; the error also wraps ErrProgramReplaced.
+	RefusedProgramReplaced RefusalReason = "program-replaced"
+	// RefusedUnidentified means the peer or the serving process could not be
+	// identified or inspected.
+	RefusedUnidentified RefusalReason = "unidentified"
+	// RefusedOwnUnreadable means this process's own program or user could not be read.
+	RefusedOwnUnreadable RefusalReason = "own-unreadable"
+	// RefusedNotPrivate means a file, directory, or pipe of the channel is not
+	// owned by the expected user or is not private enough.
+	RefusedNotPrivate RefusalReason = "not-private"
+	// RefusedOwnProcess means this process serves the channel itself.
+	RefusedOwnProcess RefusalReason = "own-process"
+	// RefusedServerChanged means another process serves the channel than the
+	// one found a moment before.
+	RefusedServerChanged RefusalReason = "server-changed"
+	// RefusedVersionCheck means the check between program versions
+	// (CrossVersion) failed or could not run.
+	RefusedVersionCheck RefusalReason = "version-check"
+	// RefusedChallenge means the application's Challenge failed or could not run.
+	RefusedChallenge RefusalReason = "challenge"
+	// RefusedSuccessor means a successor could not be proven to be the
+	// channel's next listener.
+	RefusedSuccessor RefusalReason = "successor"
+)
+
+// RefusalError is a refusal with its reason. Its text and chain are those of
+// the refusal itself; it wraps ErrRefused.
+type RefusalError struct {
+	Reason RefusalReason
+	err    error
+}
+
+func (e *RefusalError) Error() string { return e.err.Error() }
+
+func (e *RefusalError) Unwrap() error { return e.err }
+
+// refusal builds an ErrRefused error of the given reason. The text is
+// "<ErrRefused>: <format>"; a %w operand stays in the chain.
+func refusal(reason RefusalReason, format string, args ...any) error {
+	return &RefusalError{Reason: reason, err: fmt.Errorf("%w: "+format, append([]any{ErrRefused}, args...)...)}
+}
+
 // PeerError is a refused peer. PID is its process id as the kernel reported
-// it, or 0 if it could not be told. Err wraps ErrRefused.
+// it, or 0 if it could not be told. Err wraps ErrRefused and is a
+// *RefusalError.
 type PeerError struct {
 	PID int
 	Err error
@@ -266,16 +320,16 @@ func establish(ctx context.Context, conn net.Conn, label string, check func(net.
 }
 
 func runChallenge(ctx context.Context, conn net.Conn, challenge Challenge) error {
-	return bounded(ctx, conn, "the challenge failed", func() error { return challenge(ctx, conn) })
+	return bounded(ctx, conn, RefusedChallenge, "the challenge failed", func() error { return challenge(ctx, conn) })
 }
 
 // bounded ties the connection's deadline to ctx so a silent peer cannot hold
-// an exchange longer than the caller allows. failed names the exchange in a
-// refusal.
-func bounded(ctx context.Context, conn net.Conn, failed string, exchange func() error) error {
+// an exchange longer than the caller allows. reason classifies a refusal and
+// failed names the exchange in it.
+func bounded(ctx context.Context, conn net.Conn, reason RefusalReason, failed string, exchange func() error) error {
 	if deadline, ok := ctx.Deadline(); ok {
 		if err := conn.SetDeadline(deadline); err != nil {
-			return fmt.Errorf("%w: cannot bound the challenge: %v", ErrRefused, err)
+			return refusal(reason, "cannot bound the challenge: %v", err)
 		}
 	}
 	stop := context.AfterFunc(ctx, func() { _ = conn.SetDeadline(time.Unix(1, 0)) })
@@ -284,10 +338,10 @@ func bounded(ctx context.Context, conn net.Conn, failed string, exchange func() 
 		err = ctx.Err()
 	}
 	if err != nil {
-		return fmt.Errorf("%w: %s: %w", ErrRefused, failed, err)
+		return refusal(reason, "%s: %w", failed, err)
 	}
 	if err := conn.SetDeadline(time.Time{}); err != nil {
-		return fmt.Errorf("%w: cannot reset the deadline: %v", ErrRefused, err)
+		return refusal(reason, "cannot reset the deadline: %v", err)
 	}
 	return nil
 }
