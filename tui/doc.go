@@ -36,10 +36,10 @@
 // and alt+delete delete a character or a word; ctrl+u and ctrl+k delete to the start or end. A word ends at
 // white space; in a masked field a word jump goes to an end and a word deletion takes everything on that
 // side, so no boundary shows. A screen asks its own actions first, so a Form, a LogView and a List keep
-// theirs for left, right, home and end, and a second way of an action wins over an edit. Dialog.Paste,
-// Form.Paste, LogView.Paste, List.Paste and CommandLine.Paste insert whole at the cursor, never as keys: line
-// breaks at the end go, those and tabs inside become one space, and other control characters, invalid UTF-8
-// and direction marks such as U+202E are dropped, in a masked field too.
+// theirs for left, right, home and end, and a second way of an action wins over an edit. The Paste of each
+// of these parts and a suggestion a Dialog takes insert whole at the cursor, never as keys: line breaks at the
+// end go, those and tabs inside become one space, and other control characters, invalid UTF-8 and direction
+// marks such as U+202E are dropped, in a masked field too.
 //
 // The parts with state share one shape. NewX checks an XSpec, which holds the content and, in Keys, the
 // actions of the key table the part reads, against the Keymap and the Translator and refuses what cannot
@@ -238,28 +238,28 @@
 // only focuses it.
 //
 // A Dialog asks a question over the screen: the warning glyph and the question in bold, one sentence on what
-// follows, the details, one button per answer and the key line of the answers, from the same answers, so no
-// dialog names one twice. A detail is a DialogLine of plain text in one of the text, hint, warn and fail styles,
-// optionally behind a prefix such as a prompt sign; fail is for a Notice only, since a question keeps red for
-// the button of a destructive answer; a wrapped line continues under the text, not the prefix. The dialog takes
-// no styled text, so it escapes and wraps before it styles, and the tool chooses prefix, style and wording.
-// Irreversible draws the sentence on what follows in the warn colour. A Notice is a calm message without the
-// warning glyph that needs at least one detail: a dialog interrupts only where there is something to read or to
-// decide, so a plain success without details belongs in the message line. Only the answers and the scroll keys
-// act; every other key goes back to the application, so a stray key neither saves nor destroys. The answer to
-// enter is the default and shows focused, and the destroying answer of a destructive question is drawn in the
-// fail colour and can never be the default. A dialog with an input is a text field, shows what runs and the
-// last error inside itself, drops the error when the text changes and never shows a masked input. Overlay dims
-// the screen behind it and returns the targets of the dialog alone; where it does not fit, View fills the
-// workspace and Hints go into the footer, whose targets answer it.
+// follows, the details, one button per answer and the key line of the same answers, so no dialog names one
+// twice. A detail is a DialogLine of plain text, optionally behind a prefix such as a prompt sign; the dialog
+// escapes and wraps it before it styles, and red is for a Notice only, since a question keeps it for the
+// button of a destructive answer. Irreversible draws the sentence on what follows in the warn colour. A Notice
+// is a calm message without the warning glyph that needs at least one detail: a plain success belongs in the
+// message line. Only the answers, the scroll and the suggestion keys act; every other key goes back to the
+// application, so a stray key neither saves nor destroys. Enter gives the default, which shows focused; the
+// destroying answer is drawn in the fail colour and is never the default. A dialog with an input is a text
+// field, shows what runs and the last error inside itself, drops the error when the text changes and never
+// shows a masked input. Overlay dims the screen behind it and returns the targets of the dialog alone; where
+// it does not fit, View fills the workspace and Hints go into the footer, whose targets answer it.
 //
-// Details that do not fit never push out the question: the question, the consequence, the input, the buttons
-// and the key line stay, and the details scroll in the rest with their position under them; Overlay gives
-// way to View only where not even three detail lines fit. The wheel and the optional scroll actions of
-// DialogKeys stop at the ends, and Hints names the scroll keys behind the answers, the first to go where the
-// line is short. A dialog whose details fit has no position line, scroll hint or wheel target.
-// DialogSpec.Extra adds hints of the application, such as help, behind the answers: click targets that give
-// way before the answers and that Update and Click leave to the application.
+// Details that do not fit never push out the question: everything else stays, and the details scroll in the
+// rest with their position under them; Overlay gives way to View only where not even three detail lines fit.
+// Hints names the scroll keys behind the answers while the details scroll, the first to go where the line is
+// short. DialogSpec.Extra adds hints of the application, such as help, behind the answers: click targets that
+// give way before the answers and that Update and Click leave to the application.
+//
+// DialogInput.Suggest hands an input suggestions, such as from a projectpath.Suggester; tui reads no file
+// system. At most five stand under the input, escaped, one row and one click target each. The complete action
+// and up and down mark and take them, and enter takes the typed text unless one was marked; whether a taken
+// one keeps the dialog open is Continues, never a path separator. Without suggestions nothing changes.
 //
 // Help explains in three stages: the one-line hint under the focused field, the explanation of the focused
 // element, and the help with its topics. The Help shows the application's helptopics.Topic values, the same

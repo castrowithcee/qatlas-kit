@@ -22,6 +22,18 @@ type Answer struct {
 type DialogInput struct {
 	Masked bool
 	Value  string
+	// Suggest returns the suggestions for the typed text in the order shown, such as the paths that complete
+	// it; none shows nothing. The dialog asks it whenever the text changes. A masked input has none.
+	Suggest func(typed string) []Suggestion
+}
+
+// Suggestion is one entry under a dialog input. Text is data of the application: the dialog escapes it to
+// draw it and cleans it as pasted text when it becomes the value.
+type Suggestion struct {
+	Text string
+	// Continues keeps the dialog open when enter takes the suggestion and shows the suggestions of the new
+	// text, such as a directory in a dialog that asks for a file.
+	Continues bool
 }
 
 // DialogKeys are the actions of the key table a dialog reads beside its answers. Enter is the action of the
@@ -32,6 +44,10 @@ type DialogKeys struct {
 	// Last jump there. All are optional; without them only the wheel scrolls. In a dialog with an input, the
 	// four that scroll need a key that acts while text is typed, and First and Last stay with the text line.
 	Up, Down, PageUp, PageDown, First, Last ActionID
+	// Complete takes a suggestion, typically the tab action; SuggestUp and SuggestDown are second ways of Up
+	// and Down that act only while suggestions are shown. An input with suggestions needs Complete, Up and
+	// Down; each needs a key that acts while text is typed.
+	Complete, SuggestUp, SuggestDown ActionID
 }
 
 // DialogLine is one detail line of a dialog: plain text with a style, optionally behind a prefix such as a
@@ -102,7 +118,7 @@ type Dialog struct {
 	spec  DialogSpec
 	keys  *Keymap
 	text  Translator
-	input textLine
+	input suggestLine
 	msg   *Message
 	// scroll is the first shown detail line and what the last drawing found.
 	scroll textScroll
@@ -115,9 +131,11 @@ type Dialog struct {
 // default or danger that is no answer, a default without the enter action or with an enter key that is another
 // answer, a danger that is the default, so enter never destroys, an answer of an input dialog that has no key
 // outside the typed text, a scroll key that names no action, is listed twice or is an answer or the enter key,
-// a scroll key of an input dialog that has no key outside the typed text, and a masked input that starts with
-// a value, and an extra hint without action, of another kind than normal, that names an unknown action, lists
-// one twice or names an answer, the enter action or a scroll action.
+// a scroll key of an input dialog that has no key outside the typed text, a masked input that starts with a
+// value or has suggestions, an input with suggestions without the complete, up or down action, a complete or
+// suggestion key that names no action, is listed twice, is an answer or the enter key or has no key outside the
+// typed text in an input dialog, and an extra hint without action, of another kind than normal, that names an
+// unknown action, lists one twice or names an answer, the enter action, a scroll or a suggestion action.
 func NewDialog(spec DialogSpec, keys *Keymap, text Translator) (*Dialog, error) {
 	if keys == nil || text == nil {
 		return nil, errors.New("the dialog needs a key table and a translator")
@@ -191,19 +209,29 @@ func NewDialog(spec DialogSpec, keys *Keymap, text Translator) (*Dialog, error) 
 			fail("danger %q is the default; enter never destroys", spec.Danger)
 		}
 	}
-	if spec.Input != nil && spec.Input.Masked && spec.Input.Value != "" {
-		fail("a masked input starts empty")
+	suggests := spec.Input != nil && spec.Input.Suggest != nil
+	if spec.Input != nil && spec.Input.Masked {
+		if spec.Input.Value != "" {
+			fail("a masked input starts empty")
+		}
+		if suggests {
+			fail("a masked input has no suggestions, which would show what it hides")
+		}
 	}
 	k := spec.Keys
-	scrollKeys := []namedKey{{"up", k.Up, false}, {"down", k.Down, false}, {"page up", k.PageUp, false},
+	scrollKeys := []namedKey{{"up", k.Up, suggests}, {"down", k.Down, suggests}, {"page up", k.PageUp, false},
 		{"page down", k.PageDown, false}, {"first", k.First, false}, {"last", k.Last, false}}
-	errs = append(errs, checkKeys("dialog", keys, scrollKeys)...)
-	for i, sk := range scrollKeys {
+	suggestKeys := []namedKey{{"complete", k.Complete, suggests}, {"suggestion up", k.SuggestUp, false},
+		{"suggestion down", k.SuggestDown, false}}
+	errs = append(errs, checkKeys("dialog", keys, append(slices.Clone(scrollKeys), suggestKeys...))...)
+	for _, sk := range append(slices.Clone(scrollKeys), suggestKeys...) {
+		// First and last stay with the text line, so only they need no key that acts while text is typed.
+		lineEnd := sk.name == "first" || sk.name == "last"
 		switch {
 		case sk.id == "" || !keys.known(sk.id):
 		case slices.Contains(answers, sk.id) || sk.id == k.Enter:
 			fail("%s key %q is also an answer or the enter key", sk.name, sk.id)
-		case focus == InputText && i < 4 && len(keys.keysUnder(keys.index[sk.id], InputText)) == 0:
+		case focus == InputText && !lineEnd && len(keys.keysUnder(keys.index[sk.id], InputText)) == 0:
 			fail("%s key %q has no key that acts while text is typed", sk.name, sk.id)
 		}
 	}
@@ -221,6 +249,8 @@ func NewDialog(spec DialogSpec, keys *Keymap, text Translator) (*Dialog, error) 
 		case h.Action == k.Enter || slices.ContainsFunc(scrollKeys, func(sk namedKey) bool { return sk.id == h.Action }):
 			// Update would run these itself and report them handled.
 			fail("extra hint %q is also the enter action or a scroll action", h.Action)
+		case slices.ContainsFunc(suggestKeys, func(sk namedKey) bool { return sk.id == h.Action }):
+			fail("extra hint %q is also a suggestion action", h.Action)
 		case h.Kind != HintNormal || h.WhileTyping:
 			fail("extra hint %q is a normal hint that names no text keys", h.Action)
 		}
@@ -236,7 +266,7 @@ func NewDialog(spec DialogSpec, keys *Keymap, text Translator) (*Dialog, error) 
 	if spec.Input != nil {
 		in := *spec.Input
 		d.spec.Input = &in
-		d.input = newTextLine(in.Value)
+		d.input = newSuggestLine(in.Value, in.Suggest)
 	}
 	return d, nil
 }
@@ -259,16 +289,37 @@ func (d *Dialog) Input() InputFocus { return d.focus() }
 
 // Update handles a key. answer is the answer the key gives, the default for enter; handled is false for a key
 // that neither answers nor edits the input, which the application handles or drops, but never passes to the
-// screen behind the dialog.
+// screen behind the dialog. While suggestions are shown, enter after a suggestion was marked takes it first:
+// one that continues keeps the dialog open, any other gives the answer to enter with it as the value.
 func (d *Dialog) Update(msg tea.KeyPressMsg) (answer ActionID, handled bool) {
 	focus := d.focus()
+	k := d.spec.Keys
+	if d.input.marked && d.keys.Is(msg, k.Enter, focus) {
+		if enter := d.enterAnswer(); enter != "" {
+			chosen := d.input.take(d.input.mark)
+			d.clearError()
+			if chosen.Continues {
+				return "", true
+			}
+			return enter, true
+		}
+	}
 	for _, a := range d.spec.Answers {
 		if d.keys.Is(msg, a.Action, focus) {
 			return a.Action, true
 		}
 	}
-	if d.spec.Default != "" && d.keys.Is(msg, d.spec.Keys.Enter, focus) {
+	if d.spec.Default != "" && d.keys.Is(msg, k.Enter, focus) {
 		return d.spec.Default, true
+	}
+	for _, id := range d.suggestKeys() {
+		if d.keys.Is(msg, id, focus) {
+			if !d.input.shown() {
+				return "", false
+			}
+			d.suggestBy(id)
+			return "", true
+		}
 	}
 	for _, id := range d.scrollKeys() {
 		if d.keys.Is(msg, id, focus) {
@@ -284,6 +335,43 @@ func (d *Dialog) Update(msg tea.KeyPressMsg) (answer ActionID, handled bool) {
 		return "", handled
 	}
 	return "", false
+}
+
+// enterAnswer is the answer enter gives, or "" where enter answers nothing.
+func (d *Dialog) enterAnswer() ActionID {
+	k := d.spec.Keys
+	switch {
+	case d.spec.Default != "":
+		return d.spec.Default
+	case k.Enter != "" && slices.ContainsFunc(d.spec.Answers, func(a Answer) bool { return a.Action == k.Enter }):
+		return k.Enter
+	}
+	return ""
+}
+
+// suggestKeys are the actions that act on the suggestions: up and down only while suggestions are shown, as
+// they scroll otherwise; complete and the second ways always, so Update reports them as not handled then.
+func (d *Dialog) suggestKeys() []ActionID {
+	k := d.spec.Keys
+	ids := []ActionID{k.Complete, k.SuggestUp, k.SuggestDown}
+	if d.input.shown() {
+		ids = append(ids, k.Up, k.Down)
+	}
+	return slices.DeleteFunc(ids, func(id ActionID) bool { return id == "" })
+}
+
+// suggestBy runs a suggestion action.
+func (d *Dialog) suggestBy(id ActionID) {
+	k := d.spec.Keys
+	switch id {
+	case k.Complete:
+		d.input.complete()
+		d.clearError()
+	case k.Up, k.SuggestUp:
+		d.input.move(-1)
+	case k.Down, k.SuggestDown:
+		d.input.move(1)
+	}
 }
 
 // scrollKeys are the scroll actions the dialog acts on. A dialog with an input leaves first and last to the
@@ -337,13 +425,27 @@ func (d *Dialog) clearError() {
 
 // Click handles a click on a target the dialog drew, as the MouseMap of its targets reports it: a button or
 // a key of the key line gives its answer, as its key does, and a click on the input does nothing more than
-// keep it. A click on an extra hint is not handled, as its key is not: r.Action is the action for the
+// keep it. A click on a suggestion marks it, and one on the marked suggestion takes it as the complete key
+// does. A click on an extra hint is not handled, as its key is not: r.Action is the action for the
 // application to run.
 func (d *Dialog) Click(r MouseResult) (answer ActionID, handled bool) {
 	if !r.Handled {
 		return "", false
 	}
 	if r.Item == dialogInputRef && d.spec.Input != nil {
+		return "", true
+	}
+	if i, ok := d.input.suggestionOf(r.Item); ok {
+		if d.input.marked && i == d.input.mark {
+			d.input.take(i)
+			d.clearError()
+		} else {
+			d.input.markAt(i)
+		}
+		return "", true
+	}
+	if r.Action != "" && d.input.shown() && slices.Contains(d.suggestKeys(), r.Action) {
+		d.suggestBy(r.Action)
 		return "", true
 	}
 	for _, a := range d.spec.Answers {
@@ -379,13 +481,20 @@ func (d *Dialog) SetMessage(msg *Message) {
 }
 
 // Hints are the answers as hints of the key line, the enter key beside the default, the extra hints of the
-// application and the scroll keys while the last drawing scrolled the details. The extra and the scroll hints
-// give way by their priority where the line is short; an answer is shortened and never dropped. The extra
-// hints stand before the scroll hints, so they keep their place while the scroll hints come and go. A dialog
-// drawn over the screen shows them itself; where it does not fit, the application puts them into the footer,
-// whose targets then answer it.
+// application and the scroll keys while the last drawing scrolled the details. While suggestions are shown,
+// the complete key and up and down, which mark then instead of scrolling a line, stand before the answers.
+// The extra and the scroll hints give way by their priority where the line is short; an answer is shortened
+// and never dropped. The extra hints stand before the scroll hints, so they keep their place while the scroll
+// hints come and go. A dialog drawn over the screen shows them itself; where it does not fit, the application
+// puts them into the footer, whose targets then answer it.
 func (d *Dialog) Hints() []Hint {
 	var hints []Hint
+	suggests := d.input.shown()
+	if suggests {
+		k := d.spec.Keys
+		hints = append(hints, Hint{Action: k.Complete, Label: TextKeyComplete},
+			Hint{Action: k.Up, Label: TextKeyMark}, Hint{Action: k.Down, Label: TextKeyMark})
+	}
 	for _, a := range d.spec.Answers {
 		hints = append(hints, Hint{Action: a.Action, Label: a.Label, Kind: HintAnswer})
 		if a.Action == d.spec.Default && d.spec.Keys.Enter != d.spec.Default {
@@ -400,7 +509,7 @@ func (d *Dialog) Hints() []Hint {
 			label    TextID
 			priority int
 		}{{k.Up, TextHelpScroll, 1}, {k.Down, TextHelpScroll, 1}, {k.PageUp, TextHelpPage, 2}, {k.PageDown, TextHelpPage, 2}} {
-			if h.id != "" {
+			if h.id != "" && !(suggests && h.label == TextHelpScroll) {
 				hints = append(hints, Hint{Action: h.id, Label: h.label, Priority: h.priority})
 			}
 		}
@@ -437,7 +546,8 @@ func redactSecret(text, secret string) string {
 }
 
 // dialogParts is the content above the buttons in width cells: what stands above the details, the details
-// and what stands below them, with the target of the input line counted from the top left of the tail.
+// and what stands below them, with the targets of the input line and its suggestions counted from the top left
+// of the tail.
 type dialogParts struct {
 	head, details, tail []string
 	tailTargets         []Target
@@ -501,6 +611,9 @@ func (d *Dialog) parts(width int, styles Styles) dialogParts {
 		lines = append(lines, "")
 		targets = append(targets, Target{Rect: Rect{Y: len(lines), Width: width, Height: 1}, Zone: ZoneForm, Item: dialogInputRef})
 		lines = append(lines, fieldStyle(styles, false).Render(d.input.view(width, styles, true, mask)))
+		rows, rt := d.input.rows(width, styles)
+		targets = append(targets, OffsetTargets(rt, 0, len(lines))...)
+		lines = append(lines, rows...)
 	}
 	if d.msg != nil && d.msg.Text != "" {
 		lines = append(lines, "")
@@ -652,7 +765,8 @@ func (d *Dialog) content(width int, styles Styles, p dialogParts, room int) ([]s
 // the application then draws View in the workspace and Hints in the footer. Where the details do not fit,
 // the question, the consequence, the input, the buttons and the key line stay and the details scroll in the
 // rest, which holds at least dialogMinDetails lines and the position line under them; ok is false only where
-// even that does not fit.
+// even that does not fit. The suggestions under the input stay as the input does, so the box grows and
+// shrinks as they come and go.
 func (d *Dialog) Overlay(styles Styles, screen string, width, height int, room Rect) (view string, targets []Target, ok bool) {
 	inner := min(dialogMaxInner, room.Width-8)
 	if inner < dialogMinInner {
