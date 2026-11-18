@@ -30,7 +30,7 @@ One line per package, in alphabetical order. The package documentation holds the
 - [`output`](output): renders ordered results in the CLI output formats and defines the shared error codes.
 - [`projectpath`](projectpath): expands, resolves and compares paths, finds Git working tree roots and suggests completions for a typed path.
 - [`ptytest`](ptytest): runs a program at a pseudo-terminal or pseudo console in tests, types input and waits for its output.
-- [`ratelimit`](ratelimit): spaces the requests of one credential and holds them when the remote side asks to wait.
+- [`ratelimit`](ratelimit): spaces the requests of one credential, holds them when the remote side asks to wait, and counts units per key in a sliding or daily window.
 - [`redact`](redact): replaces registered secret values, also quoted or JSON-escaped, in text, errors and writers.
 - [`release`](release): verifies signed release checksums and archive contents offline.
 - [`release/installer`](release/installer): renders the install.sh and install.ps1 installers of a signed release.
