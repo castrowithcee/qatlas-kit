@@ -220,3 +220,83 @@ func TestUpdateWithUnitThenRestart(t *testing.T) {
 		t.Fatalf("calls %q, want %q", calls, want)
 	}
 }
+
+func TestServiceNameReachesSystemctlAndPaths(t *testing.T) {
+	root := t.TempDir()
+	c := Companion("tool-worker", WithRoot(root))
+	if c.Entry != "lib/systemd/system/tool-worker.service" || filepath.Base(c.Path) != "tool-worker.service" {
+		t.Fatalf("companion: %+v", c)
+	}
+	if got := Companion("tool-worker").Path; got != "/usr/local/lib/systemd/system/tool-worker.service" {
+		t.Fatalf("path without root: %q", got)
+	}
+	var calls []string
+	result := selfupdate.Result{Latest: "v1.1.0", Companions: []string{c.Path}}
+	if err := Restart(context.Background(), "tool-worker", result, WithRoot(root), recorder(&calls, "")); err != nil {
+		t.Fatal(err)
+	}
+	if want := []string{"daemon-reload", "restart tool-worker"}; !slices.Equal(calls, want) {
+		t.Fatalf("calls %q, want %q", calls, want)
+	}
+	dir := filepath.Join(root, "etc", "systemd", "system")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "tool-worker.service"), []byte("[Service]\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := Shadowed("tool-worker", WithRoot(root)); err != nil || !got {
+		t.Fatalf("Shadowed = %v, %v", got, err)
+	}
+}
+
+func TestPrivilegedOrInvalidServiceNameIsRefused(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "etc", "systemd", "system")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "root.service"), []byte("[Service]\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, service := range []string{"root", "sudo", "wheel", "admin", "", "../tool", "tool --now"} {
+		if c := Companion(service, WithRoot(root)); c.Path != "" {
+			t.Errorf("Companion(%q) has path %q", service, c.Path)
+		}
+		var calls []string
+		if err := Restart(context.Background(), service, selfupdate.Result{}, recorder(&calls, "")); err == nil || len(calls) != 0 {
+			t.Errorf("Restart(%q): err %v, calls %q", service, err, calls)
+		}
+		if got, err := Shadowed(service, WithRoot(root)); err == nil || got {
+			t.Errorf("Shadowed(%q) = %v, %v", service, got, err)
+		}
+	}
+}
+
+func TestUpdateRefusesCompanionOfInvalidService(t *testing.T) {
+	root := t.TempDir()
+	executable := filepath.Join(root, "tool")
+	if runtime.GOOS == "windows" {
+		executable += ".exe"
+	}
+	if err := os.WriteFile(executable, []byte("old program"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	signer := releasetest.NewSigner(t)
+	const namespace = "tool-release"
+	archiveName := func(v string) string { return "tool_" + v + "_linux_amd64.tar.gz" }
+	archive := releasetest.Archive(t, archiveName("v1.1.0"),
+		releasetest.File{Name: "bin/tool", Body: []byte("new program")},
+		releasetest.File{Name: UnitEntry("root"), Body: []byte(validUnit)})
+	assets := releasetest.Release(t, signer, namespace, "checksums.txt.example.sig", map[string][]byte{archiveName("v1.1.0"): archive})
+	c := &selfupdate.Client{RepositoryAPI: releaseAPI(t, "v1.1.0", assets), CurrentVersion: "v1.0.0", MinimumVersion: "v1.0.0", ArchiveName: archiveName,
+		UserAgent: "tool/1", HTTPClient: http.DefaultClient, Namespace: namespace, SignatureAsset: "checksums.txt.example.sig", TrustedKeys: []ssh.PublicKey{signer.PublicKey()},
+		ProgramName: "tool", Executable: executable,
+		Companions: []selfupdate.Companion{Companion("root", WithRoot(root))}}
+	if _, err := c.Update(context.Background()); err == nil || !strings.Contains(err.Error(), "absolute path") {
+		t.Fatalf("Update error = %v, want the companion refused", err)
+	}
+	if body, err := os.ReadFile(executable); err != nil || string(body) != "old program" {
+		t.Fatalf("program changed: %q, %v", body, err)
+	}
+}

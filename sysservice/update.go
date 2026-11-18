@@ -56,40 +56,43 @@ func runSystemctl(ctx context.Context, args ...string) error {
 	return exec.CommandContext(ctx, "systemctl", args...).Run()
 }
 
-// Companion returns the unit of program as a selfupdate companion. It does not validate program;
-// Restart does.
-func Companion(program string, opts ...Option) selfupdate.Companion {
-	o := newOptions(opts)
-	return selfupdate.Companion{Entry: UnitEntry(program), Path: o.hostPath(InstallPaths(program).Unit)}
+// Companion returns the unit of service as a selfupdate companion. For an invalid service name the
+// companion has no path, which selfupdate refuses before it writes anything.
+func Companion(service string, opts ...Option) selfupdate.Companion {
+	c := selfupdate.Companion{Entry: UnitEntry(service)}
+	if validateService(service) == nil {
+		c.Path = newOptions(opts).hostPath(ServicePaths(service, service).Unit)
+	}
+	return c
 }
 
-// Restart restarts the service of program after an installation. It reloads systemd first when result lists
-// the unit as written. It does not check for root. An error names the installed version and the failed
-// step; after a failed reload the service is not restarted.
-func Restart(ctx context.Context, program string, result selfupdate.Result, opts ...Option) error {
-	if err := validateProgram(program); err != nil {
+// Restart restarts service after an installation. It reloads systemd first when result lists the unit as
+// written. It does not check for root. An error names the installed version and the failed step; after a
+// failed reload the service is not restarted.
+func Restart(ctx context.Context, service string, result selfupdate.Result, opts ...Option) error {
+	if err := validateService(service); err != nil {
 		return err
 	}
 	o := newOptions(opts)
-	if slices.Contains(result.Companions, Companion(program, opts...).Path) {
+	if slices.Contains(result.Companions, Companion(service, opts...).Path) {
 		if err := o.run(ctx, "daemon-reload"); err != nil {
 			return fmt.Errorf("version %s is installed, but systemctl daemon-reload failed: %w", result.Latest, err)
 		}
 	}
-	if err := o.run(ctx, "restart", program); err != nil {
-		return fmt.Errorf("version %s is installed, but systemctl restart %s failed: %w", result.Latest, program, err)
+	if err := o.run(ctx, "restart", service); err != nil {
+		return fmt.Errorf("version %s is installed, but systemctl restart %s failed: %w", result.Latest, service, err)
 	}
 	return nil
 }
 
-// Shadowed reports whether a complete unit of program exists in /etc/systemd/system. A drop-in directory
+// Shadowed reports whether a complete unit of service exists in /etc/systemd/system. A drop-in directory
 // does not count, nor does anything but a regular file or a symbolic link.
-func Shadowed(program string, opts ...Option) (bool, error) {
-	if err := validateProgram(program); err != nil {
+func Shadowed(service string, opts ...Option) (bool, error) {
+	if err := validateService(service); err != nil {
 		return false, err
 	}
 	o := newOptions(opts)
-	info, err := os.Lstat(o.hostPath(shadowDir + "/" + program + ".service"))
+	info, err := os.Lstat(o.hostPath(shadowDir + "/" + service + ".service"))
 	if errors.Is(err, fs.ErrNotExist) {
 		return false, nil
 	}

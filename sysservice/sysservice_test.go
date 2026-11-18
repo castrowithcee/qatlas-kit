@@ -225,3 +225,115 @@ func TestValidateGroups(t *testing.T) {
 		t.Fatal("ValidateGroups accepted an invalid program name")
 	}
 }
+
+const workerUnit = `[Service]
+User=tool-worker
+Group=tool-worker
+ExecStart=/usr/local/bin/tool worker run
+NoNewPrivileges=yes
+ProtectSystem=full
+PrivateTmp=yes
+ConfigurationDirectory=tool-worker
+StateDirectory=tool-worker
+SupplementaryGroups=docker
+ReadWritePaths=/etc/tool-worker
+`
+
+var workerRules = UnitRules{Program: "tool", Service: "tool-worker", Groups: []string{"docker"}, WritableConfig: true}
+
+func TestServicePaths(t *testing.T) {
+	want := Paths{
+		Program: "/usr/local/bin/tool",
+		Unit:    "/usr/local/lib/systemd/system/tool-worker.service",
+		Config:  "/etc/tool-worker",
+		State:   "/var/lib/tool-worker",
+	}
+	if got := ServicePaths("tool", "tool-worker"); got != want {
+		t.Fatalf("ServicePaths = %+v, want %+v", got, want)
+	}
+	if got := ServicePaths("tool", ""); got != InstallPaths("tool") {
+		t.Fatalf("ServicePaths without service = %+v", got)
+	}
+	if got := UnitEntry("tool-worker"); got != "lib/systemd/system/tool-worker.service" {
+		t.Fatalf("UnitEntry = %q", got)
+	}
+}
+
+func TestValidateUnitAcceptsServiceName(t *testing.T) {
+	if err := ValidateUnit([]byte(workerUnit), workerRules); err != nil {
+		t.Fatalf("ValidateUnit: %v", err)
+	}
+	// The program itself may be a supplementary group of another service.
+	unit := strings.Replace(workerUnit, "SupplementaryGroups=docker", "SupplementaryGroups=docker tool", 1)
+	rules := workerRules
+	rules.Groups = []string{"docker", "tool"}
+	if err := ValidateUnit([]byte(unit), rules); err != nil {
+		t.Fatalf("ValidateUnit with program group: %v", err)
+	}
+}
+
+func TestValidateUnitRejectsWithServiceName(t *testing.T) {
+	rep := func(old, new string) string {
+		if !strings.Contains(workerUnit, old) {
+			t.Fatalf("fixture lacks %q", old)
+		}
+		return strings.Replace(workerUnit, old, new, 1)
+	}
+	add := func(line string) string { return workerUnit + line + "\n" }
+	tests := map[string]struct{ unit, want string }{
+		"User is the program":              {rep("User=tool-worker", "User=tool"), "User must be"},
+		"User other":                       {rep("User=tool-worker", "User=other"), "User must be"},
+		"User root":                        {rep("User=tool-worker", "User=root"), "User must not be root"},
+		"User numeric zero":                {add("User=0"), "User must not be root"},
+		"Group is the program":             {rep("Group=tool-worker", "Group=tool"), "Group must be"},
+		"Group root":                       {rep("Group=tool-worker", "Group=root"), "Group must not be root"},
+		"NoNewPrivileges no":               {add("NoNewPrivileges=no"), "NoNewPrivileges must be yes"},
+		"PrivateTmp no":                    {add("PrivateTmp=no"), "PrivateTmp must be yes"},
+		"ProtectSystem no":                 {add("ProtectSystem=no"), "ProtectSystem must be"},
+		"ConfigurationDirectory program":   {rep("ConfigurationDirectory=tool-worker", "ConfigurationDirectory=tool"), "ConfigurationDirectory must be"},
+		"StateDirectory program":           {rep("StateDirectory=tool-worker", "StateDirectory=tool"), "StateDirectory must be"},
+		"ExecStart service name":           {rep("/usr/local/bin/tool worker", "/usr/local/bin/tool-worker"), "ExecStart must begin"},
+		"ExecStart other binary":           {rep("/usr/local/bin/tool worker", "/bin/sh -c"), "ExecStart must begin"},
+		"groups extra":                     {rep("SupplementaryGroups=docker", "SupplementaryGroups=docker disk"), "SupplementaryGroups must be"},
+		"writable config of the program":   {rep("ReadWritePaths=/etc/tool-worker", "ReadWritePaths=/etc/tool"), "ReadWritePaths must release /etc/tool-worker"},
+		"DynamicUser":                      {add("DynamicUser=yes"), "DynamicUser is not allowed"},
+		"AmbientCapabilities":              {add("AmbientCapabilities=CAP_NET_ADMIN"), "AmbientCapabilities is not allowed"},
+		"PermissionsStartOnly":             {add("PermissionsStartOnly=yes"), "PermissionsStartOnly is not allowed"},
+		"plus prefix":                      {add("ExecStartPre=+/bin/true"), "must not use the + or ! prefix"},
+		"bang prefix":                      {rep("ExecStart=/usr", "ExecStart=!/usr"), "must not use the + or ! prefix"},
+		"rules naming the program instead": {workerUnit, "User must be"},
+	}
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			rules := workerRules
+			if name == "rules naming the program instead" {
+				rules.Service = ""
+			}
+			err := ValidateUnit([]byte(tc.unit), rules)
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("ValidateUnit error = %v, want it to contain %q", err, tc.want)
+			}
+		})
+	}
+}
+
+func TestValidateUnitChecksServiceName(t *testing.T) {
+	for _, service := range []string{"root", "sudo", "wheel", "admin", "Tool", "tool.worker", "../tool", "tool worker", "-tool", strings.Repeat("a", 33)} {
+		t.Run(service, func(t *testing.T) {
+			rules := workerRules
+			rules.Service = service
+			unit := strings.ReplaceAll(workerUnit, "tool-worker", service)
+			if err := ValidateUnit([]byte(unit), rules); err == nil || !strings.Contains(err.Error(), "service name") {
+				t.Fatalf("ValidateUnit error = %v, want a service name error", err)
+			}
+			if err := ValidateGroups(service, nil); err == nil {
+				t.Fatal("ValidateGroups accepted the service name")
+			}
+		})
+	}
+	rules := workerRules
+	rules.Groups = []string{"tool-worker"}
+	if err := ValidateUnit([]byte(workerUnit), rules); err == nil || !strings.Contains(err.Error(), "service group itself") {
+		t.Fatalf("ValidateUnit error = %v, want the service group refused", err)
+	}
+}
