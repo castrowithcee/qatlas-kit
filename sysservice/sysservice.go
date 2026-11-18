@@ -10,7 +10,7 @@ import (
 )
 
 var (
-	// The service user name is the program name, so the program name must also be a valid system user name.
+	// The service name defaults to the program name and becomes a system user name, so both follow its rules.
 	programPattern = regexp.MustCompile(`^[a-z][a-z0-9-]{0,31}$`)
 	groupPattern   = regexp.MustCompile(`^[a-z_][a-z0-9_-]{0,31}$`)
 	forbiddenGroup = []string{"root", "sudo", "wheel", "admin"}
@@ -27,29 +27,39 @@ type Paths struct {
 
 // UnitRules selects what ValidateUnit checks the unit against.
 type UnitRules struct {
-	Program        string   // program and service user name
+	Program        string   // program the service starts
+	Service        string   // unit, user, group and directory name; empty means Program
 	Groups         []string // exact set of SupplementaryGroups
 	WritableConfig bool     // ReadWritePaths must release the configuration directory
 }
 
-// UnitEntry returns the archive path of the unit of program.
-func UnitEntry(program string) string {
-	return path.Join("lib/systemd/system", program+".service")
+// UnitEntry returns the archive path of the unit of service.
+func UnitEntry(service string) string {
+	return path.Join("lib/systemd/system", service+".service")
 }
 
-// InstallPaths returns the installation paths of program. It does not validate program.
+// InstallPaths returns the installation paths of program as its own service. It does not validate program.
 func InstallPaths(program string) Paths {
+	return ServicePaths(program, "")
+}
+
+// ServicePaths returns the installation paths of the service that runs program; an empty service means
+// program. It does not validate the names.
+func ServicePaths(program, service string) Paths {
+	if service == "" {
+		service = program
+	}
 	return Paths{
 		Program: path.Join("/usr/local/bin", program),
-		Unit:    path.Join("/usr/local/lib/systemd/system", program+".service"),
-		Config:  path.Join("/etc", program),
-		State:   path.Join("/var/lib", program),
+		Unit:    path.Join("/usr/local/lib/systemd/system", service+".service"),
+		Config:  path.Join("/etc", service),
+		State:   path.Join("/var/lib", service),
 	}
 }
 
-// ValidateGroups checks the supplementary groups of the service user of program.
-func ValidateGroups(program string, groups []string) error {
-	if err := validateProgram(program); err != nil {
+// ValidateGroups checks the supplementary groups of the user of service.
+func ValidateGroups(service string, groups []string) error {
+	if err := validateService(service); err != nil {
 		return err
 	}
 	var errs []error
@@ -58,7 +68,7 @@ func ValidateGroups(program string, groups []string) error {
 		switch {
 		case !groupPattern.MatchString(g):
 			errs = append(errs, fmt.Errorf("group %q must match %s", g, groupPattern))
-		case g == program:
+		case g == service:
 			errs = append(errs, fmt.Errorf("group %q is the service group itself", g))
 		case slices.Contains(forbiddenGroup, g):
 			errs = append(errs, fmt.Errorf("group %q is privileged and not allowed", g))
@@ -77,13 +87,28 @@ func validateProgram(program string) error {
 	return nil
 }
 
-// ValidateUnit checks unit against rules. It validates the program name and groups first and then reports
-// every violated unit rule.
+// validateService rejects a name that would make the service run as root or as a privileged group.
+func validateService(service string) error {
+	if !programPattern.MatchString(service) {
+		return fmt.Errorf("service name %q must match %s", service, programPattern)
+	}
+	if slices.Contains(forbiddenGroup, service) {
+		return fmt.Errorf("service name %q is privileged and not allowed", service)
+	}
+	return nil
+}
+
+// ValidateUnit checks unit against rules. It validates the program and service names and the groups first
+// and then reports every violated unit rule.
 func ValidateUnit(unit []byte, rules UnitRules) error {
 	if err := validateProgram(rules.Program); err != nil {
 		return err
 	}
-	if err := ValidateGroups(rules.Program, rules.Groups); err != nil {
+	service := rules.Service
+	if service == "" {
+		service = rules.Program
+	}
+	if err := ValidateGroups(service, rules.Groups); err != nil {
 		return err
 	}
 	u, err := parseUnit(string(unit))
@@ -93,15 +118,15 @@ func ValidateUnit(unit []byte, rules UnitRules) error {
 	if !u.hasService {
 		return errors.New("unit has no [Service] section")
 	}
-	p := InstallPaths(rules.Program)
+	p := ServicePaths(rules.Program, service)
 	var errs []error
 	fail := func(format string, args ...any) { errs = append(errs, fmt.Errorf(format, args...)) }
 
-	if v := u.last("User"); v != rules.Program {
-		fail("User must be %q, is %q", rules.Program, v)
+	if v := u.last("User"); v != service {
+		fail("User must be %q, is %q", service, v)
 	}
-	if v := u.last("Group"); v != rules.Program {
-		fail("Group must be %q, is %q", rules.Program, v)
+	if v := u.last("Group"); v != service {
+		fail("Group must be %q, is %q", service, v)
 	}
 	if v := u.last("NoNewPrivileges"); !isTrue(v) {
 		fail("NoNewPrivileges must be yes, is %q", v)
@@ -113,8 +138,8 @@ func ValidateUnit(unit []byte, rules UnitRules) error {
 		fail("ProtectSystem must be full or strict, is %q", v)
 	}
 	for _, key := range []string{"ConfigurationDirectory", "StateDirectory"} {
-		if w := u.words(key); !slices.Equal(w, []string{rules.Program}) {
-			fail("%s must be exactly %q, is %q", key, rules.Program, strings.Join(w, " "))
+		if w := u.words(key); !slices.Equal(w, []string{service}) {
+			fail("%s must be exactly %q, is %q", key, service, strings.Join(w, " "))
 		}
 	}
 	starts := u.list("ExecStart")
