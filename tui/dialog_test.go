@@ -1239,3 +1239,499 @@ func TestDialogEscapesControlCharactersInExtraHints(t *testing.T) {
 		t.Errorf("control characters in the key line:\n%q", view)
 	}
 }
+
+// gardenSuggest is an invented source of suggestions: the entries of a small tree one level below the typed
+// text, a directory continuing.
+func gardenSuggest(typed string) []Suggestion {
+	var out []Suggestion
+	for _, s := range []Suggestion{
+		{Text: "beds/", Continues: true}, {Text: "beds/east/", Continues: true}, {Text: "beds/west/", Continues: true},
+		{Text: "beds/east/basil.txt"}, {Text: "notes.txt"}, {Text: "pots/", Continues: true},
+	} {
+		rest, ok := strings.CutPrefix(s.Text, typed)
+		if ok && rest != "" && !strings.Contains(strings.TrimSuffix(rest, "/"), "/") {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
+// plantSuggest offers twelve plants whatever is typed, more than fit under the input.
+func plantSuggest(string) []Suggestion {
+	var out []Suggestion
+	for i := 1; i <= 12; i++ {
+		out = append(out, Suggestion{Text: fmt.Sprintf("plant-%02d", i)})
+	}
+	return out
+}
+
+func suggestSpec(source func(string) []Suggestion) DialogSpec {
+	return DialogSpec{Title: "d.unlock", Question: "Type the path of the note.", Input: &DialogInput{Suggest: source},
+		Answers: []Answer{{Action: "enter", Label: "a.save"}, {Action: "back", Label: "a.cancel"}}, Default: "enter",
+		Keys: DialogKeys{Enter: "enter", Up: "up", Down: "down", PageUp: "pageup", PageDown: "pagedown",
+			Complete: "next", SuggestUp: "suggest.prev", SuggestDown: "suggest.next"}}
+}
+
+// suggestKeymap is the sample table with ctrl+n as the second way of down beside ctrl+p for up.
+func suggestKeymap(t *testing.T) *Keymap {
+	t.Helper()
+	keys, err := NewKeymap(append(sampleActions(),
+		Action{ID: "suggest.next", Level: LevelCtrl, DefaultKeys: []string{"ctrl+n"}, Help: "sample.suggest.next", SecondWayOf: "down"}),
+		CharsetUnicode)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return keys
+}
+
+func newSuggestDialog(t *testing.T, spec DialogSpec) *Dialog {
+	t.Helper()
+	keys := suggestKeymap(t)
+	d, err := NewDialog(spec, keys, newTranslator(t, i18n.English, dialogCatalogs(), keys))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return d
+}
+
+// keyPress is the key press a terminal reports for a key name the suggestion tests use.
+func keyPress(name string) tea.KeyPressMsg {
+	codes := map[string]rune{"up": tea.KeyUp, "down": tea.KeyDown, "pgup": tea.KeyPgUp, "pgdown": tea.KeyPgDown,
+		"home": tea.KeyHome, "end": tea.KeyEnd, "tab": tea.KeyTab, "enter": tea.KeyEnter, "backspace": tea.KeyBackspace}
+	if code, ok := codes[name]; ok {
+		return tea.KeyPressMsg{Code: code}
+	}
+	return press(name)
+}
+
+func typeIntoDialog(d *Dialog, text string) {
+	for _, r := range text {
+		d.Update(tea.KeyPressMsg{Code: r, Text: string(r)})
+	}
+}
+
+// update presses the keys in turn and returns what the last one gave.
+func pressKeys(d *Dialog, names ...string) (answer ActionID, handled bool) {
+	for _, n := range names {
+		answer, handled = d.Update(keyPress(n))
+	}
+	return answer, handled
+}
+
+// shownSuggestions are the suggestion rows of the input drawn in width cells, as plain text without the
+// lead, and the target items of the rows.
+func shownSuggestions(t *testing.T, d *Dialog, width int) (rows []string, items []string) {
+	t.Helper()
+	lines, targets := d.input.rows(width, looks(t)["noneascii"])
+	for i, l := range lines {
+		rows = append(rows, strings.TrimSpace(ansi.Strip(l)))
+		items = append(items, targets[i].Item)
+	}
+	return rows, items
+}
+
+func TestDialogSuggestionsCompleteAndMarkWithWrapAround(t *testing.T) {
+	d := newSuggestDialog(t, suggestSpec(gardenSuggest))
+	if rows, _ := shownSuggestions(t, d, 40); !slices.Equal(rows, []string{"beds/", "notes.txt", "pots/"}) {
+		t.Fatalf("suggestions of the empty input %q", rows)
+	}
+	if a, ok := pressKeys(d, "tab"); a != "" || !ok || d.Value() != "beds/" {
+		t.Fatalf("complete without a mark gives %q, %v, value %q", a, ok, d.Value())
+	}
+	if rows, _ := shownSuggestions(t, d, 40); !slices.Equal(rows, []string{"beds/east/", "beds/west/"}) {
+		t.Fatalf("suggestions after completing %q", rows)
+	}
+	d = newSuggestDialog(t, suggestSpec(gardenSuggest))
+	marks := func() int { return d.input.mark }
+	for _, step := range []struct {
+		key  string
+		want int
+	}{{"down", 0}, {"down", 1}, {"down", 2}, {"down", 0}, {"up", 2}, {"ctrl+n", 0}, {"ctrl+p", 2}, {"ctrl+p", 1}} {
+		if a, ok := pressKeys(d, step.key); a != "" || !ok || marks() != step.want || d.Value() != "" {
+			t.Fatalf("%s gives %q, %v, mark %d (want %d), value %q", step.key, a, ok, marks(), step.want, d.Value())
+		}
+	}
+	if rows, _ := shownSuggestions(t, d, 40); !slices.Equal(rows, []string{"beds/", "> notes.txt", "pots/"}) {
+		t.Errorf("the marked row is not drawn selected: %q", rows)
+	}
+	pressKeys(d, "tab")
+	if d.Value() != "notes.txt" {
+		t.Errorf("complete takes %q, want the marked one", d.Value())
+	}
+	d = newSuggestDialog(t, suggestSpec(gardenSuggest))
+	pressKeys(d, "up")
+	if marks() != 2 {
+		t.Errorf("up without a mark marks %d, want the last", marks())
+	}
+}
+
+func TestDialogSuggestionWindowFollowsTheMark(t *testing.T) {
+	d := newSuggestDialog(t, suggestSpec(plantSuggest))
+	window := func() []string { rows, _ := shownSuggestions(t, d, 40); return rows }
+	if got := window(); len(got) != suggestionsShown || got[0] != "plant-01" || got[4] != "plant-05" {
+		t.Fatalf("first window %q", got)
+	}
+	pressKeys(d, "down", "down", "down", "down", "down", "down")
+	if got := window(); got[0] != "plant-02" || got[4] != "> plant-06" {
+		t.Errorf("window after six downs %q", got)
+	}
+	pressKeys(d, "up", "up", "up", "up", "up")
+	if got := window(); got[0] != "> plant-01" || got[4] != "plant-05" {
+		t.Errorf("window back at the top %q", got)
+	}
+	pressKeys(d, "up")
+	if got := window(); got[0] != "plant-08" || got[4] != "> plant-12" {
+		t.Errorf("window after wrapping to the end %q", got)
+	}
+	pressKeys(d, "down")
+	if got := window(); got[0] != "> plant-01" {
+		t.Errorf("window after wrapping to the start %q", got)
+	}
+}
+
+func TestDialogSuggestionsEnter(t *testing.T) {
+	d := newSuggestDialog(t, suggestSpec(gardenSuggest))
+	typeIntoDialog(d, "be")
+	if a, ok := pressKeys(d, "enter"); a != "enter" || !ok || d.Value() != "be" {
+		t.Errorf("enter without a mark gives %q, %v with %q, want the typed text", a, ok, d.Value())
+	}
+	d = newSuggestDialog(t, suggestSpec(gardenSuggest))
+	pressKeys(d, "down")
+	if a, ok := pressKeys(d, "enter"); a != "" || !ok || d.Value() != "beds/" {
+		t.Fatalf("enter on a continuing suggestion gives %q, %v with %q", a, ok, d.Value())
+	}
+	if rows, _ := shownSuggestions(t, d, 40); !slices.Equal(rows, []string{"beds/east/", "beds/west/"}) || d.input.marked {
+		t.Fatalf("after entering a directory %q, marked %v", rows, d.input.marked)
+	}
+	if a, _ := pressKeys(d, "down", "enter"); a != "" || d.Value() != "beds/east/" {
+		t.Fatalf("second directory gives %q with %q", a, d.Value())
+	}
+	if a, ok := pressKeys(d, "down", "enter"); a != "enter" || !ok || d.Value() != "beds/east/basil.txt" {
+		t.Errorf("enter on a file gives %q, %v with %q", a, ok, d.Value())
+	}
+	// Enter acts only where the dialog answers to it.
+	s := suggestSpec(gardenSuggest)
+	s.Default, s.Answers = "", []Answer{{Action: "back", Label: "a.cancel"}}
+	d = newSuggestDialog(t, s)
+	pressKeys(d, "down")
+	if a, ok := pressKeys(d, "enter"); a != "" || ok || d.Value() != "" {
+		t.Errorf("enter without an answer to it gives %q, %v with %q", a, ok, d.Value())
+	}
+}
+
+func TestDialogSuggestionsFollowEveryChangeOfTheText(t *testing.T) {
+	d := newSuggestDialog(t, suggestSpec(gardenSuggest))
+	pressKeys(d, "down", "down")
+	typeIntoDialog(d, "b")
+	if d.input.marked || len(d.input.items) != 1 {
+		t.Errorf("typing keeps the mark %v or the suggestions %+v", d.input.marked, d.input.items)
+	}
+	pressKeys(d, "down")
+	d.Paste("eds/")
+	if d.input.marked || d.Value() != "beds/" || len(d.input.items) != 2 {
+		t.Errorf("a paste keeps the mark %v or gives %q with %+v", d.input.marked, d.Value(), d.input.items)
+	}
+	pressKeys(d, "down")
+	d.ClearInput()
+	if d.input.marked || len(d.input.items) != 3 {
+		t.Errorf("clearing keeps the mark %v or the suggestions %+v", d.input.marked, d.input.items)
+	}
+	pressKeys(d, "down")
+	pressKeys(d, "left", "home", "end")
+	if !d.input.marked {
+		t.Error("moving the cursor drops the mark")
+	}
+}
+
+func TestDialogWithoutSuggestionsKeepsItsKeys(t *testing.T) {
+	st := looks(t)["noneascii"]
+	s := suggestSpec(func(string) []Suggestion { return nil })
+	s.Details = longDetailsSpec(12).Details
+	d := newSuggestDialog(t, s)
+	plainSpec := s
+	plainSpec.Input = &DialogInput{}
+	plain := newSuggestDialog(t, plainSpec)
+	a, ta, _ := d.Overlay(st, sampleScreen(100, 30), 100, 30, Rect{Y: 2, Width: 100, Height: 16})
+	b, tb, _ := plain.Overlay(st, sampleScreen(100, 30), 100, 30, Rect{Y: 2, Width: 100, Height: 16})
+	if a != b || !slices.Equal(ta, tb) || !slices.Equal(d.Hints(), plain.Hints()) {
+		t.Error("an empty list of suggestions changes the drawing")
+	}
+	pressKeys(d, "down", "down")
+	if d.scroll.offset != 2 {
+		t.Errorf("down without suggestions scrolled to %d", d.scroll.offset)
+	}
+	pressKeys(d, "up")
+	if d.scroll.offset != 1 {
+		t.Errorf("up without suggestions scrolled to %d", d.scroll.offset)
+	}
+	for _, key := range []string{"tab", "ctrl+p", "ctrl+n"} {
+		if a, ok := pressKeys(d, key); a != "" || ok {
+			t.Errorf("%s without suggestions gives %q, %v", key, a, ok)
+		}
+	}
+	if d.scroll.offset != 1 || d.Value() != "" {
+		t.Errorf("the suggestion keys changed the offset %d or the value %q", d.scroll.offset, d.Value())
+	}
+}
+
+func TestDialogSuggestionsLeavePagesWheelAndLineEndsAlone(t *testing.T) {
+	s := suggestSpec(plantSuggest)
+	s.Details = longDetailsSpec(12).Details
+	d := newSuggestDialog(t, s)
+	view, targets, ok := overlayText(t, d, 22)
+	if !ok || !strings.Contains(view, "lines 1-") {
+		t.Fatalf("the details do not scroll:\n%s", view)
+	}
+	typeIntoDialog(d, "ab")
+	pressKeys(d, "down", "down")
+	if d.scroll.offset != 0 || d.input.mark != 1 {
+		t.Errorf("down scrolled to %d or marked %d", d.scroll.offset, d.input.mark)
+	}
+	pressKeys(d, "up")
+	if d.scroll.offset != 0 || d.input.mark != 0 {
+		t.Errorf("up scrolled to %d or marked %d", d.scroll.offset, d.input.mark)
+	}
+	pressKeys(d, "pgdown")
+	if d.scroll.offset == 0 {
+		t.Error("page down did not scroll the details")
+	}
+	pressKeys(d, "pgup")
+	if d.scroll.offset != 0 {
+		t.Errorf("page up scrolled to %d", d.scroll.offset)
+	}
+	m := NewMouseMap(targets, true)
+	for _, tg := range targets {
+		if tg.Zone == ZoneDetail {
+			if r := m.Handle(tea.MouseWheelMsg{X: tg.Rect.X + 1, Y: tg.Rect.Y + 1, Button: tea.MouseWheelDown}); r.Zone == ZoneDetail {
+				d.Wheel(r.WheelSteps)
+			}
+		}
+	}
+	if d.scroll.offset != WheelTextLines {
+		t.Errorf("the wheel scrolled to %d", d.scroll.offset)
+	}
+	pressKeys(d, "home")
+	if d.input.cursor != 0 || d.input.mark != 0 || !d.input.marked {
+		t.Errorf("home put the cursor at %d, mark %d", d.input.cursor, d.input.mark)
+	}
+	pressKeys(d, "end")
+	if d.input.cursor != 2 {
+		t.Errorf("end put the cursor at %d", d.input.cursor)
+	}
+}
+
+// suggestionTargets are the targets of the suggestion rows of a drawing by their index.
+func suggestionTargets(targets []Target) map[int]Target {
+	out := map[int]Target{}
+	for _, tg := range targets {
+		if rest, ok := strings.CutPrefix(tg.Item, suggestionRefPrefix); ok {
+			var i int
+			fmt.Sscan(rest, &i)
+			out[i] = tg
+		}
+	}
+	return out
+}
+
+func TestDialogSuggestionClickMarksThenTakes(t *testing.T) {
+	st := looks(t)["noneascii"]
+	for _, roomWidth := range []int{100, 44} {
+		d := newSuggestDialog(t, suggestSpec(plantSuggest))
+		view, targets, ok := d.Overlay(st, sampleScreen(100, 30), 100, 30, Rect{Y: 2, Width: roomWidth, Height: 27})
+		if !ok {
+			t.Fatalf("width %d: no overlay", roomWidth)
+		}
+		lines := strings.Split(ansi.Strip(view), "\n")
+		rows := suggestionTargets(targets)
+		if len(rows) != suggestionsShown {
+			t.Fatalf("width %d: %d suggestion targets", roomWidth, len(rows))
+		}
+		for i, tg := range rows {
+			cells := ansi.Cut(lines[tg.Rect.Y], tg.Rect.X, tg.Rect.X+tg.Rect.Width)
+			if tg.Rect.Height != 1 || strings.TrimSpace(cells) != fmt.Sprintf("plant-%02d", i+1) {
+				t.Errorf("width %d: target %d lies on %q", roomWidth, i, cells)
+			}
+		}
+		m := NewMouseMap(targets, true)
+		at := rows[2].Rect
+		if a, ok := d.Click(m.Handle(click(at.X+1, at.Y))); a != "" || !ok || d.input.mark != 2 || !d.input.marked || d.Value() != "" {
+			t.Errorf("width %d: first click gives %q, %v, mark %d, value %q", roomWidth, a, ok, d.input.mark, d.Value())
+		}
+		_, targets, _ = d.Overlay(st, sampleScreen(100, 30), 100, 30, Rect{Y: 2, Width: roomWidth, Height: 27})
+		m = NewMouseMap(targets, true)
+		at = suggestionTargets(targets)[2].Rect
+		if a, ok := d.Click(m.Handle(click(at.X+at.Width-1, at.Y))); a != "" || !ok || d.Value() != "plant-03" {
+			t.Errorf("width %d: second click gives %q, %v, value %q", roomWidth, a, ok, d.Value())
+		}
+	}
+}
+
+func TestDialogSuggestionTextIsUntrusted(t *testing.T) {
+	hostile := []string{"a\x1b[31mred", "two\nlines", "evil\u202etxt.exe", "bad\xffbyte", "plain"}
+	s := suggestSpec(func(string) []Suggestion {
+		var out []Suggestion
+		for _, h := range hostile {
+			out = append(out, Suggestion{Text: h})
+		}
+		return out
+	})
+	d := newSuggestDialog(t, s)
+	view, targets, ok := overlayText(t, d, 27)
+	if !ok {
+		t.Fatal("no overlay")
+	}
+	if strings.Contains(view, "\x1b") || strings.Contains(view, "\u202e") || strings.Contains(view, "\xff") {
+		t.Errorf("the drawing holds a raw control character:\n%q", view)
+	}
+	lines := strings.Split(view, "\n")
+	rows := suggestionTargets(targets)
+	for i, want := range []string{`a\x1b[31mred`, `two\nlines`, `evil\u202etxt.exe`, "bad\ufffdbyte", "plain"} {
+		tg, ok := rows[i]
+		if !ok {
+			t.Fatalf("no target for suggestion %d", i)
+		}
+		if cells := strings.TrimSpace(ansi.Cut(lines[tg.Rect.Y], tg.Rect.X, tg.Rect.X+tg.Rect.Width)); cells != want {
+			t.Errorf("suggestion %d draws %q, want %q", i, cells, want)
+		}
+		if i > 0 && tg.Rect.Y != rows[i-1].Rect.Y+1 {
+			t.Errorf("suggestion %d stands at %d after %d", i, tg.Rect.Y, rows[i-1].Rect.Y)
+		}
+	}
+	for i, want := range []string{"a[31mred", "two lines", "eviltxt.exe", "badbyte"} {
+		d = newSuggestDialog(t, s)
+		d.input.markAt(i)
+		pressKeys(d, "tab")
+		if d.Value() != want {
+			t.Errorf("suggestion %d gives the value %q, want %q", i, d.Value(), want)
+		}
+	}
+}
+
+func TestNewDialogRejectsBadSuggestions(t *testing.T) {
+	cases := []struct {
+		name string
+		edit func(*DialogSpec)
+		want string
+	}{
+		{"masked", func(s *DialogSpec) { s.Input.Masked = true }, "masked input has no suggestions"},
+		{"no complete", func(s *DialogSpec) { s.Keys.Complete = "" }, "the complete key is missing"},
+		{"no up", func(s *DialogSpec) { s.Keys.Up = "" }, "the up key is missing"},
+		{"no down", func(s *DialogSpec) { s.Keys.Down = "" }, "the down key is missing"},
+		{"unknown", func(s *DialogSpec) { s.Keys.SuggestUp = "fly" }, `suggestion up key "fly" is no action`},
+		{"answer", func(s *DialogSpec) { s.Keys.Complete = "back" }, `complete key "back" is also an answer or the enter key`},
+		{"enter", func(s *DialogSpec) { s.Keys.SuggestDown = "enter" }, `suggestion down key "enter" is also an answer or the enter key`},
+		{"twice", func(s *DialogSpec) { s.Keys.SuggestUp = "suggest.next" }, "is also the suggestion up key"},
+		{"scroll key", func(s *DialogSpec) { s.Keys.Complete = "pageup" }, "is also the page up key"},
+		{"typing", func(s *DialogSpec) { s.Keys.Complete = "vim.up" }, `complete key "vim.up" has no key that acts while text is typed`},
+		{"extra", func(s *DialogSpec) { s.Extra = []Hint{{Action: "next", Label: TextKeyHelp}} }, `extra hint "next" is also a suggestion action`},
+		{"extra second way", func(s *DialogSpec) { s.Extra = []Hint{{Action: "suggest.prev", Label: TextKeyHelp}} }, "also a suggestion action"},
+	}
+	keys := suggestKeymap(t)
+	text := newTranslator(t, i18n.English, dialogCatalogs(), keys)
+	for _, c := range cases {
+		s := suggestSpec(gardenSuggest)
+		c.edit(&s)
+		if _, err := NewDialog(s, keys, text); err == nil || !strings.Contains(err.Error(), c.want) {
+			t.Errorf("%s: err = %v, want %q", c.name, err, c.want)
+		}
+	}
+	if _, err := NewDialog(suggestSpec(gardenSuggest), keys, text); err != nil {
+		t.Errorf("valid suggestions refused: %v", err)
+	}
+	// The complete and suggestion keys of a shared key set do nothing in a dialog without input.
+	s := confirmSpec()
+	s.Keys.Complete, s.Keys.SuggestUp = "next", "suggest.prev"
+	d, err := NewDialog(s, keys, text)
+	if err != nil {
+		t.Fatalf("the suggestion keys refused in a question: %v", err)
+	}
+	if a, ok := pressKeys(d, "tab"); a != "" || ok {
+		t.Errorf("complete in a question gives %q, %v", a, ok)
+	}
+}
+
+func TestDialogKeyLineNamesTheSuggestionKeys(t *testing.T) {
+	s := suggestSpec(gardenSuggest)
+	s.Details = longDetailsSpec(12).Details
+	d := newSuggestDialog(t, s)
+	view, targets, ok := overlayText(t, d, 22)
+	if !ok {
+		t.Fatal("no overlay")
+	}
+	plain := dialogFooter(t, d, 80)
+	ic, im, is := strings.Index(plain, "tab complete"), strings.Index(plain, "↑/↓ mark"), strings.Index(plain, "enter Save")
+	if ic < 0 || im < ic || is < im || strings.Contains(plain, "scroll") || !strings.Contains(plain, "page") {
+		t.Errorf("key line with suggestions %q", plain)
+	}
+	if !strings.Contains(view, "tab complete") {
+		t.Errorf("the dialog does not draw the complete key:\n%s", view)
+	}
+	m := NewMouseMap(targets, true)
+	for _, action := range []ActionID{"down", "down", "up", "next"} {
+		tg := targets[slices.IndexFunc(targets, func(tg Target) bool { return tg.Action == action })]
+		if a, ok := d.Click(m.Handle(click(tg.Rect.X, tg.Rect.Y))); a != "" || !ok {
+			t.Errorf("click on %s gives %q, %v", action, a, ok)
+		}
+	}
+	if d.Value() != "beds/" || d.scroll.offset != 0 {
+		t.Errorf("clicks on the hints give %q, offset %d", d.Value(), d.scroll.offset)
+	}
+	typeIntoDialog(d, "x")
+	overlayText(t, d, 18)
+	plain = dialogFooter(t, d, 80)
+	if strings.Contains(plain, "complete") || strings.Contains(plain, "mark") || !strings.Contains(plain, "scroll") {
+		t.Errorf("key line without suggestions %q", plain)
+	}
+	german := newSuggestDialog(t, suggestSpec(gardenSuggest))
+	german.text = newTranslator(t, i18n.German, dialogCatalogs(), german.keys)
+	if plain := dialogFooter(t, german, 80); !strings.Contains(plain, "tab Übernehmen") || !strings.Contains(plain, "Markieren") {
+		t.Errorf("German key line %q", plain)
+	}
+}
+
+func TestDialogOverlayMakesRoomForSuggestions(t *testing.T) {
+	s := suggestSpec(gardenSuggest)
+	s.Details = longDetailsSpec(12).Details
+	with := newSuggestDialog(t, s)
+	none := s
+	none.Input = &DialogInput{Suggest: func(string) []Suggestion { return nil }}
+	without := newSuggestDialog(t, none)
+	smallest := func(d *Dialog) int {
+		for h := 6; h < 30; h++ {
+			if _, _, ok := overlayText(t, d, h); ok {
+				return h
+			}
+		}
+		return -1
+	}
+	if a, b := smallest(with), smallest(without); a != b+3 {
+		t.Errorf("the overlay needs %d rows with three suggestions and %d without", a, b)
+	}
+	text, _, _ := overlayText(t, with, smallest(with))
+	if n := strings.Count(text, " needs water"); n != dialogMinDetails {
+		t.Errorf("%d detail lines at the smallest room:\n%s", n, text)
+	}
+	a, _, _ := overlayText(t, with, 16)
+	b, _, _ := overlayText(t, without, 16)
+	if na, nb := strings.Count(a, " needs water"), strings.Count(b, " needs water"); na != nb-3 {
+		t.Errorf("the details show %d lines with suggestions and %d without", na, nb)
+	}
+	// Details that fit: the box grows by the suggestions and shrinks when they go.
+	short := suggestSpec(gardenSuggest)
+	d := newSuggestDialog(t, short)
+	height := func() int {
+		text, _, ok := overlayText(t, d, 27)
+		if !ok {
+			t.Fatal("no overlay")
+		}
+		lines := strings.Split(text, "\n")
+		top := slices.IndexFunc(lines, func(l string) bool { return strings.Contains(l, "Unlock the shed") })
+		bottom := slices.IndexFunc(lines, func(l string) bool { return strings.Contains(l, "[ Cancel ]") })
+		return bottom - top
+	}
+	tall := height()
+	typeIntoDialog(d, "x")
+	if low := height(); low != tall-3 {
+		t.Errorf("the box is %d rows with suggestions and %d without", tall, low)
+	}
+}
