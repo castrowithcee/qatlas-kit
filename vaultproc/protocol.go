@@ -56,13 +56,19 @@ const (
 	codeMismatch       = "program-mismatch"
 	codeHandoverFailed = "handover-failed"
 	codeNoHandover     = "handover-unsupported"
+
+	// The codes only a handover answers with, one for each reason that has no code of its own above.
+	codeHandoverBadRequest = "handover-bad-request"
+	codeHandoverLocked     = "handover-locked"
+	codeHandoverTooLarge   = "handover-too-large"
+	codeHandoverBusy       = "handover-busy"
 )
 
 func isKitCode(code string) bool {
 	switch code {
 	case codeRefused, codeBadRequest, codeTooLarge, codeVersion, codeLocked, codeChallenge, codeReplaced,
 		codeUnknownOp, codeFailed, codeUnverified, codeRollback, codeUnchanged, codeMismatch, codeHandoverFailed,
-		codeNoHandover:
+		codeNoHandover, codeHandoverBadRequest, codeHandoverLocked, codeHandoverTooLarge, codeHandoverBusy:
 		return true
 	}
 	return false
