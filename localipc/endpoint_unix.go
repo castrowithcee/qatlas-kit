@@ -82,7 +82,7 @@ func privateExistingDir(dir string) error {
 		return err
 	}
 	if !info.IsDir() || !ownedByMe(info) || info.Mode().Perm()&0o077 != 0 {
-		return fmt.Errorf("%w: runtime directory %q is not a private directory of this user", ErrRefused, dir)
+		return refusal(RefusedNotPrivate, "runtime directory %q is not a private directory of this user", dir)
 	}
 	return nil
 }
@@ -101,7 +101,7 @@ func (a RuntimeAccess) checkRoot(dir string) error {
 		return err
 	}
 	if !info.IsDir() || !ownedByMe(info) || info.Mode().Perm()&0o022 != 0 {
-		return fmt.Errorf("%w: runtime directory %q is not a directory of this user that only this user can write", ErrRefused, dir)
+		return refusal(RefusedNotPrivate, "runtime directory %q is not a directory of this user that only this user can write", dir)
 	}
 	return nil
 }
@@ -142,7 +142,7 @@ func checkSocket(path string) error {
 		return err
 	}
 	if info.Mode().Type() != fs.ModeSocket || !ownedByMe(info) || info.Mode().Perm() != socketMode {
-		return fmt.Errorf("%w: socket %q is not private", ErrRefused, path)
+		return refusal(RefusedNotPrivate, "socket %q is not private", path)
 	}
 	return nil
 }

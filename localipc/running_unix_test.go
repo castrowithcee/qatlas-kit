@@ -3,7 +3,6 @@
 package localipc
 
 import (
-	"errors"
 	"net"
 	"os"
 	"path/filepath"
@@ -105,9 +104,8 @@ func TestRunningRefusesOpenDirectory(t *testing.T) {
 	if err := os.Chmod(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := e.Running(); !errors.Is(err, ErrRefused) {
-		t.Fatalf("error = %v, want ErrRefused", err)
-	}
+	_, err := e.Running()
+	requireRefusal(t, err, RefusedNotPrivate)
 }
 
 func TestRunningRejectsInvalidFields(t *testing.T) {
@@ -128,9 +126,8 @@ func TestRunningRejectsInvalidFields(t *testing.T) {
 		})
 	}
 	loose := Endpoint{RuntimeDirName: "session", RuntimeRoot: shortRoot(t, 0o755)}
-	if _, err := loose.Running(); !errors.Is(err, ErrRefused) {
-		t.Fatalf("open root error = %v, want ErrRefused", err)
-	}
+	_, err := loose.Running()
+	requireRefusal(t, err, RefusedNotPrivate)
 }
 
 func TestRunningRuntimeRootOverridesEnvironment(t *testing.T) {

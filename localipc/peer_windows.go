@@ -15,6 +15,15 @@ import (
 
 var errProgramGone = errors.New("was removed or replaced since it started")
 
+// peerProgramReason classifies a failure to read the peer's program file: a
+// program file that is gone means the peer runs another program.
+func peerProgramReason(err error) RefusalReason {
+	if errors.Is(err, errProgramGone) {
+		return RefusedOtherProgram
+	}
+	return RefusedUnidentified
+}
+
 type programFile struct {
 	path string
 	id   fileID
@@ -64,7 +73,7 @@ func checkPeer(conn net.Conn, program bool) (int, error) {
 func peerProcessID(conn net.Conn) (uint32, error) {
 	pipe, ok := conn.(*pipeConn)
 	if !ok {
-		return 0, fmt.Errorf("%w: not a named pipe connection", ErrRefused)
+		return 0, refusal(RefusedUnidentified, "not a named pipe connection")
 	}
 	var pid uint32
 	var err error
@@ -74,7 +83,7 @@ func peerProcessID(conn net.Conn) (uint32, error) {
 		err = windows.GetNamedPipeServerProcessId(pipe.h, &pid)
 	}
 	if err != nil {
-		return 0, fmt.Errorf("%w: the peer's process is unavailable: %w", ErrRefused, err)
+		return 0, refusal(RefusedUnidentified, "the peer's process is unavailable: %w", err)
 	}
 	return pid, nil
 }
@@ -89,21 +98,21 @@ func checkProcess(pid uint32) error {
 		return err
 	}
 	if ownProgramErr != nil {
-		return fmt.Errorf("%w: this program %w", ErrRefused, ownProgramErr)
+		return refusal(RefusedOwnUnreadable, "this program %w", ownProgramErr)
 	}
 	replaced, err := ownProgramReplaced()
 	if err != nil {
-		return fmt.Errorf("%w: this program cannot be read", ErrRefused)
+		return refusal(RefusedOwnUnreadable, "this program cannot be read")
 	}
 	if replaced {
-		return fmt.Errorf("%w: %w", ErrRefused, ErrProgramReplaced)
+		return refusal(RefusedProgramReplaced, "%w", ErrProgramReplaced)
 	}
 	peer, err := programOf(process)
 	if err != nil {
-		return fmt.Errorf("%w: its program %w", ErrRefused, err)
+		return refusal(peerProgramReason(err), "its program %w", err)
 	}
 	if !samePath(peer.path, ownProgram.path) || peer.id != ownProgram.id {
-		return fmt.Errorf("%w: it runs another program", ErrRefused)
+		return refusal(RefusedOtherProgram, "it runs another program")
 	}
 	return nil
 }
@@ -141,11 +150,11 @@ func programReplaced() (string, bool, error) {
 
 func openPeer(pid uint32) (windows.Handle, error) {
 	if pid == 0 {
-		return 0, fmt.Errorf("%w: its process cannot be identified", ErrRefused)
+		return 0, refusal(RefusedUnidentified, "its process cannot be identified")
 	}
 	process, err := windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION, false, pid)
 	if err != nil {
-		return 0, fmt.Errorf("%w: its process cannot be read", ErrRefused)
+		return 0, refusal(RefusedUnidentified, "its process cannot be read")
 	}
 	return process, nil
 }
@@ -153,19 +162,19 @@ func openPeer(pid uint32) (windows.Handle, error) {
 func checkUser(process windows.Handle) error {
 	own, err := currentUserSID()
 	if err != nil {
-		return fmt.Errorf("%w: this process's user cannot be read", ErrRefused)
+		return refusal(RefusedOwnUnreadable, "this process's user cannot be read")
 	}
 	var token windows.Token
 	if err := windows.OpenProcessToken(process, windows.TOKEN_QUERY, &token); err != nil {
-		return fmt.Errorf("%w: its user cannot be read", ErrRefused)
+		return refusal(RefusedUnidentified, "its user cannot be read")
 	}
 	defer token.Close()
 	user, err := token.GetTokenUser()
 	if err != nil {
-		return fmt.Errorf("%w: its user cannot be read", ErrRefused)
+		return refusal(RefusedUnidentified, "its user cannot be read")
 	}
 	if !user.User.Sid.Equals(own) {
-		return fmt.Errorf("%w: it runs as another user", ErrRefused)
+		return refusal(RefusedOtherUser, "it runs as another user")
 	}
 	return nil
 }

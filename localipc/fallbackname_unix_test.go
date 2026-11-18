@@ -65,15 +65,12 @@ func TestFallbackDirNameChecksOwnDirectory(t *testing.T) {
 	dir := filepath.Join(e.FallbackDir, "vault")
 	check := func(label string) {
 		t.Helper()
-		if _, err := e.Dial(context.Background()); !errors.Is(err, ErrRefused) {
-			t.Errorf("%s: Dial error = %v, want ErrRefused", label, err)
-		}
-		if _, err := e.Running(); !errors.Is(err, ErrRefused) {
-			t.Errorf("%s: Running error = %v, want ErrRefused", label, err)
-		}
-		if _, err := e.Listen(); !errors.Is(err, ErrRefused) {
-			t.Errorf("%s: Listen error = %v, want ErrRefused", label, err)
-		}
+		_, err := e.Dial(context.Background())
+		requireRefusal(t, err, RefusedNotPrivate)
+		_, err = e.Running()
+		requireRefusal(t, err, RefusedNotPrivate)
+		_, err = e.Listen()
+		requireRefusal(t, err, RefusedNotPrivate)
 	}
 	if err := os.Chmod(dir, 0o755); err != nil {
 		t.Fatal(err)
@@ -131,12 +128,10 @@ func TestFallbackDirNameHolder(t *testing.T) {
 	listenBase(t, e, "control")
 	// This process serves the channel, so Holder reaches it through the new
 	// path and refuses it as its own.
-	if _, err := e.Holder(context.Background()); !errors.Is(err, ErrRefused) {
-		t.Fatalf("Holder of own channel error = %v, want ErrRefused", err)
-	}
-	if _, err := e.EndHolder(context.Background()); !errors.Is(err, ErrRefused) {
-		t.Fatalf("EndHolder of own channel error = %v, want ErrRefused", err)
-	}
+	_, err := e.Holder(context.Background())
+	requireRefusal(t, err, RefusedOwnProcess)
+	_, err = e.EndHolder(context.Background())
+	requireRefusal(t, err, RefusedOwnProcess)
 }
 
 func TestFallbackDirNameEarlier(t *testing.T) {

@@ -56,8 +56,8 @@ func TestRuntimeRootRejected(t *testing.T) {
 				if err == nil {
 					t.Fatalf("%s accepted root %q", op, c.root)
 				}
-				if c.refused && !errors.Is(err, ErrRefused) {
-					t.Fatalf("%s error = %v, want ErrRefused", op, err)
+				if c.refused {
+					requireRefusal(t, err, RefusedNotPrivate)
 				}
 			}
 			_, err := e.Path()

@@ -248,7 +248,7 @@ func acquireLock(spec socketSpec) (*os.File, error) {
 		info, err := lock.Stat()
 		if err != nil || !info.Mode().IsRegular() || !ownedByMe(info) || info.Mode().Perm() != lockMode {
 			_ = lock.Close()
-			return nil, fmt.Errorf("%w: socket lock is not private", ErrRefused)
+			return nil, refusal(RefusedNotPrivate, "socket lock is not private")
 		}
 		if spec.beforeLock != nil {
 			spec.beforeLock()
@@ -305,7 +305,7 @@ func replaceDeadSocket(path string, mode fs.FileMode) error {
 	case err != nil:
 		return err
 	case info.Mode().Type() != fs.ModeSocket || !ownedByMe(info) || info.Mode().Perm() != mode:
-		return fmt.Errorf("%w: existing socket is not private and owned by this user", ErrRefused)
+		return refusal(RefusedNotPrivate, "existing socket is not private and owned by this user")
 	default:
 		return os.Remove(path)
 	}
@@ -390,7 +390,7 @@ func handOver(l net.Listener) error {
 	}
 	next := cl.path + nextSuffix
 	if err := checkSuccessor(next, cl.mode); err != nil {
-		return fmt.Errorf("%w: %w", ErrRefused, err)
+		return refusal(RefusedSuccessor, "%w", err)
 	}
 	if err := os.Rename(next+lockSuffix, cl.path+lockSuffix); err != nil {
 		return fmt.Errorf("cannot move the successor's lock: %w", err)

@@ -69,11 +69,12 @@ func newSecret(t *testing.T) []byte {
 	return secret
 }
 
-func wantRefusalOf(t *testing.T, err error, pid int, reason string) {
+func wantRefusalOf(t *testing.T, err error, pid int, reason RefusalReason, text string) {
 	t.Helper()
+	requireRefusal(t, err, reason)
 	var pe *PeerError
-	if !errors.Is(err, ErrRefused) || !errors.As(err, &pe) || pe.PID != pid || !strings.Contains(err.Error(), reason) {
-		t.Fatalf("got %v; want a refusal of process %d with %q", err, pid, reason)
+	if !errors.As(err, &pe) || pe.PID != pid || !strings.Contains(err.Error(), text) {
+		t.Fatalf("got %v; want a refusal of process %d with %q", err, pid, text)
 	}
 }
 
@@ -100,10 +101,10 @@ func TestCrossVersionReachesReplacedListener(t *testing.T) {
 	}
 
 	_, err = e.DialWith(ctx, DialOptions{CrossVersion: &CrossVersion{Secret: newSecret(t)}})
-	wantRefusalOf(t, err, pid, "did not prove the secret")
+	wantRefusalOf(t, err, pid, RefusedVersionCheck, "did not prove the secret")
 
 	_, err = e.Dial(ctx)
-	wantRefusalOf(t, err, pid, "")
+	wantRefusalOf(t, err, pid, RefusedOtherProgram, "")
 	if strings.Contains(err.Error(), "cross-version") {
 		t.Fatalf("plain dial reached the cross-version check: %v", err)
 	}
@@ -153,10 +154,10 @@ func TestCrossVersionAcceptsReplacedDialer(t *testing.T) {
 
 	h = startCrossHelper(t, "dial", e, newSecret(t))
 	_, err = accept()
-	wantRefusalOf(t, err, h.cmd.Process.Pid, "cross-version check failed")
+	wantRefusalOf(t, err, h.cmd.Process.Pid, RefusedVersionCheck, "cross-version check failed")
 	select {
 	case err := <-refused:
-		wantRefusalOf(t, err, h.cmd.Process.Pid, "cross-version check failed")
+		wantRefusalOf(t, err, h.cmd.Process.Pid, RefusedVersionCheck, "cross-version check failed")
 	default:
 		t.Fatal("refused callback did not run")
 	}

@@ -45,7 +45,8 @@ func asDialer(secret []byte) func(net.Conn) error {
 
 func wantCrossVersionRefusal(t *testing.T, side string, err error) {
 	t.Helper()
-	if !errors.Is(err, ErrRefused) || !strings.Contains(err.Error(), "cross-version check failed") {
+	requireRefusal(t, err, RefusedVersionCheck)
+	if !strings.Contains(err.Error(), "cross-version check failed") {
 		t.Fatalf("%s = %v; want a cross-version refusal", side, err)
 	}
 }

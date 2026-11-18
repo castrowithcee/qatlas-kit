@@ -208,8 +208,8 @@ func TestEarlierEndpointFallsBackOrFailsWithoutTouching(t *testing.T) {
 		setup func(t *testing.T, current, earlier Endpoint)
 		// fails is the path whose content must stay "kept"; empty means the
 		// successor listens beside the endpoint's channel.
-		fails string
-		err   error
+		fails  string
+		reason RefusalReason
 	}{
 		"nothing at the earlier socket": {setup: func(*testing.T, Endpoint, Endpoint) {}},
 		"earlier socket without a held lock": {setup: func(t *testing.T, _, earlier Endpoint) {
@@ -256,7 +256,7 @@ func TestEarlierEndpointFallsBackOrFailsWithoutTouching(t *testing.T) {
 			if err := os.Chmod(filepath.Dir(mustPath(t, earlier)), 0o755); err != nil {
 				t.Fatal(err)
 			}
-		}, fails: "-", err: ErrRefused},
+		}, fails: "-", reason: RefusedNotPrivate},
 		"lock beside the earlier socket": {setup: func(t *testing.T, _, earlier Endpoint) {
 			listenUntilEnd(t, earlier)
 			if err := os.WriteFile(mustPath(t, earlier)+nextSuffix+lockSuffix, []byte("kept"), lockMode); err != nil {
@@ -298,8 +298,8 @@ func TestEarlierEndpointFallsBackOrFailsWithoutTouching(t *testing.T) {
 					_ = l.Close()
 					t.Fatal("the successor listened with something in the way")
 				}
-				if tc.err != nil && !errors.Is(err, tc.err) {
-					t.Fatalf("error = %v, want %v", err, tc.err)
+				if tc.reason != "" {
+					requireRefusal(t, err, tc.reason)
 				}
 				if tc.fails != "-" {
 					earlierPath := filepath.Join(earlierDir, earlier.SocketBase+".sock")
