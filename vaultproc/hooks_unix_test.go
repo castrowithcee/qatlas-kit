@@ -4,7 +4,9 @@ package vaultproc
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"net"
 	"os"
 	"testing"
 	"time"
@@ -135,6 +137,14 @@ func TestHooksOnFailedHandover(t *testing.T) {
 			_, err := handover.Commit(ctx)
 			return err
 		}, reason: HandoverNoSuccessor},
+		"bad request at prepare": {run: func(t *testing.T, h *handoverSetup) error {
+			// A request that names the wrong phase first.
+			return exchangeHandover(t, h, nil, phaseCommit)
+		}, reason: HandoverBadRequest},
+		"bad request at commit": {run: func(t *testing.T, h *handoverSetup) error {
+			handover := prepare(t, h)
+			return exchangeHandover(t, h, handover, phasePrepare)
+		}, reason: HandoverBadRequest},
 		"connection closed before commit": {run: func(t *testing.T, h *handoverSetup) error {
 			_ = prepare(t, h).Close()
 			return ErrHandover
@@ -158,6 +168,16 @@ func TestHooksOnFailedHandover(t *testing.T) {
 			if test.reason != HandoverDeclined && !errors.Is(err, ErrHandover) {
 				t.Fatalf("handover = %v, want ErrHandover", err)
 			}
+			// The client reads the reason the process reports. A closed connection is no answer.
+			var he *HandoverError
+			switch {
+			case errors.As(err, &he):
+				if he.Reason != test.reason {
+					t.Fatalf("the client reads %q, want %q", he.Reason, test.reason)
+				}
+			case test.reason != HandoverDeclined && name != "connection closed before commit":
+				t.Fatalf("handover = %v, want a *HandoverError", err)
+			}
 			select {
 			case result := <-log.handovers:
 				if result != (HandoverResult{Reason: test.reason}) {
@@ -177,6 +197,70 @@ func TestHooksOnFailedHandover(t *testing.T) {
 				t.Fatal("OnHandover reported more than one result")
 			}
 		})
+	}
+}
+
+// exchangeHandover sends a handover request for phase on the connection of handover, or on a new one when
+// handover is nil, and returns the error the client makes of the answer.
+func exchangeHandover(t *testing.T, h *handoverSetup, handover *Handover, phase string) error {
+	t.Helper()
+	ctx := context.Background()
+	var conn net.Conn
+	if handover != nil {
+		conn = handover.conn
+	} else {
+		var err error
+		if conn, err = h.client.dial(ctx); err != nil {
+			t.Fatal(err)
+		}
+		defer conn.Close()
+	}
+	body, err := json.Marshal(handoverRequest{Phase: phase})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = h.client.exchange(ctx, conn, request{Op: OpHandover, Body: body})
+	return err
+}
+
+func TestHandoverBusyLeavesTheFirstHandoverAlone(t *testing.T) {
+	var log *hookLog
+	h := newHandover(t, func(h *handoverSetup) { log = attachHooks(&h.cfg) })
+	ctx := context.Background()
+	// PrepareHandover returns once the process answered, which is after it claimed the handover, so the
+	// second request meets a handover under way without any waiting.
+	first, err := h.client.PrepareHandover(ctx, h.files)
+	if err != nil || first == nil {
+		t.Fatalf("PrepareHandover = %v, %v", first, err)
+	}
+	second, err := h.client.PrepareHandover(ctx, h.files)
+	var he *HandoverError
+	if second != nil || !errors.As(err, &he) || he.Reason != HandoverBusy || !errors.Is(err, ErrHandover) ||
+		errors.Is(err, ErrBadRequest) || errors.Is(err, ErrNotRunning) {
+		t.Fatalf("second PrepareHandover = %v, %v; want ErrHandover with reason %q", second, err, HandoverBusy)
+	}
+	if h.server.stopping() {
+		t.Fatal("the busy answer locked the process")
+	}
+	if len(log.handovers) != 0 {
+		t.Fatal("OnHandover ran for the busy answer")
+	}
+	// The first handover still completes.
+	h.replace(t, newProgramBody)
+	if _, err := first.Commit(ctx); err != nil {
+		t.Fatalf("Commit = %v, want the first handover to happen", err)
+	}
+	select {
+	case result := <-log.handovers:
+		if result != (HandoverResult{HandedOver: true}) {
+			t.Fatalf("OnHandover = %+v", result)
+		}
+	default:
+		t.Fatal("OnHandover did not run for the first handover")
+	}
+	awaitStopped(t, h.running)
+	if event := log.lockEvent(t); event != (LockEvent{Reason: LockHandedOver}) {
+		t.Fatalf("OnLock = %+v", event)
 	}
 }
 

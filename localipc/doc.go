@@ -82,7 +82,8 @@
 // admits only a server running as the service user or as itself. Both use the
 // kernel's credentials of the peer.
 //
-// A refusal is a *PeerError with the peer's process id. Accept closes a
+// A refusal is a *PeerError with the peer's process id. Its Err is a
+// *RefusalError, whose Reason names the cause without a text comparison. Accept closes a
 // refused connection; ListenOptions.Refused may send a refusal first.
 //
 // Security boundary: these checks protect against other processes of the same

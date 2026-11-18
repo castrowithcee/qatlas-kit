@@ -76,8 +76,8 @@ func checkServiceDir(dir string, gid uint32) error {
 	}
 	uid, group, ok := ownerOf(info)
 	if !info.IsDir() || !ok || uid != uint32(os.Getuid()) || group != gid || info.Mode().Perm()&0o007 != 0 {
-		return fmt.Errorf("%w: service directory %q must belong to this user and the group and be closed to others",
-			ErrRefused, dir)
+		return refusal(RefusedNotPrivate, "service directory %q must belong to this user and the group and be closed to others",
+			dir)
 	}
 	return nil
 }
@@ -95,14 +95,14 @@ func admit(cred *syscall.Ucred, gid uint32, groupsOf groupsReader) error {
 		return nil
 	}
 	if cred.Pid <= 0 {
-		return fmt.Errorf("%w: peer process cannot be identified", ErrRefused)
+		return refusal(RefusedUnidentified, "peer process cannot be identified")
 	}
 	groups, err := groupsOf(cred.Pid, cred.Uid, cred.Gid)
 	if err != nil {
-		return fmt.Errorf("%w: peer groups cannot be read: %v", ErrRefused, err)
+		return refusal(RefusedUnidentified, "peer groups cannot be read: %v", err)
 	}
 	if !slices.Contains(groups, gid) {
-		return fmt.Errorf("%w: peer is neither root nor a member of the group", ErrRefused)
+		return refusal(RefusedOtherUser, "peer is neither root nor a member of the group")
 	}
 	return nil
 }
@@ -189,7 +189,7 @@ func checkServiceFiles(path string, allowed []uint32) error {
 		}
 		uid, _, ok := ownerOf(info)
 		if info.Mode().Type() != file.kind || !ok || !slices.Contains(allowed, uid) || info.Mode().Perm()&0o007 != 0 {
-			return fmt.Errorf("%w: %q does not belong to the service or is open to others", ErrRefused, file.path)
+			return refusal(RefusedNotPrivate, "%q does not belong to the service or is open to others", file.path)
 		}
 	}
 	return nil
@@ -201,7 +201,7 @@ func checkServer(conn net.Conn, allowed []uint32) (int, error) {
 		return 0, err
 	}
 	if !slices.Contains(allowed, cred.Uid) {
-		return int(cred.Pid), fmt.Errorf("%w: peer runs as neither the service user nor this user", ErrRefused)
+		return int(cred.Pid), refusal(RefusedOtherUser, "peer runs as neither the service user nor this user")
 	}
 	return int(cred.Pid), nil
 }

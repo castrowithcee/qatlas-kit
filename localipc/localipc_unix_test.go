@@ -103,12 +103,10 @@ func TestValidConnectionAndPermissions(t *testing.T) {
 }
 
 func TestRejectsForeignUIDAndProgram(t *testing.T) {
-	if err := checkProcess(os.Getpid(), uint32(os.Getuid())+1); !errors.Is(err, ErrRefused) {
-		t.Fatalf("foreign UID accepted: %v", err)
-	}
-	if err := checkProcess(0, uint32(os.Getuid())); !errors.Is(err, ErrRefused) {
-		t.Fatalf("unidentifiable process accepted: %v", err)
-	}
+	err := checkProcess(os.Getpid(), uint32(os.Getuid())+1)
+	requireRefusal(t, err, RefusedOtherUser)
+	err = checkProcess(0, uint32(os.Getuid()))
+	requireRefusal(t, err, RefusedUnidentified)
 	e := testEndpoint(t)
 	copyPath := copyTestProgram(t)
 	if err := os.Mkdir(filepath.Dir(mustPath(t, e)), 0o700); err != nil {
@@ -116,7 +114,9 @@ func TestRejectsForeignUIDAndProgram(t *testing.T) {
 	}
 	cmd := startHelper(t, copyPath, "listen", mustPath(t, e))
 	defer stopHelper(cmd)
-	if _, err := e.Dial(context.Background()); !errors.Is(err, ErrRefused) || !strings.Contains(err.Error(), "another program") {
+	_, err = e.Dial(context.Background())
+	requireRefusal(t, err, RefusedOtherProgram)
+	if !strings.Contains(err.Error(), "another program") {
 		t.Fatalf("client accepted another program: %v", err)
 	}
 }
@@ -139,7 +139,9 @@ func TestServerRejectsForeignProgram(t *testing.T) {
 	}()
 	cmd := startHelper(t, copyPath, "dial", mustPath(t, e))
 	defer stopHelper(cmd)
-	if err := <-accepted; !errors.Is(err, ErrRefused) || !strings.Contains(err.Error(), "another program") {
+	err = <-accepted
+	requireRefusal(t, err, RefusedOtherProgram)
+	if !strings.Contains(err.Error(), "another program") {
 		t.Fatalf("server accepted another program: %v", err)
 	}
 }
@@ -153,37 +155,37 @@ func TestRejectsOpenDirectoryAndSymlinks(t *testing.T) {
 	if err := os.Chmod(filepath.Dir(path), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := e.Listen(); !errors.Is(err, ErrRefused) {
-		t.Fatalf("open app runtime directory accepted: %v", err)
+	err := privateExistingDir(filepath.Dir(path))
+	requireRefusal(t, err, RefusedNotPrivate)
+	if got, want := err.Error(), fmt.Sprintf("local channel refused: runtime directory %q is not a private directory of this user", filepath.Dir(path)); got != want {
+		t.Fatalf("text = %q, want %q", got, want)
 	}
-	if _, err := e.Dial(context.Background()); !errors.Is(err, ErrRefused) {
-		t.Fatalf("client accepted open runtime directory: %v", err)
-	}
+	_, err = e.Listen()
+	requireRefusal(t, err, RefusedNotPrivate)
+	_, err = e.Dial(context.Background())
+	requireRefusal(t, err, RefusedNotPrivate)
 	if err := os.Remove(filepath.Dir(path)); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.Symlink(t.TempDir(), filepath.Dir(path)); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := e.Listen(); !errors.Is(err, ErrRefused) {
-		t.Fatalf("symlink app runtime directory accepted: %v", err)
-	}
+	_, err = e.Listen()
+	requireRefusal(t, err, RefusedNotPrivate)
 	xdg := os.Getenv("XDG_RUNTIME_DIR")
 	linked := filepath.Join(t.TempDir(), "linked")
 	if err := os.Symlink(xdg, linked); err != nil {
 		t.Fatal(err)
 	}
 	t.Setenv("XDG_RUNTIME_DIR", linked)
-	if _, err := e.Path(); !errors.Is(err, ErrRefused) {
-		t.Fatalf("symlink XDG_RUNTIME_DIR accepted or silently bypassed: %v", err)
-	}
+	_, err = e.Path()
+	requireRefusal(t, err, RefusedNotPrivate)
 	t.Setenv("XDG_RUNTIME_DIR", xdg)
 	if err := os.Chmod(xdg, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := e.Path(); !errors.Is(err, ErrRefused) {
-		t.Fatalf("open XDG_RUNTIME_DIR accepted or silently bypassed: %v", err)
-	}
+	_, err = e.Path()
+	requireRefusal(t, err, RefusedNotPrivate)
 }
 
 func TestRejectsOpenSocket(t *testing.T) {
@@ -196,9 +198,8 @@ func TestRejectsOpenSocket(t *testing.T) {
 	if err := os.Chmod(path, 0o666); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := e.Dial(context.Background()); !errors.Is(err, ErrRefused) {
-		t.Fatalf("client accepted open socket: %v", err)
-	}
+	_, err = e.Dial(context.Background())
+	requireRefusal(t, err, RefusedNotPrivate)
 	if err := l.Close(); err != nil {
 		t.Fatal(err)
 	}
@@ -212,9 +213,8 @@ func TestRejectsOpenSocket(t *testing.T) {
 		t.Fatal(err)
 	}
 	_ = dead.Close()
-	if _, err := e.Listen(); !errors.Is(err, ErrRefused) {
-		t.Fatalf("open stale socket replaced: %v", err)
-	}
+	_, err = e.Listen()
+	requireRefusal(t, err, RefusedNotPrivate)
 	info, err := os.Lstat(path)
 	if err != nil || info.Mode().Perm() != 0o666 {
 		t.Fatalf("open stale socket changed: %v, %v", info, err)

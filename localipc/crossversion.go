@@ -74,13 +74,13 @@ func (o ListenOptions) peerCheck() (func(net.Conn) (int, error), error) {
 // accepts only a dialer that proves the secret for both nonces.
 func proveAsListener(conn net.Conn, secret []byte) error {
 	if err := conn.SetDeadline(time.Now().Add(crossVersionWait)); err != nil {
-		return fmt.Errorf("%w: cannot bound the cross-version check: %v", ErrRefused, err)
+		return refusal(RefusedVersionCheck, "cannot bound the cross-version check: %v", err)
 	}
 	if err := listenerExchange(conn, secret); err != nil {
-		return fmt.Errorf("%w: the cross-version check failed: %w", ErrRefused, err)
+		return refusal(RefusedVersionCheck, "the cross-version check failed: %w", err)
 	}
 	if err := conn.SetDeadline(time.Time{}); err != nil {
-		return fmt.Errorf("%w: cannot reset the deadline: %v", ErrRefused, err)
+		return refusal(RefusedVersionCheck, "cannot reset the deadline: %v", err)
 	}
 	return nil
 }
@@ -112,7 +112,7 @@ func listenerExchange(conn net.Conn, secret []byte) error {
 // proveAsDialer sends a nonce first and proves the secret only to a listener
 // that proved it before. ctx bounds the exchange.
 func proveAsDialer(ctx context.Context, conn net.Conn, secret []byte) error {
-	return bounded(ctx, conn, "the cross-version check failed", func() error { return dialerExchange(conn, secret) })
+	return bounded(ctx, conn, RefusedVersionCheck, "the cross-version check failed", func() error { return dialerExchange(conn, secret) })
 }
 
 func dialerExchange(conn net.Conn, secret []byte) error {

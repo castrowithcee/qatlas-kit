@@ -3,7 +3,6 @@
 package localipc
 
 import (
-	"errors"
 	"os"
 	"path/filepath"
 	"slices"
@@ -30,7 +29,6 @@ func TestRunningListsTempDirFallback(t *testing.T) {
 	if err := os.Chmod(filepath.Join(tmp, e.RuntimeDirName), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := e.Running(); !errors.Is(err, ErrRefused) {
-		t.Fatalf("open fallback directory error = %v, want ErrRefused", err)
-	}
+	_, err = e.Running()
+	requireRefusal(t, err, RefusedNotPrivate)
 }

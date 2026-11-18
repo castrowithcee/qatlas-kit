@@ -4,7 +4,6 @@ package localipc
 
 import (
 	"context"
-	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -19,28 +18,22 @@ func readableEndpoint(root string) Endpoint {
 // checkRefusedAll expects Path, Running, Listen and Dial to refuse e.
 func checkRefusedAll(t *testing.T, label string, e Endpoint) {
 	t.Helper()
-	if _, err := e.Path(); !errors.Is(err, ErrRefused) {
-		t.Errorf("%s: Path error = %v, want ErrRefused", label, err)
-	}
-	if _, err := e.Running(); !errors.Is(err, ErrRefused) {
-		t.Errorf("%s: Running error = %v, want ErrRefused", label, err)
-	}
+	_, err := e.Path()
+	requireRefusal(t, err, RefusedNotPrivate)
+	_, err = e.Running()
+	requireRefusal(t, err, RefusedNotPrivate)
 	l, err := e.Listen()
 	if l != nil {
 		_ = l.Close()
 	}
-	if !errors.Is(err, ErrRefused) {
-		t.Errorf("%s: Listen error = %v, want ErrRefused", label, err)
-	}
+	requireRefusal(t, err, RefusedNotPrivate)
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	conn, err := e.Dial(ctx)
 	if conn != nil {
 		_ = conn.Close()
 	}
-	if !errors.Is(err, ErrRefused) {
-		t.Errorf("%s: Dial error = %v, want ErrRefused", label, err)
-	}
+	requireRefusal(t, err, RefusedNotPrivate)
 }
 
 func TestRuntimePrivateIsDefault(t *testing.T) {

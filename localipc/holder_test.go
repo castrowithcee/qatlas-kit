@@ -94,19 +94,27 @@ func holderContext(t *testing.T) context.Context {
 // wantNoHolder checks that both calls fail with want and report no process.
 func wantNoHolder(t *testing.T, e Endpoint, want error) {
 	t.Helper()
-	wantNoHolderFor(t, e, want, "")
+	ctx := holderContext(t)
+	for name, call := range map[string]func(context.Context) (int, error){"Holder": e.Holder, "EndHolder": e.EndHolder} {
+		if pid, err := call(ctx); pid != 0 || !errors.Is(err, want) {
+			t.Errorf("%s() = %d, %v; want 0, %v", name, pid, err, want)
+		}
+	}
 }
 
-// wantNoHolderFor is wantNoHolder that also wants reason in the error text.
-func wantNoHolderFor(t *testing.T, e Endpoint, want error, reason string) {
+// wantHolderRefusal checks that both calls fail with a refusal of the given
+// reason and report no process. A non-empty text must be in the error text.
+func wantHolderRefusal(t *testing.T, e Endpoint, reason RefusalReason, text string) {
 	t.Helper()
 	ctx := holderContext(t)
 	for name, call := range map[string]func(context.Context) (int, error){"Holder": e.Holder, "EndHolder": e.EndHolder} {
 		pid, err := call(ctx)
-		if pid != 0 || !errors.Is(err, want) {
-			t.Errorf("%s() = %d, %v; want 0, %v", name, pid, err, want)
-		} else if !strings.Contains(err.Error(), reason) {
-			t.Errorf("%s() = %v; want the reason %q", name, err, reason)
+		if pid != 0 {
+			t.Errorf("%s() = %d, %v; want no process", name, pid, err)
+		}
+		requireRefusal(t, err, reason)
+		if !strings.Contains(err.Error(), text) {
+			t.Errorf("%s() = %v; want %q", name, err, text)
 		}
 	}
 }
@@ -149,7 +157,7 @@ func TestHolderRefusesOwnProcess(t *testing.T) {
 			}
 		}
 	}()
-	wantNoHolderFor(t, e, ErrRefused, "this process serves the channel")
+	wantHolderRefusal(t, e, RefusedOwnProcess, "this process serves the channel")
 }
 
 func TestHolderHelperProcess(t *testing.T) {
