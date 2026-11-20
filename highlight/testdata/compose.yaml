@@ -1,0 +1,31 @@
+# Example stack with invented names.
+name: demo
+x-common: &common
+  restart: unless-stopped
+  logging: {driver: json-file, options: {max-size: "10m"}}
+
+services:
+  web:
+    <<: *common
+    image: "registry.example.test/demo/web:1.4"
+    ports:
+      - "8080:80"
+      - 8443
+    environment:
+      LOG_LEVEL: info
+      WORKERS: 4
+      DEBUG: false
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/health"]
+      interval: 30s
+    command: |
+      sh -c 'echo starting: web
+      # kept as text
+      exec serve --port 80'
+  db:
+    <<: *common
+    image: db:16 # pinned
+    volumes:
+      - data:/var/lib/db
+volumes:
+  data: ~
