@@ -20,7 +20,10 @@ const (
 	pageSize         = 100
 	maxPages         = 20
 	maxMetadataBytes = 1 << 20
-	checksumsAsset   = "checksums.txt"
+	// maxReleasePageBytes bounds one page of the release list: a full page carries every asset entry and
+	// the notes of each release, which GitHub allows up to 125000 characters long.
+	maxReleasePageBytes = 16 << 20
+	checksumsAsset      = "checksums.txt"
 )
 
 // ErrDevelopmentBuild reports a running build without a release version.
@@ -355,7 +358,7 @@ func (c *Client) Target(ctx context.Context, tag string) (Target, error) {
 		return Target{}, &TargetError{tag, TargetBelowMinimum}
 	}
 	var r githubRelease
-	if err := c.getJSON(ctx, p, "/releases/tags/"+url.PathEscape(tag), &r); err != nil {
+	if err := c.getJSON(ctx, p, "/releases/tags/"+url.PathEscape(tag), maxMetadataBytes, &r); err != nil {
 		var status *statusError
 		if errors.As(err, &status) && status.code == http.StatusNotFound {
 			return Target{}, &TargetError{tag, TargetNotFound}
@@ -455,7 +458,7 @@ func (c *Client) releases(ctx context.Context, p policy) ([]githubRelease, error
 	for page := 1; page <= maxPages; page++ {
 		var batch []githubRelease
 		path := "/releases?per_page=" + strconv.Itoa(pageSize) + "&page=" + strconv.Itoa(page)
-		if err := c.getJSON(ctx, p, path, &batch); err != nil {
+		if err := c.getJSON(ctx, p, path, maxReleasePageBytes, &batch); err != nil {
 			return nil, err
 		}
 		all = append(all, batch...)
@@ -481,7 +484,7 @@ func (c *Client) newRequest(ctx context.Context, p policy, raw, accept string) (
 	return request, nil
 }
 
-func (c *Client) getJSON(ctx context.Context, p policy, path string, out any) error {
+func (c *Client) getJSON(ctx context.Context, p policy, path string, limit int, out any) error {
 	request, err := c.newRequest(ctx, p, p.base.String()+path, "application/vnd.github+json")
 	if err != nil {
 		return err
@@ -502,11 +505,11 @@ func (c *Client) getJSON(ctx context.Context, p policy, path string, out any) er
 	if response.StatusCode != http.StatusOK {
 		return &statusError{response.StatusCode, response.Status}
 	}
-	body, err := io.ReadAll(io.LimitReader(response.Body, maxMetadataBytes+1))
+	body, err := io.ReadAll(io.LimitReader(response.Body, int64(limit)+1))
 	if err != nil {
 		return err
 	}
-	if len(body) > maxMetadataBytes {
+	if len(body) > limit {
 		return errors.New("release metadata exceeds size limit")
 	}
 	if err := json.Unmarshal(body, out); err != nil {
