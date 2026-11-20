@@ -175,6 +175,13 @@ const (
 	TextLogProblemOrder  TextID = "tui.log.problemorder"
 	TextLogNextOrder     TextID = "tui.log.nextorder"
 
+	TextViewNumbers    TextID = "tui.textview.numbers"
+	TextViewReveal     TextID = "tui.textview.reveal"
+	TextViewHide       TextID = "tui.textview.hide"
+	TextViewEmpty      TextID = "tui.textview.empty"
+	TextViewLimitLines TextID = "tui.textview.limitlines"
+	TextViewLimitLong  TextID = "tui.textview.limitlong"
+
 	TextChatSend        TextID = "tui.chat.send"
 	TextChatSendKey     TextID = "tui.chat.sendkey"
 	TextChatPlaceholder TextID = "tui.chat.placeholder"
@@ -371,6 +378,13 @@ func ModuleCatalog() i18n.Catalogs[TextID] {
 			TextLogProblemOrder:  "the end is before the start",
 			TextLogNextOrder:     "set the end to the start or later",
 
+			TextViewNumbers:    "line numbers",
+			TextViewReveal:     "reveal",
+			TextViewHide:       "hide",
+			TextViewEmpty:      "No text.",
+			TextViewLimitLines: "first %d of %d lines",
+			TextViewLimitLong:  "%d long lines cut",
+
 			TextChatSend:        "send",
 			TextChatSendKey:     "ctrl+enter send",
 			TextChatPlaceholder: "Write a message…",
@@ -561,6 +575,13 @@ func ModuleCatalog() i18n.Catalogs[TextID] {
 			TextLogNextOpen:      "eingeben oder im Kalender wählen",
 			TextLogProblemOrder:  "das Ende liegt vor dem Anfang",
 			TextLogNextOrder:     "das Ende auf den Anfang oder später legen",
+
+			TextViewNumbers:    "Zeilennummern",
+			TextViewReveal:     "aufdecken",
+			TextViewHide:       "verdecken",
+			TextViewEmpty:      "Kein Text.",
+			TextViewLimitLines: "erste %d von %d Zeilen",
+			TextViewLimitLong:  "%d lange Zeilen gekürzt",
 
 			TextChatSend:        "Senden",
 			TextChatSendKey:     "ctrl+enter senden",

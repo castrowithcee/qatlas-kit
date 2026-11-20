@@ -1028,123 +1028,143 @@ func logQueryTail(q, mark string) string {
 // position gives way last: to a shorter form, and only below that is it cut. While the search text is typed
 // the row holds that field and the position.
 func (l *LogView) status(styles Styles, width, at, shown int) (string, []Target) {
-	const gap = len(buttonGap)
 	var long, short string
 	if n := len(l.buf); n > 0 && shown > 0 {
 		long = l.text.Lookup(TextScrollPosition, at+1, at+shown, n)
 		short = l.text.Lookup(TextLogPositionShort, at+1, at+shown, n)
 	}
-	type drawn struct {
-		text   string
-		action ActionID
-	}
-	var items []drawn
+	var items []statusItem
 	var pos string
-	fits := func(items []drawn, pos string) bool {
-		w := 0
-		for i, it := range items {
-			w += lipgloss.Width(it.text)
-			if i > 0 {
-				w += gap
-			}
-		}
-		if pos != "" {
-			w += lipgloss.Width(pos)
-			if len(items) > 0 {
-				w += gap
-			}
-		}
-		return w <= width
+	if l.searching {
+		items, pos = searchStatus(styles, width, l.keys.Label(l.spec.Keys.Search), l.spec.Keys.Search, &l.query, l.matchInfo(), long, short)
+	} else {
+		items, pos = fitButtons(styles, width, l.logButtons(styles), long, short)
 	}
+	return statusLine(styles, width, items, pos)
+}
+
+// statusItem is one drawn piece of a status row and the action a click on it runs.
+type statusItem struct {
+	text   string
+	action ActionID
+}
+
+// statusFits reports whether the items and the position fit one row of width cells.
+func statusFits(items []statusItem, pos string, width int) bool {
+	const gap = len(buttonGap)
+	w := 0
+	for i, it := range items {
+		w += lipgloss.Width(it.text)
+		if i > 0 {
+			w += gap
+		}
+	}
+	if pos != "" {
+		w += lipgloss.Width(pos)
+		if len(items) > 0 {
+			w += gap
+		}
+	}
+	return w <= width
+}
+
+// searchStatus is the row while a search text is typed: the field with the match info where it fits, and
+// the position in its longest form that fits.
+func searchStatus(styles Styles, width int, keyLabel string, action ActionID, query *textLine, info, long, short string) ([]statusItem, string) {
+	const gap = len(buttonGap)
+	keyText := Escape(keyLabel) + " "
+	for _, p := range []string{long, short, ""} {
+		room := width - lipgloss.Width(keyText) - 1
+		if p != "" {
+			room -= lipgloss.Width(p) + gap
+		}
+		if room < 3 && p != "" {
+			continue
+		}
+		if room-lipgloss.Width(info)-1 >= 3 {
+			room -= lipgloss.Width(info) + 1
+		} else {
+			info = ""
+		}
+		qw := min(max(lipgloss.Width(Escape(query.String()))+1, 8), logSearchFieldMax, max(room, 1))
+		field := keyText + strings.TrimRight(query.view(qw, styles, true, ""), " ")
+		if styles.profile.Colorless() && styles.profile != ProfileMono && room > qw {
+			field += " "
+		}
+		if info != "" {
+			field += " " + styles.Render(StyleHint, Escape(info))
+		}
+		return []statusItem{{field, action}}, p
+	}
+	return nil, ""
+}
+
+// fitButtons draws btns and the position in the least reduced form that fits width: first the labels go one
+// by one, the highest rank first; then, with every label gone, the buttons go by rank. The button of rank 0
+// and the one of the next lower rank outlast the long position, which takes its short form first.
+func fitButtons(styles Styles, width int, btns []logButton, long, short string) ([]statusItem, string) {
 	// A button draws without its label when its rank is shortFrom or higher.
-	draw := func(b logButton, shortFrom int) drawn {
+	draw := func(b logButton, shortFrom int) statusItem {
 		text := b.full
 		if b.rank >= shortFrom {
 			text = b.short
 		}
-		return drawn{styles.Button(b.kind, text, false), b.action}
+		return statusItem{styles.Button(b.kind, text, false), b.action}
 	}
-	if l.searching {
-		k := l.spec.Keys
-		keyText := Escape(l.keys.Label(k.Search)) + " "
-		for _, p := range []string{long, short, ""} {
-			room := width - lipgloss.Width(keyText) - 1
-			if p != "" {
-				room -= lipgloss.Width(p) + gap
-			}
-			if room < 3 && p != "" {
-				continue
-			}
-			info := l.matchInfo()
-			if room-lipgloss.Width(info)-1 >= 3 {
-				room -= lipgloss.Width(info) + 1
-			} else {
-				info = ""
-			}
-			qw := min(max(lipgloss.Width(Escape(l.query.String()))+1, 8), logSearchFieldMax, max(room, 1))
-			field := keyText + strings.TrimRight(l.query.view(qw, styles, true, ""), " ")
-			if styles.profile.Colorless() && styles.profile != ProfileMono && room > qw {
-				field += " "
-			}
-			if info != "" {
-				field += " " + styles.Render(StyleHint, Escape(info))
-			}
-			items, pos = []drawn{{field, k.Search}}, p
-			break
-		}
-	} else {
-		btns := l.logButtons(styles)
-		keep := func(cut int) []logButton {
-			var out []logButton
-			for _, b := range btns {
-				if b.rank < cut {
-					out = append(out, b)
-				}
-			}
-			return out
-		}
-		type step struct {
-			cut, shortFrom int
-			pos            string
-		}
-		var ranks []int
+	keep := func(cut int) []logButton {
+		var out []logButton
 		for _, b := range btns {
-			ranks = append(ranks, b.rank)
-		}
-		slices.SortFunc(ranks, func(a, b int) int { return b - a })
-		// First the labels go one by one, the highest rank first; then, with every label gone, the buttons go
-		// by rank. Follow and search outlast the long position: it takes its short form first.
-		steps := []step{{ranks[0] + 1, ranks[0] + 1, long}}
-		for _, r := range ranks {
-			steps = append(steps, step{ranks[0] + 1, r, long})
-		}
-		for i, r := range ranks {
-			steps = append(steps, step{r + 1, 0, long})
-			if i >= len(ranks)-2 {
-				steps = append(steps, step{r + 1, 0, short})
+			if b.rank < cut {
+				out = append(out, b)
 			}
 		}
-		steps = append(steps, step{0, 0, short}, step{0, 0, ""})
-		for _, st := range steps {
-			var cand []drawn
-			for _, b := range keep(st.cut) {
-				cand = append(cand, draw(b, st.shortFrom))
-			}
-			if fits(cand, st.pos) {
-				items, pos = cand, st.pos
+		return out
+	}
+	type step struct {
+		cut, shortFrom int
+		pos            string
+	}
+	var ranks []int
+	for _, b := range btns {
+		ranks = append(ranks, b.rank)
+	}
+	slices.SortFunc(ranks, func(a, b int) int { return b - a })
+	steps := []step{{ranks[0] + 1, ranks[0] + 1, long}}
+	for _, r := range ranks {
+		steps = append(steps, step{ranks[0] + 1, r, long})
+	}
+	for i, r := range ranks {
+		steps = append(steps, step{r + 1, 0, long})
+		if i >= len(ranks)-2 {
+			steps = append(steps, step{r + 1, 0, short})
+		}
+	}
+	steps = append(steps, step{0, 0, short}, step{0, 0, ""})
+	for _, st := range steps {
+		var cand []statusItem
+		for _, b := range keep(st.cut) {
+			cand = append(cand, draw(b, st.shortFrom))
+		}
+		if statusFits(cand, st.pos, width) {
+			if cand == nil && st.pos == "" {
 				break
 			}
-		}
-		if items == nil && pos == "" {
-			// Not even the follow button fits: its key and state, cut to the width.
-			f := btns[0]
-			text := styles.Truncate(Escape(f.short), width)
-			if width >= 5 {
-				text = styles.Button(ButtonNormal, styles.Truncate(f.short, width-4), false)
-			}
-			items = []drawn{{text, f.action}}
+			return cand, st.pos
 		}
 	}
+	// Not even the first button fits: its key and state, cut to the width.
+	f := btns[0]
+	text := styles.Truncate(Escape(f.short), width)
+	if width >= 5 {
+		text = styles.Button(ButtonNormal, styles.Truncate(f.short, width-4), false)
+	}
+	return []statusItem{{text, f.action}}, ""
+}
+
+// statusLine joins the items with the button gap and puts the position at the right edge. It returns a
+// click target per item.
+func statusLine(styles Styles, width int, items []statusItem, pos string) (string, []Target) {
+	const gap = len(buttonGap)
 	var line strings.Builder
 	var targets []Target
 	x := 0

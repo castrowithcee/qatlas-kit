@@ -13,6 +13,9 @@ type Palette struct {
 	Text, TextDim, Accent, Selection, OK, Warn, Fail Color
 	// Heat are the levels of a heatmap: 0 is an empty cell, 4 the strongest.
 	Heat [5]Color
+	// The syntax roles colour the sections of a text view that carry a role. An empty one takes the text colour,
+	// so a palette written before they existed stays valid. A filled one must read on the base and the panel.
+	SyntaxKey, SyntaxString, SyntaxNumber, SyntaxComment, SyntaxKeyword Color
 	// Brand is a fixed row of category colours; CategoryColor picks one per name.
 	Brand [8]Color
 }
@@ -20,22 +23,51 @@ type Palette struct {
 // roles lists the roles of p with their names, for checks that treat every role alike.
 func (p *Palette) roles() []namedColor {
 	out := []namedColor{
-		{"base", &p.Base}, {"surface", &p.Surface}, {"panel", &p.Panel}, {"border", &p.Border},
-		{"borderFocus", &p.BorderFocus}, {"text", &p.Text}, {"textDim", &p.TextDim}, {"accent", &p.Accent},
-		{"selection", &p.Selection}, {"ok", &p.OK}, {"warn", &p.Warn}, {"fail", &p.Fail},
+		{"base", &p.Base, false}, {"surface", &p.Surface, false}, {"panel", &p.Panel, false}, {"border", &p.Border, false},
+		{"borderFocus", &p.BorderFocus, false}, {"text", &p.Text, false}, {"textDim", &p.TextDim, false}, {"accent", &p.Accent, false},
+		{"selection", &p.Selection, false}, {"ok", &p.OK, false}, {"warn", &p.Warn, false}, {"fail", &p.Fail, false},
+	}
+	for _, r := range p.syntaxRoles() {
+		out = append(out, namedColor{r.name, r.color, true})
 	}
 	for i := range p.Heat {
-		out = append(out, namedColor{"heat" + strconv.Itoa(i), &p.Heat[i]})
+		out = append(out, namedColor{"heat" + strconv.Itoa(i), &p.Heat[i], false})
 	}
 	for i := range p.Brand {
-		out = append(out, namedColor{"brand" + strconv.Itoa(i), &p.Brand[i]})
+		out = append(out, namedColor{"brand" + strconv.Itoa(i), &p.Brand[i], false})
 	}
 	return out
+}
+
+// syntaxColor is c, or the text colour where a theme leaves the syntax role empty.
+func (p Palette) syntaxColor(c Color) Color {
+	if c == "" {
+		return p.Text
+	}
+	return c
 }
 
 type namedColor struct {
 	name  string
 	color *Color
+	// optional marks a role that may stay empty.
+	optional bool
+}
+
+// syntaxRole is a syntax role of a palette with the least contrast it keeps on the base and the panel.
+type syntaxRole struct {
+	name  string
+	color *Color
+	least float64
+}
+
+// syntaxRoles lists the syntax roles of p. The comment is secondary text and keeps the contrast of dimmed text.
+func (p *Palette) syntaxRoles() []syntaxRole {
+	return []syntaxRole{
+		{"syntaxKey", &p.SyntaxKey, textContrast}, {"syntaxString", &p.SyntaxString, textContrast},
+		{"syntaxNumber", &p.SyntaxNumber, textContrast}, {"syntaxComment", &p.SyntaxComment, dimContrast},
+		{"syntaxKeyword", &p.SyntaxKeyword, textContrast},
+	}
 }
 
 // The least contrast of text and of dimmed text on the colours a palette puts behind them (WCAG).
@@ -45,19 +77,25 @@ const (
 )
 
 // contrastError reports the first role pair of p that is known on both sides and reads below its limit:
-// text on the ground and every fill, dimmed text on the ground and the panel.
+// text on the ground and every fill, dimmed text on the ground and the panel, and each syntax role on the
+// ground and the panel.
 func contrastError(p Palette) error {
-	pairs := []struct {
+	type contrastPair struct {
 		fg, bg   Color
 		fgn, bgn string
 		least    float64
-	}{
+	}
+	pairs := []contrastPair{
 		{p.Text, p.Base, "text", "base", textContrast},
 		{p.Text, p.Surface, "text", "surface", textContrast},
 		{p.Text, p.Panel, "text", "panel", textContrast},
 		{p.Text, p.Selection, "text", "selection", textContrast},
 		{p.TextDim, p.Base, "textDim", "base", dimContrast},
 		{p.TextDim, p.Panel, "textDim", "panel", dimContrast},
+	}
+	for _, r := range p.syntaxRoles() {
+		pairs = append(pairs, contrastPair{*r.color, p.Base, r.name, "base", r.least},
+			contrastPair{*r.color, p.Panel, r.name, "panel", r.least})
 	}
 	for _, pair := range pairs {
 		fg, okFg := rgbOfColor(pair.fg)
@@ -89,6 +127,11 @@ var shareHeat = [5]float64{0.15, 0.35, 0.55, 0.78, 1}
 // The ANSI slots of the roles a derived palette takes from the colours of a scheme or the terminal.
 const (
 	slotFail, slotOK, slotWarn, slotAccent, slotDim = 1, 2, 3, 4, 8
+)
+
+// The ANSI slots of the syntax roles; the comment takes the dimmed text.
+const (
+	slotSyntaxString, slotSyntaxKeyword, slotSyntaxNumber = 2, 5, 6
 )
 
 // brandSlots avoid the bright yellow and green, which vanish on a light background.
@@ -137,10 +180,26 @@ func mixPalette(fg, bg rgb, ansi *[16]rgb) (Palette, bool) {
 		Accent:  slot(slotAccent), OK: slot(slotOK), Fail: slot(slotFail), Warn: slot(slotWarn),
 		Selection: selection.hex(),
 	}
+	p.SyntaxComment = dim.hex()
 	green := fg
 	if ansi != nil {
 		p.Text = fg.hex()
 		green = ansi[slotOK]
+		// A scheme colour that does not read moves towards the text, which always does.
+		readable := func(slot int) Color {
+			for step := 0; step <= 20; step++ {
+				v := mix(ansi[slot], fg, float64(step)/20)
+				if contrast(v, bg) >= textContrast && contrast(v, panel) >= textContrast {
+					return v.hex()
+				}
+			}
+			return fg.hex()
+		}
+		p.SyntaxKey, p.SyntaxString = readable(slotAccent), readable(slotSyntaxString)
+		p.SyntaxNumber, p.SyntaxKeyword = readable(slotSyntaxNumber), readable(slotSyntaxKeyword)
+	} else {
+		p.SyntaxKey, p.SyntaxString = slot(slotAccent), slot(slotSyntaxString)
+		p.SyntaxNumber, p.SyntaxKeyword = slot(slotSyntaxNumber), slot(slotSyntaxKeyword)
 	}
 	p.Heat[0] = fill(shareHeat[0]).hex()
 	for i := 1; i < len(p.Heat); i++ {
@@ -160,6 +219,8 @@ func plainPalette() Palette {
 	p := Palette{
 		Border: slot(slotDim), BorderFocus: slot(slotAccent), TextDim: slot(slotDim),
 		Accent: slot(slotAccent), OK: slot(slotOK), Fail: slot(slotFail), Warn: slot(slotWarn),
+		SyntaxKey: slot(slotAccent), SyntaxString: slot(slotSyntaxString), SyntaxNumber: slot(slotSyntaxNumber),
+		SyntaxComment: slot(slotDim), SyntaxKeyword: slot(slotSyntaxKeyword),
 	}
 	for i, s := range brandSlots {
 		p.Brand[i] = slot(s)
@@ -174,6 +235,15 @@ func steppedTo256(p Palette, fg, bg rgb) (Palette, bool) {
 	for _, r := range p.roles() {
 		if v, ok := rgbOfColor(*r.color); ok && r.color.isHex() {
 			*r.color = Color(strconv.Itoa(nearest256(v)))
+		}
+	}
+	// A syntax role that loses its contrast in the steps takes the text colour.
+	for _, r := range p.syntaxRoles() {
+		c, okC := rgbOfColor(*r.color)
+		base, okBase := rgbOfColor(p.Base)
+		panel, okPanel := rgbOfColor(p.Panel)
+		if okC && p.Text != "" && ((okBase && contrast(c, base) < r.least) || (okPanel && contrast(c, panel) < r.least)) {
+			*r.color = p.Text
 		}
 	}
 	check := p
@@ -200,8 +270,9 @@ func DarkTheme(name string) Theme {
 			Text: "#d6e2ee", TextDim: "#7f93a8",
 			Accent: "#4c9aff", OK: "#3fb56b", Fail: "#f0525a", Warn: "#e7b84c",
 			Selection: "#14336b",
-			Heat:      [5]Color{"#16222d", "#1f5a3a", "#2a8a50", "#35a95a", "#4fd47a"},
-			Brand:     [8]Color{"#f08c3a", "#4c9aff", "#e7b84c", "#2fb5a8", "#a35cf0", "#5fd07f", "#e0629a", "#ef5b5b"},
+			SyntaxKey: "#7fb4ff", SyntaxString: "#8fd694", SyntaxNumber: "#f2b36b", SyntaxComment: "#7f93a8", SyntaxKeyword: "#c79bf0",
+			Heat:  [5]Color{"#16222d", "#1f5a3a", "#2a8a50", "#35a95a", "#4fd47a"},
+			Brand: [8]Color{"#f08c3a", "#4c9aff", "#e7b84c", "#2fb5a8", "#a35cf0", "#5fd07f", "#e0629a", "#ef5b5b"},
 		},
 		ProfileANSI256: {
 			Base: "233", Surface: "236", Panel: "235",
@@ -209,8 +280,9 @@ func DarkTheme(name string) Theme {
 			Text: "253", TextDim: "246",
 			Accent: "75", OK: "71", Fail: "203", Warn: "179",
 			Selection: "24",
-			Heat:      [5]Color{"236", "22", "29", "35", "41"},
-			Brand:     [8]Color{"208", "75", "179", "37", "135", "78", "168", "203"},
+			SyntaxKey: "111", SyntaxString: "114", SyntaxNumber: "215", SyntaxComment: "246", SyntaxKeyword: "183",
+			Heat:  [5]Color{"236", "22", "29", "35", "41"},
+			Brand: [8]Color{"208", "75", "179", "37", "135", "78", "168", "203"},
 		},
 		// The 16-colour surfaces stay black: a dim grey slot would fall into the text colours.
 		ProfileANSI16: {
@@ -219,8 +291,9 @@ func DarkTheme(name string) Theme {
 			Text: "15", TextDim: "7",
 			Accent: "12", OK: "10", Fail: "9", Warn: "11",
 			Selection: "4",
-			Heat:      [5]Color{"8", "2", "2", "10", "10"},
-			Brand:     [8]Color{"3", "12", "11", "6", "5", "10", "13", "9"},
+			SyntaxKey: "12", SyntaxString: "10", SyntaxNumber: "14", SyntaxComment: "7", SyntaxKeyword: "13",
+			Heat:  [5]Color{"8", "2", "2", "10", "10"},
+			Brand: [8]Color{"3", "12", "11", "6", "5", "10", "13", "9"},
 		},
 	}}
 }
@@ -235,8 +308,9 @@ func LightTheme(name string) Theme {
 			Text: "#14202e", TextDim: "#566778",
 			Accent: "#1d5fd6", OK: "#1a7f43", Fail: "#c62828", Warn: "#9a6700",
 			Selection: "#cfe0fb",
-			Heat:      [5]Color{"#e1e8ef", "#b7e1c4", "#7cc794", "#3fa365", "#1b7a44"},
-			Brand:     [8]Color{"#c2570c", "#1d5fd6", "#9a6700", "#0f7f79", "#7b3fc4", "#1a7f43", "#b8346f", "#c62828"},
+			SyntaxKey: "#1d5fd6", SyntaxString: "#17703b", SyntaxNumber: "#8a4b00", SyntaxComment: "#566778", SyntaxKeyword: "#7b3fc4",
+			Heat:  [5]Color{"#e1e8ef", "#b7e1c4", "#7cc794", "#3fa365", "#1b7a44"},
+			Brand: [8]Color{"#c2570c", "#1d5fd6", "#9a6700", "#0f7f79", "#7b3fc4", "#1a7f43", "#b8346f", "#c62828"},
 		},
 		ProfileANSI256: {
 			Base: "255", Surface: "253", Panel: "254",
@@ -244,8 +318,9 @@ func LightTheme(name string) Theme {
 			Text: "234", TextDim: "241",
 			Accent: "26", OK: "28", Fail: "160", Warn: "130",
 			Selection: "153",
-			Heat:      [5]Color{"254", "151", "114", "71", "28"},
-			Brand:     [8]Color{"166", "26", "130", "30", "91", "28", "125", "160"},
+			SyntaxKey: "25", SyntaxString: "22", SyntaxNumber: "94", SyntaxComment: "241", SyntaxKeyword: "90",
+			Heat:  [5]Color{"254", "151", "114", "71", "28"},
+			Brand: [8]Color{"166", "26", "130", "30", "91", "28", "125", "160"},
 		},
 		ProfileANSI16: {
 			Base: "15", Surface: "15", Panel: "15",
@@ -253,8 +328,9 @@ func LightTheme(name string) Theme {
 			Text: "0", TextDim: "8",
 			Accent: "4", OK: "2", Fail: "1", Warn: "3",
 			Selection: "7",
-			Heat:      [5]Color{"7", "2", "2", "10", "10"},
-			Brand:     [8]Color{"3", "4", "3", "6", "5", "2", "5", "1"},
+			SyntaxKey: "4", SyntaxString: "2", SyntaxNumber: "6", SyntaxComment: "8", SyntaxKeyword: "5",
+			Heat:  [5]Color{"7", "2", "2", "10", "10"},
+			Brand: [8]Color{"3", "4", "3", "6", "5", "2", "5", "1"},
 		},
 	}}
 }

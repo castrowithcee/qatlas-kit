@@ -1,0 +1,12 @@
+  1 # service settings                                                                                        
+  2 name = "demo"                                                                                             
+  3 port = 8080                                                                                               
+  4 enabled = true                                                                                            
+  5 session = ******                                                                                          
+  6 notes = "a rather long note that does no [cut]                                                            
+                                                                                                              
+                                                                                                              
+                                                                                                              
+                                                                                                              
+                                                                                                              
+[ / search ]  [ R reveal ]  [ w off ]  [ # on ]            lines 1-6 of 6 first 6 of 7 lines, 1 long lines cut

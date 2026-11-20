@@ -327,6 +327,14 @@
 // search last and the period before them; the position gives way last, to a shorter form. While the search text is typed the row holds that field and
 // the position only.
 //
+// A TextView shows a text read-only: line numbers, scrolling, wrapping, search and a status row with the
+// position, from the text and optional TextSpan sections the application gives SetText. It is made for
+// foreign content: every character is escaped and the view cannot be told otherwise, and MaxLines and
+// MaxLineRunes bound what it keeps, the status row naming a cut. A masked section stays hidden in every
+// drawing and out of every match until the application calls SetRevealed; the reveal key only asks, through
+// TakeRevealRequest, and hiding again needs no permission. The roles of the sections are neutral and drawn in
+// the syntax roles of the Palette; a package that tells them apart builds the spans, TextView knows no language.
+//
 // A Chat shows the messages an application hands it, oldest first, each with a stable ID, sender, time, status
 // and details, above a field to write the next one. The selection follows the ID, and the newest message while
 // it is selected; a status names its state by a glyph and a word, never by colour alone, and every text of a
@@ -346,9 +354,10 @@
 // terminal reports, plain until it has; AsksTerminalColors says when to ask. NewThemeSet rejects a theme
 // whose text reads below 4.5:1 or whose dimmed text reads below 3:1 on its ground and fills; a derived
 // palette that would fall below falls back to the plain palette, which has no ground and no fills and shows
-// the selection in reverse video. Any other theme with a ground colour paints every cell through Paint. An
-// unknown theme name resolves to the terminal theme and is reported, so the application can show
-// TextThemeUnknown.
+// the selection in reverse video. The syntax roles of a Palette may stay empty and then take the text colour;
+// a filled one must read 4.5:1 on the base and the panel, a comment 3:1. Any other theme with a ground
+// colour paints every cell through Paint. An unknown theme name resolves to the terminal theme and is
+// reported, so the application can show TextThemeUnknown.
 //
 // DetectColorProfile and DetectCharsetMode read the terminal once at start. A profile without colour, set by
 // NO_COLOR with any non-empty value or by a missing terminal, wins over every theme; ProfileNone also drops

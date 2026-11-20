@@ -1,0 +1,12 @@
+  1 # service settings                  
+  2 name = "demo"                       
+  3 port = 8080                         
+  4 enabled = true                      
+  5 session = ******                    
+  6 notes = "a rather long note t~ [cut]
+                                        
+                                        
+                                        
+                                        
+                                        
+[ / ]  [ R ]                 1-6/6 [cut]

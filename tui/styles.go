@@ -59,6 +59,13 @@ const (
 	// StyleBorder and StyleBorderFocus are the quiet frame and the frame of the zone with the focus.
 	StyleBorder
 	StyleBorderFocus
+	// The syntax styles colour a section of a text view by its role. They add no attribute, so where there is
+	// no colour they are plain text.
+	StyleSyntaxKey
+	StyleSyntaxString
+	StyleSyntaxNumber
+	StyleSyntaxComment
+	StyleSyntaxKeyword
 )
 
 // Style is the Lip Gloss style of t, for composing with styles of an application's own roles.
@@ -105,6 +112,16 @@ func (s Styles) Style(t TextStyle) lipgloss.Style {
 		return fg(plain, p.Border)
 	case StyleBorderFocus:
 		return fg(plain, p.BorderFocus)
+	case StyleSyntaxKey:
+		return fg(plain, p.syntaxColor(p.SyntaxKey))
+	case StyleSyntaxString:
+		return fg(plain, p.syntaxColor(p.SyntaxString))
+	case StyleSyntaxNumber:
+		return fg(plain, p.syntaxColor(p.SyntaxNumber))
+	case StyleSyntaxComment:
+		return fg(plain, p.syntaxColor(p.SyntaxComment))
+	case StyleSyntaxKeyword:
+		return fg(plain, p.syntaxColor(p.SyntaxKeyword))
 	case StyleActiveRow, StyleSelectionMark:
 		if p.Selection == "" {
 			return bold.Reverse(true)

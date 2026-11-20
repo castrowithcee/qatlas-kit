@@ -1,0 +1,12 @@
+  1 # service settings                                                                                        
+  2 name = "demo"                                                                                             
+  3 port = 8080                                                                                               
+  4 enabled = true                                                                                            
+  5 session = "hunter2-example-value"                                                                         
+  6 notes = "a rather long note that does not fit into a narrow view and has to be wrapped or clipped"        
+  7 timeout = 30                                                                                              
+                                                                                                              
+                                                                                                              
+                                                                                                              
+                                                                                                              
+[ / Suchen ]  [ R verdecken ]  [ w Zeilen umbrechen aus ]  [ # Zeilennummern an ]             Zeilen 1-7 von 7
