@@ -40,7 +40,7 @@ One line per package, in alphabetical order. The package documentation holds the
 - [`selfupdate`](selfupdate): selects, verifies and installs signed releases of the running program.
 - [`sqlite`](sqlite): opens an embedded SQLite database without cgo, migrates its schema in numbered steps and backs it up first.
 - [`sysservice`](sysservice): lays out a systemd system service for a program, checks its unit file and restarts the service after a self-update.
-- [`tui`](tui): provides the text catalogs, themes, styles, basic widgets, key table, frame with tabs, focus zones and footer, mouse targets, command line, lists, filter bar, forms, dialogs, a chat with a multi-line input, help and explanations of a terminal user interface.
+- [`tui`](tui): provides the text catalogs, themes, styles, basic widgets, key table, frame with tabs, focus zones and footer, mouse targets, command line, lists, filter bar, forms, dialogs, a chat with a multi-line input, a file browser over entries the application supplies, help and explanations of a terminal user interface.
 - [`uiprefs`](uiprefs): loads and saves the device-local preferences of a terminal user interface.
 - [`vault`](vault): stores secrets in an age-encrypted directory unlocked by a passphrase.
 - [`vaultproc`](vaultproc): keeps an unlocked vault in a hardened background process and hands it to the program an update installs.

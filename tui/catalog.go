@@ -181,6 +181,19 @@ const (
 	TextChatDetails     TextID = "tui.chat.details"
 	TextChatDetailsKey  TextID = "tui.chat.detailskey"
 
+	TextFileColName     TextID = "tui.file.col.name"
+	TextFileColSize     TextID = "tui.file.col.size"
+	TextFileColModified TextID = "tui.file.col.modified"
+	TextFileColRights   TextID = "tui.file.col.rights"
+	TextFileColOwner    TextID = "tui.file.col.owner"
+	TextFileEmpty       TextID = "tui.file.empty"
+	TextFileLoading     TextID = "tui.file.loading"
+	TextFileFailed      TextID = "tui.file.failed"
+	TextFileBadName     TextID = "tui.file.badname"
+	TextFileRoot        TextID = "tui.file.root"
+	TextFileUp          TextID = "tui.file.up"
+	TextFileUnreadable  TextID = "tui.file.unreadable"
+
 	TextSettingsTitle    TextID = "tui.settings.title"
 	TextSettingsGeneral  TextID = "tui.settings.general"
 	TextSettingTheme     TextID = "tui.setting.theme"
@@ -377,6 +390,19 @@ func ModuleCatalog() i18n.Catalogs[TextID] {
 			TextChatDetails:     "details (%d)",
 			TextChatDetailsKey:  "details",
 
+			TextFileColName:     "Name",
+			TextFileColSize:     "Size",
+			TextFileColModified: "Modified",
+			TextFileColRights:   "Rights",
+			TextFileColOwner:    "Owner",
+			TextFileEmpty:       "This folder is empty.",
+			TextFileLoading:     "Loading…",
+			TextFileFailed:      "Could not read this folder: %s",
+			TextFileBadName:     "This folder lists an entry with an invalid name: %s",
+			TextFileRoot:        "root",
+			TextFileUp:          "up",
+			TextFileUnreadable:  "unreadable",
+
 			TextSettingsTitle:    "Settings",
 			TextSettingsGeneral:  "General",
 			TextSettingTheme:     "theme",
@@ -567,6 +593,19 @@ func ModuleCatalog() i18n.Catalogs[TextID] {
 			TextChatPlaceholder: "Nachricht schreiben…",
 			TextChatDetails:     "Details (%d)",
 			TextChatDetailsKey:  "Details",
+
+			TextFileColName:     "Name",
+			TextFileColSize:     "Größe",
+			TextFileColModified: "Geändert",
+			TextFileColRights:   "Rechte",
+			TextFileColOwner:    "Besitzer",
+			TextFileEmpty:       "Dieser Ordner ist leer.",
+			TextFileLoading:     "Lädt…",
+			TextFileFailed:      "Der Ordner ließ sich nicht lesen: %s",
+			TextFileBadName:     "Der Ordner enthält einen Eintrag mit ungültigem Namen: %s",
+			TextFileRoot:        "Wurzel",
+			TextFileUp:          "Hoch",
+			TextFileUnreadable:  "nicht lesbar",
 
 			TextSettingsTitle:    "Einstellungen",
 			TextSettingsGeneral:  "Allgemein",
