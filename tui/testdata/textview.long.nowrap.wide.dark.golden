@@ -1,0 +1,12 @@
+  [38;2;127;147;168m1[m [38;2;214;226;238m# service settings[m                                                                                        
+  [38;2;127;147;168m2[m [38;2;214;226;238mname = "demo"[m                                                                                             
+  [38;2;127;147;168m3[m [38;2;214;226;238mport = 8080[m                                                                                               
+  [38;2;127;147;168m4[m [38;2;214;226;238menabled = true[m                                                                                            
+  [38;2;127;147;168m5[m [38;2;214;226;238msession = "hunter2-example-value"[m                                                                         
+  [38;2;127;147;168m6[m [38;2;214;226;238mnotes = "a rather long note that does not fit into a narrow view and has to be wrapped or clipped"[m        
+  [38;2;127;147;168m7[m [38;2;214;226;238mtimeout = 30[m                                                                                              
+                                                                                                              
+                                                                                                              
+                                                                                                              
+                                                                                                              
+[38;2;214;226;238m[ / search ][m  [38;2;214;226;238m[ w wrap lines off ][m  [1;38;2;11;20;29;48;2;76;154;255m[ # line numbers on ][m                                       [38;2;127;147;168mlines 1-7 of 7[m

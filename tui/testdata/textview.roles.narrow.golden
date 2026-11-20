@@ -1,0 +1,12 @@
+  1 # service settings                  
+  2 name = "demo"                       
+  3 port = 8080                         
+  4 enabled = true                      
+  5 session = ******                    
+  6 notes = "a rather long note that doe
+    s not fit into a narrow view and has
+     to be wrapped or clipped"          
+  7 timeout = 30                        
+                                        
+                                        
+[ / ]  [ R ]  [ w on ]    lines 1-7 of 7

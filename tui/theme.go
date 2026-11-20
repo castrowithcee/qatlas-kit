@@ -132,6 +132,9 @@ func checkPalette(p Palette, profile ColorProfile) error {
 		return fmt.Errorf("profile %d takes no palette", profile)
 	}
 	for _, r := range p.roles() {
+		if r.optional && *r.color == "" {
+			continue
+		}
 		if !form(*r.color) {
 			return fmt.Errorf("profile %d: role %s = %q is not a colour of the profile", profile, r.name, *r.color)
 		}

@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"image/color"
 	"strconv"
 	"strings"
@@ -415,5 +416,105 @@ func TestColorOf(t *testing.T) {
 	}
 	if got := ColorOf(nil); got != "" {
 		t.Errorf("ColorOf(nil) = %q", got)
+	}
+}
+
+// A syntax role must read on the base and the panel it is drawn on, as text does; a theme may leave it empty,
+// and then the role takes the text colour. A comment keeps the limit of dimmed text.
+func TestSyntaxRolesKeepTheContrast(t *testing.T) {
+	dark := DarkTheme("a").Profiles
+	with := func(profile ColorProfile, change func(*Palette)) map[ColorProfile]Palette {
+		out := map[ColorProfile]Palette{}
+		for k, v := range dark {
+			out[k] = v
+		}
+		p := out[profile]
+		change(&p)
+		out[profile] = p
+		return out
+	}
+	for _, tc := range []struct {
+		name    string
+		profile ColorProfile
+		change  func(*Palette)
+		want    string
+	}{
+		{"faint key", ProfileTrueColor, func(p *Palette) { p.SyntaxKey = "#26323e" }, "syntaxKey on base"},
+		{"faint string", ProfileTrueColor, func(p *Palette) { p.SyntaxString = "#3a4a5a" }, "syntaxString on base"},
+		{"faint number on the panel", ProfileTrueColor, func(p *Palette) { p.Base, p.Panel, p.SyntaxNumber = "#000000", "#3a3a3a", "#808080" }, "syntaxNumber on panel"},
+		{"faint comment", ProfileTrueColor, func(p *Palette) { p.SyntaxComment = "#26323e" }, "syntaxComment on base"},
+		{"faint keyword in 256", ProfileANSI256, func(p *Palette) { p.SyntaxKeyword = "236" }, "syntaxKeyword on base"},
+		{"hex in 256", ProfileANSI256, func(p *Palette) { p.SyntaxKey = "#ffffff" }, "syntaxKey"},
+		{"index above 15", ProfileANSI16, func(p *Palette) { p.SyntaxKey = "16" }, "syntaxKey"},
+	} {
+		_, err := NewThemeSet([]Theme{{Name: "a", Profiles: with(tc.profile, tc.change)}})
+		if err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("%s: err = %v, want %q", tc.name, err, tc.want)
+		}
+	}
+	// A comment may be fainter than text, down to the limit of dimmed text; a key may not.
+	p := dark[ProfileTrueColor]
+	p.SyntaxComment = "#647789"
+	if err := contrastError(p); err != nil {
+		t.Errorf("a comment between the limits: %v", err)
+	}
+	p.SyntaxKey = "#647789"
+	if err := contrastError(p); err == nil {
+		t.Error("a key as faint as a comment passes the limit of text")
+	}
+	// Empty roles are valid: a palette written before the roles existed.
+	empty := with(ProfileTrueColor, func(p *Palette) {
+		p.SyntaxKey, p.SyntaxString, p.SyntaxNumber, p.SyntaxComment, p.SyntaxKeyword = "", "", "", "", ""
+	})
+	if _, err := NewThemeSet([]Theme{{Name: "a", Profiles: empty}}); err != nil {
+		t.Errorf("a palette without syntax roles: %v", err)
+	}
+}
+
+// Every built-in theme and every derived palette fills the syntax roles, and what it fills reads: the two
+// hand-picked themes in all profiles, the schemes in true colour and 256 colours, and the fallbacks by ANSI
+// slot.
+func TestEverySyntaxRoleIsFilledAndReads(t *testing.T) {
+	roles := func(p Palette) []Color {
+		return []Color{p.SyntaxKey, p.SyntaxString, p.SyntaxNumber, p.SyntaxComment, p.SyntaxKeyword}
+	}
+	check := func(name string, p Palette) {
+		t.Helper()
+		for i, c := range roles(p) {
+			if c == "" {
+				t.Errorf("%s: syntax role %d is empty", name, i)
+			}
+		}
+		if err := contrastError(p); err != nil {
+			t.Errorf("%s: %v", name, err)
+		}
+	}
+	for _, theme := range []Theme{DarkTheme("a"), LightTheme("b")} {
+		for profile, p := range theme.Profiles {
+			check(fmt.Sprintf("%s profile %d", theme.Name, profile), p)
+		}
+	}
+	set := exampleSet(t)
+	for _, s := range builtinSchemes() {
+		for _, profile := range []ColorProfile{ProfileTrueColor, ProfileANSI256} {
+			p := resolve(t, set, s.Name, profile, nil).Palette()
+			if p == plainPalette() {
+				continue
+			}
+			check(fmt.Sprintf("%s profile %d", s.Name, profile), p)
+		}
+	}
+	for _, profile := range []ColorProfile{ProfileTrueColor, ProfileANSI256, ProfileANSI16} {
+		check(fmt.Sprintf("terminal profile %d", profile), resolve(t, set, ThemeTerminal, profile, &TerminalColors{Foreground: "#d0d0d0", Background: "#101010"}).Palette())
+		check(fmt.Sprintf("terminal without answer, profile %d", profile), resolve(t, set, ThemeTerminal, profile, nil).Palette())
+	}
+	// Without colour no role draws a colour.
+	for _, profile := range []ColorProfile{ProfileNone, ProfileMono} {
+		st := resolve(t, set, exampleDark, profile, nil)
+		for _, ts := range []TextStyle{StyleSyntaxKey, StyleSyntaxString, StyleSyntaxNumber, StyleSyntaxComment, StyleSyntaxKeyword} {
+			if got := st.Render(ts, "x"); got != "x" {
+				t.Errorf("profile %d style %d draws %q", profile, ts, got)
+			}
+		}
 	}
 }
