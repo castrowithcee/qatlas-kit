@@ -365,3 +365,54 @@ func TestCtrlPunctuationKeysRoundTrip(t *testing.T) {
 		t.Fatalf("file = %q", again)
 	}
 }
+
+func TestEditorRoundTrip(t *testing.T) {
+	s := testSchema(t)
+	path := Path(t.TempDir())
+	want := Default(s)
+	want.Editor = "sample-editor --flag"
+	if err := Save(path, want, s); err != nil {
+		t.Fatal(err)
+	}
+	if got := read(t, path); !strings.Contains(got, "editor: sample-editor --flag\n") {
+		t.Fatalf("file = %q", got)
+	}
+	if got, warnings := Load(path, s); !reflect.DeepEqual(got, want) || len(warnings) != 0 {
+		t.Fatalf("Load() = %+v, %v; want %+v", got, warnings, want)
+	}
+}
+
+// A file written before the editor preference existed loads as before and saves to the same bytes.
+func TestFileWithoutEditorStaysUnchanged(t *testing.T) {
+	s := testSchema(t)
+	path := Path(t.TempDir())
+	const before = "theme: sample dark\nstart: items\nicons: unicode\nlanguage: english\nmouse: true\nkeys:\n  info: f3\n"
+	write(t, path, before)
+	got, warnings := Load(path, s)
+	if got.Editor != "" || got.Theme != "sample dark" || len(warnings) != 0 {
+		t.Fatalf("Load() = %+v, %v", got, warnings)
+	}
+	if err := Save(path, got, s); err != nil {
+		t.Fatal(err)
+	}
+	if after := read(t, path); after != before {
+		t.Fatalf("file = %q, want %q", after, before)
+	}
+}
+
+func TestInvalidEditorFallsBackAndIsRefused(t *testing.T) {
+	s := testSchema(t)
+	path := Path(t.TempDir())
+	write(t, path, "theme: sample dark\neditor: \"vim\\n-R\"\n")
+	got, warnings := Load(path, s)
+	if got.Editor != "" || got.Theme != "sample dark" || len(warnings) != 1 || !strings.Contains(warnings[0], "editor") {
+		t.Fatalf("Load() = %+v, %v; want no editor and one warning", got, warnings)
+	}
+	p := Default(s)
+	for _, editor := range []string{"vim\x1b", "vim\t-R", "caf\xe9"} {
+		p.Editor = editor
+		if err := Save(path, p, s); err == nil {
+			t.Errorf("Save accepted the editor %q", editor)
+		}
+	}
+}
