@@ -7,6 +7,9 @@ import (
 	"io/fs"
 	"path/filepath"
 	"slices"
+	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"go.yaml.in/yaml/v3"
 
@@ -72,6 +75,9 @@ type Prefs struct {
 	MouseEnabled                  bool
 	// Keys holds the keys that differ from the default, as tui.Keymap.Bind takes them; nil holds none.
 	Keys map[tui.ActionID]string
+	// Editor is the command line of the external editor, as exteditor.Resolve takes it; empty leaves
+	// the choice to the environment.
+	Editor string
 }
 
 // Default returns the preferences of a device that has none.
@@ -90,6 +96,7 @@ type fileForm struct {
 	Icons    string            `yaml:"icons"`
 	Language string            `yaml:"language"`
 	Mouse    bool              `yaml:"mouse"`
+	Editor   string            `yaml:"editor,omitempty"`
 	Keys     map[string]string `yaml:"keys,omitempty"`
 }
 
@@ -132,6 +139,7 @@ func parse(data []byte, schema Schema) (Prefs, []string, error) {
 		Icons    *string           `yaml:"icons"`
 		Language *string           `yaml:"language"`
 		Mouse    *string           `yaml:"mouse"`
+		Editor   *string           `yaml:"editor"`
 		Keys     map[string]string `yaml:"keys"`
 	}
 	if err := yaml.Unmarshal(data, &raw); err != nil {
@@ -156,6 +164,13 @@ func parse(data []byte, schema Schema) (Prefs, []string, error) {
 		mouse := "true"
 		choose("mouse", raw.Mouse, []string{"true", "false"}, &mouse)
 		prefs.MouseEnabled = mouse == "true"
+	}
+	if raw.Editor != nil {
+		if err := checkEditor(*raw.Editor); err != nil {
+			warnings = append(warnings, fmt.Sprintf("%v, using none", err))
+		} else {
+			prefs.Editor = *raw.Editor
+		}
 	}
 	prefs.Keys, warnings = loadKeys(raw.Keys, schema.Keys, warnings)
 	return prefs, warnings, nil
@@ -201,6 +216,9 @@ func validate(prefs Prefs, schema Schema) error {
 	check("start", prefs.Start, schema.Areas)
 	check("icons", prefs.Icons, []string{IconsUnicode, IconsNerdFont, IconsNone})
 	check("language", prefs.Language, []string{LanguageEnglish, LanguageGerman, LanguageSystem})
+	if err := checkEditor(prefs.Editor); err != nil {
+		errs = append(errs, err)
+	}
 	if len(prefs.Keys) > 0 {
 		if schema.Keys == nil {
 			errs = append(errs, errors.New("keys: this application has no keys to rebind"))
@@ -214,11 +232,20 @@ func validate(prefs Prefs, schema Schema) error {
 	return errors.Join(errs...)
 }
 
+// checkEditor refuses an editor command line that is not valid UTF-8 or holds a control character.
+func checkEditor(editor string) error {
+	if !utf8.ValidString(editor) || strings.IndexFunc(editor, unicode.IsControl) >= 0 {
+		return fmt.Errorf("editor %q holds a control character or invalid UTF-8", editor)
+	}
+	return nil
+}
+
 func codec(schema Schema) configfile.Codec[Prefs] {
 	return configfile.Codec[Prefs]{
 		Validate: func(p Prefs) error { return validate(p, schema) },
 		Encode: func(p Prefs) ([]byte, error) {
-			form := fileForm{Theme: p.Theme, Start: p.Start, Icons: p.Icons, Language: p.Language, Mouse: p.MouseEnabled}
+			form := fileForm{Theme: p.Theme, Start: p.Start, Icons: p.Icons, Language: p.Language, Mouse: p.MouseEnabled,
+				Editor: p.Editor}
 			if schema.Keys != nil {
 				usable, _ := schema.Keys.Resolve(p.Keys)
 				for id, key := range usable {

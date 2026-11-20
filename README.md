@@ -18,6 +18,7 @@ One line per package, in alphabetical order. The package documentation holds the
 - [`cobracli`](cobracli): applies the shared flags, help, version and error conventions to a Cobra command tree.
 - [`configfile`](configfile): writes configuration documents atomically, with locking, transactions and backups.
 - [`docker`](docker): reads containers from a Docker Engine over its Unix socket, groups them by Compose project, finds those that use a path, reads their CPU and memory use, streams their logs, starts, stops and restarts them and waits until they are healthy.
+- [`exteditor`](exteditor): hands a text to the user's editor on a private copy and returns the checked change, also as root for a target user.
 - [`filelock`](filelock): provides an exclusive whole-file lock across processes.
 - [`fileretry`](fileretry): repeats a file operation that fails only because another process holds the file.
 - [`helptopics`](helptopics): shares plain-text help topics and terms between CLI, TUI and manpage.
