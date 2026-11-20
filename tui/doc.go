@@ -337,6 +337,12 @@
 // the next key, sends with enter in every terminal. Update and Click return the sent text or the quick reply;
 // delivering, storing and the state of a message stay with the application.
 //
+// A FileBrowser shows the folders and files below a root from entries the application hands it; it reads no
+// file system. A folder is a list of name parts below the root, never a joined string, and a name that is
+// empty, ".", "..", or holds a separator or NUL refuses the whole folder, so no step leaves the root. It asks
+// for a folder with a FileLoad and shows only the answer to the last one; actions come back as a FileAction.
+// The application still joins the parts below its own root and checks the result, and runs every action.
+//
 // Colours come from themes. Screen code names roles, never colour values: a Palette assigns one colour per
 // role, Styles build text styles and widgets on it. A ThemeSet holds the terminal theme, the application's
 // own themes and the built-in schemes; each theme is data, either hand-picked palettes per colour profile
