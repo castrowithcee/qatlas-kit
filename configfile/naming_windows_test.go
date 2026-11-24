@@ -23,3 +23,15 @@ func TestOwnNamingBackupsHaveUserOnlyACL(t *testing.T) {
 		assertUserOnlyACL(t, name)
 	}
 }
+
+func TestCopySuffixCopyHasUserOnlyACL(t *testing.T) {
+	n := testNaming
+	n.CopySuffix = ".bak"
+	store := namedStore(t, t.TempDir(), numberCodec, WithBackupNaming(n))
+	mustSaveNumber(t, store, 1)
+	copied, err := store.BackupCopy(store.Path())
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertUserOnlyACL(t, copied)
+}
