@@ -7,7 +7,11 @@
 // minLength, maxLength (in characters), pattern (Go regular expression syntax), format (uuid or date-time
 // as RFC 3339, on strings only), propertyNames (a schema every member name is checked against as a string,
 // in both modes; its errors name the member in braces after the object's path, such as $.labels{name}),
-// minimum, maximum and anyOf.
+// minimum, maximum, exclusiveMinimum, exclusiveMaximum (the number form of Draft 2020-12 only, so the
+// boolean form of Draft 4 is an invalid schema), const and anyOf. Every keyword applies on its own, so
+// minimum and exclusiveMinimum may stand together and both are checked. const takes any JSON value and
+// compares it as enum does; a literal null const is a valid schema that requires null, while null is
+// malformed for every other checked keyword.
 // x-form names the form a pattern checks in words for the error message. The annotations title,
 // description, default, examples, deprecated, readOnly, writeOnly, $comment, $schema, $id and every x-
 // keyword are accepted and not checked. Any other keyword, anywhere in the schema, makes the schema
