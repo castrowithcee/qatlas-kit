@@ -1,0 +1,20 @@
+Garden  ok                                                                                          
+  1 Plants  2 Beds                                                                                  
+  basil  resting  #= Commands ===================================================#                  
+  basil  resting  | : search or run a command…                                   |                  
+  basil  resting  |                                                              |                  
+  basil  resting  | > go overview    Open Overview                             1 |                  
+  basil  resting  |   go items       Open Items                                2 |                  
+  basil  resting  |   go settings    Open Settings                             3 |                  
+  basil  resting  |   reload         Read the data again                  ctrl+r |                  
+  basil  resting  |   upgrade        Install the newer version                 U |                  
+  basil  resting  |   export config  Write the configuration to a file           |                  
+  basil  resting  |   help           Show the help                             ? |                  
+  basil  resting  |   quit           End the program                           q |                  
+  basil  resting  |                                                              |                  
+  basil  resting  | enter open or confirm  esc back                              |                  
+  basil  resting  #==============================================================#                  
+  basil  resting                                                                                    
+  basil  resting                                                                                    
+  basil  resting                                                                                    
+  basil  resting                                                                                    
