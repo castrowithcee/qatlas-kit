@@ -205,6 +205,16 @@ func loadKeys(given map[string]string, keymap *tui.Keymap, warnings []string) (m
 	return usable, warnings
 }
 
+// Validate checks prefs against schema exactly as Save does, for preferences that come from flags or
+// live only in memory. An invalid schema is the only error reported then; otherwise every invalid value
+// is, bundled.
+func Validate(prefs Prefs, schema Schema) error {
+	if err := schema.check(); err != nil {
+		return err
+	}
+	return validate(prefs, schema)
+}
+
 func validate(prefs Prefs, schema Schema) error {
 	var errs []error
 	check := func(name, value string, valid []string) {
@@ -284,11 +294,8 @@ func codec(schema Schema) configfile.Codec[Prefs] {
 // nothing is written. When another writer replaced the file meanwhile, Save starts over, so the last
 // writer wins.
 func Save(path string, prefs Prefs, schema Schema) error {
-	if err := schema.check(); err != nil {
-		return err
-	}
 	// Checked before the store takes its lock, which leaves a lock file behind.
-	if err := validate(prefs, schema); err != nil {
+	if err := Validate(prefs, schema); err != nil {
 		return err
 	}
 	store, err := configfile.NewStore(path, codec(schema))
