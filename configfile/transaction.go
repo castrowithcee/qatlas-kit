@@ -70,10 +70,12 @@ type Store[T any] struct {
 	transient func(error) bool
 	naming    naming
 	tempName  string
+	private   bool
 }
 
 // NewStore creates a store for one file. The path is made absolute at construction. Options choose the
-// backup naming and the temporary file prefix; invalid ones are rejected before anything is created.
+// backup naming, the temporary file prefix and private replacement; invalid ones are rejected before
+// anything is created.
 func NewStore[T any](path string, codec Codec[T], opts ...Option) (*Store[T], error) {
 	if path == "" || codec.Validate == nil || codec.Encode == nil || codec.Decode == nil {
 		return nil, errors.New("configuration path and codec callbacks are required")
@@ -105,7 +107,7 @@ func NewStore[T any](path string, codec Codec[T], opts ...Option) (*Store[T], er
 		}
 		tempName = *o.tempPrefix
 	}
-	return &Store[T]{path: abs, codec: codec, now: time.Now, transient: fileretry.Transient, naming: scheme, tempName: tempName}, nil
+	return &Store[T]{path: abs, codec: codec, now: time.Now, transient: fileretry.Transient, naming: scheme, tempName: tempName, private: o.private}, nil
 }
 
 // Observed returns a store like s that reports its file retries and lock waits to obs. s is unchanged.
@@ -297,7 +299,7 @@ func (s *Store[T]) replaceIfUnchanged(target string, data []byte, expected Revis
 	if err := unchanged(); err != nil {
 		return err
 	}
-	return replaceWithTemp(target, data, s.tempName, unchanged, s.retry)
+	return replaceWithTemp(target, data, s.tempName, s.private, unchanged, s.retry)
 }
 
 // SaveIfUnchanged writes only if the file still has expected's revision.
