@@ -357,12 +357,13 @@
 // (DarkTheme and LightTheme are such palettes under a name the application chooses) or a scheme of
 // foreground, background and 16 ANSI colours. The terminal theme is the default: it paints no ground,
 // names the ANSI slots for its accents and derives its surfaces from the foreground and background the
-// terminal reports, plain until it has; AsksTerminalColors says when to ask. NewThemeSet rejects a theme
-// whose text reads below 4.5:1 or whose dimmed text reads below 3:1 on its ground and fills; a derived
-// palette that would fall below falls back to the plain palette, which has no ground and no fills and shows
-// the selection in reverse video. The syntax roles of a Palette may stay empty and then take the text colour;
-// a filled one must read 4.5:1 on the base and the panel, a comment 3:1. Any other theme with a ground
-// colour paints every cell through Paint. An unknown theme name resolves to the terminal theme and is
+// terminal reports, plain until it has; AsksTerminalColors says when to ask. Step names the theme a number
+// of places before or after another in the order of Names, wrapping at both ends. NewThemeSet rejects a
+// theme whose text reads below 4.5:1 or whose dimmed text reads below 3:1 on its ground and fills; a
+// derived palette that would fall below falls back to the plain palette, which has no ground and no fills
+// and shows the selection in reverse video. The syntax roles of a Palette may stay empty and then take the
+// text colour; a filled one must read 4.5:1 on the base and the panel, a comment 3:1. Any other theme with a
+// ground colour paints every cell through Paint. An unknown theme name resolves to the terminal theme and is
 // reported, so the application can show TextThemeUnknown.
 //
 // DetectColorProfile and DetectCharsetMode read the terminal once at start. A profile without colour, set by

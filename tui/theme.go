@@ -178,6 +178,19 @@ func (s *ThemeSet) Names() []string {
 	return names
 }
 
+// Step returns the name steps places after name in the order of Names, backwards for a negative steps,
+// wrapping at both ends. A name the set does not hold counts from the terminal theme.
+func (s *ThemeSet) Step(name string, steps int) string {
+	at := 0
+	for i, t := range s.themes {
+		if t.name == name {
+			at = i
+			break
+		}
+	}
+	return s.themes[wrap(at+steps%len(s.themes), len(s.themes))].name
+}
+
 func (s *ThemeSet) named(name string) (themeEntry, bool) {
 	for _, t := range s.themes {
 		if t.name == name {

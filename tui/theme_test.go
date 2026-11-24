@@ -63,6 +63,44 @@ func TestThemeSetOffersTerminalThenApplicationThenBuiltinThemes(t *testing.T) {
 	}
 }
 
+func TestThemeSetStepWraps(t *testing.T) {
+	set := exampleSet(t)
+	names := set.Names()
+	n := len(names)
+	last := names[n-1]
+	for _, c := range []struct {
+		name  string
+		steps int
+		want  string
+	}{
+		{names[0], 1, names[1]},
+		{names[1], -1, names[0]},
+		{names[1], 0, names[1]},
+		{last, 1, names[0]},
+		{names[0], -1, last},
+		{names[1], n, names[1]},
+		{names[1], -n, names[1]},
+		{names[0], 3*n + 2, names[2]},
+		{names[0], -3*n - 2, names[n-2]},
+		{"purple", 1, names[1]},
+		{"purple", -1, last},
+		{"", 0, names[0]},
+	} {
+		if got := set.Step(c.name, c.steps); got != c.want {
+			t.Errorf("Step(%q, %d) = %q, want %q", c.name, c.steps, got, c.want)
+		}
+	}
+}
+
+func TestThemeSetStepOfTerminalOnlySet(t *testing.T) {
+	set := &ThemeSet{themes: []themeEntry{{name: ThemeTerminal, terminal: true}}}
+	for _, steps := range []int{-3, -1, 0, 1, 5} {
+		if got := set.Step("other", steps); got != ThemeTerminal {
+			t.Errorf("Step(other, %d) = %q", steps, got)
+		}
+	}
+}
+
 func TestUnknownThemeFallsBackToTerminal(t *testing.T) {
 	set := exampleSet(t)
 	for _, name := range []string{"", "purple", "Example Dark", "dracula", ThemeTerminal + " "} {
