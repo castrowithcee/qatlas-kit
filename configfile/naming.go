@@ -18,8 +18,8 @@ const (
 
 // BackupNaming chooses how a store names its backups, for reading and writing alike. Without
 // WithBackupNaming, names are <file>-<stamp>-<six digits>.bak, <file>-first-hand-<stamp>-<six digits>.bak for the
-// first hand-edited version, and <source>-copy-<stamp>-<six digits>.bak for BackupCopy. The stamp is
-// fixed (UTC, 20060102T150405Z).
+// first hand-edited version, and <source>-copy-<stamp>-<six digits>.bak for BackupCopy (with CopySuffix,
+// that suffix replaces .bak on copies only). The stamp is fixed (UTC, 20060102T150405Z).
 //
 // A selected naming replaces the default entirely: files in another scheme are not backups of this store.
 // Rotation, permissions and the sequence rules do not depend on it.
@@ -39,6 +39,10 @@ type BackupNaming struct {
 	// CopyMarker sits between the source name and the stamp in a BackupCopy name, for example "-copy-".
 	// Required. The copy name must never parse as a backup of this store, whatever the source name.
 	CopyMarker string
+	// CopySuffix ends a BackupCopy name in place of Suffix, for example ".bak", so a copy of a file that is
+	// not a document of the schema does not look like one. Optional: without it, Suffix applies. The copy
+	// name must still never parse as a backup of this store.
+	CopySuffix string
 }
 
 // Option configures NewStore.
@@ -59,14 +63,14 @@ func WithTempPrefix(prefix string) Option { return func(o *options) { o.tempPref
 
 // naming is a validated scheme with the file-dependent defaults resolved.
 type naming struct {
-	prefix, firstHandPrefix, handMarker, suffix, copyMarker string
-	width                                                   int
+	prefix, firstHandPrefix, handMarker, suffix, copyMarker, copySuffix string
+	width                                                               int
 }
 
 func defaultNaming(base string) naming {
 	return naming{
 		prefix: base + "-", firstHandPrefix: base + "-" + defaultFirstHand, suffix: defaultSuffix,
-		copyMarker: defaultCopy, width: defaultSeqWidth,
+		copyMarker: defaultCopy, copySuffix: defaultSuffix, width: defaultSeqWidth,
 	}
 }
 
@@ -112,15 +116,22 @@ func newNaming(n BackupNaming) (naming, error) {
 	if n.Prefix == n.FirstHandPrefix {
 		return naming{}, errors.New("invalid backup naming: Prefix and FirstHandPrefix are equal")
 	}
+	copySuffix := n.Suffix
+	if n.CopySuffix != "" {
+		if err := validNamePart(n.CopySuffix); err != nil {
+			return naming{}, fmt.Errorf("invalid backup naming: CopySuffix %w", err)
+		}
+		copySuffix = n.CopySuffix
+	}
 	return naming{
 		prefix: n.Prefix, firstHandPrefix: n.FirstHandPrefix, handMarker: n.HandMarker, suffix: n.Suffix,
-		copyMarker: n.CopyMarker, width: n.SeqWidth,
+		copyMarker: n.CopyMarker, copySuffix: copySuffix, width: n.SeqWidth,
 	}, nil
 }
 
 // copyName returns the file name BackupCopy gives a copy of the file called src.
 func (n naming) copyName(src, stamp string, seq int) string {
-	return fmt.Sprintf("%s%s%s-%0*d%s", src, n.copyMarker, stamp, n.width, seq, n.suffix)
+	return fmt.Sprintf("%s%s%s-%0*d%s", src, n.copyMarker, stamp, n.width, seq, n.copySuffix)
 }
 
 // checkCopy rejects a copy name that would count as a backup of the store.
