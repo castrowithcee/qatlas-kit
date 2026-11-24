@@ -218,7 +218,7 @@ func testLiterals(t testing.TB) []string {
 		}
 		return "", false
 	}
-	for _, name := range []string{"jsonschema_test.go", "checkschema_test.go"} {
+	for _, name := range []string{"jsonschema_test.go", "checkschema_test.go", "keywords_test.go"} {
 		file, err := parser.ParseFile(token.NewFileSet(), name, nil, 0)
 		if err != nil {
 			t.Fatal(err)
@@ -366,5 +366,35 @@ func BenchmarkCheckSchemaCorpus(b *testing.B) {
 				b.ReportMetric(float64(b.Elapsed().Nanoseconds())/float64(b.N*len(set.schemas)), "ns/schema")
 			})
 		}
+	}
+}
+
+// TestKnownValidRecognizesConstAndExclusiveBounds holds the fast path to the tree on the keywords const,
+// exclusiveMinimum and exclusiveMaximum: it recognizes a valid schema and never accepts an invalid one.
+func TestKnownValidRecognizesConstAndExclusiveBounds(t *testing.T) {
+	for schema, valid := range map[string]bool{
+		`{"const":"latest"}`:                 true,
+		`{"type":"boolean","const":true}`:    true,
+		`{"const":null}`:                     true,
+		`{"const":{"a":[1,2.5,{"b":null}]}}`: true,
+		`{"const":[1,"x",false]}`:            true,
+		`{"anyOf":[{"const":"latest"},{"type":"integer","minimum":1}]}`: true,
+		`{"type":"number","exclusiveMinimum":0,"exclusiveMaximum":1}`:   true,
+		`{"minimum":0,"exclusiveMinimum":-1.5,"maximum":9}`:             true,
+		`{"properties":{"a":{"items":{"exclusiveMaximum":10}}}}`:        true,
+		`{"const":1e400}`:                                        false,
+		`{"const":[{"a":-1e999}]}`:                               false,
+		`{"exclusiveMinimum":true}`:                              false,
+		`{"exclusiveMaximum":"0"}`:                               false,
+		`{"exclusiveMinimum":null}`:                              false,
+		`{"exclusiveMaximum":1e400}`:                             false,
+		`{"properties":{"a":{"items":{"exclusiveMinimum":[]}}}}`: false,
+	} {
+		if got := knownValid([]byte(schema), nil); got && !valid {
+			t.Errorf("%s: knownValid accepted an invalid schema", schema)
+		} else if !got && valid {
+			t.Errorf("%s: knownValid did not recognize a valid schema", schema)
+		}
+		sameVerdict(t, new(Checker), []byte(schema))
 	}
 }
