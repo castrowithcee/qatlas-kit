@@ -134,7 +134,7 @@ func (s *Store[T]) backupCurrent(data []byte) (string, error) {
 	case hand:
 		marker = s.naming.handMarker
 	}
-	name, err := s.writeBackupFile(prefix+stamp+"-", marker, seq, data)
+	name, err := s.writeBackupFile(prefix+stamp+"-", marker, s.naming.suffix, seq, data)
 	if err != nil {
 		return "", err
 	}
@@ -162,10 +162,10 @@ func (s *Store[T]) ensureBackupDir() error {
 
 // writeBackupFile creates <prefix><sequence><marker><suffix> exclusively from seq upwards, so a backup never
 // overwrites another one, and returns its name.
-func (s *Store[T]) writeBackupFile(prefix, marker string, seq int, data []byte) (string, error) {
+func (s *Store[T]) writeBackupFile(prefix, marker, suffix string, seq int, data []byte) (string, error) {
 	dir := s.backupDir()
 	for ; seq < s.naming.limit(); seq++ {
-		name := fmt.Sprintf("%s%0*d%s%s", prefix, s.naming.width, seq, marker, s.naming.suffix)
+		name := fmt.Sprintf("%s%0*d%s%s", prefix, s.naming.width, seq, marker, suffix)
 		path := filepath.Join(dir, name)
 		f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, fileMode)
 		if errors.Is(err, os.ErrExist) {
@@ -212,7 +212,7 @@ func (s *Store[T]) BackupCopy(src string) (string, error) {
 	if err := s.naming.checkCopy(base); err != nil {
 		return "", fmt.Errorf("back up %s: %w", src, err)
 	}
-	name, err := s.writeBackupFile(base+s.naming.copyMarker+s.now().UTC().Format(stampLayout)+"-", "", 0, data)
+	name, err := s.writeBackupFile(base+s.naming.copyMarker+s.now().UTC().Format(stampLayout)+"-", "", s.naming.copySuffix, 0, data)
 	if err != nil {
 		return "", err
 	}
