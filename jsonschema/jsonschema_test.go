@@ -244,8 +244,8 @@ func TestUnsupportedKeywordsAreRefused(t *testing.T) {
 		`{"properties":{"absent":{"type":"string","contentEncoding":"x"}}}`: "schema at $.absent uses the unsupported keyword contentEncoding",
 		`{"properties":{"d":{"items":{"$ref":"#/x"}}}}`:                     "schema at $.d[] uses the unsupported keyword $ref",
 		`{"additionalProperties":{"not":{"type":"null"}}}`:                  "schema at $.* uses the unsupported keyword not",
-		`{"anyOf":[{"type":"object"},{"const":1}]}`:                         "schema at $ uses the unsupported keyword const",
-		`{"type":"object","exclusiveMinimum":1}`:                            "schema at $ uses the unsupported keyword exclusiveMinimum",
+		`{"anyOf":[{"type":"object"},{"multipleOf":2}]}`:                    "schema at $ uses the unsupported keyword multipleOf",
+		`{"type":"object","contains":{}}`:                                   "schema at $ uses the unsupported keyword contains",
 	} {
 		for _, mode := range []jsonschema.Mode{jsonschema.Strict, jsonschema.Lenient} {
 			err := jsonschema.Validate(json.RawMessage(schema), map[string]any{}, mode)

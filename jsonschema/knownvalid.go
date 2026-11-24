@@ -89,7 +89,9 @@ func (s *scan) node() bool {
 			valid = s.count(&bounds[4])
 		case "maxLength":
 			valid = s.count(&bounds[5])
-		case "minimum", "maximum":
+		case "const":
+			valid = s.skip(true)
+		case "minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum":
 			valid = s.limit()
 		case "uniqueItems":
 			valid = s.boolean()
@@ -217,7 +219,7 @@ func (s *scan) count(bound *int) bool {
 	return true
 }
 
-// limit reads a minimum or maximum.
+// limit reads a minimum, maximum, exclusiveMinimum or exclusiveMaximum.
 func (s *scan) limit() bool {
 	return fitsFloat(s.number())
 }

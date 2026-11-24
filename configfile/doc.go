@@ -17,8 +17,9 @@
 // UndoRestore can put back. Copies made with BackupCopy are kept apart from rotation.
 //
 // Callers may choose the file names. WithBackupNaming selects the scheme for reading and writing backups
-// (prefixes, marker of later hand-edited versions, suffix, sequence width, copy marker) and WithTempPrefix
-// the prefix of the temporary file; without them the neutral defaults apply, and NewStore rejects invalid
+// (prefixes, marker of later hand-edited versions, suffix, sequence width, copy marker and an optional
+// copy suffix that replaces the suffix on BackupCopy names only) and WithTempPrefix the prefix of the
+// temporary file; without them the neutral defaults apply, and NewStore rejects invalid
 // choices before it creates anything. Files outside the selected scheme are not backups. Codec.Canonicalize
 // replaces the decode-and-encode comparison that recognizes hand-edited versions, so files from before a
 // rename or migration need not count as hand-edited. Choosing names never bypasses the lock or the

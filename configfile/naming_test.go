@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -318,26 +319,110 @@ func TestOwnNamingCopyStaysOutsideBackups(t *testing.T) {
 	}
 }
 
+func TestCopySuffixNamesCopyPrivatelyOutsideBackupsAndRotation(t *testing.T) {
+	n := testNaming
+	n.CopySuffix = ".bak"
+	store := namedStore(t, t.TempDir(), numberCodec, WithBackupNaming(n))
+	mustSaveNumber(t, store, 1)
+	copied, err := store.BackupCopy(store.Path())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if name := filepath.Base(copied); !strings.HasPrefix(name, "settings.yml-copy-") || !strings.HasSuffix(name, "-000.bak") {
+		t.Fatalf("copy = %s", copied)
+	}
+	if runtime.GOOS != "windows" {
+		if info, err := os.Stat(copied); err != nil || info.Mode().Perm() != 0o600 {
+			t.Fatalf("copy mode = %v, %v; want 600", info, err)
+		}
+	}
+	for i := 2; i < 30; i++ {
+		mustSaveNumber(t, store, i)
+	}
+	if _, err := os.Stat(copied); err != nil {
+		t.Fatalf("copy rotated: %v", err)
+	}
+	backups, err := store.Backups()
+	if err != nil || len(backups) != 10 {
+		t.Fatalf("backups = %v, %v", backups, err)
+	}
+	for _, b := range backups {
+		if b.Name == filepath.Base(copied) || !strings.HasSuffix(b.Name, ".yml") {
+			t.Fatalf("copy or foreign name listed: %s", b.Name)
+		}
+	}
+}
+
+func TestCopySuffixUnsetKeepsSuffixAndDefaultNames(t *testing.T) {
+	store := namedStore(t, t.TempDir(), numberCodec, WithBackupNaming(testNaming))
+	mustSaveNumber(t, store, 1)
+	copied, err := store.BackupCopy(store.Path())
+	if err != nil || !strings.HasSuffix(copied, "-000.yml") {
+		t.Fatalf("copy = %s, %v", copied, err)
+	}
+	def := namedStore(t, t.TempDir(), numberCodec)
+	mustSaveNumber(t, def, 1)
+	copied, err = def.BackupCopy(def.Path())
+	if err != nil || !strings.HasSuffix(copied, "-000000.bak") || !strings.Contains(copied, "settings.yml-copy-") {
+		t.Fatalf("copy = %s, %v", copied, err)
+	}
+}
+
+func TestCopySuffixExhaustedSequenceFailsWithoutOverwriting(t *testing.T) {
+	n := testNaming
+	n.SeqWidth, n.CopySuffix = 1, ".bak"
+	store := namedStore(t, t.TempDir(), numberCodec, WithBackupNaming(n))
+	fixed := time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC)
+	store.now = func() time.Time { return fixed }
+	mustSaveNumber(t, store, 1)
+	for i := 0; i < 10; i++ {
+		if _, err := store.BackupCopy(store.Path()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	before := listDir(t, store.backupDir())
+	if err := os.WriteFile(store.Path(), []byte("2"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.BackupCopy(store.Path()); err == nil {
+		t.Fatal("copy succeeded with an exhausted sequence")
+	}
+	for _, name := range before {
+		if got := string(readNumberFile(t, filepath.Join(store.backupDir(), name))); got != "1" {
+			t.Fatalf("%s overwritten with %q", name, got)
+		}
+	}
+}
+
 func TestInvalidOptionsAreRejectedWithoutCreatingFiles(t *testing.T) {
 	mutate := func(f func(*BackupNaming)) BackupNaming { n := testNaming; f(&n); return n }
 	cases := map[string]Option{
-		"separator":        WithBackupNaming(mutate(func(n *BackupNaming) { n.Prefix = "a/b-" })),
-		"backslash":        WithBackupNaming(mutate(func(n *BackupNaming) { n.Suffix = `.y\ml` })),
-		"dotdot":           WithBackupNaming(mutate(func(n *BackupNaming) { n.Suffix = "..yml" })),
-		"nul":              WithBackupNaming(mutate(func(n *BackupNaming) { n.HandMarker = "-h\x00" })),
-		"empty prefix":     WithBackupNaming(mutate(func(n *BackupNaming) { n.Prefix = "" })),
-		"empty first hand": WithBackupNaming(mutate(func(n *BackupNaming) { n.FirstHandPrefix = "" })),
-		"empty suffix":     WithBackupNaming(mutate(func(n *BackupNaming) { n.Suffix = "" })),
-		"empty copy":       WithBackupNaming(mutate(func(n *BackupNaming) { n.CopyMarker = "" })),
-		"width zero":       WithBackupNaming(mutate(func(n *BackupNaming) { n.SeqWidth = 0 })),
-		"width too large":  WithBackupNaming(mutate(func(n *BackupNaming) { n.SeqWidth = 10 })),
-		"equal prefixes":   WithBackupNaming(mutate(func(n *BackupNaming) { n.FirstHandPrefix = n.Prefix })),
-		"copy parses":      WithBackupNaming(mutate(func(n *BackupNaming) { n.CopyMarker = "-"; n.Prefix = "settings.yml-"; n.FirstHandPrefix = "x-" })),
-		"temp empty":       WithTempPrefix(""),
-		"temp separator":   WithTempPrefix("a/b"),
-		"temp dotdot":      WithTempPrefix("a..b"),
-		"temp star":        WithTempPrefix("a*"),
-		"temp nul":         WithTempPrefix("a\x00"),
+		"separator":             WithBackupNaming(mutate(func(n *BackupNaming) { n.Prefix = "a/b-" })),
+		"backslash":             WithBackupNaming(mutate(func(n *BackupNaming) { n.Suffix = `.y\ml` })),
+		"dotdot":                WithBackupNaming(mutate(func(n *BackupNaming) { n.Suffix = "..yml" })),
+		"nul":                   WithBackupNaming(mutate(func(n *BackupNaming) { n.HandMarker = "-h\x00" })),
+		"empty prefix":          WithBackupNaming(mutate(func(n *BackupNaming) { n.Prefix = "" })),
+		"empty first hand":      WithBackupNaming(mutate(func(n *BackupNaming) { n.FirstHandPrefix = "" })),
+		"empty suffix":          WithBackupNaming(mutate(func(n *BackupNaming) { n.Suffix = "" })),
+		"empty copy":            WithBackupNaming(mutate(func(n *BackupNaming) { n.CopyMarker = "" })),
+		"copy suffix separator": WithBackupNaming(mutate(func(n *BackupNaming) { n.CopySuffix = "a/b" })),
+		"copy suffix dotdot":    WithBackupNaming(mutate(func(n *BackupNaming) { n.CopySuffix = "..bak" })),
+		"copy suffix nul":       WithBackupNaming(mutate(func(n *BackupNaming) { n.CopySuffix = ".b\x00" })),
+		"copy suffix parses": WithBackupNaming(mutate(func(n *BackupNaming) {
+			n.CopyMarker, n.CopySuffix, n.Prefix, n.FirstHandPrefix = "-", ".yml", "settings.yml-", "x-"
+		})),
+		"copy suffix differs and parses": WithBackupNaming(mutate(func(n *BackupNaming) {
+			n.CopyMarker, n.CopySuffix, n.Prefix, n.FirstHandPrefix = "-", "-hand.yml", "settings.yml-", "x-"
+		})),
+		"width zero":      WithBackupNaming(mutate(func(n *BackupNaming) { n.SeqWidth = 0 })),
+		"width too large": WithBackupNaming(mutate(func(n *BackupNaming) { n.SeqWidth = 10 })),
+		"equal prefixes":  WithBackupNaming(mutate(func(n *BackupNaming) { n.FirstHandPrefix = n.Prefix })),
+		"copy parses":     WithBackupNaming(mutate(func(n *BackupNaming) { n.CopyMarker = "-"; n.Prefix = "settings.yml-"; n.FirstHandPrefix = "x-" })),
+		"temp empty":      WithTempPrefix(""),
+		"temp separator":  WithTempPrefix("a/b"),
+		"temp dotdot":     WithTempPrefix("a..b"),
+		"temp star":       WithTempPrefix("a*"),
+		"temp nul":        WithTempPrefix("a\x00"),
 	}
 	for name, opt := range cases {
 		t.Run(name, func(t *testing.T) {

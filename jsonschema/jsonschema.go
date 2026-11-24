@@ -87,10 +87,10 @@ func checkSchemaTree(schema json.RawMessage) error {
 // the last of duplicate members wins, as with encoding/json.
 type object struct {
 	members map[string]any
-	// enumOverflows records that the last enum member holds a number outside the float64 range anywhere in
-	// its text, even in a member a later duplicate replaces. encoding/json refuses such an enum when it
-	// decodes it into an any, which is how CheckSchema holds enum.
-	enumOverflows bool
+	// enumOverflows and constOverflows record that the last enum or const member holds a number outside the
+	// float64 range anywhere in its text, even in a member a later duplicate replaces. encoding/json refuses
+	// such a value when it decodes it into an any, which is how CheckSchema holds both keywords.
+	enumOverflows, constOverflows bool
 }
 
 // decoder reads a schema that json.Valid accepted, so it does not check the syntax again.
@@ -155,8 +155,11 @@ func (d *decoder) object() *object {
 		d.pos++ // the colon
 		overflows := d.overflows
 		node.members[name] = d.value()
-		if name == "enum" {
+		switch name {
+		case "enum":
 			node.enumOverflows = d.overflows > overflows
+		case "const":
+			node.constOverflows = d.overflows > overflows
 		}
 		d.space()
 		if d.data[d.pos] == ',' {
@@ -204,6 +207,7 @@ var nullMessages = map[string]string{
 	"minLength": "has an invalid minLength", "maxLength": "has an invalid maxLength",
 	"items": "has invalid items", "uniqueItems": "has an invalid uniqueItems", "pattern": "has an invalid pattern",
 	"minimum": "has an invalid minimum", "maximum": "has an invalid maximum", "anyOf": "has an invalid anyOf",
+	"exclusiveMinimum": "has an invalid exclusiveMinimum", "exclusiveMaximum": "has an invalid exclusiveMaximum",
 	"format": "has an invalid format", "propertyNames": "has invalid propertyNames",
 }
 
@@ -219,8 +223,9 @@ func checkNode(node *object, path string) []error {
 		}
 	}
 
-	// A literal null is malformed for every checked keyword, though encoding/json decodes it into a bool or
-	// a string without error. Past this point a checked keyword that is present is not null.
+	// A literal null is malformed for every checked keyword but const, where it is a value, though
+	// encoding/json decodes it into a bool or a string without error. Past this point a checked keyword that
+	// is present is not null.
 	present := func(name string) (any, bool) {
 		v, ok := node.members[name]
 		return v, ok && v != nil
@@ -240,6 +245,9 @@ func checkNode(node *object, path string) []error {
 		if allowed, isArray := v.([]any); !isArray || len(allowed) == 0 || node.enumOverflows {
 			bad("has an invalid enum")
 		}
+	}
+	if node.constOverflows {
+		bad("has an invalid const")
 	}
 	if v, ok := present("required"); ok {
 		if !isStringArray(v) {
@@ -274,7 +282,7 @@ func checkNode(node *object, path string) []error {
 			bad("has an invalid pattern")
 		}
 	}
-	for _, name := range []string{"minimum", "maximum"} {
+	for _, name := range []string{"minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum"} {
 		if v, ok := present(name); ok {
 			if n, isNumber := v.(json.Number); !isNumber {
 				bad("has an invalid %s", name)
@@ -387,7 +395,7 @@ func knownKeyword(name string) bool {
 	switch name {
 	case "type", "enum", "properties", "required", "additionalProperties", "minProperties", "maxProperties",
 		"items", "minItems", "maxItems", "uniqueItems", "minLength", "maxLength", "pattern", "minimum",
-		"maximum", "anyOf", "propertyNames", "format",
+		"maximum", "anyOf", "propertyNames", "format", "const", "exclusiveMinimum", "exclusiveMaximum",
 		"title", "description", "default", "examples", "deprecated", "readOnly", "writeOnly", "$comment",
 		"$schema", "$id":
 		return true
@@ -462,6 +470,21 @@ func validateAt(schema map[string]json.RawMessage, value any, path string, stric
 		}
 		if !match {
 			return fmt.Errorf("%s is not an allowed value", path)
+		}
+	}
+
+	if raw, ok := schema["const"]; ok {
+		var want any
+		decoder := json.NewDecoder(bytes.NewReader(raw))
+		decoder.UseNumber()
+		if decoder.Decode(&want) != nil {
+			return fmt.Errorf("schema at %s has an invalid const", path)
+		}
+		// The same comparison as enum, so a null const matches only null.
+		encoded, _ := json.Marshal(value)
+		other, _ := json.Marshal(want)
+		if !bytes.Equal(encoded, other) {
+			return fmt.Errorf("%s is not the allowed value", path)
 		}
 	}
 
@@ -635,7 +658,7 @@ func validateAt(schema map[string]json.RawMessage, value any, path string, stric
 		}
 	case json.Number:
 		number, _ := value.Float64()
-		for _, name := range []string{"minimum", "maximum"} {
+		for _, name := range []string{"minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum"} {
 			raw := schema[name]
 			if len(raw) == 0 {
 				continue
@@ -644,11 +667,15 @@ func validateAt(schema map[string]json.RawMessage, value any, path string, stric
 			if err != nil {
 				return fmt.Errorf("schema at %s has an invalid %s", path, name)
 			}
-			if name == "minimum" && number < limit {
+			switch {
+			case name == "minimum" && number < limit:
 				return fmt.Errorf("%s must be at least %v", path, limit)
-			}
-			if name == "maximum" && number > limit {
+			case name == "maximum" && number > limit:
 				return fmt.Errorf("%s must be at most %v", path, limit)
+			case name == "exclusiveMinimum" && number <= limit:
+				return fmt.Errorf("%s must be greater than %v", path, limit)
+			case name == "exclusiveMaximum" && number >= limit:
+				return fmt.Errorf("%s must be less than %v", path, limit)
 			}
 		}
 	}
