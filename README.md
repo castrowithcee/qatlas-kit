@@ -16,6 +16,7 @@ One line per package, in alphabetical order. The package documentation holds the
 - [`cli`](cli): maps errors to exit codes and diagnostics and checks the confirmation of commands.
 - [`cmd/releasebuild`](cmd/releasebuild): runs `release/releasebuild` for the module in the current directory.
 - [`cmd/tuidemo`](cmd/tuidemo): shows the terminal building blocks at work with invented data, started with `go run ./cmd/tuidemo`.
+- [`cmd/webdemo`](cmd/webdemo): serves a small browser interface on loopback to try the one-time-code sign-in with invented content, started with `go run ./cmd/webdemo`.
 - [`cobracli`](cobracli): applies the shared flags, help, version and error conventions to a Cobra command tree.
 - [`configfile`](configfile): writes configuration documents atomically, with locking, transactions and backups.
 - [`docker`](docker): reads containers from a Docker Engine over its Unix socket, groups them by Compose project, finds those that use a path, reads their CPU and memory use, streams their logs, starts, stops and restarts them and waits until they are healthy.
