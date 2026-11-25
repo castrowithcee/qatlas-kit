@@ -18,7 +18,7 @@ func chatKeys() ChatKeys {
 func chatActions() []Action {
 	return append(sampleActions(),
 		Action{ID: "approve", Level: LevelLetter, DefaultKeys: []string{"a"}, Help: "app.approve"},
-		Action{ID: "reject", Level: LevelLetter, DefaultKeys: []string{"r"}, Help: "app.reject"})
+		Action{ID: "reject", Level: LevelLetter, DefaultKeys: []string{"x"}, Help: "app.reject"})
 }
 
 func chatCatalog() i18n.Catalogs[TextID] {

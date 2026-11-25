@@ -36,7 +36,7 @@ func sampleHelpKeys() HelpKeys {
 
 func sampleHelpSpec() HelpSpec {
 	return HelpSpec{Topics: sampleTopics(), Keys: sampleHelpKeys(),
-		Screen: []Hint{{Action: "new", Label: "h.new"}, {Action: "upgrade", Label: "h.water"}},
+		Screen: []Hint{{Action: "new", Label: "h.new"}, {Action: "update", Label: "h.water"}},
 		Global: []ActionID{"save", "help", "command"}}
 }
 

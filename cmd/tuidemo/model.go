@@ -218,7 +218,7 @@ func hitName(res tui.MouseResult) string {
 // run does one action; key is the key that triggered it, empty for a click.
 func (m *model) run(action tui.ActionID, key string) tea.Cmd {
 	switch action {
-	case actQuit:
+	case actQuit, actForceQuit:
 		return tea.Quit
 	case actArea:
 		if n, err := strconv.Atoi(key); err == nil && n >= 1 && n <= len(m.groups) {

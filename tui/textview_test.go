@@ -387,15 +387,15 @@ func TestTextViewRevealsOnTheApplicationsCommand(t *testing.T) {
 	if !v.HasMasked() || v.Revealed() || strings.Contains(show(), "hunter2") {
 		t.Fatal("the text starts revealed")
 	}
-	if !strings.Contains(show(), "session = ******") || !strings.Contains(show(), "R reveal") {
+	if !strings.Contains(show(), "session = ******") || !strings.Contains(show(), "V reveal") {
 		t.Errorf("hidden view:\n%s", show())
 	}
 	// The key only asks; the application decides.
-	if !v.Update(typed('R')) || v.Revealed() || !v.TakeRevealRequest() || v.TakeRevealRequest() {
+	if !v.Update(typed('V')) || v.Revealed() || !v.TakeRevealRequest() || v.TakeRevealRequest() {
 		t.Fatal("the key must ask once and reveal nothing")
 	}
 	v.SetRevealed(true)
-	if out := show(); !strings.Contains(out, "session = hunter2-example-value") || !strings.Contains(out, "QUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVo=") || !strings.Contains(out, "R hide") {
+	if out := show(); !strings.Contains(out, "session = hunter2-example-value") || !strings.Contains(out, "QUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVo=") || !strings.Contains(out, "V hide") {
 		t.Errorf("revealed view:\n%s", out)
 	}
 	// Hiding needs no permission.
