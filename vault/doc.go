@@ -46,6 +46,12 @@
 // the previous state readable: the key file is written after the document, and pending files are removed
 // only after the merged document is written.
 //
+// With Options.RetryFiles a file operation that fails because another process holds the file for a moment,
+// such as a sharing violation on Windows, is repeated after the waits of fileretry.DefaultDelays, 2.775 s at
+// most per operation: stat, read, listing the pending directory, replace and remove. A missing file is
+// never repeated, nor is the lock file or writing the temporary file. Without it every failure is returned
+// at once.
+//
 // Writes are serialized within one Vault value. With Files.Lock every write of the document, the key or the
 // recipient also holds an exclusive lock on that file across processes and reads what it changes from disk
 // under the lock, so no write rests on a state read before it. Update then works as compare-and-swap: its

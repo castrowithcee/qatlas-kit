@@ -105,7 +105,7 @@ func (v *Vault) removeEntry(remove func(string) error, path string) error {
 			return err
 		}
 	}
-	if err := remove(path); err != nil {
+	if err := v.retry(func() error { return remove(path) }); err != nil {
 		return err
 	}
 	if data != nil {
