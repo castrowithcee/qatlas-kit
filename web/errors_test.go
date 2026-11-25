@@ -46,6 +46,16 @@ func TestUnknownPathAndMethodGetErrorPages(t *testing.T) {
 	}
 }
 
+func TestPathRedirectsOfTheMuxPass(t *testing.T) {
+	s := newServer(t, Options{Login: LoginOff, Routes: []Route{{Pattern: "GET /a/", Handler: noContent}}})
+	for path, want := range map[string]string{"/a": "/a/", "/x/../a/": "/a/", "/x/../y": "/y"} {
+		rec := do(s, get(path))
+		if rec.Code < 300 || rec.Code > 399 || rec.Header().Get("Location") != want {
+			t.Errorf("%s: status %d location %q, want a redirect to %q", path, rec.Code, rec.Header().Get("Location"), want)
+		}
+	}
+}
+
 func TestRedirectStaysOnTheServer(t *testing.T) {
 	rec := httptest.NewRecorder()
 	if err := Redirect(rec, get("/"), "/items?page=2", http.StatusSeeOther); err != nil {
