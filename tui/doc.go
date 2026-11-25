@@ -41,7 +41,8 @@
 // end go, those and tabs inside become one space, and other control characters, invalid UTF-8 and direction
 // marks such as U+202E are dropped, in a masked field too.
 //
-// The parts with state share one shape. NewX checks an XSpec, which holds the content and, in Keys, the
+// The parts with state share one shape, and Dialog, Help, Explanation and Form, which answer with an
+// ActionID, satisfy the interface Modal. NewX checks an XSpec, which holds the content and, in Keys, the
 // actions of the key table the part reads, against the Keymap and the Translator and refuses what cannot
 // work. Update reads a key press and Click the MouseResult of a target the part drew; both return what the
 // application runs. View draws with the Styles of that drawing in width by height cells and returns the lines
@@ -106,7 +107,9 @@
 // is typed, so a letter is always text; it edits its text as a text line does and moves the choice with the
 // actions of CommandLineKeys. View draws a panel with an optional icon before each name, in a Unicode
 // terminal only, and the key in force beside it, at most twelve rows that scroll with the choice and one
-// target per row; the application places it over the workspace, or on it where the terminal is too small.
+// target per row. Overlay draws it at the top of the room it may cover, centred across it, over the dimmed
+// screen, with a key line of its own from Hints whose keys a click answers like the keys do; where the room
+// is too small it returns ok false, and the application draws View in the workspace and Hints in the footer.
 //
 // A List shows the entries an application hands it, each with a stable ItemID, its cells and a group key, as
 // a table under dimmed upper-case column titles. The selection follows the ID, never the position, when the
@@ -241,14 +244,15 @@
 // follows, the details, one button per answer and the key line of the same answers, so no dialog names one
 // twice. A detail is a DialogLine of plain text, optionally behind a prefix such as a prompt sign; the dialog
 // escapes and wraps it before it styles, and red is for a Notice only, since a question keeps it for the
-// button of a destructive answer. Irreversible draws the sentence on what follows in the warn colour. A Notice
-// is a calm message without the warning glyph that needs at least one detail: a plain success belongs in the
-// message line. Only the answers, the scroll and the suggestion keys act; every other key goes back to the
-// application, so a stray key neither saves nor destroys. Enter gives the default, which shows focused; the
-// destroying answer is drawn in the fail colour and is never the default. A dialog with an input is a text
-// field, shows what runs and the last error inside itself, drops the error when the text changes and never
-// shows a masked input. Overlay dims the screen behind it and returns the targets of the dialog alone; where
-// it does not fit, View fills the workspace and Hints go into the footer, whose targets answer it.
+// button of a destructive answer. Irreversible draws the sentence on what follows in the warn colour. A
+// Notice is a calm message headed by its Question, without the warning glyph, that needs at least one detail:
+// a plain success belongs in the message line. Only the answers, the scroll and the suggestion keys act;
+// every other key goes back to the application, so a stray key neither saves nor destroys. Enter gives the
+// default, which shows focused; the destroying answer is drawn in the fail colour and is never the default. A
+// dialog with an input is a text field, shows what runs and the last error inside itself, drops the error
+// when the text changes and never shows a masked input. Overlay dims the screen behind it and returns the
+// targets of the dialog alone; where it does not fit, View fills the workspace and Hints go into the footer,
+// whose targets answer it.
 //
 // Details that do not fit never push out the question: everything else stays, and the details scroll in the
 // rest with their position under them; Overlay gives way to View only where not even three detail lines fit.
@@ -268,7 +272,8 @@
 // of every topic where three text rows remain below it, and is otherwise left out whole. The first topic ends
 // with the keys of the screen the help was opened from and the keys that act everywhere, in the binding in
 // force. Left and right, and the topic keys of the help level, change the topic with wrap-around; the scroll
-// keys and the wheel stop at the ends; back and the help key close it. An Explanation shows a title, the long
+// keys and the wheel stop at the ends; back and the help key close it. A click on a line of the key list
+// yields its action, and the application closes the help and then runs it. An Explanation shows a title, the long
 // text, a helptopics.Term and the address of the documentation, which is shown in full and, where the terminal
 // takes escapes, also linked; it accepts only an absolute http or https address of printable ASCII, so the
 // address cannot end the link sequence.
