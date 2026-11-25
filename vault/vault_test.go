@@ -120,6 +120,9 @@ func addPending(t *testing.T, v *Vault, entry testEntry) string {
 	return name
 }
 
+// fileExists checks a path with a Vault that sets no option.
+func fileExists(path string) (bool, error) { return (&Vault{}).fileExists(path) }
+
 func readBytes(t *testing.T, path string) []byte {
 	t.Helper()
 	data, err := os.ReadFile(path)

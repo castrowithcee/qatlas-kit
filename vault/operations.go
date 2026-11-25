@@ -2,7 +2,6 @@ package vault
 
 import (
 	"fmt"
-	"os"
 	"slices"
 )
 
@@ -18,6 +17,11 @@ func (v *Vault) Create(passphrase string, document []byte) error {
 	}
 	v.mu.Lock()
 	defer v.mu.Unlock()
+	release, err := v.lockWrites(true)
+	if err != nil {
+		return err
+	}
+	defer release()
 	state, err := v.state()
 	if err != nil {
 		return err
@@ -41,6 +45,7 @@ func (v *Vault) encryptNew(passphrase string, document []byte) error {
 	if err != nil {
 		return err
 	}
+	v.noteSwitch()
 	if err := v.write(v.recipientPath(), []byte(id.recipient.String()+"\n")); err != nil {
 		return err
 	}
@@ -64,6 +69,11 @@ func (v *Vault) CreateUnencrypted(document []byte) error {
 	}
 	v.mu.Lock()
 	defer v.mu.Unlock()
+	release, err := v.lockWrites(true)
+	if err != nil {
+		return err
+	}
+	defer release()
 	state, err := v.state()
 	if err != nil {
 		return err
@@ -74,6 +84,7 @@ func (v *Vault) CreateUnencrypted(document []byte) error {
 	if err := v.createDir(); err != nil {
 		return err
 	}
+	v.noteSwitch()
 	return v.write(v.plainPath(), document)
 }
 
@@ -83,6 +94,11 @@ func (v *Vault) CreateUnencrypted(document []byte) error {
 func (v *Vault) Unlock(passphrase string) (merged int, err error) {
 	v.mu.Lock()
 	defer v.mu.Unlock()
+	release, err := v.lockWrites(false)
+	if err != nil {
+		return 0, err
+	}
+	defer release()
 	state, err := v.state()
 	if err != nil {
 		return 0, err
@@ -115,11 +131,11 @@ func (v *Vault) Unlock(passphrase string) (merged int, err error) {
 // unwrapIdentity reads the key and recipient files fresh and verifies passphrase against them, without
 // consulting or changing what this value holds.
 func (v *Vault) unwrapIdentity(passphrase string) (*identity, error) {
-	keyData, err := readFile(v.keyPath())
+	keyData, err := v.readFile(v.keyPath())
 	if err != nil {
 		return nil, fmt.Errorf("cannot read %s: %w", v.keyPath(), err)
 	}
-	recipientText, err := readFile(v.recipientPath())
+	recipientText, err := v.readFile(v.recipientPath())
 	if err != nil {
 		return nil, fmt.Errorf("cannot read %s: %w", v.recipientPath(), err)
 	}
@@ -128,7 +144,7 @@ func (v *Vault) unwrapIdentity(passphrase string) (*identity, error) {
 
 // loadDocument decrypts the document file; a missing file is a nil document.
 func (v *Vault) loadDocument(id *identity) ([]byte, error) {
-	data, err := readFile(v.documentPath())
+	data, err := v.readFile(v.documentPath())
 	if err != nil {
 		if isNotExist(err) {
 			return nil, nil
@@ -163,7 +179,7 @@ func (v *Vault) Document() ([]byte, error) {
 }
 
 func (v *Vault) loadPlain() ([]byte, error) {
-	data, err := readFile(v.plainPath())
+	data, err := v.readFile(v.plainPath())
 	if err != nil {
 		return nil, fmt.Errorf("cannot read %s: %w", v.plainPath(), err)
 	}
@@ -175,7 +191,12 @@ func (v *Vault) loadPlain() ([]byte, error) {
 func (v *Vault) Write(document []byte) error {
 	v.mu.Lock()
 	defer v.mu.Unlock()
-	state, err := v.state()
+	release, err := v.lockWrites(false)
+	if err != nil {
+		return err
+	}
+	defer release()
+	state, err := v.writeState()
 	if err != nil {
 		return err
 	}
@@ -188,7 +209,7 @@ func (v *Vault) Write(document []byte) error {
 		if err := checkSchema(v.plainPath(), document, v.opts.Schemas); err != nil {
 			return err
 		}
-		return v.write(v.plainPath(), document)
+		return v.putDocument(savedFile{path: v.plainPath(), data: document, exists: true})
 	}
 	if err := checkSchema(v.documentPath(), document, v.opts.Schemas); err != nil {
 		return err
@@ -202,19 +223,18 @@ func (v *Vault) Write(document []byte) error {
 }
 
 func (v *Vault) writeDocument(id *identity, document []byte) error {
-	data, err := encryptTo(document, id.recipient)
-	if err != nil {
-		return err
-	}
-	return v.write(v.documentPath(), data)
+	_, err := v.writeEncrypted(id, document)
+	return err
 }
 
-// removeAll removes paths, ignoring those that do not exist.
-func removeAll(paths ...string) error {
-	for _, path := range paths {
-		if err := os.Remove(path); err != nil && !isNotExist(err) {
-			return err
-		}
+// writeEncrypted encrypts document to id, writes it and returns the bytes written.
+func (v *Vault) writeEncrypted(id *identity, document []byte) ([]byte, error) {
+	data, err := encryptTo(document, id.recipient)
+	if err != nil {
+		return nil, err
 	}
-	return nil
+	if err := v.putDocument(savedFile{path: v.documentPath(), data: data, exists: true}); err != nil {
+		return nil, err
+	}
+	return data, nil
 }

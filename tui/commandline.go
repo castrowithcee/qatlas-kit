@@ -267,13 +267,24 @@ func (c *CommandLine) Update(msg tea.KeyPressMsg) (cmd Command, done bool) {
 	return Command{}, false
 }
 
-// Click is a click on a match the command line drew, as the MouseMap of its targets reports it: it chooses
-// the match and runs it as the enter key does.
+// Click is a click on a match or a key of the key line the command line drew, as the MouseMap of its targets
+// reports it: a match is chosen and run as the enter key does, the enter key runs the chosen match, and the
+// back key closes the line.
 func (c *CommandLine) Click(r MouseResult) (cmd Command, done bool) {
-	if !r.Handled || r.Zone != ZoneRows {
+	if !r.Handled {
 		return Command{}, false
 	}
 	matches := c.Matches()
+	if r.Zone != ZoneRows {
+		switch r.Action {
+		case c.nav.Back:
+			c.Reset()
+			return Command{}, true
+		case c.nav.Enter:
+			return c.run(matches)
+		}
+		return Command{}, false
+	}
 	for i, m := range matches {
 		if m.Action == r.Action && m.Area == r.Area && m.Tab == r.Tab {
 			c.cursor = i
@@ -281,6 +292,14 @@ func (c *CommandLine) Click(r MouseResult) (cmd Command, done bool) {
 		}
 	}
 	return Command{}, false
+}
+
+// Hints are the keys of the open command line for a key line, for the input focus InputText.
+func (c *CommandLine) Hints() []Hint {
+	return []Hint{
+		{Action: c.nav.Enter, Label: TextKeyEnter},
+		{Action: c.nav.Back, Label: TextKeyBack, Kind: HintAlways},
+	}
 }
 
 func (c *CommandLine) run(matches []Command) (Command, bool) {
@@ -314,6 +333,38 @@ func (c *CommandLine) View(styles Styles, width, height int) (string, []Target) 
 		// Without room for a frame the panel draws the lines alone.
 		x0, y0, inner, room = 0, 0, width, height
 	}
+	lines, targets := c.content(styles, inner, room)
+	return strings.Join(styles.Panel(title, "", lines, width, height, true), "\n"), OffsetTargets(targets, x0, y0)
+}
+
+// Overlay draws the command line with styles over screen, the drawn screen of width by height cells: the
+// screen dimmed and the line in its frame at the top of room, the part of the screen it may cover, centred
+// across it, with the content of View and the key line under it. The box is as high as its content and at
+// most room is. The targets are the line's alone. ok is false where room is too small for the frame, the
+// input line, one match and the key line, or for the position or message that belong to them; the
+// application then draws View in the workspace and Hints in the footer.
+func (c *CommandLine) Overlay(styles Styles, screen string, width, height int, room Rect) (view string, targets []Target, ok bool) {
+	inner := min(dialogMaxInner, room.Width-8)
+	// Frame, input line, the blank under it, one match, the blank above the key line and the key line.
+	textRoom := room.Height - 2 - 2
+	if inner < dialogMinInner || textRoom < 3 {
+		return "", nil, false
+	}
+	lines, ts := c.content(styles, inner, textRoom)
+	keyLine, kt := styles.footer(c.keys.Hints(c.Hints(), InputText, c.text), "", inner)
+	ts = append(ts, OffsetTargets(kt, 0, len(lines)+1)...)
+	lines = append(lines, "", keyLine)
+	box := styles.Panel(c.text.Lookup(TextCommandTitle), "", lines, inner+4, len(lines)+2, true)
+	if len(box) > room.Height {
+		return "", nil, false
+	}
+	left := room.X + (room.Width-inner-4)/2
+	return overlay(screen, box, width, height, room.Y, left, styles), OffsetTargets(ts, left+2, room.Y+1), true
+}
+
+// content is the lines inside the frame: the input line, the matches that fit in room lines, the position
+// and the message of a refusal, with one target per drawn match, counted from the top left of the lines.
+func (c *CommandLine) content(styles Styles, inner, room int) ([]string, []Target) {
 	matches := c.Matches()
 	lines := []string{c.inputLine(styles, inner), ""}
 	var msg []string
@@ -341,7 +392,7 @@ func (c *CommandLine) View(styles Styles, width, height int) (string, []Target) 
 			nameW = max(nameW, lipgloss.Width(m.Name))
 		}
 		for i := start; i < end; i++ {
-			targets = append(targets, Target{Rect: Rect{X: x0, Y: y0 + len(lines), Width: inner, Height: 1},
+			targets = append(targets, Target{Rect: Rect{Y: len(lines), Width: inner, Height: 1},
 				Zone: ZoneRows, Action: matches[i].Action, Area: matches[i].Area, Tab: matches[i].Tab})
 			lines = append(lines, c.row(styles, matches[i], i == cursor, nameW, keyW, iconW, inner))
 		}
@@ -353,11 +404,11 @@ func (c *CommandLine) View(styles Styles, width, height int) (string, []Target) 
 	lines = append(lines, msg...)
 	var kept []Target
 	for _, t := range targets {
-		if t.Rect.Y-y0 < room {
+		if t.Rect.Y < room {
 			kept = append(kept, t)
 		}
 	}
-	return strings.Join(styles.Panel(title, "", lines, width, height, true), "\n"), kept
+	return lines, kept
 }
 
 // inputLine is the prompt and the typed text with its cursor, scrolled where it is long, or the dimmed

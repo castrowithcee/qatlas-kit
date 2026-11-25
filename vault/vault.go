@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"weak"
 
 	"filippo.io/age"
 )
@@ -63,6 +64,13 @@ var (
 	// ErrPendingUnmerged reports pending entries the vault cannot merge, because no MergeFunc is set or
 	// because the operation needs every entry merged.
 	ErrPendingUnmerged = errors.New("the vault has pending entries that were not merged")
+	// ErrSwitched reports a write with Files.Lock while the files on disk no longer belong to the key this
+	// value holds: another writer switched the vault to unencrypted or replaced its key. Nothing is written.
+	ErrSwitched = errors.New("another writer switched the vault or replaced its key")
+	// ErrConflict reports an undo or a Checkpoint's restore with Files.Lock while another writer changed the
+	// document since this value wrote it and no Options.Revert takes this value's change back. Nothing is
+	// written.
+	ErrConflict = errors.New("another writer changed the document since; nothing was taken back")
 )
 
 // Files names the files of a vault inside its directory. Every name is a single path element; the
@@ -81,6 +89,10 @@ type Files struct {
 	// Sealed are further files encrypted to the recipient, read and written with ReadSealed and
 	// WriteSealed and removed by Decrypt.
 	Sealed []string
+	// Lock, when set, names a lock file that every write of the document, the key or the recipient holds
+	// across processes, and under which it reads what it changes from disk. Empty keeps writes serialized
+	// within this value alone. The file is created by the first write and is never removed.
+	Lock string
 }
 
 // Pending is one pending entry handed to a MergeFunc.
@@ -96,11 +108,17 @@ type Pending struct {
 // merged document is written. An entry it leaves out stays pending.
 type MergeFunc func(document []byte, pending []Pending) (merged []byte, done []string, err error)
 
+// RevertFunc takes one write back from the document another writer changed since: before is the document
+// the write replaced, after the one it wrote and current the one on disk now, each nil where the document
+// file did not exist. It returns current without the change from before to after, which must pass the
+// schema check; an error writes nothing. It may return current itself.
+type RevertFunc func(before, after, current []byte) ([]byte, error)
+
 // Options configures a vault. The zero value of every optional field is the safe choice.
 type Options struct {
 	// Dir is the vault directory itself.
 	Dir string
-	// Files names the vault files. Every name except Plain and Sealed is required.
+	// Files names the vault files. Every name except Plain, Sealed and Lock is required.
 	Files Files
 	// Schemas are the schema versions of the document the application accepts. The document is a JSON
 	// object whose integer member "schema" is one of them.
@@ -114,9 +132,17 @@ type Options struct {
 	SwitchFilter func(document []byte) ([]byte, error)
 	// Merge merges pending entries on unlock. Without it, a vault with pending entries does not unlock.
 	Merge MergeFunc
+	// Revert, with Files.Lock, takes this value's change out of a document another writer changed since,
+	// for an undo or a Checkpoint's restore. Without it those refuse in that case with ErrConflict.
+	Revert RevertFunc
 	// WorkFactor is the scrypt work factor of a newly wrapped key. Zero is DefaultWorkFactor. Values below
 	// it are accepted only in test binaries, values above MaxWorkFactor never.
 	WorkFactor int
+	// RetryFiles repeats a file operation that fails because another process holds the file for a moment,
+	// such as a sharing violation on Windows, with fileretry.DefaultDelays. It covers stat, read, listing
+	// the pending directory, replace and remove, never the lock file or a missing file. Without it every
+	// such failure is returned at once.
+	RetryFiles bool
 }
 
 // Status describes a vault without any secret.
@@ -140,6 +166,8 @@ type Vault struct {
 	unlocked bool
 	identity *identity
 	doc      []byte
+	// journals are the open checkpoints with Files.Lock; each lives as long as its restore.
+	journals []weak.Pointer[journal]
 }
 
 // New checks opts and returns the vault it describes. The vault does not have to exist.
@@ -161,8 +189,10 @@ func (o Options) check() error {
 		return errors.New("vault: no directory")
 	}
 	names := []string{o.Files.Key, o.Files.Recipient, o.Files.Document, o.Files.Pending}
-	if o.Files.Plain != "" {
-		names = append(names, o.Files.Plain)
+	for _, name := range []string{o.Files.Plain, o.Files.Lock} {
+		if name != "" {
+			names = append(names, name)
+		}
 	}
 	names = append(names, o.Files.Sealed...)
 	seen := map[string]bool{}
@@ -226,13 +256,13 @@ func (v *Vault) state() (State, error) {
 	}
 	if v.opts.Files.Plain != "" {
 		// An interrupted Encrypt leaves the plain document beside a new key; the plain one still counts.
-		if exists, err := fileExists(v.plainPath()); err != nil {
+		if exists, err := v.fileExists(v.plainPath()); err != nil {
 			return "", err
 		} else if exists {
 			return StateUnencrypted, nil
 		}
 	}
-	if exists, err := fileExists(v.keyPath()); err != nil {
+	if exists, err := v.fileExists(v.keyPath()); err != nil {
 		return "", err
 	} else if exists {
 		return StateLocked, nil
@@ -277,8 +307,8 @@ func (v *Vault) Identity() (*age.X25519Identity, error) {
 	return v.identity.key, nil
 }
 
-func fileExists(path string) (bool, error) {
-	_, err := os.Stat(path)
+func (v *Vault) fileExists(path string) (bool, error) {
+	_, err := v.stat(path)
 	switch {
 	case err == nil:
 		return true, nil

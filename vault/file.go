@@ -31,15 +31,20 @@ func (e *PermissionError) Error() string {
 }
 
 // readFile reads path after checking that nobody else can reach it.
-func readFile(path string) ([]byte, error) {
-	info, err := os.Stat(path)
+func (v *Vault) readFile(path string) ([]byte, error) {
+	info, err := v.stat(path)
 	if err != nil {
 		return nil, err
 	}
 	if err := checkMode(path, info); err != nil {
 		return nil, err
 	}
-	return os.ReadFile(path)
+	var data []byte
+	err = v.retry(func() (err error) {
+		data, err = os.ReadFile(path)
+		return err
+	})
+	return data, err
 }
 
 // write replaces path atomically with a private file, creating its directory privately if needed. A
@@ -80,7 +85,7 @@ func (v *Vault) write(path string, data []byte) error {
 	if err := tmp.Close(); err != nil {
 		return fmt.Errorf("cannot write %s: %w", name, err)
 	}
-	if err := v.rename(name, target); err != nil {
+	if err := v.retry(func() error { return v.rename(name, target) }); err != nil {
 		return fmt.Errorf("cannot replace %s: %w", target, err)
 	}
 	moved = true

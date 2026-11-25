@@ -98,7 +98,7 @@ func TestDefaultNamingKeepsNamesTempPrefixAndHandDetection(t *testing.T) {
 		}
 		return nil
 	}
-	if err := replaceWithTemp(store.Path(), []byte("9"), "", hook, nil); err != nil {
+	if err := replaceWithTemp(store.Path(), []byte("9"), "", false, hook, nil); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.HasPrefix(seen, ".settings.yml-") {
@@ -449,7 +449,7 @@ func TestTempPrefixIsUsedAndLeavesNoResidue(t *testing.T) {
 		}
 		return errors.New("stop")
 	}
-	if err := replaceWithTemp(store.Path(), []byte("1"), store.tempName, hook, nil); err == nil {
+	if err := replaceWithTemp(store.Path(), []byte("1"), store.tempName, false, hook, nil); err == nil {
 		t.Fatal("expected failure")
 	}
 	if !strings.HasPrefix(seen, "tmp-") {

@@ -37,7 +37,7 @@ func OpenWithIdentity(opts Options, key *age.X25519Identity) (*Vault, error) {
 	if err != nil {
 		return nil, err
 	}
-	text, err := readFile(v.recipientPath())
+	text, err := v.readFile(v.recipientPath())
 	if err != nil {
 		if isNotExist(err) {
 			return nil, ErrAbsent
@@ -96,7 +96,7 @@ func ReadSealedWithIdentityOptions(opts Options, key *age.X25519Identity, name s
 	if err := v.checkSealed(name); err != nil {
 		return nil, err
 	}
-	text, err := readFile(v.recipientPath())
+	text, err := v.readFile(v.recipientPath())
 	switch {
 	case err == nil:
 		if _, err := bindIdentity(key, text); err != nil {
@@ -109,7 +109,7 @@ func ReadSealedWithIdentityOptions(opts Options, key *age.X25519Identity, name s
 		return nil, fmt.Errorf("cannot read %s: %w", v.recipientPath(), err)
 	}
 	path := v.path(name)
-	data, err := readFile(path)
+	data, err := v.readFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("cannot read %s: %w", path, err)
 	}
@@ -130,7 +130,7 @@ func (v *Vault) Recipient() (string, error) {
 	if err := v.requireEncrypted(); err != nil {
 		return "", err
 	}
-	text, err := readFile(v.recipientPath())
+	text, err := v.readFile(v.recipientPath())
 	if err != nil {
 		return "", fmt.Errorf("cannot read %s: %w", v.recipientPath(), err)
 	}

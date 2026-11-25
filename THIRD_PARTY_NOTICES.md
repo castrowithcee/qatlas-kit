@@ -1,6 +1,6 @@
 # Third-party notices
 
-Components derived from `qatlas-cli` and `qatlas-sysmin` retain their original AGPL-3.0 license.
+Components derived from `qatlas-cli`, `qatlas-connect` and `qatlas-sysmin` retain their original AGPL-3.0 license.
 
 | Source | Copyright | License | Included components |
 | --- | --- | --- | --- |
@@ -141,6 +141,7 @@ Components derived from `qatlas-cli` and `qatlas-sysmin` retain their original A
 | `qatlas-cli/internal/vault/workfactor.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Work factor limited to test binaries (`vault/vault.go`) |
 | `qatlas-cli/internal/vault/terminal.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Passphrase from the controlling terminal (`vault/terminal.go`) |
 | `qatlas-cli/internal/vault/terminal_test.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Non-interactive prompt test (`vault/terminal_test.go`) |
+| `qatlas-connect/internal/vault/terminal.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Hidden line input that ends with a context (`vault/terminal.go`) |
 | `qatlas-cli/internal/vault/mode_other.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Private Unix file modes (`vault/perm_other.go`) |
 | `qatlas-cli/internal/vault/mode_windows.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Windows ACL check and private ACLs (`vault/perm_windows.go`) |
 | `qatlas-cli/internal/vault/mode_windows_test.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Windows ACL tests (`vault/perm_windows_test.go`) |
@@ -150,6 +151,11 @@ Components derived from `qatlas-cli` and `qatlas-sysmin` retain their original A
 | `qatlas-sysmin/internal/vault/snapshot.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Opening with the vault key alone (`vault/snapshot.go`) |
 | `qatlas-sysmin/internal/vault/vault.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Concurrency-safe vault value (`vault/vault.go`) |
 | `qatlas-sysmin/internal/vault/vault_test.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Vault rejection tests (`vault/vault_test.go`) |
+| `qatlas-connect/internal/vault/replace.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Write lock across processes taken once at the outermost call (`vault/lock.go`) |
+| `qatlas-connect/internal/vault/write.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Writes on the document read under the lock, undo of one write that keeps another writer's change (`vault/lock.go`, `vault/update.go`, `vault/undo.go`) |
+| `qatlas-connect/internal/vault/checkpoint.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Checkpoint journal of this value's writes and queued entries, removal of a directory holding only the lock file (`vault/journal.go`, `vault/checkpoint.go`) |
+| `qatlas-connect/internal/vault/fileio.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Retry of transient file failures on stat, read and replace (`vault/retry.go`) |
+| `qatlas-connect/internal/vault/concurrent_test.go`, `replace_test.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Concurrent write, undo and restore tests (`vault/lock_test.go`, `vault/revert_test.go`) |
 | `qatlas-cli/internal/vault/approval.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Labelled SHA-256 fingerprint over canonical JSON, approval record with state and time (`approval/fingerprint.go`, `approval/store.go`) |
 | `qatlas-cli/internal/approval/approval.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Open changes between approved and current state (`approval/store.go`, `approval/diff.go`) |
 | `qatlas-cli/internal/cli/admin.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Admin check with terminal and passphrase before an approval (`approval/admin.go`) |
@@ -229,6 +235,8 @@ Components derived from `qatlas-cli` and `qatlas-sysmin` retain their original A
 | `qatlas-sysmin/internal/adopt/stacks.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Compose project labels, grouping by project and working directory and splitting of the config file list (`docker/group.go`) |
 | `qatlas-sysmin/internal/hostchange/stackcheck.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Container use of a path through mount sources and the working directory, with a separator boundary (`docker/container.go`) |
 | `qatlas-sysmin/internal/execute/check.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Container name without the leading slash and health "none" as no health check (`docker/container.go`) |
+| `qatlas-connect/internal/vaultproc/client.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Asking again on not running after a replaced answer (`vaultproc/client.go`) |
+| `qatlas-connect/internal/vaultproc/handover_unix_test.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Handover test of a client queued at the old listener, with a gate at the accept loop (`vaultproc/handover_unix_test.go`) |
 
 ## Built-in TUI themes
 

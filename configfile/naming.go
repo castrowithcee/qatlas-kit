@@ -51,6 +51,7 @@ type Option func(*options)
 type options struct {
 	naming     *BackupNaming
 	tempPrefix *string
+	private    bool
 }
 
 // WithBackupNaming selects the backup naming of the store. NewStore rejects an invalid naming.
@@ -60,6 +61,11 @@ func WithBackupNaming(n BackupNaming) Option { return func(o *options) { o.namin
 // removed after a failure. The name is the prefix, random characters and ".tmp". The default is a dot,
 // the file name and a dash. NewStore rejects an invalid prefix.
 func WithTempPrefix(prefix string) Option { return func(o *options) { o.tempPrefix = &prefix } }
+
+// WithPrivateReplace makes every replacement of the file by this store private (0600, a user-only ACL on
+// Windows) instead of keeping the permissions of the file it replaces. It covers saves, updates,
+// transactions, RestoreBackup and UndoRestore. Without it, existing permissions are kept.
+func WithPrivateReplace() Option { return func(o *options) { o.private = true } }
 
 // naming is a validated scheme with the file-dependent defaults resolved.
 type naming struct {

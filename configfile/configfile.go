@@ -100,11 +100,13 @@ func replace(path string, data []byte) error {
 // replaceResolved is the final write step after all checks on this exact target. retry repeats the
 // rename on a transient failure; nil uses the default classification.
 func replaceResolved(target string, data []byte, beforeRename func() error, retry func(func() error) error) error {
-	return replaceWithTemp(target, data, "", beforeRename, retry)
+	return replaceWithTemp(target, data, "", false, beforeRename, retry)
 }
 
-// replaceWithTemp is replaceResolved with a chosen temporary file prefix; "" keeps the default.
-func replaceWithTemp(target string, data []byte, tempPrefix string, beforeRename func() error, retry func(func() error) error) error {
+// replaceWithTemp is replaceResolved with a chosen temporary file prefix; "" keeps the default. With
+// private, the replacement keeps the private permissions of the temporary file instead of taking the
+// target's.
+func replaceWithTemp(target string, data []byte, tempPrefix string, private bool, beforeRename func() error, retry func(func() error) error) error {
 	if retry == nil {
 		retry = func(op func() error) error {
 			return fileretry.Do(op, fileretry.Options{Transient: fileretry.Transient})
@@ -143,8 +145,10 @@ func replaceWithTemp(target string, data []byte, tempPrefix string, beforeRename
 	if err := tmp.Close(); err != nil {
 		return fmt.Errorf("close temporary configuration: %w", err)
 	}
-	if err := preservePermissions(target, name); err != nil {
-		return fmt.Errorf("preserve configuration permissions: %w", err)
+	if !private {
+		if err := preservePermissions(target, name); err != nil {
+			return fmt.Errorf("preserve configuration permissions: %w", err)
+		}
 	}
 	if err := retry(func() error {
 		if beforeRename != nil {

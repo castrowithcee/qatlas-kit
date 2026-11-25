@@ -25,5 +25,9 @@
 // rename or migration need not count as hand-edited. Choosing names never bypasses the lock or the
 // revision check.
 //
+// WithPrivateReplace makes every replacement of the file private (0600, a user-only ACL on Windows)
+// instead of keeping the permissions of the replaced file. It covers every write of the store, including
+// RestoreBackup and UndoRestore. Without it, existing permissions are kept.
+//
 // The file path and the document schema belong to the caller.
 package configfile

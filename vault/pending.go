@@ -17,7 +17,7 @@ const pendingSuffix = ".age"
 
 // pendingFiles returns the names of the pending entries, sorted, so a merge is deterministic.
 func (v *Vault) pendingFiles() ([]string, error) {
-	entries, err := os.ReadDir(v.pendingPath())
+	entries, err := v.readDir(v.pendingPath())
 	if err != nil {
 		if isNotExist(err) {
 			return nil, nil
@@ -56,7 +56,7 @@ func (v *Vault) AddPending(payload []byte) (name string, err error) {
 	case StateUnlocked:
 		recipient = v.identity.recipient
 	default:
-		text, err := readFile(v.recipientPath())
+		text, err := v.readFile(v.recipientPath())
 		if err != nil {
 			return "", fmt.Errorf("cannot read %s: %w", v.recipientPath(), err)
 		}
@@ -71,9 +71,11 @@ func (v *Vault) AddPending(payload []byte) (name string, err error) {
 	random := make([]byte, 16)
 	_, _ = rand.Read(random) // crypto/rand.Read never returns an error; it ends the program instead.
 	name = hex.EncodeToString(random) + pendingSuffix
-	if err := v.write(filepath.Join(v.pendingPath(), name), data); err != nil {
+	path := filepath.Join(v.pendingPath(), name)
+	if err := v.write(path, data); err != nil {
 		return "", err
 	}
+	v.noteQueued(path)
 	return name, nil
 }
 
@@ -85,7 +87,7 @@ func (v *Vault) RemovePending(name string) error {
 	}
 	v.mu.Lock()
 	defer v.mu.Unlock()
-	return removeAll(filepath.Join(v.pendingPath(), name))
+	return v.removeAll(filepath.Join(v.pendingPath(), name))
 }
 
 // planMerge hands every pending entry to the MergeFunc and returns the merged document and the names of the
@@ -143,7 +145,7 @@ func (v *Vault) mergePending(id *identity, doc []byte, all bool) ([]byte, int, e
 	}
 	// A file left behind merges again on the next unlock, which a MergeFunc treats as a repeat.
 	for _, name := range done {
-		_ = os.Remove(filepath.Join(v.pendingPath(), name))
+		_ = v.removeEntry(os.Remove, filepath.Join(v.pendingPath(), name))
 	}
 	clear(doc)
 	return merged, len(done), nil
@@ -156,7 +158,7 @@ func (v *Vault) readPending(id *identity, names []string) ([]Pending, [][]byte, 
 	raw := make([][]byte, 0, len(names))
 	for _, name := range names {
 		path := filepath.Join(v.pendingPath(), name)
-		data, err := readFile(path)
+		data, err := v.readFile(path)
 		if err != nil {
 			clearPending(pending)
 			return nil, nil, fmt.Errorf("cannot read %s: %w", path, err)
