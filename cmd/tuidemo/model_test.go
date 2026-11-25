@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"io"
+	"os"
 	"slices"
 	"strings"
 	"testing"
@@ -17,7 +18,12 @@ func testModel(t *testing.T, icons string) *model {
 	t.Helper()
 	prefs := uiprefs.Default(uiprefs.Schema{DefaultArea: "overview"})
 	prefs.Icons = icons
-	m, err := newModel(prefs, tui.ProfileNone, tui.CharsetUnicode)
+	root, err := newSampleRoot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(root) })
+	m, err := newModel(prefs, tui.ProfileNone, tui.CharsetUnicode, root)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -87,21 +93,18 @@ func TestThemeStepsBackByKeyAndWrapsAtBothEnds(t *testing.T) {
 	}
 }
 
-func TestThemeStepsBackByClickAndCommand(t *testing.T) {
+func TestThemeStepsBackByLeftInTheFormAndCommand(t *testing.T) {
 	m := testModel(t, uiprefs.IconsUnicode)
 	m.openArea("settings")
 	m.refresh()
-	for _, action := range []tui.ActionID{actTheme, actThemeBack} {
-		if !clickable(m, action) {
-			t.Errorf("no click target runs %s", action)
-		}
+	if !clickable(m, actTheme) {
+		t.Errorf("no click target runs %s", actTheme)
 	}
 	names := m.themes.Names()
-	if !clickWhere(m, func(r tui.MouseResult) bool { return r.Action == actThemeBack }) {
-		t.Fatal("no click target runs back")
-	}
+	m.zone = tui.ZoneForm
+	m.Update(tea.KeyPressMsg{Code: tea.KeyLeft})
 	if m.prefs.Theme != names[len(names)-1] {
-		t.Fatalf("theme %q after a click on back, want %q", m.prefs.Theme, names[len(names)-1])
+		t.Fatalf("theme %q after left in the theme field, want %q", m.prefs.Theme, names[len(names)-1])
 	}
 	m.run(actThemeBack, "")
 	if i := slices.IndexFunc(commands(m.groups, m.text), func(c tui.Command) bool { return c.Action == actThemeBack }); i < 0 {
@@ -202,7 +205,7 @@ func TestFlagValuesAreChecked(t *testing.T) {
 		case "-icons":
 			prefs.Icons = f[1]
 		}
-		if _, err := newModel(prefs, tui.ProfileNone, tui.CharsetUnicode); err != nil {
+		if _, err := newModel(prefs, tui.ProfileNone, tui.CharsetUnicode, ""); err != nil {
 			t.Errorf("%s: %v", args, err)
 		}
 	}
@@ -211,7 +214,7 @@ func TestFlagValuesAreChecked(t *testing.T) {
 func modalOpeners() map[string]func(*model) {
 	return map[string]func(*model){
 		"question": (*model).openQuestion, "input": (*model).openInput, "notice": (*model).openNotice,
-		"help": (*model).openHelp, "explanation": (*model).openExplanation,
+		"help": (*model).openHelp, "explanation": (*model).openExplanation, "picker": (*model).openPicker, "suggest": (*model).openSuggest,
 	}
 }
 

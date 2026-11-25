@@ -7,6 +7,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
+	"github.com/castrowithcee/qatlas-kit/i18n"
 	"github.com/castrowithcee/qatlas-kit/tui"
 	"github.com/castrowithcee/qatlas-kit/uiprefs"
 )
@@ -51,16 +52,25 @@ type model struct {
 	focus       tui.InputFocus
 	dialog      *tui.Dialog
 	explanation *tui.Explanation
+	picker      *tui.List
 	journal     string
+
+	// root is the temporary folder of the sample files, the only folder the Picker tabs read; bed and path
+	// hold what the picker and the suggestion dialog took.
+	root      string
+	bed, path string
 
 	cmdline *tui.CommandLine
 	cmdOpen bool
+
+	// blocks hold the live blocks of the tabs that show one, see block.
+	blocks map[blockKey]block
 
 	mouse *tui.MouseMap
 	view  string
 }
 
-func newModel(prefs uiprefs.Prefs, profile tui.ColorProfile, charset tui.CharsetMode) (*model, error) {
+func newModel(prefs uiprefs.Prefs, profile tui.ColorProfile, charset tui.CharsetMode, root string) (*model, error) {
 	gs := groups()
 	areas := make([]tui.Area, len(gs))
 	ids := make([]string, len(gs))
@@ -81,7 +91,7 @@ func newModel(prefs uiprefs.Prefs, profile tui.ColorProfile, charset tui.Charset
 	if err != nil {
 		return nil, err
 	}
-	m := &model{prefs: prefs, groups: gs, themes: themes, keys: keys, profile: profile, charset: charset,
+	m := &model{prefs: prefs, groups: gs, themes: themes, keys: keys, profile: profile, charset: charset, root: root,
 		area: gs[0].area.ID, tabs: map[tui.AreaID]tui.TabID{}, zone: tui.ZoneTabs}
 	if err := m.rebuildText(); err != nil {
 		return nil, err
@@ -90,9 +100,22 @@ func newModel(prefs uiprefs.Prefs, profile tui.ColorProfile, charset tui.Charset
 	return m, nil
 }
 
+// withThemeNames gives every theme without a text of its own its name as the label of its choice in the
+// settings form, in every language; the built-in themes of the kit are many and carry no translation.
+func withThemeNames(cat i18n.Catalogs[tui.TextID], names []string) i18n.Catalogs[tui.TextID] {
+	for _, texts := range cat {
+		for _, name := range names {
+			if id := tui.TextID("demo.theme." + name); texts[id] == "" {
+				texts[id] = name
+			}
+		}
+	}
+	return cat
+}
+
 // rebuildText builds the translator and the frame again for the language in force.
 func (m *model) rebuildText() error {
-	text, err := tui.NewTranslator(uiprefs.Language(m.prefs.Language), catalog(), m.keys)
+	text, err := tui.NewTranslator(uiprefs.Language(m.prefs.Language), withThemeNames(catalog(), m.themes.Names()), m.keys)
 	if err != nil {
 		return err
 	}
@@ -102,7 +125,7 @@ func (m *model) rebuildText() error {
 		return err
 	}
 	m.text, m.frame, m.cmdline = text, tui.NewFrame(m.keys, text), line
-	return nil
+	return m.rebuildBlocks()
 }
 
 // restyle resolves the theme in force; a theme the set does not know falls back to the terminal theme.
@@ -150,6 +173,10 @@ func (m *model) handle(msg tea.Msg) tea.Cmd {
 			m.cmdline.Paste(msg.Content)
 		case m.dialog != nil:
 			m.dialog.Paste(msg.Content)
+		case m.modal == nil:
+			if b := m.inBlock(m.zone); b != nil {
+				b.paste(msg.Content)
+			}
 		}
 	case tea.KeyPressMsg:
 		switch {
@@ -158,7 +185,10 @@ func (m *model) handle(msg tea.Msg) tea.Cmd {
 		case m.modal != nil:
 			return m.modalKey(msg)
 		}
-		if action, ok := m.keys.Match(msg, tui.InputNavigation); ok {
+		if b := m.inBlock(m.zone); b != nil && b.key(m, msg) {
+			return nil
+		}
+		if action, ok := m.keys.Match(msg, m.input()); ok {
 			return m.run(action, tui.KeyName(msg))
 		}
 	case tea.MouseMsg:
@@ -186,13 +216,22 @@ func (m *model) click(msg tea.MouseMsg) tea.Cmd {
 	if !res.Handled {
 		return nil
 	}
+	b := m.inBlock(res.Zone)
 	if _, ok := msg.(tea.MouseWheelMsg); ok {
-		m.wheel += res.WheelSteps
+		if b != nil {
+			b.wheel(res)
+		} else {
+			m.wheel += res.WheelSteps
+		}
 		return nil
 	}
 	event := msg.Mouse()
 	m.clickX, m.clickY, m.hit = event.X, event.Y, hitName(res)
 	switch {
+	case b != nil:
+		// A target of a block carries the action of its key for the block to read back, so it never runs here.
+		m.zone = res.Zone
+		b.click(m, res)
 	case res.Action != "":
 		return m.run(res.Action, "")
 	case res.Area != "":
@@ -242,24 +281,20 @@ func (m *model) run(action tui.ActionID, key string) tea.Cmd {
 		m.stepTheme(-1)
 	case actLanguage:
 		if m.prefs.Language == uiprefs.LanguageGerman {
-			m.prefs.Language = uiprefs.LanguageEnglish
+			m.setLanguage(uiprefs.LanguageEnglish)
 		} else {
-			m.prefs.Language = uiprefs.LanguageGerman
+			m.setLanguage(uiprefs.LanguageGerman)
 		}
-		if err := m.rebuildText(); err != nil {
-			m.message = &tui.Message{Kind: tui.MessageError, Text: err.Error()}
-			break
-		}
-		m.changed(tui.TextSettingLanguage, m.prefs.Language)
 	case actIcons:
 		sets := []string{uiprefs.IconsUnicode, uiprefs.IconsNerdFont, uiprefs.IconsNone}
-		m.prefs.Icons = sets[(slices.Index(sets, m.prefs.Icons)+1)%len(sets)]
-		m.changed(tui.TextSettingIcons, m.prefs.Icons)
+		m.setIcons(sets[(slices.Index(sets, m.prefs.Icons)+1)%len(sets)])
 	case actMouse:
-		m.prefs.MouseEnabled = !m.prefs.MouseEnabled
-		m.changed(tui.TextSettingMouse, m.onOff(m.prefs.MouseEnabled))
+		m.setMouse(!m.prefs.MouseEnabled)
 	case actCount:
 		m.count++
+	case actBack:
+		// Back goes up from a block to the sub-tab line; a block that needs it took the key before.
+		m.zone = tui.StepZoneLevel(m.zones(), m.zone, -1)
 	case actHelp:
 		m.openHelp()
 	case actInfo:
@@ -272,15 +307,45 @@ func (m *model) run(action tui.ActionID, key string) tea.Cmd {
 		m.openInput()
 	case actNotice:
 		m.openNotice()
+	case actPick:
+		m.openPicker()
+	case actSuggest:
+		m.openSuggest()
+	default:
+		if b := m.live(); b != nil {
+			b.act(m, action)
+		}
 	}
 	return nil
 }
 
 // stepTheme switches the theme by one place, with wrap-around at both ends.
-func (m *model) stepTheme(by int) {
-	m.prefs.Theme = m.themes.Step(m.prefs.Theme, by)
+func (m *model) stepTheme(by int) { m.setTheme(m.themes.Step(m.prefs.Theme, by)) }
+
+// The setters are what the switches and the settings form share: each takes the value at once.
+func (m *model) setTheme(name string) {
+	m.prefs.Theme = name
 	m.restyle()
 	m.changed(tui.TextSettingTheme, m.prefs.Theme)
+}
+
+func (m *model) setLanguage(language string) {
+	m.prefs.Language = language
+	if err := m.rebuildText(); err != nil {
+		m.message = &tui.Message{Kind: tui.MessageError, Text: err.Error()}
+		return
+	}
+	m.changed(tui.TextSettingLanguage, m.prefs.Language)
+}
+
+func (m *model) setIcons(icons string) {
+	m.prefs.Icons = icons
+	m.changed(tui.TextSettingIcons, m.prefs.Icons)
+}
+
+func (m *model) setMouse(on bool) {
+	m.prefs.MouseEnabled = on
+	m.changed(tui.TextSettingMouse, m.onOff(on))
 }
 
 func (m *model) changed(label tui.TextID, value string) {

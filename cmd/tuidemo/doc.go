@@ -14,19 +14,40 @@
 // Operation: the digit of a tab opens it, left and right step through the tabs of the focused line, tab and
 // shift+tab move the focus between the tab line and the sub-tab line, and q or ctrl+c quits. The switches act
 // at once: t for the theme, T (shift+t) for the theme one step back, l for the language, I for the icons and
-// M for the mouse. The Dialogs tab opens a question with a destroying answer (a), an input (r) and a notice
+// M for the mouse. The Settings tab is a form of choice fields for the four switches (Look: theme and icons,
+// Input: language and mouse): left and right step through the values, which take effect at once, and enter or
+// a click opens the list of values. In the theme field, left is the step back. The global switches work as
+// before and the form shows the value they set; a switch of the language builds the form again and keeps the
+// field in focus. The Dialogs tab opens a question with a destroying answer (a), an input (r) and a notice
 // (o); the Help tab shows the help (?), the explanation of the sample data (i) and the command line (:),
 // which runs commands by name, such as the tabs and the switches, theme-back among them. The command line
 // stands over the dimmed screen, at the top and centred, with a key line of its own; where the terminal is
 // too small for that it fills the workspace and its keys stand in the footer. Esc closes whatever stands over
 // the screen, and nothing behind it takes a key or a click meanwhile.
 //
+// The Lists tab shows live blocks: a list with a filter bar, a grouped list that folds and a list with tick
+// boxes. A tab with a live block adds a focus zone to tab and shift+tab, and while the focus is there the block
+// reads the keys first, so a letter typed into its filter is no switch; esc steps back to the sub-tab line.
+// The Forms tab shows a form that adds a bed (text, choice, tick boxes and a masked field) and one with date
+// fields and their calendar, opened by enter or a click on its symbol. F2 or the save button checks the values
+// and reports what is missing; the reset button starts the form again.
+// The Pickers tab (digit 8) shows a list of beds as a modal over the screen (p or its button; typing filters,
+// enter or a click on the marked row takes it, esc closes), a file browser over a sample folder and an input
+// that offers sample paths while it is typed (s or its button; up and down mark one, tab completes it). The
+// sample folder is a temporary directory the program creates at its start and removes when it ends, on every
+// way out but a kill; the browser reads and writes nothing outside it.
+// The Views tab (digit 9) shows a read-only text with syntax colours, line numbers, search and a masked secret
+// that the workbench uncovers only after a question (V, answered by y or n); a log of invented lines over time
+// with following, search, wrapping, a time column and a period dialog (P) with a calendar for a range; and a
+// chat whose field takes several lines (enter breaks the line, tab leads to the send button, where enter sends)
+// and whose quick replies answer the selected message.
+//
 // Every function can be clicked while the mouse is on: tabs, the key hints of the header and the footer, the
-// rows of the Settings tab (the theme row and, under it, the row that steps the theme back), the buttons of a
+// fields of the Settings tab, the buttons of a
 // dialog and of the Dialogs and Help tabs, the topics and the key list of the help, and the commands of the
-// command line and the keys of its key line. The mouse switch is one of them: a click on its row or on its
-// footer hint switches the mouse off, and only its key M switches it on again, since a switched-off mouse
-// takes no click.
+// command line and the keys of its key line. The mouse switch is one of them: a click on its field or on its
+// footer hint switches the mouse off, and only its key M or the command mouse switches it on again, since a
+// switched-off mouse takes no click, the form's field included.
 //
 // The program uses the public API of the kit packages only, as a tool built on them would. Each tab belongs
 // to one group of blocks and is one entry of the list returned by groups, so a further group adds a tab
