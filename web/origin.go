@@ -40,18 +40,20 @@ func (s *Server) checkOrigin(r *http.Request) error {
 	case len(values) > 1:
 		return errors.New("more than one Origin header")
 	}
-	origin := strings.ToLower(values[0])
-	if s.network {
-		if !s.origins[origin] {
-			return errors.New("origin not allowed")
-		}
-		return nil
-	}
-	// Covers Origin: null as well, which Sec-Fetch-Site: same-origin alone would let through.
-	if origin != "http://"+strings.ToLower(r.Host) {
-		return errors.New("origin does not match host")
+	if !s.originAllowed(values[0], r.Host) {
+		return errors.New("origin not allowed")
 	}
 	return nil
+}
+
+// originAllowed compares an Origin header with the origin of this server. It refuses Origin: null as
+// well, which Sec-Fetch-Site: same-origin alone would let through.
+func (s *Server) originAllowed(origin, host string) bool {
+	origin = strings.ToLower(origin)
+	if s.network {
+		return s.origins[origin]
+	}
+	return origin == "http://"+strings.ToLower(host)
 }
 
 var forwardedHeaders = []string{"Forwarded", "X-Forwarded-For", "X-Forwarded-Host", "X-Forwarded-Proto",
