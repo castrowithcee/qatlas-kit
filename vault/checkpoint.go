@@ -8,10 +8,10 @@ import (
 )
 
 // Checkpoint records the document, the plain document, the key, the recipient and the pending entries
-// together with what this value holds, and returns restore, which puts those bytes back, removes such a
-// file or pending entry that was not there and returns this value to the recorded state. A vault directory
-// the checkpoint did not find is removed again once it is empty. restore needs no passphrase. Sealed files
-// are not recorded.
+// together with what this value holds, and returns restore, which puts those bytes back, also of a pending
+// entry merged or removed since, removes such a file or pending entry that was not there and returns this
+// value to the recorded state. A vault directory the checkpoint did not find is removed again once it is
+// empty. restore needs no passphrase. Sealed files are not recorded.
 //
 // With Files.Lock restore takes the write lock and takes back what this value wrote since, and only that.
 // While nobody else wrote the document file in between, it puts the recorded document back byte for byte;
@@ -37,7 +37,7 @@ func (v *Vault) Checkpoint() (restore func() error, err error) {
 			return nil, fmt.Errorf("cannot read %s: %w", path, err)
 		}
 	}
-	pending, err := v.pendingFiles()
+	names, err := v.pendingFiles()
 	if err != nil {
 		return nil, err
 	}
@@ -60,6 +60,17 @@ func (v *Vault) Checkpoint() (restore func() error, err error) {
 			return v.restoreLocked(j, c)
 		}, nil
 	}
+	pending := map[string][]byte{}
+	for _, name := range names {
+		path := filepath.Join(v.pendingPath(), name)
+		data, err := v.readFile(path)
+		switch {
+		case err == nil:
+			pending[name] = data
+		case !isNotExist(err):
+			return nil, fmt.Errorf("cannot read %s: %w", path, err)
+		}
+	}
 
 	return func() error {
 		v.mu.Lock()
@@ -79,8 +90,15 @@ func (v *Vault) Checkpoint() (restore func() error, err error) {
 			failed = append(failed, err)
 		}
 		for _, name := range now {
-			if !slices.Contains(pending, name) {
+			if _, ok := pending[name]; !ok {
 				if err := v.removeAll(filepath.Join(v.pendingPath(), name)); err != nil {
+					failed = append(failed, err)
+				}
+			}
+		}
+		for _, name := range names {
+			if data, ok := pending[name]; ok && !slices.Contains(now, name) {
+				if err := v.write(filepath.Join(v.pendingPath(), name), data); err != nil {
 					failed = append(failed, err)
 				}
 			}

@@ -90,8 +90,9 @@
 // damaged document does not stop it. It binds the key to the recipient file and reports ErrAbsent when that
 // file is missing; ReadSealedWithIdentityOptions with AllowMissingRecipient reads the sealed file with the
 // key alone in that case, and then the authenticity of the content is the application's to check.
-// Checkpoint records the vault files and returns a function that restores them without the passphrase;
-// without Files.Lock it removes every pending entry it did not record, also one another process added.
+// Checkpoint records the vault files and pending entries and returns a function that restores them without
+// the passphrase, also an entry merged since; without Files.Lock it removes every pending entry it did not
+// record, also one another process added.
 // Update and WriteWithUndo return the undo of their own change: it puts back the document file and the
 // pending files that operation removed, byte for byte, and leaves every other entry pending. With
 // Files.Lock undo and restore take back only this value's change: they put bytes back only while nobody
