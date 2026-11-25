@@ -8,17 +8,18 @@ import (
 
 // The actions of the key table. A click on a target runs the same action as its key.
 const (
-	actQuit     tui.ActionID = "quit"
-	actArea     tui.ActionID = "area"
-	actLeft     tui.ActionID = "left"
-	actRight    tui.ActionID = "right"
-	actZoneNext tui.ActionID = "zone.next"
-	actZonePrev tui.ActionID = "zone.prev"
-	actTheme    tui.ActionID = "set.theme"
-	actLanguage tui.ActionID = "set.language"
-	actIcons    tui.ActionID = "set.icons"
-	actMouse    tui.ActionID = "set.mouse"
-	actCount    tui.ActionID = "count"
+	actQuit      tui.ActionID = "quit"
+	actArea      tui.ActionID = "area"
+	actLeft      tui.ActionID = "left"
+	actRight     tui.ActionID = "right"
+	actZoneNext  tui.ActionID = "zone.next"
+	actZonePrev  tui.ActionID = "zone.prev"
+	actTheme     tui.ActionID = "set.theme"
+	actThemeBack tui.ActionID = "set.theme.back"
+	actLanguage  tui.ActionID = "set.language"
+	actIcons     tui.ActionID = "set.icons"
+	actMouse     tui.ActionID = "set.mouse"
+	actCount     tui.ActionID = "count"
 
 	actBack     tui.ActionID = "back"
 	actEnter    tui.ActionID = "enter"
@@ -57,6 +58,7 @@ func keyTable(areas int) []tui.Action {
 		act(actZoneNext, tui.LevelMove, textKeyZone, "tab"),
 		act(actZonePrev, tui.LevelMove, textKeyZone, "shift+tab"),
 		act(actTheme, tui.LevelLetter, textKeyTheme, "t"),
+		act(actThemeBack, tui.LevelLetter, textKeyThemeBack, "T"),
 		act(actLanguage, tui.LevelLetter, textKeyLanguage, "l"),
 		act(actIcons, tui.LevelLetter, textKeyIcons, "i"),
 		act(actMouse, tui.LevelLetter, textKeyMouse, "m"),
