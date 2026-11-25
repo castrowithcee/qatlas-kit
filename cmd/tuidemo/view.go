@@ -29,12 +29,17 @@ func (m *model) tab() tui.TabID {
 	return g.area.Tabs[0].ID
 }
 
-// zones are the focus zones the open area has: the sub-tab line only where it shows.
+// zones are the focus zones the open tab has: the sub-tab line only where it shows, the work area (reported
+// as rows) only where the tab has buttons.
 func (m *model) zones() []tui.FocusZone {
+	zones := []tui.FocusZone{tui.ZoneTabs}
 	if len(m.group().area.Tabs) > 1 {
-		return []tui.FocusZone{tui.ZoneTabs, tui.ZoneSubtabs}
+		zones = append(zones, tui.ZoneSubtabs)
 	}
-	return []tui.FocusZone{tui.ZoneTabs}
+	if len(m.actions()) > 0 {
+		zones = append(zones, tui.ZoneRows)
+	}
+	return zones
 }
 
 func (m *model) openArea(id tui.AreaID) {
@@ -77,7 +82,7 @@ func (m *model) areas() []tui.Area {
 	return areas
 }
 
-// footerHints are the key hints of the screen: the group's own behind the common ones, quit always.
+// footerHints are the key hints of the screen: the open tab's own behind the common ones, quit always.
 func (m *model) footerHints() []tui.Hint {
 	hints := []tui.Hint{
 		{Action: actLeft, Label: textHintStep, Kind: tui.HintNavigation},
@@ -89,7 +94,8 @@ func (m *model) footerHints() []tui.Hint {
 		{Action: actIcons, Label: textKeyIcons, Priority: 4},
 		{Action: actMouse, Label: textKeyMouse, Priority: 5},
 	}
-	hints = append(hints, m.group().hints...)
+	hints = append(hints, m.navHints()...)
+	hints = append(hints, m.group().hints[m.tab()]...)
 	return append(hints, tui.Hint{Action: actQuit, Label: tui.TextKeyQuit, Kind: tui.HintAlways})
 }
 
