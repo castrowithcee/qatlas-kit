@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -647,6 +648,55 @@ func TestCheckpointRestores(t *testing.T) {
 	}
 	if err := locked.VerifyPassphrase(testPassphrase); err != nil {
 		t.Fatalf("restore did not put the key back: %v", err)
+	}
+}
+
+// Without Files.Lock restore puts back a pending entry that an operation merged and removed after the
+// checkpoint.
+func TestCheckpointRestoresMergedPending(t *testing.T) {
+	tests := []struct {
+		name  string
+		state State
+		run   func(*Vault) error
+	}{
+		{"unlock", StateLocked, func(v *Vault) error { _, err := v.Unlock(testPassphrase); return err }},
+		{"update", StateUnlocked, func(v *Vault) error {
+			_, err := v.Update(func(doc []byte, pending []Pending) ([]byte, []string, error) {
+				return testMerge(doc, pending)
+			})
+			return err
+		}},
+		{"decrypt", StateLocked, func(v *Vault) error { return v.Decrypt(testPassphrase) }},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			v, locked := created(t, map[string]string{"reader": "example-1"})
+			if tt.state == StateLocked {
+				v = locked
+			}
+			addPending(t, v, testEntry{Name: "writer", Value: "example-2"})
+			before := dirState(t, v.Dir())
+			restore, err := v.Checkpoint()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := tt.run(v); err != nil {
+				t.Fatal(err)
+			}
+			if st, _ := v.Status(); st.Pending != 0 {
+				t.Fatalf("Status() before restore = %+v, want the entry merged", st)
+			}
+			if err := restore(); err != nil {
+				t.Fatalf("restore() error = %v", err)
+			}
+			if after := dirState(t, v.Dir()); !maps.Equal(before, after) {
+				t.Fatalf("restore left %v, want %v byte for byte", slices.Sorted(maps.Keys(after)),
+					slices.Sorted(maps.Keys(before)))
+			}
+			if st, _ := v.Status(); st.Pending != 1 || st.State != tt.state {
+				t.Fatalf("Status() after restore = %+v, want %v with the entry pending", st, tt.state)
+			}
+		})
 	}
 }
 
