@@ -14,9 +14,13 @@ type group struct {
 	icons [2]string
 	// draw returns the lines and the click targets of the open tab, relative to the workspace.
 	draw func(m *model, tab tui.TabID, room tui.Rect) ([]string, []tui.Target)
-	// hints are the footer hints of the group, behind the common ones.
-	hints []tui.Hint
-	// blocks returns the live block of each tab that shows one, see block; nil for a group without any.
+	// actions are the buttons of a tab in the order of the focus, as the actions their clicks run.
+	actions func(area tui.Area, tab tui.TabID) []tui.ActionID
+	// hints are the footer hints of a tab, behind the common ones: each tab shows the keys of its own
+	// actions only.
+	hints map[tui.TabID][]tui.Hint
+	// blocks returns the live block of each tab that shows one, see block; nil for a group without any. A
+	// tab shows either a block or buttons.
 	blocks func(m *model) (map[tui.TabID]block, error)
 }
 
@@ -33,7 +37,13 @@ func groups() []group {
 				Tabs: []tui.Tab{{ID: "tabs", Title: textTabTabs}, {ID: "mouse", Title: textTabMouse}}},
 			icons: [2]string{"▣", "\uf2d0"},
 			draw:  drawFrame,
-			hints: []tui.Hint{{Action: actCount, Label: textKeyCount, Priority: 1}},
+			actions: func(_ tui.Area, tab tui.TabID) []tui.ActionID {
+				if tab == "mouse" {
+					return []tui.ActionID{actCount}
+				}
+				return nil
+			},
+			hints: map[tui.TabID][]tui.Hint{"mouse": {{Action: actCount, Label: textKeyCount, Priority: 1}}},
 		},
 		{
 			area: tui.Area{ID: "settings", Title: textAreaSettings,
@@ -45,16 +55,21 @@ func groups() []group {
 		{
 			area: tui.Area{ID: "dialogs", Title: textAreaDialogs,
 				Tabs: []tui.Tab{{ID: "question", Title: textTabQuestion}, {ID: "input", Title: textTabInput}, {ID: "notice", Title: textTabNotice}}},
-			icons: [2]string{"▤", "\uf27a"},
-			draw:  drawDialogs,
-			hints: []tui.Hint{{Action: actAsk, Label: textKeyAsk, Priority: 1}, {Action: actRename, Label: tui.TextKeyRename, Priority: 1},
-				{Action: actNotice, Label: textKeyNotice, Priority: 1}},
+			icons:   [2]string{"▤", "\uf27a"},
+			draw:    drawDialogs,
+			actions: openerAction,
+			hints: map[tui.TabID][]tui.Hint{
+				"question": {{Action: actAsk, Label: textKeyAsk, Priority: 1}},
+				"input":    {{Action: actRename, Label: tui.TextKeyRename, Priority: 1}},
+				"notice":   {{Action: actNotice, Label: textKeyNotice, Priority: 1}},
+			},
 		},
 		{
 			area: tui.Area{ID: "help", Title: textAreaHelp,
 				Tabs: []tui.Tab{{ID: "help", Title: textTabHelp}, {ID: "explain", Title: textTabExplain}, {ID: "commands", Title: textTabCommands}}},
-			icons: [2]string{"◈", "\uf059"},
-			draw:  drawHelp,
+			icons:   [2]string{"◈", "\uf059"},
+			draw:    drawHelp,
+			actions: openerAction,
 		},
 		{
 			area: tui.Area{ID: "lists", Title: textAreaLists,
@@ -73,9 +88,13 @@ func groups() []group {
 		{
 			area: tui.Area{ID: "pickers", Title: textAreaPickers,
 				Tabs: []tui.Tab{{ID: "choose", Title: textTabPickChoose}, {ID: "files", Title: textTabPickFiles}, {ID: "suggest", Title: textTabPickSuggest}}},
-			icons:  [2]string{"◉", "\uf07b"},
-			draw:   drawPicker,
-			hints:  []tui.Hint{{Action: actPick, Label: textKeyPick, Priority: 1}, {Action: actSuggest, Label: textKeySuggest, Priority: 1}},
+			icons:   [2]string{"◉", "\uf07b"},
+			draw:    drawPicker,
+			actions: pickAction,
+			hints: map[tui.TabID][]tui.Hint{
+				"choose":  {{Action: actPick, Label: textKeyPick, Priority: 1}},
+				"suggest": {{Action: actSuggest, Label: textKeySuggest, Priority: 1}},
+			},
 			blocks: pickBlocks,
 		},
 		{
@@ -154,7 +173,7 @@ func (m *model) drawMouse(room tui.Rect) ([]string, []tui.Target) {
 	lines = append(lines, "", m.text.Lookup(textMouseLast, m.clickX+1, m.clickY+1, last),
 		m.text.Lookup(textMouseWheel, m.wheel), m.text.Lookup(textMouseCount, m.count), "")
 	label := m.text.Lookup(textMouseButton)
-	button := m.styles.Button(tui.ButtonPrimary, label, false)
+	button := m.styles.Button(tui.ButtonPrimary, label, m.focused(0))
 	target := tui.Target{Rect: tui.Rect{X: 0, Y: len(lines), Width: len([]rune(label)) + 4, Height: 1}, Action: actCount}
 	return append(lines, button), []tui.Target{target}
 }
@@ -177,6 +196,10 @@ func openers() map[tui.TabID]opener {
 	}
 }
 
+func openerAction(_ tui.Area, tab tui.TabID) []tui.ActionID {
+	return []tui.ActionID{openers()[tab].action}
+}
+
 func drawDialogs(m *model, tab tui.TabID, room tui.Rect) ([]string, []tui.Target) {
 	return m.drawOpener(tab, room)
 }
@@ -192,5 +215,5 @@ func (m *model) drawOpener(tab tui.TabID, room tui.Rect) ([]string, []tui.Target
 	lines := m.paragraph(o.body, room.Width)
 	label := tui.Escape(m.text.Lookup(o.label))
 	target := tui.Target{Rect: tui.Rect{Y: len(lines) + 1, Width: len([]rune(label)) + 4, Height: 1}, Action: o.action}
-	return append(lines, "", m.styles.Button(tui.ButtonPrimary, label, false)), []tui.Target{target}
+	return append(lines, "", m.styles.Button(tui.ButtonPrimary, label, m.focused(0))), []tui.Target{target}
 }

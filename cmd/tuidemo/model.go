@@ -38,7 +38,9 @@ type model struct {
 	area          tui.AreaID
 	tabs          map[tui.AreaID]tui.TabID
 	zone          tui.FocusZone
-	message       *tui.Message
+	// item is the button of the open tab that has the focus while zone is the work area.
+	item    int
+	message *tui.Message
 
 	// The mouse probe of the frame tab.
 	clickX, clickY int
@@ -146,7 +148,9 @@ func (m *model) Init() tea.Cmd {
 }
 
 func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	was := string(m.area) + "/" + string(m.tab())
 	cmd := m.handle(msg)
+	m.settle(was)
 	m.refresh()
 	return m, cmd
 }
@@ -260,6 +264,10 @@ func hitName(res tui.MouseResult) string {
 
 // run does one action; key is the key that triggered it, empty for a click.
 func (m *model) run(action tui.ActionID, key string) tea.Cmd {
+	// A footer hint of a block names a key of the block, so its click goes there first, as the key would.
+	if b := m.inBlock(m.zone); b != nil && key == "" && b.act(m, action) {
+		return nil
+	}
 	switch action {
 	case actQuit, actForceQuit:
 		return tea.Quit
@@ -267,6 +275,12 @@ func (m *model) run(action tui.ActionID, key string) tea.Cmd {
 		if n, err := strconv.Atoi(key); err == nil && n >= 1 && n <= len(m.groups) {
 			m.openArea(m.groups[n-1].area.ID)
 		}
+	case actDown:
+		m.down()
+	case actUp:
+		m.up()
+	case actEnter:
+		m.enter()
 	case actLeft:
 		m.step(-1)
 	case actRight:

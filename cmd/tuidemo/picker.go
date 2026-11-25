@@ -149,6 +149,14 @@ func pickOpeners() map[tui.TabID]pickOpener {
 	}
 }
 
+// pickAction is the button of a Picker tab without a block.
+func pickAction(_ tui.Area, tab tui.TabID) []tui.ActionID {
+	if o, ok := pickOpeners()[tab]; ok {
+		return []tui.ActionID{o.action}
+	}
+	return nil
+}
+
 func drawPicker(m *model, tab tui.TabID, room tui.Rect) ([]string, []tui.Target) {
 	if b := m.live(); b != nil {
 		return b.draw(m, room)
@@ -161,5 +169,5 @@ func drawPicker(m *model, tab tui.TabID, room tui.Rect) ([]string, []tui.Target)
 	if v := o.current(m); v != "" {
 		value = tui.Escape(v)
 	}
-	return append(lines, "", m.styles.Button(tui.ButtonPrimary, label, false), "", m.text.Lookup(o.value, value)), []tui.Target{target}
+	return append(lines, "", m.styles.Button(tui.ButtonPrimary, label, m.focused(0)), "", m.text.Lookup(o.value, value)), []tui.Target{target}
 }

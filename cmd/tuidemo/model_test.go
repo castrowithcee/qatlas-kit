@@ -4,6 +4,7 @@ import (
 	"errors"
 	"io"
 	"os"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -353,5 +354,268 @@ func TestEveryCommandRunsLikeItsKey(t *testing.T) {
 			t.Errorf("%s left the line open", c.Name)
 		}
 		m.closeModal()
+	}
+}
+
+func TestNoKeyTakesAReservedKeyWithAnotherMeaning(t *testing.T) {
+	owners := map[string]tui.ActionID{}
+	for _, a := range tui.StandardActions() {
+		for _, key := range a.DefaultKeys {
+			owners[key] = a.ID
+		}
+	}
+	table := keyTable(len(groups()))
+	if _, err := tui.NewKeymap(table, tui.CharsetUnicode); err != nil {
+		t.Fatal(err)
+	}
+	same := 0
+	for _, a := range table {
+		if a.Level == tui.LevelConfirm || a.Level == tui.LevelHelp {
+			continue // overlay levels may repeat a key of the main levels
+		}
+		for _, key := range a.DefaultKeys {
+			switch owner, ok := owners[key]; {
+			case !ok:
+			case owner != a.ID:
+				t.Errorf("key %q of %q is reserved for %q", key, a.ID, owner)
+			default:
+				same++
+			}
+		}
+	}
+	if same == 0 {
+		t.Error("no key of the table is a standard key; the check found nothing to compare")
+	}
+}
+
+func TestEachTabHintsItsOwnActionsOnly(t *testing.T) {
+	m := testModel(t, uiprefs.IconsNone)
+	own := map[tui.ActionID]tui.TabID{}
+	for _, g := range m.groups {
+		for tab, hints := range g.hints {
+			for _, h := range hints {
+				own[h.Action] = tab
+			}
+		}
+	}
+	for _, g := range m.groups {
+		for _, tab := range g.area.Tabs {
+			m.area, m.tabs[g.area.ID] = g.area.ID, tab.ID
+			for _, h := range m.footerHints() {
+				if want, ok := own[h.Action]; ok && (want != tab.ID || len(g.hints[tab.ID]) == 0) {
+					t.Errorf("%s/%s shows the hint of %s", g.area.ID, tab.ID, h.Action)
+				}
+			}
+		}
+	}
+	if len(own) != 6 {
+		t.Errorf("%d tab actions, want ask, rename, notice, count, pick and suggest", len(own))
+	}
+}
+
+// press sends the key as the terminal would.
+func press(m *model, code rune) {
+	m.Update(tea.KeyPressMsg{Code: code})
+}
+
+var focusMark = regexp.MustCompile(`> [^<>\n]+ <`)
+
+func TestOnlyTabsWithButtonsOrABlockHaveAWorkZone(t *testing.T) {
+	m := testModel(t, uiprefs.IconsNone)
+	for _, g := range m.groups {
+		for _, tab := range g.area.Tabs {
+			m.area, m.tabs[g.area.ID] = g.area.ID, tab.ID
+			work := slices.DeleteFunc(m.zones(), func(z tui.FocusZone) bool { return z == tui.ZoneTabs || z == tui.ZoneSubtabs })
+			if b := m.live(); b != nil {
+				if len(m.actions()) > 0 || !slices.Equal(work, b.zones()) {
+					t.Errorf("%s/%s: work zones %v, buttons %d, want the block's %v only", g.area.ID, tab.ID, work, len(m.actions()), b.zones())
+				}
+				continue
+			}
+			if got, want := slices.Contains(work, tui.ZoneRows), len(m.actions()) > 0; got != want || len(work) > 1 {
+				t.Errorf("%s/%s: work zones %v, buttons %d", g.area.ID, tab.ID, work, len(m.actions()))
+			}
+		}
+	}
+	m.area, m.tabs["frame"] = "frame", "tabs"
+	if slices.Contains(m.zones(), tui.ZoneRows) {
+		t.Error("the tab without buttons reports a work zone")
+	}
+}
+
+func TestEveryButtonIsReachableByKeyAndFocusedAndTriggersLikeItsClick(t *testing.T) {
+	m := testModel(t, uiprefs.IconsNone)
+	for _, g := range m.groups {
+		for _, tab := range g.area.Tabs {
+			m.openArea(g.area.ID)
+			m.tabs[g.area.ID], m.zone, m.item = tab.ID, tui.ZoneTabs, 0
+			m.refresh()
+			buttons := m.actions()
+			if len(buttons) == 0 {
+				continue
+			}
+			if focusMark.MatchString(m.view) {
+				t.Errorf("%s/%s: a button shows the focus before it is in the work area", g.area.ID, tab.ID)
+			}
+			press(m, tea.KeyDown) // tab line to sub-tab line
+			press(m, tea.KeyDown) // into the work area
+			for i, action := range buttons {
+				if m.zone != tui.ZoneRows || m.item != i {
+					t.Fatalf("%s/%s: focus at %s %d, want rows %d", g.area.ID, tab.ID, m.zone, m.item, i)
+				}
+				if n := len(focusMark.FindAllString(m.view, -1)); n != 1 {
+					t.Errorf("%s/%s button %d: %d focus marks on the screen", g.area.ID, tab.ID, i, n)
+				}
+				if !clickable(m, action) {
+					t.Errorf("%s: no click runs the action of the button", action)
+				}
+				press(m, tea.KeyDown)
+			}
+			if m.item != len(buttons)-1 {
+				t.Errorf("%s/%s: down went past the last button", g.area.ID, tab.ID)
+			}
+			for range buttons {
+				press(m, tea.KeyUp)
+			}
+			if m.zone != tui.ZoneSubtabs {
+				t.Errorf("%s/%s: up from the first button leads to %s", g.area.ID, tab.ID, m.zone)
+			}
+			press(m, tea.KeyDown)
+			press(m, tea.KeyEscape)
+			if m.zone != tui.ZoneSubtabs {
+				t.Errorf("%s/%s: esc from the buttons leads to %s", g.area.ID, tab.ID, m.zone)
+			}
+		}
+	}
+}
+
+func TestEnterTriggersTheFocusedButtonAndLeadsIntoTheWorkArea(t *testing.T) {
+	m := testModel(t, uiprefs.IconsNone)
+	m.openArea("frame")
+	m.tabs["frame"] = "mouse"
+	press(m, tea.KeyEnter)
+	if m.zone != tui.ZoneRows {
+		t.Fatalf("enter on the tab line leads to %s", m.zone)
+	}
+	press(m, tea.KeyEnter)
+	if m.count != 1 {
+		t.Errorf("enter on the button counted %d", m.count)
+	}
+	m.openArea("dialogs")
+	press(m, tea.KeyEnter)
+	if m.modal == nil {
+		t.Error("enter on the opener did not open the part")
+	}
+	m.zone = tui.ZoneTabs
+	m.openArea("overview")
+	press(m, tea.KeyEnter)
+	if m.zone != tui.ZoneTabs {
+		t.Errorf("enter on a tab without buttons moved the focus to %s", m.zone)
+	}
+}
+
+func TestSideKeysSwitchTabsOnlyOnTheTabLines(t *testing.T) {
+	m := testModel(t, uiprefs.IconsNone)
+	for _, area := range []tui.AreaID{"dialogs", "settings"} { // buttons, and the form of a block
+		m.zone = tui.ZoneTabs
+		m.openArea(area)
+		press(m, tea.KeyTab)
+		press(m, tea.KeyTab) // tab line, sub-tab line, work area
+		if m.zone != m.workZone() || m.zone == "" {
+			t.Fatalf("%s: tab leads to %s", area, m.zone)
+		}
+		tab := m.tab()
+		press(m, tea.KeyRight)
+		press(m, tea.KeyLeft)
+		if m.area != area || m.tab() != tab {
+			t.Errorf("a side key in the work area of %s switched to %s/%s", area, m.area, m.tab())
+		}
+	}
+}
+
+func TestFooterNamesDownUpEnterWhereTheyAct(t *testing.T) {
+	m := testModel(t, uiprefs.IconsNone)
+	has := func(a tui.ActionID) bool {
+		return slices.ContainsFunc(m.footerHints(), func(h tui.Hint) bool { return h.Action == a })
+	}
+	m.openArea("dialogs")
+	if !has(actDown) || has(actUp) || !has(actEnter) {
+		t.Error("tab line of a tab with buttons: want down and enter, no up")
+	}
+	m.zone = tui.ZoneRows
+	if has(actDown) || !has(actUp) || !has(actEnter) {
+		t.Error("its only button: want up and enter, no down")
+	}
+	m.zone = tui.ZoneTabs
+	m.openArea("settings")
+	if !has(actDown) || has(actUp) || !has(actEnter) {
+		t.Error("tab line of a tab with a block: want down and enter, no up")
+	}
+	m.zone = tui.ZoneForm
+	if hints := m.navHints(); len(hints) != 0 {
+		t.Errorf("in the block: %d hints of the work area's own moves, want the block's only", len(hints))
+	}
+	m.openArea("overview")
+	m.zone = tui.ZoneTabs
+	if has(actEnter) || !has(actDown) || has(actUp) {
+		t.Error("tab without buttons: want down only")
+	}
+}
+
+// keepsUp are the blocks that take up at their top themselves, since up scrolls or selects there; esc leads
+// out of them.
+var keepsUp = map[blockKey]bool{{"views", "text"}: true, {"views", "log"}: true, {"views", "chat"}: true}
+
+func TestEveryBlockIsReachedByKeyAndLeftByUpOrEsc(t *testing.T) {
+	m := testModel(t, uiprefs.IconsNone)
+	for _, g := range m.groups {
+		for _, tab := range g.area.Tabs {
+			m.openArea(g.area.ID)
+			m.tabs[g.area.ID], m.zone = tab.ID, tui.ZoneTabs
+			m.refresh()
+			b := m.live()
+			if b == nil {
+				continue
+			}
+			name := string(g.area.ID) + "/" + string(tab.ID)
+			into := func(how string, keys ...rune) {
+				t.Helper()
+				for _, k := range keys {
+					press(m, k)
+				}
+				if m.inBlock(m.zone) == nil {
+					t.Errorf("%s: %s leads to %s, not into the block", name, how, m.zone)
+				}
+			}
+			into("down from the tab lines", tea.KeyDown, tea.KeyDown)
+			for i := 0; i < 50 && m.zone != tui.ZoneSubtabs; i++ {
+				press(m, tea.KeyUp)
+			}
+			if up := m.zone == tui.ZoneSubtabs; up == keepsUp[blockKey{g.area.ID, tab.ID}] {
+				t.Errorf("%s: up from the top leads to %s", name, m.zone)
+			}
+			m.zone = tui.ZoneSubtabs
+			into("enter on the sub-tab line", tea.KeyEnter)
+			press(m, tea.KeyEscape)
+			if m.zone != tui.ZoneSubtabs {
+				t.Errorf("%s: esc leads to %s", name, m.zone)
+			}
+			into("tab on the sub-tab line", tea.KeyTab)
+		}
+	}
+}
+
+func TestAFooterHintOfABlockMovesTheBlock(t *testing.T) {
+	m := testModel(t, uiprefs.IconsNone)
+	m.openArea("lists")
+	m.zone = tui.ZoneRows
+	m.refresh()
+	b := m.live().(*listBlock)
+	before, _ := b.list.Current()
+	if !clickWhere(m, func(r tui.MouseResult) bool { return r.Action == actDown && m.inBlock(r.Zone) == nil }) {
+		t.Fatal("no footer hint for down in the list")
+	}
+	if after, _ := b.list.Current(); after.ID == before.ID || m.zone != tui.ZoneRows {
+		t.Errorf("a click on the down hint left the list on %s, focus at %s", after.ID, m.zone)
 	}
 }
