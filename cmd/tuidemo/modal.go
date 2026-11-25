@@ -9,17 +9,6 @@ import (
 	"github.com/castrowithcee/qatlas-kit/tui"
 )
 
-// modal is what Dialog, Help and Explanation share: the part that stands over the screen, takes every key
-// and draws its targets alone.
-type modal interface {
-	Update(tea.KeyPressMsg) (tui.ActionID, bool)
-	Click(tui.MouseResult) (tui.ActionID, bool)
-	Wheel(steps int)
-	Overlay(styles tui.Styles, screen string, width, height int, room tui.Rect) (string, []tui.Target, bool)
-	View(styles tui.Styles, width, height int) (string, []tui.Target)
-	Hints() []tui.Hint
-}
-
 // modalKind says which part is open; the zero value is none.
 type modalKind uint8
 
@@ -51,7 +40,7 @@ func dialogKeys(ends bool) tui.DialogKeys {
 }
 
 // show opens part, or reports why it cannot be drawn.
-func (m *model) show(part modal, err error, kind modalKind, focus tui.InputFocus) {
+func (m *model) show(part tui.Modal, err error, kind modalKind, focus tui.InputFocus) {
 	if err != nil {
 		m.message = &tui.Message{Kind: tui.MessageError, Text: err.Error()}
 		return
@@ -246,7 +235,7 @@ func commands(groups []group, text tui.Translator) []tui.Command {
 		action tui.ActionID
 		text   tui.TextID
 	}{
-		{"theme", actTheme, textKeyTheme}, {"language", actLanguage, textKeyLanguage}, {"icons", actIcons, textKeyIcons},
+		{"theme", actTheme, textKeyTheme}, {"theme-back", actThemeBack, textKeyThemeBack}, {"language", actLanguage, textKeyLanguage}, {"icons", actIcons, textKeyIcons},
 		{"mouse", actMouse, textKeyMouse}, {"ask", actAsk, textKeyAsk}, {"rename", actRename, tui.TextKeyRename},
 		{"notice", actNotice, textKeyNotice}, {"help", actHelp, tui.TextKeyHelp}, {"explain", actInfo, tui.TextKeyInfo},
 		{"quit", actQuit, tui.TextKeyQuit},
@@ -271,23 +260,13 @@ func (m *model) commandKey(msg tea.KeyPressMsg) tea.Cmd {
 	return m.commandDone(cmd, done)
 }
 
-// commandClick gives a click to the open command line: a match runs as enter does, the footer keys act as
-// theirs.
+// commandClick gives a click to the open command line, which runs a match, the enter key or closes on the
+// back key itself.
 func (m *model) commandClick(msg tea.MouseMsg) tea.Cmd {
-	res := m.mouse.Handle(msg)
-	if _, ok := msg.(tea.MouseClickMsg); !ok || !res.Handled {
+	if _, ok := msg.(tea.MouseClickMsg); !ok {
 		return nil
 	}
-	switch res.Action {
-	case actBack:
-		m.cmdline.Reset()
-		return m.commandDone(tui.Command{}, true)
-	case actEnter:
-		cmd, done := m.cmdline.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
-		return m.commandDone(cmd, done)
-	}
-	cmd, done := m.cmdline.Click(res)
-	return m.commandDone(cmd, done)
+	return m.commandDone(m.cmdline.Click(m.mouse.Handle(msg)))
 }
 
 // commandDone closes the line and runs the command it chose, as its key or its tab click would.

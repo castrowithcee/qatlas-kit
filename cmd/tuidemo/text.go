@@ -10,13 +10,15 @@ import (
 const (
 	textProduct tui.TextID = "demo.product"
 
-	textKeyArea     tui.TextID = "demo.key.area"
-	textKeyZone     tui.TextID = "demo.key.zone"
-	textKeyTheme    tui.TextID = "demo.key.theme"
-	textKeyLanguage tui.TextID = "demo.key.language"
-	textKeyIcons    tui.TextID = "demo.key.icons"
-	textKeyMouse    tui.TextID = "demo.key.mouse"
-	textKeyCount    tui.TextID = "demo.key.count"
+	textKeyArea          tui.TextID = "demo.key.area"
+	textKeyZone          tui.TextID = "demo.key.zone"
+	textKeyTheme         tui.TextID = "demo.key.theme"
+	textKeyLanguage      tui.TextID = "demo.key.language"
+	textKeyThemeBack     tui.TextID = "demo.key.theme.back"
+	textSettingThemeBack tui.TextID = "demo.setting.theme.back"
+	textKeyIcons         tui.TextID = "demo.key.icons"
+	textKeyMouse         tui.TextID = "demo.key.mouse"
+	textKeyCount         tui.TextID = "demo.key.count"
 
 	textHintStep tui.TextID = "demo.hint.step"
 	textHintZone tui.TextID = "demo.hint.zone"
@@ -124,13 +126,15 @@ func catalog() i18n.Catalogs[tui.TextID] {
 		i18n.English: {
 			textProduct: "Kit workbench",
 
-			textKeyArea:     "open area",
-			textKeyZone:     "move focus",
-			textKeyTheme:    "switch theme",
-			textKeyLanguage: "switch language",
-			textKeyIcons:    "switch icons",
-			textKeyMouse:    "switch mouse",
-			textKeyCount:    "count",
+			textKeyArea:          "open area",
+			textKeyZone:          "move focus",
+			textKeyTheme:         "switch theme",
+			textKeyThemeBack:     "switch theme back",
+			textSettingThemeBack: "theme back",
+			textKeyLanguage:      "switch language",
+			textKeyIcons:         "switch icons",
+			textKeyMouse:         "switch mouse",
+			textKeyCount:         "count",
 
 			textHintStep: "step",
 			textHintZone: "focus",
@@ -242,13 +246,15 @@ func catalog() i18n.Catalogs[tui.TextID] {
 		i18n.German: {
 			textProduct: "Kit-Werkbank",
 
-			textKeyArea:     "Bereich öffnen",
-			textKeyZone:     "Fokus wechseln",
-			textKeyTheme:    "Theme wechseln",
-			textKeyLanguage: "Sprache wechseln",
-			textKeyIcons:    "Icons wechseln",
-			textKeyMouse:    "Maus umschalten",
-			textKeyCount:    "zählen",
+			textKeyArea:          "Bereich öffnen",
+			textKeyZone:          "Fokus wechseln",
+			textKeyTheme:         "Theme wechseln",
+			textKeyThemeBack:     "Theme zurück wechseln",
+			textSettingThemeBack: "Theme zurück",
+			textKeyLanguage:      "Sprache wechseln",
+			textKeyIcons:         "Icons wechseln",
+			textKeyMouse:         "Maus umschalten",
+			textKeyCount:         "zählen",
 
 			textHintStep: "wechseln",
 			textHintZone: "Fokus",

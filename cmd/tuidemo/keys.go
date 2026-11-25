@@ -16,6 +16,7 @@ const (
 	actZoneNext  tui.ActionID = "zone.next"
 	actZonePrev  tui.ActionID = "zone.prev"
 	actTheme     tui.ActionID = "set.theme"
+	actThemeBack tui.ActionID = "set.theme.back"
 	actLanguage  tui.ActionID = "set.language"
 	actIcons     tui.ActionID = "set.icons"
 	actMouse     tui.ActionID = "set.mouse"
@@ -59,6 +60,7 @@ func keyTable(areas int) []tui.Action {
 		act(actZoneNext, tui.LevelMove, textKeyZone, "tab"),
 		act(actZonePrev, tui.LevelMove, textKeyZone, "shift+tab"),
 		act(actTheme, tui.LevelLetter, textKeyTheme, "t"),
+		act(actThemeBack, tui.LevelLetter, textKeyThemeBack, "T"),
 		act(actLanguage, tui.LevelLetter, textKeyLanguage, "l"),
 		act(actIcons, tui.LevelLetter, textKeyIcons, "I"),
 		act(actMouse, tui.LevelLetter, textKeyMouse, "M"),

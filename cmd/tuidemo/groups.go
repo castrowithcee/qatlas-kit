@@ -139,6 +139,7 @@ func settingRows() map[tui.TabID][]setting {
 	return map[tui.TabID][]setting{
 		"look": {
 			{actTheme, tui.TextSettingTheme, func(m *model) string { return m.prefs.Theme }},
+			{actThemeBack, textSettingThemeBack, func(m *model) string { return m.themes.Step(m.prefs.Theme, -1) }},
 			{actIcons, tui.TextSettingIcons, func(m *model) string { return m.prefs.Icons }},
 		},
 		"input": {
