@@ -58,10 +58,14 @@ Supported platforms are Linux, macOS and Windows; CI runs the tests on all three
 ## Commits and pull requests
 
 - Every change reaches `main` through a pull request with green CI on all three platforms and an up-to-date
-  base. Pull requests are merged by squash only.
-- One pull request holds one result. A preparatory mechanical refactoring is its own pull request.
-- The pull request title is the squash commit message in English
+  base. Pull requests are merged with a merge commit only, so branches built on an open pull request stay
+  valid after it lands.
+- One pull request holds one result. Every commit on its branch reaches `main` unchanged, so each is a
+  coherent step with an English message, without fixup or work-in-progress commits. A preparatory
+  mechanical refactoring is its own commit.
+- The pull request title is the merge commit title in English
   [Conventional Commits](https://www.conventionalcommits.org) form, for example
-  `feat: add release archive verification`. Title and body describe the public change.
+  `feat: add release archive verification`. Title and body describe the public change. The merge commits
+  on `main` (`git log --first-parent`) are the change history the release notes draw on.
 - A breaking change before `v1.0.0` is marked with `!` in the type and described in the body, so the
   release notes can name it.
