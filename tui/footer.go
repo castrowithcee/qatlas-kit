@@ -75,8 +75,9 @@ func (g HintGroup) keyText() string {
 
 // Hints resolves hints for a screen in the input focus focus: each action to the keys that act there,
 // each label to its text in text. A hint whose action has no such key is left out; an action the table
-// does not know shows as its placeholder "{id}", so the mistake is visible. Hints with the same label text
-// and kind fold into one group. Keys and labels are escaped.
+// does not know shows as its placeholder "{id}", so the mistake is visible; a hint of an action that only
+// another page sees is left out whole. Hints with the same label text and kind fold into one group. Keys
+// and labels are escaped.
 func (k *Keymap) Hints(hints []Hint, focus InputFocus, text Translator) []HintGroup {
 	var groups []HintGroup
 	type foldKey struct {
@@ -90,6 +91,9 @@ func (k *Keymap) Hints(hints []Hint, focus InputFocus, text Translator) []HintGr
 			label = Escape(lookup(text, h.Label))
 		}
 		var key *HintKey
+		if k != nil && k.otherPage(h.Action) {
+			continue
+		}
 		if h.Action != "" {
 			at := focus
 			if h.WhileTyping && focus == InputText {

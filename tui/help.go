@@ -66,7 +66,8 @@ type Help struct {
 // NewHelp checks spec and returns the help on its first topic. It rejects a help without topics, a topic
 // without name or text, a name with a blank or control character or one that two topics share, a missing
 // key of Left, Right, Up, Down, PageUp, PageDown, Back or Help, a key that names no action of keys or that two
-// help keys share, and a key list entry that names no action of keys or a global action listed twice.
+// help keys share, and a key list entry that names no action of keys or a global action listed twice. An
+// entry for an action that only another page sees is no error: the key lists leave it out.
 func NewHelp(spec HelpSpec, keys *Keymap, text Translator) (*Help, error) {
 	if keys == nil || text == nil {
 		return nil, errors.New("the help needs a key table and a translator")
@@ -97,13 +98,13 @@ func NewHelp(spec HelpSpec, keys *Keymap, text Translator) (*Help, error) {
 		{"last", k.Last, false}, {"back", k.Back, true}, {"help", k.Help, true},
 	})...)
 	for _, h := range spec.Screen {
-		if h.Action != "" && !keys.known(h.Action) {
+		if h.Action != "" && !keys.known(h.Action) && !keys.otherPage(h.Action) {
 			fail("screen key %q is no action of the key table", h.Action)
 		}
 	}
 	for i, id := range spec.Global {
 		switch {
-		case !keys.known(id):
+		case !keys.known(id) && !keys.otherPage(id):
 			fail("global key %q is no action of the key table", id)
 		case slices.Contains(spec.Global[:i], id):
 			fail("global key %q is listed twice", id)

@@ -18,10 +18,14 @@
 //
 // Keys come from one key table per TUI. NewKeymap takes the application's actions, each with a level,
 // default keys, a help text and whether a user may replace its key or add an extra one, and rejects a table
-// that would give one key two meanings: within the main levels, a key belongs to one action on every
-// screen, and only the overlay levels of a question's answers and of the help may repeat one. It also
-// rejects a key that terminals, multiplexers or text lines take for themselves, unless the action is the
-// second way of another. Screens ask the Keymap for an action, never for a key name; Match lets the overlay
+// that would give one key two meanings: within the main levels, a key belongs to one action everywhere,
+// except that an action tied to a page (Action.Page) may share it with an action of another page, never
+// with one of its own page or one without a page; only the overlay levels of a question's answers and of
+// the help may repeat one. Keymap.Page returns the view of one page, which Match, Is, Label, Hints and
+// every part that takes a Keymap read, so a footer and the help show the actions of the active page and
+// those without a page; the application decides which page is active. NewKeymap also rejects a key that
+// terminals, multiplexers or text lines take for themselves, unless the action is the second way of
+// another. Screens ask the Keymap for an action, never for a key name; Match lets the overlay
 // levels a screen names win over the main levels. The input focus decides what reaches the table: where
 // text is typed, every key that types a character is text, and that is the zero value; while a key is
 // captured as a new binding only ctrl+c and esc act; in an embedded terminal no key does. Bind applies the
