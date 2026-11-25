@@ -41,7 +41,8 @@
 // end go, those and tabs inside become one space, and other control characters, invalid UTF-8 and direction
 // marks such as U+202E are dropped, in a masked field too.
 //
-// The parts with state share one shape. NewX checks an XSpec, which holds the content and, in Keys, the
+// The parts with state share one shape, and Dialog, Help, Explanation and Form, which answer with an
+// ActionID, satisfy the interface Modal. NewX checks an XSpec, which holds the content and, in Keys, the
 // actions of the key table the part reads, against the Keymap and the Translator and refuses what cannot
 // work. Update reads a key press and Click the MouseResult of a target the part drew; both return what the
 // application runs. View draws with the Styles of that drawing in width by height cells and returns the lines
@@ -270,7 +271,8 @@
 // of every topic where three text rows remain below it, and is otherwise left out whole. The first topic ends
 // with the keys of the screen the help was opened from and the keys that act everywhere, in the binding in
 // force. Left and right, and the topic keys of the help level, change the topic with wrap-around; the scroll
-// keys and the wheel stop at the ends; back and the help key close it. An Explanation shows a title, the long
+// keys and the wheel stop at the ends; back and the help key close it. A click on a line of the key list
+// yields its action, and the application closes the help and then runs it. An Explanation shows a title, the long
 // text, a helptopics.Term and the address of the documentation, which is shown in full and, where the terminal
 // takes escapes, also linked; it accepts only an absolute http or https address of printable ASCII, so the
 // address cannot end the link sequence.

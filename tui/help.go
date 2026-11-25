@@ -218,7 +218,7 @@ func (h *Help) Act(id ActionID) (act ActionID, handled bool) {
 
 // Click handles a click on a target the help drew, as the MouseMap of its targets reports it: a topic tab
 // shows its topic as the topic keys would, a key of the key line acts as that key, and a line of the key
-// list yields its action, which the application runs as if its key were pressed while the help is open.
+// list yields its action: the application closes the help, then runs the action.
 func (h *Help) Click(r MouseResult) (act ActionID, handled bool) {
 	if !r.Handled {
 		return "", false
