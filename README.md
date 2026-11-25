@@ -46,7 +46,7 @@ One line per package, in alphabetical order. The package documentation holds the
 - [`uiprefs`](uiprefs): loads and saves the device-local preferences of a terminal user interface.
 - [`vault`](vault): stores secrets in an age-encrypted directory unlocked by a passphrase.
 - [`vaultproc`](vaultproc): keeps an unlocked vault in a hardened background process and hands it to the program an update installs.
-- [`web`](web): serves the browser interface of an application on loopback or, with TLS or declared proxies, on the network, with fixed host, origin and session checks, strict headers with a CSP nonce, size and time limits, detail-free error pages and redirects that stay on the server.
+- [`web`](web): serves the browser interface of an application on loopback or, with TLS or declared proxies, on the network, with fixed host, origin and session checks, cookie sessions with a one-time-code sign-in, strict headers with a CSP nonce, size and time limits, detail-free error pages and redirects that stay on the server.
 
 ## Installation
 

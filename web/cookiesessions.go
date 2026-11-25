@@ -40,6 +40,7 @@ type CookieSessions struct {
 	store     SessionStore
 	idle, abs time.Duration
 	now       func() time.Time
+	loginPath string // set by NewPages
 }
 
 // NewCookieSessions returns CookieSessions for Options.Sessions. Call Issue after a successful sign-in
@@ -79,7 +80,7 @@ func (c *CookieSessions) Session(w http.ResponseWriter, r *http.Request) (*http.
 	strict := strictFor(r)
 	id, ok := c.cookieID(r, strict)
 	if !ok {
-		return nil, false
+		return c.deny(w, r)
 	}
 	key := keyOf(id)
 	rec, found, err := c.store.Get(key)
@@ -93,7 +94,7 @@ func (c *CookieSessions) Session(w http.ResponseWriter, r *http.Request) (*http.
 			_ = c.store.Delete(key)
 		}
 		c.clear(w, strict)
-		return nil, false
+		return c.deny(w, r)
 	}
 	rec.Expires = c.deadline(rec.Created, now)
 	ok, err = c.store.Touch(key, rec.Expires)
@@ -103,10 +104,19 @@ func (c *CookieSessions) Session(w http.ResponseWriter, r *http.Request) (*http.
 	}
 	if !ok { // ended between Get and Touch
 		c.clear(w, strict)
-		return nil, false
+		return c.deny(w, r)
 	}
 	ctx := context.WithValue(r.Context(), sessionCtxKey{}, Session{Created: rec.Created, key: key})
 	return r.WithContext(ctx), true
+}
+
+// deny refuses r. A browser navigation goes to the sign-in page if there is one; the server answers 401
+// otherwise and for every other method.
+func (c *CookieSessions) deny(w http.ResponseWriter, r *http.Request) (*http.Request, bool) {
+	if c.loginPath != "" && (r.Method == http.MethodGet || r.Method == http.MethodHead) {
+		_ = Redirect(w, r, c.loginPath, http.StatusSeeOther)
+	}
+	return nil, false
 }
 
 // Issue starts a new session with a new ID and sets its cookie. Call it after a successful sign-in. A

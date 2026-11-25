@@ -27,6 +27,35 @@
 // serves them without a session and is accepted only on loopback. Handlers keep the fixed headers they
 // receive.
 //
+// CookieSessions is the Sessions implementation. A session is a random 256 bit ID that only the server
+// issues, in a cookie that is always HttpOnly, SameSite=Strict, Path=/ and without Domain. The server keeps
+// the state in a SessionStore under a hash of the ID, in memory by default, and a tool may supply its own.
+// A session ends after 30 minutes without use or 8 hours after it began, unless SessionOptions say less
+// or more; an unknown or expired ID is refused and never creates a session. Issue starts a session with a
+// new ID after a sign-in and ends one the request brought along, End ends it on the server and deletes the
+// cookie. The cookie has the __Host- prefix and Secure, except on a Server that binds to loopback alone,
+// which speaks plain HTTP: Safari does not store Secure cookies there and Chrome before version 138
+// refuses __Host-. That choice follows the Server and never a request header, and anything but such a
+// Server, including a network server behind a proxy that terminates TLS, gets the strict form. Other
+// local programs can read cookies of a loopback server whatever their form, which only IDs the server
+// issued, the refusal of unknown IDs and the new ID after sign-in answer.
+//
+// Authenticator turns a LoginMethod into a session. OnceCode is the first method: the application calls
+// Generate and shows the code in its terminal; it is eight symbols without look-alikes, valid once and for
+// five minutes, compared in constant time, replaced only by Generate and never by a request. A wrong guess
+// does not use it up. Failed attempts, wrong or throttled, count against a limit per peer address and
+// one for all addresses, per ten minutes, using ratelimit; a refusal looks the same either way. On
+// loopback every client shares one address, so the limit for all addresses is the one that holds, and
+// a local program can lock the sign-in for one window by failing on purpose. LoginAudit receives
+// sign-ins, sign-outs, failures and throttled attempts, for example for auditlog; an entry holds the
+// kind, the time and the peer host, never a code or an ID.
+//
+// Pages serves the sign-in page and the sign-out for these: plain, accessible markup with the CSP nonce,
+// one-time-code autocomplete that never blocks pasting, and an error that names the field. A sign-in ends in a
+// redirect to a fixed path of the application, never one from the request. Sign-out takes POST only, so a
+// tool adds a form that posts to LogoutPath. With Pages, a GET or HEAD request without a session for a
+// route that is not Public goes to the sign-in page, and any other method gets 401.
+//
 // Static serves the files of an fs.FS such as an embed.FS for GET and HEAD, mounted as a route like
 // "GET /". It reads the files once and answers only for a path that names one of them: no directory
 // listing, no redirect, no path outside the file system and no file or directory whose name starts with a
