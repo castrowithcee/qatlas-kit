@@ -92,7 +92,8 @@ type Keymap struct {
 // keys. It rejects an action without a valid placeholder ID, level, key or help text, an ID or a key
 // listed twice, a key that two actions of the main levels or of one overlay level share, a key that
 // terminals, multiplexers or text lines take for themselves unless the action is the second way of
-// another, and a rebindable action whose default key breaks the rules of a binding.
+// another, a key of a standard action held by any other action of the main levels, and a rebindable
+// action whose default key breaks the rules of a binding.
 func NewKeymap(actions []Action, charset CharsetMode) (*Keymap, error) {
 	if len(actions) == 0 {
 		return nil, errors.New("the key table holds no action")
@@ -143,6 +144,8 @@ func (k *Keymap) actionErrors(a Action) []error {
 			fail("key %q is not a key name; names are lower case except single characters, and a space is \"space\"", key)
 		case slices.Contains(a.DefaultKeys[:i], key):
 			fail("key %q is listed twice", key)
+		case reservedKeys[key] != "" && reservedKeys[key] != a.ID && !a.Level.overlay():
+			fail("key %q is reserved for the standard action %q", key, reservedKeys[key])
 		case takenKeys[key] != "" && a.SecondWayOf == "":
 			fail("key %q %s; only a second way of another action may hold it", key, takenKeys[key])
 		}

@@ -43,7 +43,7 @@ func TestEveryIconSetPassesTheFrameChecks(t *testing.T) {
 
 func TestEveryKeyOfTheSwitchesActs(t *testing.T) {
 	m := testModel(t, uiprefs.IconsUnicode)
-	for _, key := range []string{"t", "l", "i", "m"} {
+	for _, key := range []string{"t", "l", "I", "M"} {
 		m.Update(tea.KeyPressMsg{Code: rune(key[0]), Text: key})
 	}
 	p := m.prefs
@@ -248,7 +248,7 @@ func TestKeysStayInThePartOverTheScreen(t *testing.T) {
 		m := testModel(t, uiprefs.IconsNone)
 		open(m)
 		before := m.prefs
-		for _, key := range []string{"t", "l", "i", "m", "2", "q"} {
+		for _, key := range []string{"t", "l", "I", "M", "+", "2", "q"} {
 			if cmd := m.handle(tea.KeyPressMsg{Code: rune(key[0]), Text: key}); cmd != nil && key == "q" && name != "input" {
 				t.Errorf("%s: q quit the program", name)
 			}
