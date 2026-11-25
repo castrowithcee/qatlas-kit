@@ -66,10 +66,18 @@
 // and CheckAreas reject an icon that fails CheckIcon, and the frame draws no icon that fails it. The tab line gives
 // up its icons before it closes any gap, and the digit-only level holds none; no icon is drawn in an ASCII
 // terminal. The application chooses the icon set; the kit knows none. Nerd Font glyphs measure one cell, but
-// a font that draws them wider is the application's risk. The focus
+// a font that draws them wider is the application's risk. FrameSpec.Nav chooses the form of the navigation:
+// NavTabs, the zero value, is the tab line with sub-tabs; NavPathLine replaces both by one line that names the
+// current place as "Area ▾ › Tab ▾", the tab only where the area has more than one, and gives the freed row to
+// the workspace. Each section is a click target of ZonePath that carries the area, and the tab for the last,
+// so the application handles it like a tab click; the focus mark stands at the line and the section named by
+// FrameSpec.PathFocusArea, else the last, is drawn as the focused tab. A line that runs short takes the mark
+// from all sections but the last, then keeps the last section alone and cuts its name; ModeTab stands as the
+// only section, without mark and target. CheckFrame refuses an unknown form and holds the areas of the path
+// line to CheckAreas. A screen reports ZonePath instead of ZoneTabs and ZoneSubtabs. The focus
 // zones have a fixed order that CycleZone walks with wrap-around, as StepArea and StepTab do for the tabs.
-// StepZoneLevel steps vertically between the tab line, the sub-tab line and the work area, skips a missing
-// line and does not wrap.
+// StepZoneLevel steps vertically between the tab line, the sub-tab line or the path line and the work area,
+// skips a missing line and does not wrap.
 //
 // Header and footer show hints. Keymap.Hints resolves each hint to the keys of its action that act in the
 // input focus of the screen, so a line never names a key that does nothing, and folds hints whose labels

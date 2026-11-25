@@ -142,37 +142,39 @@ func (s Styles) Render(t TextStyle, text string) string { return s.Style(t).Rend
 type Glyph uint8
 
 const (
-	GlyphStatus       Glyph = iota // leads a status word
-	GlyphOK                        // a result that succeeded
-	GlyphFail                      // a result that failed
-	GlyphWarning                   // a warning or question
-	GlyphCollapsed                 // a closed group
-	GlyphExpanded                  // an open group, and the end of a choice field
-	GlyphCategory                  // a category mark
-	GlyphEllipsis                  // the end of a shortened text
-	GlyphKeySeparator              // between groups of key hints
-	GlyphTabSeparator              // between groups of tabs
-	GlyphInfo                      // more explanation on request
-	GlyphMask                      // one typed character of a masked field
-	GlyphCalendar                  // the symbol of a date field that opens its calendar
+	GlyphStatus        Glyph = iota // leads a status word
+	GlyphOK                         // a result that succeeded
+	GlyphFail                       // a result that failed
+	GlyphWarning                    // a warning or question
+	GlyphCollapsed                  // a closed group
+	GlyphExpanded                   // an open group, and the end of a choice field
+	GlyphCategory                   // a category mark
+	GlyphEllipsis                   // the end of a shortened text
+	GlyphKeySeparator               // between groups of key hints
+	GlyphTabSeparator               // between groups of tabs
+	GlyphInfo                       // more explanation on request
+	GlyphMask                       // one typed character of a masked field
+	GlyphCalendar                   // the symbol of a date field that opens its calendar
+	GlyphPathSeparator              // between the sections of the path line
 	glyphCount
 )
 
 // glyphs are the Unicode and ASCII forms of every glyph, in one place.
 var glyphs = [glyphCount][2]string{
-	GlyphStatus:       {"●", "*"},
-	GlyphOK:           {"✓", "+"},
-	GlyphFail:         {"✗", "x"},
-	GlyphWarning:      {"⚠", "!"},
-	GlyphCollapsed:    {"▸", ">"},
-	GlyphExpanded:     {"▾", "v"},
-	GlyphCategory:     {"■", "#"},
-	GlyphEllipsis:     {"…", "~"},
-	GlyphKeySeparator: {" · ", " - "},
-	GlyphTabSeparator: {"|", "|"},
-	GlyphInfo:         {" (i)", " (i)"},
-	GlyphMask:         {"•", "*"},
-	GlyphCalendar:     {"▦", "[#]"},
+	GlyphStatus:        {"●", "*"},
+	GlyphOK:            {"✓", "+"},
+	GlyphFail:          {"✗", "x"},
+	GlyphWarning:       {"⚠", "!"},
+	GlyphCollapsed:     {"▸", ">"},
+	GlyphExpanded:      {"▾", "v"},
+	GlyphCategory:      {"■", "#"},
+	GlyphEllipsis:      {"…", "~"},
+	GlyphKeySeparator:  {" · ", " - "},
+	GlyphTabSeparator:  {"|", "|"},
+	GlyphInfo:          {" (i)", " (i)"},
+	GlyphMask:          {"•", "*"},
+	GlyphCalendar:      {"▦", "[#]"},
+	GlyphPathSeparator: {"›", ">"},
 }
 
 // Glyph is the form of g in the character set of the styles.

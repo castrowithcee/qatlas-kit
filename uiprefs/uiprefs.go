@@ -27,6 +27,12 @@ const (
 	IconsNone     = "none"
 )
 
+// The values of the navigation preference: the tab line and the path line of tui.NavForm.
+const (
+	NavigationTabs     = "tabs"
+	NavigationPathLine = "pathline"
+)
+
 // saveAttempts bounds how often Save starts over when another writer replaced the file meanwhile.
 const saveAttempts = 3
 
@@ -40,6 +46,13 @@ type Schema struct {
 	DefaultArea string
 	// Keys is the key table whose rebindable actions the keys section binds; nil allows no keys section.
 	Keys *tui.Keymap
+	// Navigations are the navigation forms the application offers: NavigationTabs and NavigationPathLine.
+	// Empty means the application does not offer the setting; Prefs.Navigation is then empty and the
+	// application chooses the form itself.
+	Navigations []string
+	// DefaultNavigation is the form that holds without a choice; it is one of Navigations, and empty where
+	// there are none.
+	DefaultNavigation string
 }
 
 func (s Schema) check() error {
@@ -50,6 +63,18 @@ func (s Schema) check() error {
 	errs = append(errs, namesError("theme", s.Themes), namesError("area", s.Areas))
 	if !slices.Contains(s.Areas, s.DefaultArea) {
 		errs = append(errs, fmt.Errorf("the default area %q is none of the areas", s.DefaultArea))
+	}
+	errs = append(errs, namesError("navigation", s.Navigations))
+	for _, n := range s.Navigations {
+		if n != NavigationTabs && n != NavigationPathLine {
+			errs = append(errs, fmt.Errorf("the navigation %q is unknown", n))
+		}
+	}
+	if len(s.Navigations) == 0 && s.DefaultNavigation != "" {
+		errs = append(errs, fmt.Errorf("the default navigation %q is set but no navigation is offered", s.DefaultNavigation))
+	}
+	if len(s.Navigations) > 0 && !slices.Contains(s.Navigations, s.DefaultNavigation) {
+		errs = append(errs, fmt.Errorf("the default navigation %q is none of the navigations", s.DefaultNavigation))
 	}
 	if err := errors.Join(errs...); err != nil {
 		return fmt.Errorf("invalid preferences schema: %w", err)
@@ -78,12 +103,14 @@ type Prefs struct {
 	// Editor is the command line of the external editor, as exteditor.Resolve takes it; empty leaves
 	// the choice to the environment.
 	Editor string
+	// Navigation is the navigation form, one of Schema.Navigations; empty where the schema offers none.
+	Navigation string
 }
 
 // Default returns the preferences of a device that has none.
 func Default(schema Schema) Prefs {
 	return Prefs{Theme: tui.ThemeTerminal, Start: schema.DefaultArea, Icons: IconsUnicode,
-		Language: LanguageEnglish, MouseEnabled: true}
+		Language: LanguageEnglish, MouseEnabled: true, Navigation: schema.DefaultNavigation}
 }
 
 // Path returns the preferences file in the folder dir of the application.
@@ -91,13 +118,15 @@ func Path(dir string) string { return filepath.Join(dir, FileName) }
 
 // fileForm is the encoding a save writes.
 type fileForm struct {
-	Theme    string            `yaml:"theme"`
-	Start    string            `yaml:"start"`
-	Icons    string            `yaml:"icons"`
-	Language string            `yaml:"language"`
-	Mouse    bool              `yaml:"mouse"`
-	Editor   string            `yaml:"editor,omitempty"`
-	Keys     map[string]string `yaml:"keys,omitempty"`
+	Theme    string `yaml:"theme"`
+	Start    string `yaml:"start"`
+	Icons    string `yaml:"icons"`
+	Language string `yaml:"language"`
+	Mouse    bool   `yaml:"mouse"`
+	Editor   string `yaml:"editor,omitempty"`
+	// Navigation is left out while the schema offers none.
+	Navigation string            `yaml:"navigation,omitempty"`
+	Keys       map[string]string `yaml:"keys,omitempty"`
 }
 
 // Load reads the preferences at path. It never fails: a missing file gives the defaults without a warning;
@@ -134,13 +163,14 @@ func Load(path string, schema Schema) (Prefs, []string) {
 func parse(data []byte, schema Schema) (Prefs, []string, error) {
 	prefs := Default(schema)
 	var raw struct {
-		Theme    *string           `yaml:"theme"`
-		Start    *string           `yaml:"start"`
-		Icons    *string           `yaml:"icons"`
-		Language *string           `yaml:"language"`
-		Mouse    *string           `yaml:"mouse"`
-		Editor   *string           `yaml:"editor"`
-		Keys     map[string]string `yaml:"keys"`
+		Theme      *string           `yaml:"theme"`
+		Start      *string           `yaml:"start"`
+		Icons      *string           `yaml:"icons"`
+		Language   *string           `yaml:"language"`
+		Mouse      *string           `yaml:"mouse"`
+		Editor     *string           `yaml:"editor"`
+		Navigation *string           `yaml:"navigation"`
+		Keys       map[string]string `yaml:"keys"`
 	}
 	if err := yaml.Unmarshal(data, &raw); err != nil {
 		return prefs, nil, err
@@ -164,6 +194,13 @@ func parse(data []byte, schema Schema) (Prefs, []string, error) {
 		mouse := "true"
 		choose("mouse", raw.Mouse, []string{"true", "false"}, &mouse)
 		prefs.MouseEnabled = mouse == "true"
+	}
+	if raw.Navigation != nil {
+		if len(schema.Navigations) == 0 {
+			warnings = append(warnings, "navigation: this application does not offer the setting, using its own form")
+		} else {
+			choose("navigation", raw.Navigation, schema.Navigations, &prefs.Navigation)
+		}
 	}
 	if raw.Editor != nil {
 		if err := checkEditor(*raw.Editor); err != nil {
@@ -229,6 +266,11 @@ func validate(prefs Prefs, schema Schema) error {
 	if err := checkEditor(prefs.Editor); err != nil {
 		errs = append(errs, err)
 	}
+	if len(schema.Navigations) > 0 {
+		check("navigation", prefs.Navigation, schema.Navigations)
+	} else if prefs.Navigation != "" {
+		errs = append(errs, fmt.Errorf("navigation %q: this application does not offer the setting", prefs.Navigation))
+	}
 	if len(prefs.Keys) > 0 {
 		if schema.Keys == nil {
 			errs = append(errs, errors.New("keys: this application has no keys to rebind"))
@@ -255,7 +297,7 @@ func codec(schema Schema) configfile.Codec[Prefs] {
 		Validate: func(p Prefs) error { return validate(p, schema) },
 		Encode: func(p Prefs) ([]byte, error) {
 			form := fileForm{Theme: p.Theme, Start: p.Start, Icons: p.Icons, Language: p.Language, Mouse: p.MouseEnabled,
-				Editor: p.Editor}
+				Editor: p.Editor, Navigation: p.Navigation}
 			if schema.Keys != nil {
 				usable, _ := schema.Keys.Resolve(p.Keys)
 				for id, key := range usable {

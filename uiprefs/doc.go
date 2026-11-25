@@ -9,7 +9,12 @@
 // later version can add fields. The keys section holds only the bindings that differ from the default; one
 // that breaks a rule of the key table or collides keeps the default of its action with a warning, so the
 // loaded keys never collide. The editor is an optional command line for the exteditor package; a file
-// without it loads as before, and a save leaves it out while it is empty.
+// without it loads as before, and a save leaves it out while it is empty. The navigation is the form of
+// tui.NavForm, the tab line or the path line. The application offers it through Schema.Navigations and
+// names the form that holds without a choice in Schema.DefaultNavigation; without Navigations the setting
+// does not exist: Prefs.Navigation stays empty, Validate and Save refuse a value, and Load ignores a value in
+// the file with a warning. A file without the key loads as before, and a save leaves the key out while the
+// value is empty.
 //
 // Save refuses a value that is not valid and writes nothing then. It writes through the configfile
 // package: atomically under a lock file beside the target, with a backup of the replaced bytes, through a
