@@ -230,6 +230,8 @@ Components derived from `qatlas-cli`, `qatlas-connect` and `qatlas-sysmin` retai
 | `qatlas-sysmin/internal/adopt/stacks.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Compose project labels, grouping by project and working directory and splitting of the config file list (`docker/group.go`) |
 | `qatlas-sysmin/internal/hostchange/stackcheck.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Container use of a path through mount sources and the working directory, with a separator boundary (`docker/container.go`) |
 | `qatlas-sysmin/internal/execute/check.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Container name without the leading slash and health "none" as no health check (`docker/container.go`) |
+| `qatlas-connect/internal/vaultproc/client.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Asking again on not running after a replaced answer (`vaultproc/client.go`) |
+| `qatlas-connect/internal/vaultproc/handover_unix_test.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Handover test of a client queued at the old listener, with a gate at the accept loop (`vaultproc/handover_unix_test.go`) |
 
 ## Built-in TUI themes
 

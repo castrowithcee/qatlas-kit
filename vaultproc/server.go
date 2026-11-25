@@ -128,6 +128,8 @@ type Server struct {
 	program    func() (string, bool, error)
 	start      func(ctx context.Context, program string, state []byte) (pid int, end func(), err error)
 	watchEvery time.Duration
+	// beforeAccept, if set, is called by the accept loop before each Accept. Tests hold the loop with it.
+	beforeAccept func()
 
 	mu       sync.Mutex
 	key      *age.X25519Identity
@@ -245,6 +247,9 @@ func (s *Server) Serve(l net.Listener) (err error) {
 	}()
 	go s.watch()
 	for {
+		if s.beforeAccept != nil {
+			s.beforeAccept()
+		}
 		conn, err := l.Accept()
 		if err != nil {
 			if s.stopping() {
