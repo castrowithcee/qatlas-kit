@@ -159,6 +159,8 @@ func TestThemeSwitchByKeyAndByClick(t *testing.T) {
 	term := startDemo(t, "-icons none")
 	act(t, term, "t", "theme: demo-dark")
 	clickOn(t, term, "switch theme", "theme: demo-light")
+	act(t, term, "T", "theme: demo-dark")
+	clickOn(t, term, "switch theme back", "theme: terminal")
 }
 
 func TestLanguageSwitchByKeyAndByClick(t *testing.T) {
@@ -286,6 +288,11 @@ func TestExplanationOpensCopiesAndCloses(t *testing.T) {
 func TestCommandLineRunsByKeyAndByClick(t *testing.T) {
 	term := startDemo(t, "-icons none")
 	act(t, term, ":", "go overview")
+	// The line stands over the dimmed screen: the text of the screen shows beside its frame.
+	row := screenRow(term, "go overview")
+	if before, _, _ := strings.Cut(row, "║"); strings.TrimSpace(before) == "" {
+		t.Errorf("the command line does not stand over the screen: %q", row)
+	}
 	act(t, term, "theme", "Open the tab") // typing filters; the theme command stays
 	act(t, term, "\r", "theme: demo-dark")
 	gone(t, term, "search or run a command")
@@ -296,6 +303,16 @@ func TestCommandLineRunsByKeyAndByClick(t *testing.T) {
 	act(t, term, "\x1b", "[2 Frame]")
 	gone(t, term, "search or run a command")
 	clickOn(t, term, "[:] commands", "go overview")
-	clickOnly(t, term, "close")
+	clickOnly(t, term, "esc back")
 	gone(t, term, "search or run a command")
+}
+
+// screenRow returns the line of the screen that holds text.
+func screenRow(term *ptytest.Terminal, text string) string {
+	for _, line := range screen(term.Output(), 100, 30) {
+		if strings.Contains(line, text) {
+			return line
+		}
+	}
+	return ""
 }

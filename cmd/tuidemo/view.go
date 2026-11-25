@@ -84,6 +84,7 @@ func (m *model) footerHints() []tui.Hint {
 		{Action: actRight, Label: textHintStep, Kind: tui.HintNavigation},
 		{Action: actZoneNext, Label: textHintZone, Kind: tui.HintNavigation},
 		{Action: actTheme, Label: textKeyTheme, Priority: 2},
+		{Action: actThemeBack, Label: textKeyThemeBack, Priority: 3},
 		{Action: actLanguage, Label: textKeyLanguage, Priority: 3},
 		{Action: actIcons, Label: textKeyIcons, Priority: 4},
 		{Action: actMouse, Label: textKeyMouse, Priority: 5},
@@ -159,36 +160,34 @@ func belowWorkspace(targets []tui.Target, room tui.Rect) []tui.Target {
 	return kept
 }
 
-// drawModal draws the open part over the screen where it fits, else in the workspace with its keys in the
-// footer.
+// drawModal draws the open part over the screen.
 func (m *model) drawModal(spec tui.FrameSpec) (string, []tui.Target) {
+	return m.drawOver(spec, m.modal, m.focus)
+}
+
+// drawCommandLine draws the command line over the screen.
+func (m *model) drawCommandLine(spec tui.FrameSpec) (string, []tui.Target) {
+	return m.drawOver(spec, m.cmdline, tui.InputText)
+}
+
+// drawOver draws part over the dimmed screen where it fits, else in the workspace with its keys in the
+// footer. Its targets are the only ones, bar the footer's in the second case.
+func (m *model) drawOver(spec tui.FrameSpec, part interface {
+	Overlay(tui.Styles, string, int, int, tui.Rect) (string, []tui.Target, bool)
+	View(tui.Styles, int, int) (string, []tui.Target)
+	Hints() []tui.Hint
+}, focus tui.InputFocus) (string, []tui.Target) {
 	m.workspace(&spec)
 	screen, _ := m.frame.Render(m.styles, spec)
-	if view, targets, ok := m.modal.Overlay(m.styles, screen, m.width, m.height, tui.Rect{Width: m.width, Height: m.height}); ok {
+	if view, targets, ok := part.Overlay(m.styles, screen, m.width, m.height, tui.Rect{Width: m.width, Height: m.height}); ok {
 		return view, targets
 	}
-	spec.Footer, spec.Input, spec.HeaderKeys = m.modal.Hints(), m.focus, nil
+	spec.Footer, spec.Input, spec.HeaderKeys = part.Hints(), focus, nil
 	room := m.frame.Workspace(spec)
-	body, bt := m.modal.View(m.styles, room.Width, room.Height)
+	body, bt := part.View(m.styles, room.Width, room.Height)
 	spec.Workspace = body
 	view, targets := m.frame.Render(m.styles, spec)
 	return view, append(belowWorkspace(targets, room), tui.OffsetTargets(bt, room.X, room.Y)...)
-}
-
-// commandHeight is the most rows the command line takes over the top of the workspace.
-const commandHeight = 16
-
-// drawCommandLine draws the command line over the top of the workspace; its keys stand in the footer.
-func (m *model) drawCommandLine(spec tui.FrameSpec) (string, []tui.Target) {
-	spec.Footer = []tui.Hint{{Action: actEnter, Label: tui.TextKeyEnter}, {Action: actBack, Label: tui.TextHelpClose, Kind: tui.HintAlways}}
-	spec.Input, spec.HeaderKeys = tui.InputText, nil
-	room, _ := m.workspace(&spec)
-	panel, pt := m.cmdline.View(m.styles, room.Width, min(room.Height, commandHeight))
-	rows := strings.Split(panel, "\n")
-	rest := strings.Split(spec.Workspace, "\n")
-	spec.Workspace = strings.Join(append(rows, rest[min(len(rows), len(rest)):]...), "\n")
-	view, targets := m.frame.Render(m.styles, spec)
-	return view, append(belowWorkspace(targets, room), tui.OffsetTargets(pt, room.X, room.Y)...)
 }
 
 func (m *model) View() tea.View {
