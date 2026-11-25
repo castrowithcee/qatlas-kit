@@ -1,6 +1,6 @@
 # Third-party notices
 
-Components derived from `qatlas-cli` and `qatlas-sysmin` retain their original AGPL-3.0 license.
+Components derived from `qatlas-cli`, `qatlas-connect` and `qatlas-sysmin` retain their original AGPL-3.0 license.
 
 | Source | Copyright | License | Included components |
 | --- | --- | --- | --- |
@@ -141,6 +141,7 @@ Components derived from `qatlas-cli` and `qatlas-sysmin` retain their original A
 | `qatlas-cli/internal/vault/workfactor.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Work factor limited to test binaries (`vault/vault.go`) |
 | `qatlas-cli/internal/vault/terminal.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Passphrase from the controlling terminal (`vault/terminal.go`) |
 | `qatlas-cli/internal/vault/terminal_test.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Non-interactive prompt test (`vault/terminal_test.go`) |
+| `qatlas-connect/internal/vault/terminal.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Hidden line input that ends with a context (`vault/terminal.go`) |
 | `qatlas-cli/internal/vault/mode_other.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Private Unix file modes (`vault/perm_other.go`) |
 | `qatlas-cli/internal/vault/mode_windows.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Windows ACL check and private ACLs (`vault/perm_windows.go`) |
 | `qatlas-cli/internal/vault/mode_windows_test.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Windows ACL tests (`vault/perm_windows_test.go`) |
