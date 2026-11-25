@@ -212,6 +212,7 @@ type Form struct {
 	// -1 while a field has the focus.
 	focus    int
 	btn      int
+	focused  bool
 	pinned   map[SectionID]bool
 	problems map[FieldID][]FormProblem
 	other    []FormProblem
@@ -325,7 +326,7 @@ func NewForm(spec FormSpec, keys *Keymap, text Translator) (*Form, error) {
 		return nil, err
 	}
 	f := &Form{keys: k, table: keys, text: text, sections: slices.Clone(spec.Sections),
-		buttons: slices.Clone(spec.Buttons), title: spec.Title, lead: spec.Lead, btn: -1, pinned: map[SectionID]bool{}, problems: map[FieldID][]FormProblem{}, focus: -1}
+		buttons: slices.Clone(spec.Buttons), title: spec.Title, lead: spec.Lead, btn: -1, focused: true, pinned: map[SectionID]bool{}, problems: map[FieldID][]FormProblem{}, focus: -1}
 	fields := slices.Clone(spec.Fields)
 	slices.SortStableFunc(fields, func(a, b FormField) int { return order[a.Section] - order[b.Section] })
 	for _, field := range fields {
@@ -573,6 +574,17 @@ func (f *Form) onButton() bool { return f.btn >= 0 }
 
 // fieldFocused reports whether field i has the focus, which no field has while a button does.
 func (f *Form) fieldFocused(i int) bool { return i == f.focus && f.btn < 0 }
+
+// SetFocused says whether the form has the focus. Without it View draws no sign of the focus: no marker,
+// accent, frame, cursor or hint at the focused field, no mark at its section and no focus on a button, so
+// only one focus shows on screen. The focused field or button stays, as do an open list of values, the calendar and what is typed,
+// and the form takes keys, clicks and paste as before; the application decides what it hands the form.
+// Overlay always draws the focus. A new form has the focus. The application sets it when the focus enters or
+// leaves the form.
+func (f *Form) SetFocused(on bool) { f.focused = on }
+
+// showsFocus reports whether View draws field i as focused.
+func (f *Form) showsFocus(i int) bool { return f.focused && f.fieldFocused(i) }
 
 // FocusedButton is the action of the button with the focus; false while a field has it.
 func (f *Form) FocusedButton() (ActionID, bool) {

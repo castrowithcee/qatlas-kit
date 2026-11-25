@@ -18,3 +18,12 @@ func TestTechnicalNamesAreApplicationOwned(t *testing.T) {
 		{Name: "imports", Files: module, Check: archtest.ForbidImportPaths(forbidden), Hint: hint},
 	}, nil)
 }
+
+func TestWebImportsNoTerminalPackages(t *testing.T) {
+	archtest.Check(t, os.DirFS("."), []archtest.Rule{{
+		Name:  "web",
+		Files: archtest.Files{Under: []string{"web"}, Tests: archtest.WithTests},
+		Check: archtest.ForbidImports("tui/...", "uiprefs/...", "highlight/..."),
+		Hint:  "a web server must not pull the terminal user interface into the application",
+	}}, nil)
+}

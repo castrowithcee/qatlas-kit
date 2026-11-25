@@ -106,16 +106,22 @@ func click(column, row int) string {
 	return fmt.Sprintf("\x1b[<0;%d;%dM\x1b[<0;%d;%dm", column, row, column, row)
 }
 
-// find returns the 1-based column and row of text on the screen.
+// find waits until text stands on the screen and returns its 1-based column and row.
 func find(t *testing.T, term *ptytest.Terminal, text string) (column, row int) {
 	t.Helper()
-	for r, line := range screen(term.Output(), 100, 30) {
-		if c := strings.Index(line, text); c >= 0 {
-			return len([]rune(line[:c])) + 1, r + 1
+	err := term.WaitFor(wait, func(out string) bool {
+		for r, line := range screen(out, 100, 30) {
+			if c := strings.Index(line, text); c >= 0 {
+				column, row = len([]rune(line[:c]))+1, r+1
+				return true
+			}
 		}
+		return false
+	})
+	if err != nil {
+		t.Fatalf("%q is not on the screen: %v\n%s", text, err, strings.Join(screen(term.Output(), 100, 30), "\n"))
 	}
-	t.Fatalf("%q is not on the screen:\n%s", text, strings.Join(screen(term.Output(), 100, 30), "\n"))
-	return 0, 0
+	return column, row
 }
 
 // clickOn clicks the text on the screen, one cell inside it, and waits for want.
