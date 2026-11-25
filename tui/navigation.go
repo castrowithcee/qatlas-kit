@@ -13,13 +13,18 @@ type FocusZone string
 const (
 	ZoneTabs    FocusZone = "tabs"
 	ZoneSubtabs FocusZone = "subtabs"
+	// ZonePath is the path line, which a screen reports instead of ZoneTabs and ZoneSubtabs.
+	ZonePath    FocusZone = "path"
 	ZoneRows    FocusZone = "rows"
 	ZoneForm    FocusZone = "form"
 	ZoneDetail  FocusZone = "detail"
 	ZoneFilters FocusZone = "filters"
 )
 
-var zoneOrder = [...]FocusZone{ZoneTabs, ZoneSubtabs, ZoneRows, ZoneForm, ZoneDetail, ZoneFilters}
+var zoneOrder = [...]FocusZone{ZoneTabs, ZoneSubtabs, ZonePath, ZoneRows, ZoneForm, ZoneDetail, ZoneFilters}
+
+// workZones are the zones of the work area, below the navigation lines.
+var workZones = zoneOrder[3:]
 
 // CycleZone returns the zone step places after current among the zones a screen has, in the fixed order
 // and with wrap-around; a negative step goes back. A current zone the screen does not have leads to its
@@ -45,11 +50,11 @@ func CycleZone(zones []FocusZone, current FocusZone, step int) FocusZone {
 	return present[0]
 }
 
-// StepZoneLevel moves vertically between the levels tabs, subtabs and work area among the zones a screen
-// has: a positive step goes down, a negative one up, by that many levels and without wrap-around. A level the
-// screen lacks is skipped. Going down into the work area lands on its first zone in the fixed order; a current
-// work zone counts as that level and stays put when going down. A current zone the screen does not have leads
-// to the top level. Without any level the result is current.
+// StepZoneLevel moves vertically between the levels tabs, subtabs, path line and work area among the zones a
+// screen has: a positive step goes down, a negative one up, by that many levels and without wrap-around. A
+// level the screen lacks is skipped. Going down into the work area lands on its first zone in the fixed
+// order; a current work zone counts as that level and stays put when going down. A current zone the screen
+// does not have leads to the top level. Without any level the result is current.
 func StepZoneLevel(zones []FocusZone, current FocusZone, step int) FocusZone {
 	has := func(z FocusZone) bool {
 		for _, have := range zones {
@@ -67,8 +72,11 @@ func StepZoneLevel(zones []FocusZone, current FocusZone, step int) FocusZone {
 	if has(ZoneSubtabs) {
 		levels = append(levels, ZoneSubtabs)
 	}
+	if has(ZonePath) {
+		levels = append(levels, ZonePath)
+	}
 	work := false
-	for _, z := range zoneOrder[2:] {
+	for _, z := range workZones {
 		if has(z) {
 			levels = append(levels, z)
 			work = true
@@ -94,7 +102,7 @@ func StepZoneLevel(zones []FocusZone, current FocusZone, step int) FocusZone {
 }
 
 func isWorkZone(z FocusZone) bool {
-	for _, w := range zoneOrder[2:] {
+	for _, w := range workZones {
 		if w == z {
 			return true
 		}
