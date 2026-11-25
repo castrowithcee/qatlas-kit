@@ -107,6 +107,9 @@ type FrameSpec struct {
 	// HeaderKeys stand dimmed at the right end of the header, such as the help and command keys.
 	HeaderKeys []Hint
 	Areas      []Area
+	// Nav is the form of the navigation; the zero value is the tab line. With NavPathLine the path line
+	// replaces the tab line and the sub-tab line, and ModeTab stands in it as its only section.
+	Nav        NavForm
 	ActiveArea AreaID
 	ActiveTab  TabID
 	// ModeTab, when set, shows the application working outside every area, such as a guided setup: no area
@@ -115,6 +118,9 @@ type FrameSpec struct {
 	// targets, so the workspace keeps its height.
 	ModeTab TextID
 	Focus   FocusZone
+	// PathFocusArea puts the focus of ZonePath on the area section of the path line instead of the last one,
+	// the section of the current place.
+	PathFocusArea bool
 	// Input is the input focus of the screen; hints show only the keys that act in it.
 	Input     InputFocus
 	Workspace string
@@ -169,7 +175,7 @@ func (f *frameRun) rows(spec FrameSpec) (top, workspace, footer int) {
 	if len(spec.Areas) > 0 {
 		top++
 	}
-	if _, ok := subTabs(spec); ok {
+	if _, ok := subTabs(spec); ok && spec.Nav != NavPathLine {
 		top++
 	}
 	footer = footerRows(f.keys.Hints(spec.Footer, spec.Input, f.text), spec.Position, max(spec.Width, 0))
@@ -202,11 +208,14 @@ func (f *frameRun) render(spec FrameSpec) (string, []Target) {
 		lines = append(lines, Pad(Clip(line, width), width))
 	}
 	add(f.header(spec, width))
-	if len(spec.Areas) > 0 {
+	switch {
+	case len(spec.Areas) > 0 && spec.Nav == NavPathLine:
+		add(f.pathLine(spec, width))
+	case len(spec.Areas) > 0:
 		add(f.tabLine(spec, width))
-	}
-	if area, ok := subTabs(spec); ok {
-		add(f.subTabLine(spec, area, width))
+		if area, ok := subTabs(spec); ok {
+			add(f.subTabLine(spec, area, width))
+		}
 	}
 	add(f.styles.Render(StyleBorder, strings.Repeat(f.ruleChar(), width)), nil)
 	_, rows, footerRows := f.rows(spec)
@@ -475,15 +484,27 @@ func (f *frameRun) icon(glyph string) string {
 }
 
 // CheckFrame reports why spec cannot be drawn as it is asked: an icon of the frame or of an area that fails
-// CheckIcon. Applications run it in their tests or at start, with CheckAreas.
+// CheckIcon, and a navigation form the frame does not know. With the path line it also holds the areas to
+// CheckAreas, as the names of the path come from them. Applications run it in their tests or at start, with
+// CheckAreas.
 func CheckFrame(spec FrameSpec) error {
 	var errs []error
+	switch spec.Nav {
+	case NavTabs:
+		errs = append(errs, checkAreaIcons(spec.Areas)...)
+	case NavPathLine:
+		if err := CheckAreas(spec.Areas); err != nil {
+			errs = append(errs, err)
+		}
+	default:
+		errs = append(errs, fmt.Errorf("frame: unknown navigation form %d", spec.Nav))
+	}
 	if spec.Icon != "" {
 		if err := CheckIcon(spec.Icon); err != nil {
 			errs = append(errs, fmt.Errorf("frame: %w", err))
 		}
 	}
-	return errors.Join(append(errs, checkAreaIcons(spec.Areas)...)...)
+	return errors.Join(errs...)
 }
 
 // focusMark leads a bar: "> " while it has the focus, blanks otherwise, so nothing moves.
