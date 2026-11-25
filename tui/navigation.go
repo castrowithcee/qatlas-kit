@@ -45,6 +45,63 @@ func CycleZone(zones []FocusZone, current FocusZone, step int) FocusZone {
 	return present[0]
 }
 
+// StepZoneLevel moves vertically between the levels tabs, subtabs and work area among the zones a screen
+// has: a positive step goes down, a negative one up, by that many levels and without wrap-around. A level the
+// screen lacks is skipped. Going down into the work area lands on its first zone in the fixed order; a current
+// work zone counts as that level and stays put when going down. A current zone the screen does not have leads
+// to the top level. Without any level the result is current.
+func StepZoneLevel(zones []FocusZone, current FocusZone, step int) FocusZone {
+	has := func(z FocusZone) bool {
+		for _, have := range zones {
+			if have == z {
+				return true
+			}
+		}
+		return false
+	}
+	var levels []FocusZone // the zone that enters each present level
+	cur := -1
+	if has(ZoneTabs) {
+		levels = append(levels, ZoneTabs)
+	}
+	if has(ZoneSubtabs) {
+		levels = append(levels, ZoneSubtabs)
+	}
+	work := false
+	for _, z := range zoneOrder[2:] {
+		if has(z) {
+			levels = append(levels, z)
+			work = true
+			break
+		}
+	}
+	if len(levels) == 0 {
+		return current
+	}
+	for i, z := range levels {
+		if z == current || (work && i == len(levels)-1 && isWorkZone(current) && has(current)) {
+			cur = i
+		}
+	}
+	if cur < 0 {
+		return levels[0]
+	}
+	next := min(max(cur+step, 0), len(levels)-1)
+	if next == cur {
+		return current
+	}
+	return levels[next]
+}
+
+func isWorkZone(z FocusZone) bool {
+	for _, w := range zoneOrder[2:] {
+		if w == z {
+			return true
+		}
+	}
+	return false
+}
+
 // StepArea returns the area step places after active, with wrap-around; a negative step goes back. An
 // active area that is not one of areas leads to the first; without areas the result is active.
 func StepArea(areas []Area, active AreaID, step int) AreaID {
