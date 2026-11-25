@@ -244,10 +244,14 @@
 // typing, paste, left, right, up, down and the wheel change nothing; a click on a field takes the focus.
 // A button with the focus is always in view: the fields get the height that is left, or none, and only where
 // not even the buttons fit does the form ask for a larger terminal. With a field focused, the form is drawn
-// without the buttons where they do not fit beside it. Overlay draws the form as a modal in the way of
-// Dialog.Overlay, under FormSpec.Title in its frame, with its buttons and the keys of Hints, and ok is false
-// where room does not hold it, also with a list of values or the calendar open; the application then draws
-// View in the workspace and Hints in the footer.
+// without the buttons where they do not fit beside it. While the focus of the screen lies elsewhere,
+// SetFocused(false) draws the form without any sign of its focus: no marker, accent, frame, cursor or hint at
+// the focused field, no mark at its section and no focused button, so only one focus shows. It only draws:
+// the focused field or button, open lists and what is typed stay, and keys, clicks and paste act as before,
+// as the application hands them on. A new form has the focus, and Overlay always draws it. Overlay draws the
+// form as a modal in the way of Dialog.Overlay, under FormSpec.Title in its frame, with its buttons and the
+// keys of Hints, and ok is false where room does not hold it, also with a list of values or the calendar
+// open; the application then draws View in the workspace and Hints in the footer.
 // FormSpec.Lead is one or two dimmed sentences under the title, wrapped and never cut. It stays in view at
 // every focus, in View as in the modal, counts for ok, and SetLead changes it and keeps values, focus and
 // open list. A masked field never shows what is typed, not in its row, a target or a problem, and is never
