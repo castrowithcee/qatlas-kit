@@ -80,6 +80,9 @@ const (
 	SearchByKey ListSearch = iota
 	// SearchAsTyped filters with every typed character, for a pure choice list without letter actions.
 	SearchAsTyped
+	// SearchNone has no filter at all, for a short choice such as a menu: no search key, no search line, and
+	// typed characters do nothing. The search key may stay empty.
+	SearchNone
 )
 
 // ListSpec is what a list shows and how it reacts. The application supplies every text.
@@ -107,6 +110,10 @@ type ListSpec struct {
 	// key line of the modal name it. The price is that the key no longer types its character into the filter.
 	// It needs Ticks and SearchAsTyped.
 	TickWhileTyping bool
+	// Outline draws a grouped list as an outline: the groups stand in the order of SetGroups, not by title, and
+	// a group row shows only its fold glyph and title, without category mark or count; a group without entry
+	// has no fold glyph.
+	Outline bool
 	// Title is the text in the frame of the modal drawn by Overlay; without one the frame has no title.
 	Title TextID
 	// Buttons stand below the list in the modal, each an action of the key table and a label drawn behind
@@ -179,6 +186,7 @@ type List struct {
 	items   []ListItem
 	grouped bool
 	groups  map[string]ListGroup
+	order   map[string]int
 	folded  map[string]bool
 	ticked  map[ItemID]bool
 	memory  map[tickScope]tickMemory
@@ -196,8 +204,9 @@ type List struct {
 // NewList checks spec and returns an empty list. It rejects a list without columns, a column without title,
 // a first column that is free text or optional, more than one free text column, a list without the text of
 // its empty state, the row of all without tick boxes, and a key that names no action of keys or that two list
-// keys share; only a list that filters as typed may go without the search key, and only a list with tick
-// boxes needs the toggle key. A button needs a label and an action of the key table that no other button has.
+// keys share; only a list that filters as typed or has no filter may go without the search key, and only a
+// list with tick boxes needs the toggle key. A button needs a label and an action of the key table that no
+// other button has.
 func NewList(spec ListSpec, keys *Keymap, text Translator) (*List, error) {
 	if keys == nil || text == nil {
 		return nil, errors.New("the list needs a key table and a translator")
@@ -224,7 +233,7 @@ func NewList(spec ListSpec, keys *Keymap, text Translator) (*List, error) {
 	if spec.Empty == "" {
 		errs = append(errs, errors.New("the list has no text for its empty state"))
 	}
-	if spec.Search != SearchByKey && spec.Search != SearchAsTyped {
+	if spec.Search > SearchNone {
 		errs = append(errs, fmt.Errorf("unknown search mode %d", spec.Search))
 	}
 	if spec.AllRow && !spec.Ticks {
@@ -247,7 +256,7 @@ func NewList(spec ListSpec, keys *Keymap, text Translator) (*List, error) {
 	}
 	used := map[ActionID]string{}
 	for _, n := range named {
-		if n.id == "" && n.name == "search" && spec.Search == SearchAsTyped {
+		if n.id == "" && n.name == "search" && spec.Search != SearchByKey {
 			continue
 		}
 		if !keys.known(n.id) {
@@ -354,9 +363,11 @@ func (l *List) SetGroups(groups []ListGroup) error {
 	}
 	prev := l.mark()
 	l.groups = make(map[string]ListGroup, len(groups))
-	for _, g := range groups {
+	l.order = make(map[string]int, len(groups))
+	for i, g := range groups {
 		g.Cells = slices.Clone(g.Cells)
 		l.groups[g.Key] = g
+		l.order[g.Key] = i
 	}
 	l.rebuild(prev)
 	return nil
@@ -863,6 +874,13 @@ func (l *List) groupRow(group string, styles Styles) string {
 		glyph = GlyphCollapsed
 	}
 	title := l.groupTitle(group)
+	if l.spec.Outline {
+		lead := " "
+		if count > 0 {
+			lead = styles.Glyph(glyph)
+		}
+		return styles.Render(StyleHint, lead) + " " + styles.Render(StyleActive, Escape(title))
+	}
 	box := ""
 	if l.spec.Ticks {
 		box = l.box(tickScope{group: group}, styles) + " "
@@ -982,8 +1000,22 @@ func (l *List) rebuild(prev listMark) {
 				groups = append(groups, k)
 			}
 		}
-		// Groups go in alphabetical order of their shown title, the group without key last.
+		// Groups go in alphabetical order of their shown title, the group without key last; an outline keeps
+		// the order of SetGroups first, the groups it does not describe after them.
 		slices.SortFunc(groups, func(a, b string) int {
+			if l.spec.Outline {
+				ia, oka := l.order[a]
+				ib, okb := l.order[b]
+				switch {
+				case oka && okb && ia != ib:
+					return ia - ib
+				case oka != okb:
+					if oka {
+						return -1
+					}
+					return 1
+				}
+			}
 			if (a == "") != (b == "") {
 				if a == "" {
 					return 1

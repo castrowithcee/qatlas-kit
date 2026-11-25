@@ -140,7 +140,8 @@
 // line: the actions of the list move the rows, and left and right its cursor where no group is left to fold.
 // Enter keeps a typed filter, the first back clears it, and the next one is left to the application. Groups
 // are presentation
-// only: they stand in alphabetical order of their shown title with the group without key last, left, right
+// only: they stand in alphabetical order of their shown title with the group without key last (an outline
+// keeps the order of SetGroups), left, right
 // and enter fold them, a filter opens the groups with hits without changing their fold state, and the
 // position counts entries only, "pos/total" or, with a filter, "pos/shown (N total)". SetGroups gives a group,
 // by the key in ListItem.Group, a title and cells; the row then shows the fold glyph, the box, the category
@@ -177,6 +178,10 @@
 // twice. A click on a button acts as its key does through Act: an action that is no list key comes back with
 // handled false, and the application runs the action of the MouseResult as it runs the key. What enter and
 // back mean, and the state from before the modal opened, are the application's.
+//
+// ListSpec.Search can also be SearchNone, a list without filter and without search key, for a short choice
+// such as a menu, and ListSpec.Outline draws grouped entries as an outline: the groups stand in the order of
+// SetGroups and a group row shows its fold glyph and title only.
 //
 // The marked row is drawn as selected only while the rows have the focus, as SetFocused says (a new list has
 // it; the modal always draws the mark), so no second mark shows while the focus lies elsewhere. A click on a
