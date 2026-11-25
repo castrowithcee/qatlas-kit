@@ -106,7 +106,7 @@ func NewFilterBar(spec FilterBarSpec, keys *Keymap, text Translator) (*FilterBar
 		}
 	}
 	for _, id := range named {
-		if _, ok := keys.index[id]; !ok {
+		if !keys.known(id) {
 			errs = append(errs, fmt.Errorf("filter bar key %q is no action of the key table", id))
 		}
 		if used[id] {
@@ -135,7 +135,7 @@ func NewFilterBar(spec FilterBarSpec, keys *Keymap, text Translator) (*FilterBar
 			fail("no label")
 		}
 		if f.Action != "" {
-			if _, ok := keys.index[f.Action]; !ok {
+			if !keys.known(f.Action) {
 				fail("action %q is no action of the key table", f.Action)
 			}
 			if len(f.Options) > 0 || f.Selected != "" {

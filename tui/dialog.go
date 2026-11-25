@@ -276,10 +276,16 @@ func NewDialog(spec DialogSpec, keys *Keymap, text Translator) (*Dialog, error) 
 	return d, nil
 }
 
-// known reports whether id is an action of the table.
+// known reports whether id is an action of the table this view sees.
 func (k *Keymap) known(id ActionID) bool {
-	_, ok := k.index[id]
-	return ok
+	i, ok := k.index[id]
+	return ok && k.visible(i)
+}
+
+// otherPage reports whether id is an action of the table that only another page sees.
+func (k *Keymap) otherPage(id ActionID) bool {
+	i, ok := k.index[id]
+	return ok && !k.visible(i)
 }
 
 func (d *Dialog) focus() InputFocus {
