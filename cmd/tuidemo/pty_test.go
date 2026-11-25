@@ -30,6 +30,12 @@ const wait = 15 * time.Second
 // startDemo runs the program at a pseudo-terminal of 100 by 30 cells and waits for its first screen.
 func startDemo(t *testing.T, args string) *ptytest.Terminal {
 	t.Helper()
+	return startDemoIn(t, args, t.TempDir())
+}
+
+// startDemoIn is startDemo with tmp as the temporary directory of the program, so a test sees what it leaves.
+func startDemoIn(t *testing.T, args, tmp string) *ptytest.Terminal {
+	t.Helper()
 	if runtime.GOOS == "windows" {
 		t.Skip("the pseudo console of Windows renders the screen itself, so its output differs")
 	}
@@ -38,7 +44,7 @@ func startDemo(t *testing.T, args string) *ptytest.Terminal {
 		t.Fatal(err)
 	}
 	term, err := ptytest.Start(ptytest.Command{Path: self, Args: []string{"-test.run=^TestHelperProcess$"},
-		Env:  []string{helperEnv + "=1", helperEnv + "_ARGS=" + args, "TERM=xterm-256color", "NO_COLOR=1", "LANG=C.UTF-8"},
+		Env:  []string{helperEnv + "=1", helperEnv + "_ARGS=" + args, "TERM=xterm-256color", "TMPDIR=" + tmp, "NO_COLOR=1", "LANG=C.UTF-8"},
 		Size: ptytest.Size{Columns: 100, Rows: 30}})
 	if errors.Is(err, errors.ErrUnsupported) {
 		t.Skipf("no pseudo-terminal: %v", err)
@@ -148,7 +154,7 @@ func TestTabsSwitchByClick(t *testing.T) {
 	term := startDemo(t, "-icons none")
 	clickOn(t, term, "2 Frame", tabsBody)
 	clickOn(t, term, "3 Settings", lookBody)
-	clickOn(t, term, "Input", "Press the key or click the row")
+	clickOn(t, term, "Input", "Language and mouse change at once")
 	clickOn(t, term, "1 Overview", aboutBody)
 	clickOn(t, term, "Sample data", "PLANT    BED")
 }
@@ -176,26 +182,6 @@ func TestLanguageSwitchByKeyAndByClick(t *testing.T) {
 	expect(t, term, "Terminal-Bausteine im Betrieb")
 	clickOn(t, term, "Sprache wechseln", "language: english")
 	expect(t, term, "1 Overview")
-}
-
-func TestIconsAndMouseSwitch(t *testing.T) {
-	term := startDemo(t, "")
-	act(t, term, "3", "[ unicode ]")
-	act(t, term, "I", "[ nerdfont ]")
-	clickOn(t, term, "[ nerdfont ]", "[ none ]")
-	act(t, term, "\t", "[Look]")
-	act(t, term, "\x1b[C", "Language and mouse change at once")
-	act(t, term, "M", "[ off ]")
-	act(t, term, "M", "[ on ]")
-}
-
-func TestSettingsRowsSwitchByClick(t *testing.T) {
-	term := startDemo(t, "-icons none")
-	act(t, term, "3", lookBody)
-	clickOn(t, term, "[ terminal ]", "[ demo-dark ]")
-	act(t, term, "\t", "[Look]")
-	act(t, term, "\x1b[C", "Language and mouse change at once")
-	clickOn(t, term, "[ english ]", "[ deutsch ]")
 }
 
 func TestCtrlCQuitsCleanly(t *testing.T) {
@@ -385,4 +371,23 @@ func TestWorkAreaButtonByKeyboardOnly(t *testing.T) {
 	act(t, term, "\r", "> Count <")     // enter: into the work area again
 	act(t, term, "\x1b[C", "> Count <") // right does not leave the work area
 	act(t, term, "\x1b[Z", "[Mouse]")   // shift+tab: back to the sub-tab line
+}
+
+func TestBlocksAndOpenersByKeyboardOnly(t *testing.T) {
+	term := startDemo(t, "-icons none")
+	act(t, term, "6", "types a filter")
+	send(t, term, "\x1b[B")           // down: tab line to sub-tab line
+	act(t, term, "\x1b[B", "> Basil") // down: into the list, its first row
+	send(t, term, "\x1b[A")           // up from the first row: back to the sub-tab line
+	gone(t, term, "> Basil")
+	act(t, term, "\x1b[C", "Groups") // right on the sub-tab line steps the sub-tab
+	act(t, term, "\x1b[D", "types a filter")
+	act(t, term, "\r", "> Basil") // enter: into the list again
+	send(t, term, "\x1b")         // esc: back to the sub-tab line
+	gone(t, term, "> Basil")
+	send(t, term, "\x1b[A")                // up: the tab line
+	act(t, term, "\x1b[C", "A bed to add") // right on the tab line opens the next tab, the Forms
+	act(t, term, "\x1b[C", pickBody)
+	act(t, term, "\x1b[B\x1b[B", "> choose bed <") // the opener of the tab shows the focus
+	act(t, term, "\r", "Choose a bed")             // enter opens it as a click would
 }

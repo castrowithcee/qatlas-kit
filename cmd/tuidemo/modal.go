@@ -18,6 +18,10 @@ const (
 	kindNotice
 	kindHelp
 	kindExplain
+	kindPick
+	kindSuggest
+	kindReveal
+	kindLogFilter
 )
 
 // explanationURL is an invented address, shown in full and linked where the terminal takes escapes.
@@ -139,7 +143,7 @@ func (m *model) openExplanation() {
 }
 
 func (m *model) closeModal() {
-	m.modal, m.kind, m.dialog, m.explanation = nil, 0, nil, nil
+	m.modal, m.kind, m.dialog, m.explanation, m.picker = nil, 0, nil, nil, nil
 }
 
 func (m *model) cancelled() {
@@ -204,6 +208,16 @@ func (m *model) finish(act tui.ActionID) tea.Cmd {
 		m.closeModal()
 	case kindNotice:
 		m.closeModal()
+	case kindPick, kindSuggest:
+		if m.kind == kindSuggest && act == actEnter && strings.TrimSpace(m.dialog.Value()) == "" {
+			m.dialog.SetMessage(&tui.Message{Kind: tui.MessageError, Text: m.text.Lookup(textSuggestEmpty)})
+			break
+		}
+		m.picked(act)
+	case kindReveal:
+		m.revealed(act)
+	case kindLogFilter:
+		m.filtered()
 	}
 	return nil
 }
@@ -213,7 +227,7 @@ func (m *model) modalClick(msg tea.MouseMsg) tea.Cmd {
 	res := m.mouse.Handle(msg)
 	if _, ok := msg.(tea.MouseWheelMsg); ok {
 		// A dialog scrolls only under a notch over its details; help and explanation scroll under any notch.
-		if m.kind == kindHelp || m.kind == kindExplain || res.Zone == tui.ZoneDetail {
+		if m.kind == kindHelp || m.kind == kindExplain || m.kind == kindPick || m.kind == kindLogFilter || res.Zone == tui.ZoneDetail {
 			m.modal.Wheel(res.WheelSteps)
 		}
 		return nil
@@ -237,7 +251,7 @@ func commands(groups []group, text tui.Translator) []tui.Command {
 	}{
 		{"theme", actTheme, textKeyTheme}, {"theme-back", actThemeBack, textKeyThemeBack}, {"language", actLanguage, textKeyLanguage}, {"icons", actIcons, textKeyIcons},
 		{"mouse", actMouse, textKeyMouse}, {"ask", actAsk, textKeyAsk}, {"rename", actRename, tui.TextKeyRename},
-		{"notice", actNotice, textKeyNotice}, {"help", actHelp, tui.TextKeyHelp}, {"explain", actInfo, tui.TextKeyInfo},
+		{"notice", actNotice, textKeyNotice}, {"pick", actPick, textKeyPick}, {"suggest", actSuggest, textKeySuggest}, {"help", actHelp, tui.TextKeyHelp}, {"explain", actInfo, tui.TextKeyInfo},
 		{"quit", actQuit, tui.TextKeyQuit},
 	} {
 		cmds = append(cmds, tui.Command{Name: c.name, Description: c.text, Action: c.action, Available: tui.Always})

@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"strings"
 
 	"github.com/castrowithcee/qatlas-kit/tui"
@@ -20,6 +19,9 @@ type group struct {
 	// hints are the footer hints of a tab, behind the common ones: each tab shows the keys of its own
 	// actions only.
 	hints map[tui.TabID][]tui.Hint
+	// blocks returns the live block of each tab that shows one, see block; nil for a group without any. A
+	// tab shows either a block or buttons.
+	blocks func(m *model) (map[tui.TabID]block, error)
 }
 
 func groups() []group {
@@ -46,15 +48,9 @@ func groups() []group {
 		{
 			area: tui.Area{ID: "settings", Title: textAreaSettings,
 				Tabs: []tui.Tab{{ID: "look", Title: textTabLook}, {ID: "input", Title: textTabInput}}},
-			icons: [2]string{"✱", "\uf013"},
-			draw:  drawSettings,
-			actions: func(_ tui.Area, tab tui.TabID) []tui.ActionID {
-				var out []tui.ActionID
-				for _, s := range settingRows()[tab] {
-					out = append(out, s.action)
-				}
-				return out
-			},
+			icons:  [2]string{"✱", "\uf013"},
+			draw:   drawLive,
+			blocks: settingsBlocks,
 		},
 		{
 			area: tui.Area{ID: "dialogs", Title: textAreaDialogs,
@@ -74,6 +70,39 @@ func groups() []group {
 			icons:   [2]string{"◈", "\uf059"},
 			draw:    drawHelp,
 			actions: openerAction,
+		},
+		{
+			area: tui.Area{ID: "lists", Title: textAreaLists,
+				Tabs: []tui.Tab{{ID: "filter", Title: textTabListFilter}, {ID: "groups", Title: textTabListGroups}, {ID: "ticks", Title: textTabListTicks}}},
+			icons:  [2]string{"☰", "\uf0ca"},
+			draw:   drawLive,
+			blocks: listBlocks,
+		},
+		{
+			area: tui.Area{ID: "forms", Title: textAreaForms,
+				Tabs: []tui.Tab{{ID: "fields", Title: textTabFormFields}, {ID: "dates", Title: textTabFormDates}}},
+			icons:  [2]string{"✎", "\uf044"},
+			draw:   drawLive,
+			blocks: formBlocks,
+		},
+		{
+			area: tui.Area{ID: "pickers", Title: textAreaPickers,
+				Tabs: []tui.Tab{{ID: "choose", Title: textTabPickChoose}, {ID: "files", Title: textTabPickFiles}, {ID: "suggest", Title: textTabPickSuggest}}},
+			icons:   [2]string{"◉", "\uf07b"},
+			draw:    drawPicker,
+			actions: pickAction,
+			hints: map[tui.TabID][]tui.Hint{
+				"choose":  {{Action: actPick, Label: textKeyPick, Priority: 1}},
+				"suggest": {{Action: actSuggest, Label: textKeySuggest, Priority: 1}},
+			},
+			blocks: pickBlocks,
+		},
+		{
+			area: tui.Area{ID: "views", Title: textAreaViews,
+				Tabs: []tui.Tab{{ID: "text", Title: textTabViewText}, {ID: "log", Title: textTabViewLog}, {ID: "chat", Title: textTabViewChat}}},
+			icons:  [2]string{"≣", "\uf0e5"},
+			draw:   drawLive,
+			blocks: viewBlocks,
 		},
 	}
 }
@@ -147,52 +176,6 @@ func (m *model) drawMouse(room tui.Rect) ([]string, []tui.Target) {
 	button := m.styles.Button(tui.ButtonPrimary, label, m.focused(0))
 	target := tui.Target{Rect: tui.Rect{X: 0, Y: len(lines), Width: len([]rune(label)) + 4, Height: 1}, Action: actCount}
 	return append(lines, button), []tui.Target{target}
-}
-
-// setting is one row of the settings tabs: a switch, its text and the value it shows now.
-type setting struct {
-	action tui.ActionID
-	label  tui.TextID
-	value  func(m *model) string
-}
-
-func settingRows() map[tui.TabID][]setting {
-	return map[tui.TabID][]setting{
-		"look": {
-			{actTheme, tui.TextSettingTheme, func(m *model) string { return m.prefs.Theme }},
-			{actThemeBack, textSettingThemeBack, func(m *model) string { return m.themes.Step(m.prefs.Theme, -1) }},
-			{actIcons, tui.TextSettingIcons, func(m *model) string { return m.prefs.Icons }},
-		},
-		"input": {
-			{actLanguage, tui.TextSettingLanguage, func(m *model) string { return m.prefs.Language }},
-			{actMouse, tui.TextSettingMouse, func(m *model) string { return m.onOff(m.prefs.MouseEnabled) }},
-		},
-	}
-}
-
-func (m *model) onOff(on bool) string {
-	if on {
-		return m.text.Lookup(tui.TextValueOn)
-	}
-	return m.text.Lookup(tui.TextValueOff)
-}
-
-func drawSettings(m *model, tab tui.TabID, room tui.Rect) ([]string, []tui.Target) {
-	body := textSettingsLookBody
-	if tab == "input" {
-		body = textSettingsInputBody
-	}
-	lines := m.paragraph(body, room.Width)
-	lines = append(lines, "")
-	var targets []tui.Target
-	for i, s := range settingRows()[tab] {
-		key := tui.Escape(m.keys.Label(s.action))
-		line := fmt.Sprintf("[%s] %s  %s", key, tui.Pad(tui.Escape(m.text.Lookup(s.label)), 12),
-			m.styles.Button(tui.ButtonNormal, tui.Escape(s.value(m)), m.focused(i)))
-		targets = append(targets, tui.Target{Rect: tui.Rect{Y: len(lines), Width: room.Width, Height: 1}, Action: s.action})
-		lines = append(lines, line)
-	}
-	return lines, targets
 }
 
 // openers are what a tab of the dialogs and help groups shows: its text and the action that opens the part.

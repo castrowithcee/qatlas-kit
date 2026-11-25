@@ -39,7 +39,12 @@ func run(args []string, out io.Writer, environ []string) error {
 	if flags.NArg() != 0 {
 		return usageError{errors.New("no arguments are accepted")}
 	}
-	m, err := newModel(prefs, tui.DetectColorProfile(out, environ), tui.DetectCharsetMode(environ))
+	root, err := newSampleRoot()
+	if err != nil {
+		return err
+	}
+	defer func() { _ = os.RemoveAll(root) }() // the folder is the program's own, removed on every way out
+	m, err := newModel(prefs, tui.DetectColorProfile(out, environ), tui.DetectCharsetMode(environ), root)
 	if err != nil {
 		return err
 	}
