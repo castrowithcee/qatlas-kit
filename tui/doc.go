@@ -269,7 +269,8 @@
 // of every topic where three text rows remain below it, and is otherwise left out whole. The first topic ends
 // with the keys of the screen the help was opened from and the keys that act everywhere, in the binding in
 // force. Left and right, and the topic keys of the help level, change the topic with wrap-around; the scroll
-// keys and the wheel stop at the ends; back and the help key close it. An Explanation shows a title, the long
+// keys and the wheel stop at the ends; back and the help key close it. A click on a line of the key list
+// yields its action, and the application closes the help and then runs it. An Explanation shows a title, the long
 // text, a helptopics.Term and the address of the documentation, which is shown in full and, where the terminal
 // takes escapes, also linked; it accepts only an absolute http or https address of printable ASCII, so the
 // address cannot end the link sequence.
