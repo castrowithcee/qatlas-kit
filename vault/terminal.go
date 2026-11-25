@@ -2,6 +2,7 @@ package vault
 
 import (
 	"bufio"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -35,6 +36,55 @@ func ReadPassphrase(prompt string) (string, error) {
 		return "", ErrNoTerminal
 	}
 	return string(passphrase), nil
+}
+
+// ReadHidden shows prompt on the controlling terminal and reads one line back without echo, like
+// ReadPassphrase, but gives up when ctx ends: the terminal gets its echo back at once and ReadHidden returns
+// ctx.Err(). It is for a secret typed while something else may answer first. It returns ErrNoTerminal under
+// the same rule as ReadPassphrase. Like ReadConfirm it shows control characters in prompt other than a line
+// break as Go escapes.
+//
+// After ctx ended the read it started stays blocked on the terminal until a line arrives or the process
+// ends, and the terminal stays open for it.
+func ReadHidden(ctx context.Context, prompt string) (string, error) {
+	in, out, closeTTY, err := openTTY()
+	if err != nil {
+		return "", ErrNoTerminal
+	}
+	fd := int(in.Fd())
+	state, err := term.GetState(fd)
+	if err != nil {
+		closeTTY()
+		return "", ErrNoTerminal
+	}
+	if _, err := fmt.Fprint(out, escapePrompt(prompt)); err != nil {
+		closeTTY()
+		return "", ErrNoTerminal
+	}
+	type result struct {
+		text []byte
+		err  error
+	}
+	read := make(chan result, 1)
+	go func() {
+		text, err := term.ReadPassword(fd)
+		read <- result{text, err}
+	}()
+	select {
+	case got := <-read:
+		fmt.Fprintln(out)
+		closeTTY()
+		if got.err != nil {
+			return "", ErrNoTerminal
+		}
+		return string(got.text), nil
+	case <-ctx.Done():
+		// The terminal stays open for the read still waiting on it: closing it under that read could hand
+		// its descriptor to another file.
+		_ = term.Restore(fd, state)
+		fmt.Fprintln(out)
+		return "", ctx.Err()
+	}
 }
 
 // confirmLimit is the most bytes of an answer ReadConfirm reads; a longer line counts as no.

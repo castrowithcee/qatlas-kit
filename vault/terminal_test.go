@@ -2,6 +2,7 @@ package vault
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"strings"
 	"testing"
@@ -95,5 +96,25 @@ func TestReadConfirmMasksControlCharacters(t *testing.T) {
 	want := "Delete \\x1b[2Jname\\r\\a?\nAgain \\u202e? [y/N] "
 	if out.String() != want {
 		t.Fatalf("prompt = %q, want %q", out.String(), want)
+	}
+}
+
+func TestReadHiddenRefusesANonInteractiveProcess(t *testing.T) {
+	original := interactive
+	interactive = func() bool { return false }
+	t.Cleanup(func() { interactive = original })
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := ReadHidden(context.Background(), "example prompt: ")
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		if !errors.Is(err, ErrNoTerminal) {
+			t.Fatalf("ReadHidden() error = %v, want ErrNoTerminal", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("ReadHidden() waited for input in a process that is not interactive")
 	}
 }
