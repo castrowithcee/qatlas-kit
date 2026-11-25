@@ -2188,3 +2188,29 @@ func TestFilterTypingContinuesAtTheEnd(t *testing.T) {
 		t.Errorf("after a kept filter: %q", l.Query())
 	}
 }
+
+// SearchNone has no filter and needs no search key; Outline keeps the order of SetGroups and draws plain
+// group rows.
+func TestListSearchNoneAndOutline(t *testing.T) {
+	l, _ := newSampleList(t, looks(t)["noneascii"], i18n.English, func(s *ListSpec) {
+		s.Search, s.Keys.Search, s.Outline = SearchNone, "", true
+	})
+	l.SetGrouped(true)
+	if err := l.SetGroups([]ListGroup{{Key: "trees", Title: "Zeta"}, {Key: "herbs", Title: "Alpha"}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := l.SetItems(samplePlants()); err != nil {
+		t.Fatal(err)
+	}
+	if got := shownRows(l); !strings.HasPrefix(got, "[trees]") {
+		t.Errorf("rows %s: groups not in the order of SetGroups", got)
+	}
+	typeList(l, "b")
+	if l.Searching() || l.Query() != "" || l.Input() != InputNavigation {
+		t.Error("a typed character started a filter")
+	}
+	view, _ := l.View(looks(t)["noneascii"], 40, 8)
+	if strings.Contains(view, "(") || strings.Contains(strings.ToLower(view), "search") {
+		t.Errorf("count or search line drawn:\n%s", view)
+	}
+}
