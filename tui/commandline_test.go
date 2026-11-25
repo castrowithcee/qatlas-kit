@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 
@@ -797,5 +798,202 @@ func TestACommandWithoutKeyShowsNoKeyAndRuns(t *testing.T) {
 	typeInto(c, "export")
 	if got, done := updateIn(c, enterKey, Context{}); !done || got.Name != "export config" {
 		t.Errorf("enter yields %+v, %v", got, done)
+	}
+}
+
+// overlayIn draws the overlay of c in the room below a two-line header of a screen of width by height cells.
+func overlayIn(c *CommandLine, st Styles, width, height int, ctx Context) (string, []Target, bool) {
+	c.SetContext(ctx)
+	return c.Overlay(st, sampleScreen(width, height), width, height, Rect{Y: 2, Width: width, Height: height - 2})
+}
+
+func TestGoldenCommandLineOverlay(t *testing.T) {
+	for _, tt := range []struct {
+		name, look string
+		lang       i18n.Lang
+		w          int
+	}{
+		{"commandline.overlay.wide.golden", "noneascii", i18n.English, 100},
+		{"commandline.overlay.narrow.golden", "noneascii", i18n.English, 46},
+		{"commandline.overlay.wide.dark.golden", "dark", i18n.English, 100},
+		{"commandline.overlay.wide.de.golden", "noneascii", i18n.German, 100},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			c, _ := sampleCommandLine(t, tt.lang, sampleCommands())
+			view, _, ok := overlayIn(c, looks(t)[tt.look], tt.w, 20, Context{})
+			if !ok {
+				t.Fatal("the line does not fit")
+			}
+			checkGolden(t, tt.name, view+"\n")
+		})
+	}
+}
+
+// The overlay sits at the top of its room, centred, over the dimmed screen; every drawn match and key is a
+// target, the screen behind gives none, and a click at a drawn place acts as the row or key does.
+func TestTheOverlayTargetsMatchWhatIsDrawn(t *testing.T) {
+	st := looks(t)["noneascii"]
+	c, _ := sampleCommandLine(t, i18n.English, sampleCommands())
+	view, targets, ok := overlayIn(c, st, 100, 20, Context{})
+	if !ok {
+		t.Fatal("the line does not fit")
+	}
+	rows := plainRows(view)
+	if top := lineIndex(view, "Commands"); top != 2 {
+		t.Errorf("the frame starts at row %d, want the top of the room", top)
+	}
+	if x := strings.Index(rows[2], "#"); x != (100-64)/2 {
+		t.Errorf("the frame starts at column %d, want it centred", x)
+	}
+	zones := map[FocusZone]int{}
+	for _, tg := range targets {
+		zones[tg.Zone]++
+		if tg.Rect.Y < 3 || tg.Rect.Y >= 2+len(rows) || tg.Rect.X < (100-64)/2 || tg.Rect.X+tg.Rect.Width > (100+64)/2 {
+			t.Errorf("target %+v outside the box", tg)
+		}
+	}
+	if zones[ZoneRows] != len(sampleCommands())-1 || zones[""] < 2 {
+		t.Errorf("targets by zone = %v, want one per visible command and the keys", zones)
+	}
+	if !strings.Contains(rows[len(rows)-1], "esc") && !strings.Contains(strings.Join(rows, "\n"), "back") {
+		t.Errorf("no key line:\n%s", strings.Join(rows, "\n"))
+	}
+	m := NewMouseMap(targets, true)
+	for _, tg := range targets {
+		got, done := clickIn(c, m.Handle(click(tg.Rect.X, tg.Rect.Y)), Context{})
+		switch {
+		case tg.Zone == ZoneRows && (!done || got.Action != tg.Action || got.Area != tg.Area):
+			t.Errorf("click on row %+v gives %+v, %v", tg, got, done)
+		case tg.Zone != ZoneRows && tg.Action == sampleCommandKeys.Back && (!done || got.Name != ""):
+			t.Errorf("click on back gives %+v, %v", got, done)
+		}
+		c.Reset()
+	}
+	// The screen behind the box, above and beside it, takes no click.
+	for _, p := range [][2]int{{0, 0}, {0, 10}, {99, 2}, {50, 1}} {
+		if r := m.Handle(click(p[0], p[1])); r.Handled {
+			t.Errorf("click at %v reached %+v", p, r)
+		}
+	}
+	if !strings.Contains(ansi.Strip(view), "Garden  ok") {
+		t.Errorf("the screen behind is lost:\n%s", view)
+	}
+}
+
+func keyTarget(t *testing.T, targets []Target, action ActionID) Target {
+	t.Helper()
+	for _, tg := range targets {
+		if tg.Zone != ZoneRows && tg.Action == action {
+			return tg
+		}
+	}
+	t.Fatalf("no key target for %q", action)
+	return Target{}
+}
+
+func TestTheKeyLineActsLikeItsKeys(t *testing.T) {
+	st := looks(t)["noneascii"]
+	c, _ := sampleCommandLine(t, i18n.English, sampleCommands())
+	_, targets, _ := overlayIn(c, st, 100, 20, Context{})
+	m := NewMouseMap(targets, true)
+	press := func(tg Target) MouseResult { return m.Handle(click(tg.Rect.X, tg.Rect.Y)) }
+
+	typeInto(c, "rel")
+	if got, done := clickIn(c, press(keyTarget(t, targets, "enter")), Context{}); !done || got.Action != "reload" {
+		t.Errorf("enter gives %+v, %v", got, done)
+	}
+	if c.Query() != "" {
+		t.Errorf("a run command left %q", c.Query())
+	}
+	typeInto(c, "qu")
+	if got, done := clickIn(c, press(keyTarget(t, targets, "back")), Context{}); !done || got.Name != "" || c.Query() != "" {
+		t.Errorf("back gives %+v, %v, query %q", got, done, c.Query())
+	}
+	// An unavailable command keeps the line open with the reason, as the key does.
+	typeInto(c, "quit")
+	if got, done := clickIn(c, press(keyTarget(t, targets, "enter")), Context{Zone: ZoneForm}); done || got.Name != "" {
+		t.Errorf("enter ran an unavailable command: %+v", got)
+	}
+	view, _, _ := overlayIn(c, st, 100, 20, Context{Zone: ZoneForm})
+	if !strings.Contains(view, "quit: not in a form") || c.Query() != "quit" {
+		t.Errorf("no reason, or the text was lost:\n%s", view)
+	}
+	// Other targets of the key line and an unhandled result do nothing.
+	if _, done := clickIn(c, MouseResult{Action: "reload", Handled: true}, Context{}); done {
+		t.Error("a foreign action ran")
+	}
+	if _, done := clickIn(c, MouseResult{Action: "back"}, Context{}); done {
+		t.Error("an unhandled result closed the line")
+	}
+}
+
+func TestTheOverlayNeedsRoom(t *testing.T) {
+	c, _ := sampleCommandLine(t, i18n.English, sampleCommands())
+	st := looks(t)["noneascii"]
+	for _, tt := range []struct {
+		width, height int
+		want          bool
+	}{
+		{100, 20, true},
+		{44, 20, true},
+		{43, 20, false},
+		{100, 10, true}, // room of 8: frame, input, blank, one match, position, blank, key line
+		{100, 9, false}, // the position of the list does not fit
+		{100, 0, false},
+	} {
+		view, targets, ok := overlayIn(c, st, tt.width, tt.height, Context{})
+		if ok != tt.want {
+			t.Errorf("%dx%d: ok = %v, want %v", tt.width, tt.height, ok, tt.want)
+		}
+		if ok {
+			assertSize(t, view, tt.width, tt.height)
+		} else if view != "" || targets != nil {
+			t.Errorf("%dx%d: not ok but drew something", tt.width, tt.height)
+		}
+	}
+	// One match needs no position: frame, input, blank, the match, blank and key line.
+	typeInto(c, "quit")
+	if _, _, ok := overlayIn(c, st, 100, 9, Context{}); !ok {
+		t.Error("one match does not fit a room of 7")
+	}
+	if _, _, ok := overlayIn(c, st, 100, 8, Context{}); ok {
+		t.Error("a room of 6 was taken")
+	}
+}
+
+func TestTheOverlayShowsPositionAndErrors(t *testing.T) {
+	var many []Command
+	for i := range 20 {
+		many = append(many, Command{Name: fmt.Sprintf("entry %02d", i), Description: "cmd.help", Area: AreaID(fmt.Sprint("a", i)), Available: Always})
+	}
+	st := looks(t)["noneascii"]
+	c, _ := sampleCommandLine(t, i18n.English, many)
+	view, targets, ok := overlayIn(c, st, 100, 30, Context{})
+	if !ok || !strings.Contains(view, "1-12 of 20") || len(targets) < maxCommandRows+2 {
+		t.Errorf("long list: ok %v, %d targets:\n%s", ok, len(targets), view)
+	}
+	c, _ = sampleCommandLine(t, i18n.English, sampleCommands())
+	typeInto(c, "nonsense")
+	updateIn(c, enterKey, Context{})
+	view, targets, ok = overlayIn(c, st, 100, 20, Context{})
+	if !ok || !strings.Contains(view, "unknown command") || slices.ContainsFunc(targets, func(tg Target) bool { return tg.Zone == ZoneRows }) {
+		t.Errorf("unknown command: ok %v, %d targets:\n%s", ok, len(targets), view)
+	}
+}
+
+func TestTheOverlayEscapesText(t *testing.T) {
+	c, _ := sampleCommandLine(t, i18n.English, argCommand("A\x1b[31mB\a"))
+	typeInto(c, "go")
+	view, _, ok := overlayIn(c, looks(t)["noneascii"], 100, 20, Context{})
+	if !ok || strings.ContainsAny(view, "\x1b\a") || !strings.Contains(view, `A\x1b[31mB\a`) {
+		t.Errorf("a control character reaches the overlay:\n%q", view)
+	}
+}
+
+func TestTheHintsNameEnterAndBack(t *testing.T) {
+	c, keys := sampleCommandLine(t, i18n.English, sampleCommands())
+	groups := keys.Hints(c.Hints(), InputText, c.text)
+	if len(groups) != 2 || groups[0].Keys[0].Action != "enter" || groups[1].Keys[0].Action != "back" || groups[1].Kind != HintAlways {
+		t.Errorf("hints = %+v", groups)
 	}
 }
