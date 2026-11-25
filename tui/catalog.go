@@ -41,6 +41,10 @@ const (
 	TextKeyUpdate   TextID = "tui.key.update"
 	TextKeyLock     TextID = "tui.key.lock"
 
+	TextPathNavColumn   TextID = "tui.pathnav.column"
+	TextPathNavOverview TextID = "tui.pathnav.overview"
+	TextPathNavEmpty    TextID = "tui.pathnav.empty"
+
 	TextCancelled      TextID = "tui.cancelled"
 	TextCopyHandedOver TextID = "tui.copyhandedover"
 	TextWarning        TextID = "tui.warning"
@@ -275,14 +279,18 @@ func ModuleCatalog() i18n.Catalogs[TextID] {
 			TextListFiltered:   "%d/%d (%d total)",
 			TextListNoMatch:    "No entry matches %q; %s clears the filter.",
 			TextListNoGroup:    "no group",
-			TextListAll:        "all",
-			TextSearchKey:      "%s search…",
-			TextSearchPrompt:   "Type to search",
-			TextFilterAll:      "all",
-			TextFilterButton:   "Filter (%d)",
-			TextFilterTitle:    "Filter",
-			TextFilterApply:    "apply",
-			TextFilterNoValue:  "No value matches %q; delete the search or press %s to close.",
+
+			TextPathNavColumn:   "Place",
+			TextPathNavOverview: "All areas",
+			TextPathNavEmpty:    "Nothing to choose here.",
+			TextListAll:         "all",
+			TextSearchKey:       "%s search…",
+			TextSearchPrompt:    "Type to search",
+			TextFilterAll:       "all",
+			TextFilterButton:    "Filter (%d)",
+			TextFilterTitle:     "Filter",
+			TextFilterApply:     "apply",
+			TextFilterNoValue:   "No value matches %q; delete the search or press %s to close.",
 
 			TextCommandTitle:   "Commands",
 			TextCommandPrompt:  "search or run a command…",
@@ -490,14 +498,18 @@ func ModuleCatalog() i18n.Catalogs[TextID] {
 			TextListFiltered:   "%d/%d (%d gesamt)",
 			TextListNoMatch:    "Kein Eintrag passt zu %q; %s leert den Filter.",
 			TextListNoGroup:    "ohne Gruppe",
-			TextListAll:        "alle",
-			TextSearchKey:      "%s suchen…",
-			TextSearchPrompt:   "Zum Suchen tippen",
-			TextFilterAll:      "alle",
-			TextFilterButton:   "Filter (%d)",
-			TextFilterTitle:    "Filter",
-			TextFilterApply:    "übernehmen",
-			TextFilterNoValue:  "Kein Wert passt zu %q; Suche löschen oder mit %s schließen.",
+
+			TextPathNavColumn:   "Ziel",
+			TextPathNavOverview: "Alle Bereiche",
+			TextPathNavEmpty:    "Hier gibt es nichts zu wählen.",
+			TextListAll:         "alle",
+			TextSearchKey:       "%s suchen…",
+			TextSearchPrompt:    "Zum Suchen tippen",
+			TextFilterAll:       "alle",
+			TextFilterButton:    "Filter (%d)",
+			TextFilterTitle:     "Filter",
+			TextFilterApply:     "übernehmen",
+			TextFilterNoValue:   "Kein Wert passt zu %q; Suche löschen oder mit %s schließen.",
 
 			TextCommandTitle:   "Befehle",
 			TextCommandPrompt:  "Befehl suchen oder ausführen…",
