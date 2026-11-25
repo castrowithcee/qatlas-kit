@@ -316,7 +316,7 @@ func (f *Form) drawBelow(lay formLayout, problems []string, width, height int, s
 	content := append(head, body.lines...)
 	x0 := listWidth + 1 + 2
 	d := formDrawing{lines: problems, row: top + 1 + len(head) + body.row, top: top + 1 + len(head) + body.top, x: x0 + body.x}
-	panel := styles.Panel("", "", content, inner+4, len(content)+2, true)
+	panel := styles.Panel("", "", content, inner+4, len(content)+2, f.focused)
 	for i := range max(len(panel), len(list)) {
 		left := strings.Repeat(" ", listWidth)
 		if i < len(list) {
@@ -497,8 +497,8 @@ func (f *Form) sectionTitle(s FormSection, styles Styles) (string, bool) {
 	return text, closed
 }
 
-// sectionList draws the numbered sections in a panel, the one of the focus behind ">" as a filled bar and a
-// closed one dimmed, and returns it with a target per section and its width.
+// sectionList draws the numbered sections in a panel, the one of the focus behind ">" as a filled bar while
+// the form has the focus and a closed one dimmed, and returns it with a target per section and its width.
 func (f *Form) sectionList(styles Styles) ([]string, []Target, int) {
 	current := f.fields[f.focus].Section
 	texts := make([]string, len(f.sections))
@@ -514,7 +514,7 @@ func (f *Form) sectionList(styles Styles) ([]string, []Target, int) {
 	for i, s := range f.sections {
 		line := Pad("  "+texts[i], inner)
 		switch {
-		case s.ID == current:
+		case s.ID == current && f.focused:
 			line = styles.Render(StyleActiveRow, Pad("> "+texts[i], inner))
 		case dim[i]:
 			line = styles.Render(StyleHint, line)
@@ -585,7 +585,7 @@ func (f *Form) blocks(width int, boxed, headings bool, only SectionID, styles St
 // under the focused field and the problems of the field. A label longer than the column wraps inside it.
 func (f *Form) block(i, width, labelCol int, boxed bool, styles Styles) formBlock {
 	field := &f.fields[i]
-	focused := f.fieldFocused(i)
+	focused := f.showsFocus(i)
 	headW := 2 + labelCol + 1
 	valueW := width - headW
 	labels := Wrap(f.label(i), max(labelCol, 1))
@@ -670,7 +670,7 @@ func (f *Form) block(i, width, labelCol int, boxed bool, styles Styles) formBloc
 // from the top left of the value.
 func (f *Form) valueLines(i, width int, styles Styles) ([]string, []Target) {
 	field := &f.fields[i]
-	focused := f.fieldFocused(i)
+	focused := f.showsFocus(i)
 	hint := func(id TextID) []string {
 		return []string{styles.Render(StyleHint, styles.Truncate(Escape(f.text.Lookup(id)), width))}
 	}
@@ -766,7 +766,7 @@ func (f *Form) ticks(i, width int, styles Styles) ([]string, []Target) {
 	line, x := "", 0
 	for j, c := range field.Choices {
 		lead := " "
-		if f.fieldFocused(i) && j == field.cursor {
+		if f.showsFocus(i) && j == field.cursor {
 			lead = styles.Render(StyleActive, ">")
 		}
 		part := lead + styles.TickBox(field.ticked[j]) + " " + Escape(f.text.Lookup(c.Label))
@@ -806,7 +806,7 @@ func (f *Form) buttonRows(width int, styles Styles) ([]string, []Target) {
 		if key := f.table.Label(b.Action); key != "" {
 			label = key + " " + label
 		}
-		cells = append(cells, buttonCell{styles.Button(kind, label, f.btn == j),
+		cells = append(cells, buttonCell{styles.Button(kind, label, f.focused && f.btn == j),
 			Target{Zone: ZoneForm, Action: b.Action, Item: formButtonRef + strconv.Itoa(j)}})
 	}
 	return flowButtons(cells, width)
@@ -845,6 +845,9 @@ func (f *Form) Overlay(styles Styles, screen string, width, height int, room Rec
 // drawModal is the form in its frame over screen, shared by Form.Overlay and the modal of the log view: the
 // fields with the open list or calendar, the buttons, a gap and the key line made of hints.
 func (f *Form) drawModal(styles Styles, title string, hints []Hint, keys *Keymap, text Translator, screen string, width, height int, room Rect) (string, []Target, bool) {
+	// The modal always has the focus; SetFocused concerns View alone.
+	defer func(on bool) { f.focused = on }(f.focused)
+	f.focused = true
 	inner := min(dialogMaxInner, room.Width-8)
 	if inner < dialogMinInner {
 		return "", nil, false
