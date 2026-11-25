@@ -224,10 +224,18 @@ func TestInvalidKeysFallBackWithWarning(t *testing.T) {
 
 func TestFileSwapIsValidAsAWhole(t *testing.T) {
 	s := testSchema(t)
+	zoom := func(id tui.ActionID, key string) tui.Action {
+		return tui.Action{ID: id, Level: tui.LevelCtrl, DefaultKeys: []string{key}, Help: "sample.zoom", Rebind: tui.RebindReplace}
+	}
+	keys, err := tui.NewKeymap(append(s.Keys.Actions(), zoom("zoom.in", "f3"), zoom("zoom.out", "f4")), tui.CharsetASCII)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.Keys = keys
 	path := Path(t.TempDir())
-	write(t, path, "keys:\n  save: ctrl+l\n  lock: ctrl+x\n")
+	write(t, path, "keys:\n  zoom.in: f4\n  zoom.out: f3\n")
 	got, warnings := Load(path, s)
-	if want := map[tui.ActionID]string{"save": "ctrl+l", "lock": "ctrl+x"}; !reflect.DeepEqual(got.Keys, want) || len(warnings) != 0 {
+	if want := map[tui.ActionID]string{"zoom.in": "f4", "zoom.out": "f3"}; !reflect.DeepEqual(got.Keys, want) || len(warnings) != 0 {
 		t.Fatalf("keys = %v, warnings %v; want the swap kept", got.Keys, warnings)
 	}
 	if err := Save(path, got, s); err != nil {

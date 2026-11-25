@@ -36,6 +36,10 @@ const (
 	TextKeyChoose   TextID = "tui.key.choose"
 	TextKeyComplete TextID = "tui.key.complete"
 	TextKeyMark     TextID = "tui.key.mark"
+	TextKeyMenu     TextID = "tui.key.menu"
+	TextKeyClone    TextID = "tui.key.clone"
+	TextKeyUpdate   TextID = "tui.key.update"
+	TextKeyLock     TextID = "tui.key.lock"
 
 	TextCancelled      TextID = "tui.cancelled"
 	TextCopyHandedOver TextID = "tui.copyhandedover"
@@ -254,6 +258,10 @@ func ModuleCatalog() i18n.Catalogs[TextID] {
 			TextKeyChoose:   "choose",
 			TextKeyComplete: "complete",
 			TextKeyMark:     "mark",
+			TextKeyMenu:     "menu",
+			TextKeyClone:    "clone",
+			TextKeyUpdate:   "update",
+			TextKeyLock:     "lock or unlock",
 
 			TextCancelled:      "Cancelled",
 			TextCopyHandedOver: "Handed to the terminal for the clipboard; the terminal does not confirm it",
@@ -465,6 +473,10 @@ func ModuleCatalog() i18n.Catalogs[TextID] {
 			TextKeyChoose:   "Auswählen",
 			TextKeyComplete: "Übernehmen",
 			TextKeyMark:     "Markieren",
+			TextKeyMenu:     "Menü",
+			TextKeyClone:    "Klonen",
+			TextKeyUpdate:   "Aktualisieren",
+			TextKeyLock:     "Sperren oder entsperren",
 
 			TextCancelled:      "Abgebrochen",
 			TextCopyHandedOver: "An das Terminal für die Zwischenablage übergeben; das Terminal bestätigt es nicht",

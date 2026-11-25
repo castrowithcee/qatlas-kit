@@ -31,7 +31,7 @@ func sampleCommands() []Command {
 		{Name: "go settings", Aliases: []string{"settings"}, Description: "cmd.settings", Action: "area", Key: 3, Area: "settings", Available: Always},
 		{Name: "go settings advanced", Aliases: []string{"advanced"}, Description: "cmd.advanced", Area: "settings", Tab: "advanced", Hidden: true, Available: Always},
 		{Name: "reload", Aliases: []string{"refresh"}, Description: "cmd.reload", Action: "reload", Available: Always},
-		{Name: "upgrade", Aliases: []string{"update"}, Description: "cmd.upgrade", Action: "upgrade", Available: outsideForm},
+		{Name: "upgrade", Aliases: []string{"update"}, Description: "cmd.upgrade", Action: "update", Available: outsideForm},
 		{Name: "export config", Aliases: []string{"backup"}, Description: "cmd.export", Action: "export", Available: outsideForm},
 		{Name: "help", Description: "cmd.help", Action: "help", Available: Always},
 		{Name: "quit", Aliases: []string{"exit"}, Description: "cmd.quit", Action: "quit", Available: outsideForm},

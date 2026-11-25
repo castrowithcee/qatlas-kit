@@ -41,6 +41,18 @@ var takenKeys = func() map[string]string {
 	return m
 }()
 
+// reservedKeys maps each key of a standard action to the ID of that action, its only owner. The map comes
+// from StandardActions, so the keys have one source.
+var reservedKeys = func() map[string]ActionID {
+	m := map[string]ActionID{}
+	for _, a := range StandardActions() {
+		for _, key := range a.DefaultKeys {
+			m[key] = a.ID
+		}
+	}
+	return m
+}()
+
 // textAreaSend sends the text of a multi-line field, where enter adds a line break. Many terminals report it
 // as enter, so a field that sends with it always offers a second way.
 const textAreaSend = "ctrl+enter"
@@ -253,6 +265,9 @@ func (k *Keymap) checkAlone(a Action, key string) (string, error) {
 	}
 	key = normalizeKey(key)
 	if key != "" && fixedKeys[key] == "" {
+		if owner, ok := reservedKeys[key]; ok && owner != a.ID {
+			return "", &BindingError{Action: a.ID, Key: key, Reason: fmt.Sprintf("is reserved for the standard action %s", owner)}
+		}
 		for _, b := range k.actions {
 			if (b.Rebind == RebindNone || b.ID == a.ID && b.Rebind == RebindExtra) && slices.Contains(b.DefaultKeys, key) {
 				return "", &BindingError{Action: a.ID, Key: key, Reason: fmt.Sprintf("already the key of %s", b.ID)}

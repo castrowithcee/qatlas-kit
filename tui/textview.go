@@ -88,7 +88,7 @@ const (
 func TextViewActions() []Action {
 	return []Action{
 		{ID: ActionTextNumbers, Level: LevelLetter, DefaultKeys: []string{"#"}, Help: TextViewNumbers},
-		{ID: ActionTextReveal, Level: LevelLetter, DefaultKeys: []string{"R"}, Help: TextViewReveal},
+		{ID: ActionTextReveal, Level: LevelLetter, DefaultKeys: []string{"V"}, Help: TextViewReveal},
 	}
 }
 

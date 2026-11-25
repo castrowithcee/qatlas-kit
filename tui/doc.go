@@ -29,6 +29,12 @@
 // name the reason of every refusal. A Keymap satisfies KeyLabels, so labels and the key placeholders of
 // every text follow a binding at once; Keys and KeyNameLabel give a tool the keys in force and their labels.
 //
+// StandardActions returns the actions every tool shares, each with a level, one default key and a help text
+// in the catalog; an application adds them to its table with one append. Their keys are reserved: NewKeymap
+// rejects any other action of the main levels that holds one, whether or not the standard action is in the
+// table, and Resolve and CheckBinding refuse a user's key that belongs to another standard action. The
+// overlay levels may repeat them, and ctrl+s stays free as the second way of the save action.
+//
 // A one-line text field, the input of a Dialog, the text, masked and date fields of a Form, the search of a
 // LogView, the filter of a List and the input of a CommandLine edits with fixed keys that no action may hold:
 // the arrows, home, end, ctrl+a, ctrl+e, ctrl+b and ctrl+f move by a character and to the ends; ctrl or alt

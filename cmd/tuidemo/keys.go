@@ -8,17 +8,18 @@ import (
 
 // The actions of the key table. A click on a target runs the same action as its key.
 const (
-	actQuit     tui.ActionID = "quit"
-	actArea     tui.ActionID = "area"
-	actLeft     tui.ActionID = "left"
-	actRight    tui.ActionID = "right"
-	actZoneNext tui.ActionID = "zone.next"
-	actZonePrev tui.ActionID = "zone.prev"
-	actTheme    tui.ActionID = "set.theme"
-	actLanguage tui.ActionID = "set.language"
-	actIcons    tui.ActionID = "set.icons"
-	actMouse    tui.ActionID = "set.mouse"
-	actCount    tui.ActionID = "count"
+	actQuit      tui.ActionID = tui.ActionQuit
+	actForceQuit tui.ActionID = tui.ActionForceQuit
+	actArea      tui.ActionID = "area"
+	actLeft      tui.ActionID = "left"
+	actRight     tui.ActionID = "right"
+	actZoneNext  tui.ActionID = "zone.next"
+	actZonePrev  tui.ActionID = "zone.prev"
+	actTheme     tui.ActionID = "set.theme"
+	actLanguage  tui.ActionID = "set.language"
+	actIcons     tui.ActionID = "set.icons"
+	actMouse     tui.ActionID = "set.mouse"
+	actCount     tui.ActionID = "count"
 
 	actBack     tui.ActionID = "back"
 	actEnter    tui.ActionID = "enter"
@@ -30,7 +31,7 @@ const (
 	actLast     tui.ActionID = "last"
 	actHelp     tui.ActionID = "help"
 	actInfo     tui.ActionID = "info"
-	actCommands tui.ActionID = "commands"
+	actCommands tui.ActionID = tui.ActionCommand
 	actAsk      tui.ActionID = "ask"
 	actRename   tui.ActionID = "rename"
 	actNotice   tui.ActionID = "notice"
@@ -50,7 +51,8 @@ func keyTable(areas int) []tui.Action {
 		return tui.Action{ID: id, Level: level, DefaultKeys: keys, Help: help}
 	}
 	return []tui.Action{
-		act(actQuit, tui.LevelGlobal, tui.TextKeyQuit, "q", "ctrl+c"),
+		act(actQuit, tui.LevelLetter, tui.TextKeyQuit, "q"),
+		act(actForceQuit, tui.LevelGlobal, tui.TextKeyQuit, "ctrl+c"),
 		act(actArea, tui.LevelGlobal, textKeyArea, digits...),
 		act(actLeft, tui.LevelMove, tui.TextKeyLeft, "left"),
 		act(actRight, tui.LevelMove, tui.TextKeyRight, "right"),
@@ -58,9 +60,9 @@ func keyTable(areas int) []tui.Action {
 		act(actZonePrev, tui.LevelMove, textKeyZone, "shift+tab"),
 		act(actTheme, tui.LevelLetter, textKeyTheme, "t"),
 		act(actLanguage, tui.LevelLetter, textKeyLanguage, "l"),
-		act(actIcons, tui.LevelLetter, textKeyIcons, "i"),
-		act(actMouse, tui.LevelLetter, textKeyMouse, "m"),
-		act(actCount, tui.LevelLetter, textKeyCount, "c"),
+		act(actIcons, tui.LevelLetter, textKeyIcons, "I"),
+		act(actMouse, tui.LevelLetter, textKeyMouse, "M"),
+		act(actCount, tui.LevelLetter, textKeyCount, "+"),
 		act(actBack, tui.LevelGlobal, tui.TextKeyBack, "esc"),
 		act(actHelp, tui.LevelGlobal, tui.TextKeyHelp, "?"),
 		act(actCommands, tui.LevelGlobal, tui.TextKeyCommands, ":"),
@@ -71,7 +73,7 @@ func keyTable(areas int) []tui.Action {
 		act(actPageDown, tui.LevelMove, tui.TextKeyPageDown, "pgdown"),
 		act(actFirst, tui.LevelMove, tui.TextKeyFirst, "home"),
 		act(actLast, tui.LevelMove, tui.TextKeyLast, "end"),
-		act(actInfo, tui.LevelLetter, tui.TextKeyInfo, "e"),
+		act(actInfo, tui.LevelLetter, tui.TextKeyInfo, "i"),
 		act(actAsk, tui.LevelLetter, textKeyAsk, "a"),
 		act(actRename, tui.LevelLetter, tui.TextKeyRename, "r"),
 		act(actNotice, tui.LevelLetter, textKeyNotice, "o"),
