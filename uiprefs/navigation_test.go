@@ -8,7 +8,7 @@ import (
 
 func navSchema(t *testing.T) Schema {
 	s := testSchema(t)
-	s.Navigations = []string{NavigationTabs, NavigationPathLine}
+	s.Navigations = []string{NavigationTabs, NavigationPathLine, NavigationPathHeader}
 	s.DefaultNavigation = NavigationTabs
 	return s
 }
@@ -97,5 +97,22 @@ func TestNavigationValidateAndSchemaCheck(t *testing.T) {
 		if err := Validate(Default(s), s); err == nil || !strings.Contains(err.Error(), "invalid preferences schema") {
 			t.Errorf("%s: Validate() = %v", name, err)
 		}
+	}
+}
+
+// The path in the header is a form of its own that round-trips under its name.
+func TestNavigationPathHeaderRoundTrip(t *testing.T) {
+	s := navSchema(t)
+	path := Path(t.TempDir())
+	want := Default(s)
+	want.Navigation = NavigationPathHeader
+	if err := Save(path, want, s); err != nil {
+		t.Fatal(err)
+	}
+	if got := read(t, path); !strings.Contains(got, "navigation: header\n") {
+		t.Fatalf("file = %q", got)
+	}
+	if got, warnings := Load(path, s); !reflect.DeepEqual(got, want) || len(warnings) != 0 {
+		t.Fatalf("Load() = %+v, %v; want %+v", got, warnings, want)
 	}
 }

@@ -367,3 +367,16 @@ func TestFooterShowsTheKeysOfTheOpenTabOnly(t *testing.T) {
 	act(t, term, "\x1b[C", probeBody) // the focus stays on the sub-tab line
 	hintsOf(t, term, "+ count", dialogs...)
 }
+
+func TestWorkAreaButtonByKeyboardOnly(t *testing.T) {
+	term := startDemo(t, "-icons none")
+	act(t, term, "2", tabsBody)
+	act(t, term, "\x1b[B", "[Tabs]")    // down: tab line to sub-tab line
+	act(t, term, "\x1b[C", probeBody)   // right: the Mouse sub-tab
+	act(t, term, "\x1b[B", "> Count <") // down: into the work area, the button shows the focus
+	act(t, term, "\r", "Count: 1")      // enter triggers it like a click
+	act(t, term, "\x1b[A", "[Mouse]")   // up: back to the sub-tab line
+	act(t, term, "\r", "> Count <")     // enter: into the work area again
+	act(t, term, "\x1b[C", "> Count <") // right does not leave the work area
+	act(t, term, "\x1b[Z", "[Mouse]")   // shift+tab: back to the sub-tab line
+}

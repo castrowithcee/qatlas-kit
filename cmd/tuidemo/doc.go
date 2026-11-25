@@ -12,16 +12,20 @@
 // configuration file.
 //
 // Operation: the digit of a tab opens it, left and right step through the tabs of the focused line, tab and
-// shift+tab move the focus between the tab line and the sub-tab line, and q or ctrl+c quits. The switches act
-// at once: t for the theme, T (shift+t) for the theme one step back, l for the language, I for the icons and
-// M for the mouse; each also runs from the command line as theme, theme-back, language, icons and mouse. The
-// footer of a tab shows the keys of its own actions behind these: + counts clicks in the mouse probe of the
-// Frame tab. The Dialogs tab opens a question with a destroying answer (a), an input (r) and a notice
-// (o); the Help tab shows the help (?), the explanation of the sample data (i) and the command line (:),
-// which runs commands by name, such as the tabs and the switches, theme-back among them. The command line
-// stands over the dimmed screen, at the top and centred, with a key line of its own; where the terminal is
-// too small for that it fills the workspace and its keys stand in the footer. Esc closes whatever stands over
-// the screen, and nothing behind it takes a key or a click meanwhile.
+// shift+tab move the focus between the tab line, the sub-tab line and the work area, and q or ctrl+c quits.
+// Down and up do the same step by step, and enter on a tab line leads into the work area. Left and right
+// switch tabs only while the focus stands on a tab line. In the work area, down and up move the focus over
+// the buttons and rows of the tab, shown as "> label <", enter triggers the focused one as a click would, and
+// up from the first leads back to the sub-tab line. The switches act at once: t for the theme, T (shift+t)
+// for the theme one step back, l for the language, I for the icons and M for the mouse; each also runs from
+// the command line as theme, theme-back, language, icons and mouse. The footer of a tab shows the keys of its
+// own actions behind these: + counts clicks in the mouse probe of the Frame tab. The Dialogs tab opens a
+// question with a destroying answer (a), an input (r) and a notice (o); the Help tab shows the help (?), the
+// explanation of the sample data (i) and the command line (:), which runs commands by name, such as the tabs
+// and the switches, theme-back among them. The command line stands over the dimmed screen, at the top and
+// centred, with a key line of its own; where the terminal is too small for that it fills the workspace and
+// its keys stand in the footer. Esc closes whatever stands over the screen, and nothing behind it takes a key
+// or a click meanwhile.
 //
 // Every function can be clicked while the mouse is on: tabs, the key hints of the header and the footer, the
 // rows of the Settings tab (the theme row and, under it, the row that steps the theme back), the buttons of a

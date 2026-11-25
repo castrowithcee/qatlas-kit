@@ -15,6 +15,8 @@ type group struct {
 	icons [2]string
 	// draw returns the lines and the click targets of the open tab, relative to the workspace.
 	draw func(m *model, tab tui.TabID, room tui.Rect) ([]string, []tui.Target)
+	// actions are the buttons of a tab in the order of the focus, as the actions their clicks run.
+	actions func(area tui.Area, tab tui.TabID) []tui.ActionID
 	// hints are the footer hints of a tab, behind the common ones: each tab shows the keys of its own
 	// actions only.
 	hints map[tui.TabID][]tui.Hint
@@ -33,6 +35,12 @@ func groups() []group {
 				Tabs: []tui.Tab{{ID: "tabs", Title: textTabTabs}, {ID: "mouse", Title: textTabMouse}}},
 			icons: [2]string{"▣", "\uf2d0"},
 			draw:  drawFrame,
+			actions: func(_ tui.Area, tab tui.TabID) []tui.ActionID {
+				if tab == "mouse" {
+					return []tui.ActionID{actCount}
+				}
+				return nil
+			},
 			hints: map[tui.TabID][]tui.Hint{"mouse": {{Action: actCount, Label: textKeyCount, Priority: 1}}},
 		},
 		{
@@ -40,12 +48,20 @@ func groups() []group {
 				Tabs: []tui.Tab{{ID: "look", Title: textTabLook}, {ID: "input", Title: textTabInput}}},
 			icons: [2]string{"✱", "\uf013"},
 			draw:  drawSettings,
+			actions: func(_ tui.Area, tab tui.TabID) []tui.ActionID {
+				var out []tui.ActionID
+				for _, s := range settingRows()[tab] {
+					out = append(out, s.action)
+				}
+				return out
+			},
 		},
 		{
 			area: tui.Area{ID: "dialogs", Title: textAreaDialogs,
 				Tabs: []tui.Tab{{ID: "question", Title: textTabQuestion}, {ID: "input", Title: textTabInput}, {ID: "notice", Title: textTabNotice}}},
-			icons: [2]string{"▤", "\uf27a"},
-			draw:  drawDialogs,
+			icons:   [2]string{"▤", "\uf27a"},
+			draw:    drawDialogs,
+			actions: openerAction,
 			hints: map[tui.TabID][]tui.Hint{
 				"question": {{Action: actAsk, Label: textKeyAsk, Priority: 1}},
 				"input":    {{Action: actRename, Label: tui.TextKeyRename, Priority: 1}},
@@ -55,8 +71,9 @@ func groups() []group {
 		{
 			area: tui.Area{ID: "help", Title: textAreaHelp,
 				Tabs: []tui.Tab{{ID: "help", Title: textTabHelp}, {ID: "explain", Title: textTabExplain}, {ID: "commands", Title: textTabCommands}}},
-			icons: [2]string{"◈", "\uf059"},
-			draw:  drawHelp,
+			icons:   [2]string{"◈", "\uf059"},
+			draw:    drawHelp,
+			actions: openerAction,
 		},
 	}
 }
@@ -127,7 +144,7 @@ func (m *model) drawMouse(room tui.Rect) ([]string, []tui.Target) {
 	lines = append(lines, "", m.text.Lookup(textMouseLast, m.clickX+1, m.clickY+1, last),
 		m.text.Lookup(textMouseWheel, m.wheel), m.text.Lookup(textMouseCount, m.count), "")
 	label := m.text.Lookup(textMouseButton)
-	button := m.styles.Button(tui.ButtonPrimary, label, false)
+	button := m.styles.Button(tui.ButtonPrimary, label, m.focused(0))
 	target := tui.Target{Rect: tui.Rect{X: 0, Y: len(lines), Width: len([]rune(label)) + 4, Height: 1}, Action: actCount}
 	return append(lines, button), []tui.Target{target}
 }
@@ -168,10 +185,10 @@ func drawSettings(m *model, tab tui.TabID, room tui.Rect) ([]string, []tui.Targe
 	lines := m.paragraph(body, room.Width)
 	lines = append(lines, "")
 	var targets []tui.Target
-	for _, s := range settingRows()[tab] {
+	for i, s := range settingRows()[tab] {
 		key := tui.Escape(m.keys.Label(s.action))
 		line := fmt.Sprintf("[%s] %s  %s", key, tui.Pad(tui.Escape(m.text.Lookup(s.label)), 12),
-			m.styles.Button(tui.ButtonNormal, tui.Escape(s.value(m)), false))
+			m.styles.Button(tui.ButtonNormal, tui.Escape(s.value(m)), m.focused(i)))
 		targets = append(targets, tui.Target{Rect: tui.Rect{Y: len(lines), Width: room.Width, Height: 1}, Action: s.action})
 		lines = append(lines, line)
 	}
@@ -196,6 +213,10 @@ func openers() map[tui.TabID]opener {
 	}
 }
 
+func openerAction(_ tui.Area, tab tui.TabID) []tui.ActionID {
+	return []tui.ActionID{openers()[tab].action}
+}
+
 func drawDialogs(m *model, tab tui.TabID, room tui.Rect) ([]string, []tui.Target) {
 	return m.drawOpener(tab, room)
 }
@@ -211,5 +232,5 @@ func (m *model) drawOpener(tab tui.TabID, room tui.Rect) ([]string, []tui.Target
 	lines := m.paragraph(o.body, room.Width)
 	label := tui.Escape(m.text.Lookup(o.label))
 	target := tui.Target{Rect: tui.Rect{Y: len(lines) + 1, Width: len([]rune(label)) + 4, Height: 1}, Action: o.action}
-	return append(lines, "", m.styles.Button(tui.ButtonPrimary, label, false)), []tui.Target{target}
+	return append(lines, "", m.styles.Button(tui.ButtonPrimary, label, m.focused(0))), []tui.Target{target}
 }

@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"io"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -406,5 +407,130 @@ func TestEachTabHintsItsOwnActionsOnly(t *testing.T) {
 	}
 	if len(own) != 4 {
 		t.Errorf("%d tab actions, want ask, rename, notice and count", len(own))
+	}
+}
+
+// press sends the key as the terminal would.
+func press(m *model, code rune) {
+	m.Update(tea.KeyPressMsg{Code: code})
+}
+
+var focusMark = regexp.MustCompile(`> [^<>\n]+ <`)
+
+func TestOnlyTabsWithButtonsHaveAWorkZone(t *testing.T) {
+	m := testModel(t, uiprefs.IconsNone)
+	for _, g := range m.groups {
+		for _, tab := range g.area.Tabs {
+			m.area, m.tabs[g.area.ID] = g.area.ID, tab.ID
+			if got, want := slices.Contains(m.zones(), tui.ZoneRows), len(m.actions()) > 0; got != want {
+				t.Errorf("%s/%s: work zone %v, buttons %d", g.area.ID, tab.ID, got, len(m.actions()))
+			}
+		}
+	}
+	m.area, m.tabs["frame"] = "frame", "tabs"
+	if slices.Contains(m.zones(), tui.ZoneRows) {
+		t.Error("the tab without buttons reports a work zone")
+	}
+}
+
+func TestEveryButtonIsReachableByKeyAndFocusedAndTriggersLikeItsClick(t *testing.T) {
+	m := testModel(t, uiprefs.IconsNone)
+	for _, g := range m.groups {
+		for _, tab := range g.area.Tabs {
+			m.openArea(g.area.ID)
+			m.tabs[g.area.ID], m.zone, m.item = tab.ID, tui.ZoneTabs, 0
+			m.refresh()
+			buttons := m.actions()
+			if len(buttons) == 0 {
+				continue
+			}
+			if focusMark.MatchString(m.view) {
+				t.Errorf("%s/%s: a button shows the focus before it is in the work area", g.area.ID, tab.ID)
+			}
+			press(m, tea.KeyDown) // tab line to sub-tab line
+			press(m, tea.KeyDown) // into the work area
+			for i, action := range buttons {
+				if m.zone != tui.ZoneRows || m.item != i {
+					t.Fatalf("%s/%s: focus at %s %d, want rows %d", g.area.ID, tab.ID, m.zone, m.item, i)
+				}
+				if n := len(focusMark.FindAllString(m.view, -1)); n != 1 {
+					t.Errorf("%s/%s button %d: %d focus marks on the screen", g.area.ID, tab.ID, i, n)
+				}
+				if !clickable(m, action) {
+					t.Errorf("%s: no click runs the action of the button", action)
+				}
+				press(m, tea.KeyDown)
+			}
+			if m.item != len(buttons)-1 {
+				t.Errorf("%s/%s: down went past the last button", g.area.ID, tab.ID)
+			}
+			for range buttons {
+				press(m, tea.KeyUp)
+			}
+			if m.zone != tui.ZoneSubtabs {
+				t.Errorf("%s/%s: up from the first button leads to %s", g.area.ID, tab.ID, m.zone)
+			}
+		}
+	}
+}
+
+func TestEnterTriggersTheFocusedButtonAndLeadsIntoTheWorkArea(t *testing.T) {
+	m := testModel(t, uiprefs.IconsNone)
+	m.openArea("frame")
+	m.tabs["frame"] = "mouse"
+	press(m, tea.KeyEnter)
+	if m.zone != tui.ZoneRows {
+		t.Fatalf("enter on the tab line leads to %s", m.zone)
+	}
+	press(m, tea.KeyEnter)
+	if m.count != 1 {
+		t.Errorf("enter on the button counted %d", m.count)
+	}
+	m.openArea("dialogs")
+	press(m, tea.KeyEnter)
+	if m.modal == nil {
+		t.Error("enter on the opener did not open the part")
+	}
+	m.zone = tui.ZoneTabs
+	m.openArea("overview")
+	press(m, tea.KeyEnter)
+	if m.zone != tui.ZoneTabs {
+		t.Errorf("enter on a tab without buttons moved the focus to %s", m.zone)
+	}
+}
+
+func TestSideKeysSwitchTabsOnlyOnTheTabLines(t *testing.T) {
+	m := testModel(t, uiprefs.IconsNone)
+	m.openArea("settings")
+	press(m, tea.KeyTab)
+	press(m, tea.KeyTab) // tab line, sub-tab line, work area
+	if m.zone != tui.ZoneRows {
+		t.Fatalf("tab leads to %s", m.zone)
+	}
+	area, tab := m.area, m.tab()
+	press(m, tea.KeyRight)
+	press(m, tea.KeyLeft)
+	if m.area != area || m.tab() != tab {
+		t.Errorf("a side key in the work area switched to %s/%s", m.area, m.tab())
+	}
+}
+
+func TestFooterNamesDownUpEnterWhereTheyAct(t *testing.T) {
+	m := testModel(t, uiprefs.IconsNone)
+	has := func(a tui.ActionID) bool {
+		return slices.ContainsFunc(m.footerHints(), func(h tui.Hint) bool { return h.Action == a })
+	}
+	m.openArea("settings")
+	if !has(actDown) || has(actUp) || !has(actEnter) {
+		t.Error("tab line of a tab with buttons: want down and enter, no up")
+	}
+	m.zone = tui.ZoneRows
+	if !has(actDown) || !has(actUp) || !has(actEnter) {
+		t.Error("first button: want down, up and enter")
+	}
+	m.openArea("overview")
+	m.zone = tui.ZoneTabs
+	if has(actEnter) || !has(actDown) || has(actUp) {
+		t.Error("tab without buttons: want down only")
 	}
 }
