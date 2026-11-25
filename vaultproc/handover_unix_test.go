@@ -5,9 +5,11 @@ package vaultproc
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -44,8 +46,33 @@ func testRelease(t *testing.T, body string) (selfupdate.ReleaseFiles, ssh.Public
 		ArchiveName: testArchive}, signer.PublicKey()
 }
 
+// acceptGate is the beforeAccept of a server. Once armed, the accept loop reports that it arrived and waits
+// until the gate is opened, so connections made meanwhile stay in the listener's queue.
+type acceptGate struct {
+	armed   atomic.Bool
+	loops   atomic.Int32
+	entered chan struct{}
+	opened  chan struct{}
+	once    sync.Once
+}
+
+func (g *acceptGate) open() { g.once.Do(func() { close(g.opened) }) }
+
+func (g *acceptGate) wait() {
+	g.loops.Add(1)
+	if g.armed.Load() {
+		select {
+		case g.entered <- struct{}{}:
+		default:
+		}
+		<-g.opened
+	}
+}
+
 type handoverSetup struct {
 	running
+	gate      *acceptGate
+	hold      chan struct{} // if set, a successor starts only once it is closed
 	cfg       Config
 	files     selfupdate.ReleaseFiles
 	program   string
@@ -82,8 +109,18 @@ func newHandover(t *testing.T, change func(*handoverSetup)) *handoverSetup {
 	if err != nil {
 		t.Fatal(err)
 	}
+	h.gate = &acceptGate{entered: make(chan struct{}, 1), opened: make(chan struct{})}
+	t.Cleanup(h.gate.open)
+	server.beforeAccept = h.gate.wait
 	server.program = func() (string, bool, error) { return h.program, h.replaced.Load(), nil }
-	server.start = func(_ context.Context, program string, data []byte) (int, func(), error) {
+	server.start = func(ctx context.Context, program string, data []byte) (int, func(), error) {
+		if h.hold != nil {
+			select {
+			case <-h.hold:
+			case <-ctx.Done():
+				return 0, nil, ctx.Err()
+			}
+		}
 		if program != h.program {
 			return 0, nil, errors.New("the successor was not started from the program's path")
 		}
@@ -334,5 +371,120 @@ func TestReleaseFilesAreOpenedSafely(t *testing.T) {
 	}
 	if _, err := programHash(filepath.Join(dir, "missing"), 1<<20); err == nil {
 		t.Error("a missing program was hashed")
+	}
+}
+
+func waitUntil(t *testing.T, what string, done func() bool) {
+	t.Helper()
+	for deadline := time.Now().Add(5 * time.Second); !done(); {
+		if time.Now().After(deadline) {
+			t.Fatalf("timed out waiting until %s", what)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
+// commitHeld prepares a handover, replaces the program and commits it in the background. The successor does
+// not start until release is called, so the server answers replaced meanwhile. wait returns the commit's result.
+func (h *handoverSetup) commitHeld(t *testing.T) (release func(), wait func() error) {
+	t.Helper()
+	ctx := context.Background()
+	handover, err := h.client.PrepareHandover(ctx, h.files)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h.replace(t, newProgramBody)
+	h.hold = make(chan struct{})
+	done := make(chan error, 1)
+	go func() {
+		_, err := handover.Commit(ctx)
+		done <- err
+	}()
+	waitUntil(t, "the server answers replaced", func() bool {
+		h.server.mu.Lock()
+		defer h.server.mu.Unlock()
+		return h.server.handingOver
+	})
+	var once sync.Once
+	release = func() { once.Do(func() { close(h.hold) }) }
+	t.Cleanup(release)
+	return release, func() error { return <-done }
+}
+
+// A client that was answered replaced and has its next request waiting in the old listener's queue when the
+// handover commits is reset as the old listener closes. It is asked again and lands at the successor.
+func TestHandoverAnswersAClientQueuedAtTheOldListener(t *testing.T) {
+	h := newHandover(t, nil)
+	release, wait := h.commitHeld(t)
+	base := h.gate.loops.Load()
+	result := make(chan error, 1)
+	go func() {
+		var got string
+		err := h.client.Call(context.Background(), "peek", nil, &got)
+		if err == nil && got != testDocument {
+			err = fmt.Errorf("peek = %q", got)
+		}
+		result <- err
+	}()
+	waitUntil(t, "the request was answered replaced and asked again", func() bool { return h.gate.loops.Load() >= base+2 })
+
+	// The accept loop stops before its next Accept, so the client's following request waits in the queue.
+	h.gate.armed.Store(true)
+	<-h.gate.entered
+	// The queued request cannot be seen from here: give the client time to ask again, many pauses long.
+	time.Sleep(6 * replacedPause)
+	release()
+	// The gate stays shut until the answer is in: the queued request is reset by the close of the old
+	// listener, not accepted by the old server.
+	err := <-result
+	h.gate.open()
+	if err != nil {
+		t.Fatalf("Call() queued across the handover = %v, want the successor's answer", err)
+	}
+	if err := wait(); err != nil {
+		t.Fatalf("Commit() = %v", err)
+	}
+	awaitStopped(t, h.running)
+}
+
+// Without a replaced answer before it, ErrNotRunning is final at once.
+func TestNotRunningWithoutReplacedIsFinal(t *testing.T) {
+	c := &Client{Endpoint: testEndpoint(t), Recipient: newIdentity(t).Recipient().String(), Version: 1, ProofLabel: testLabel}
+	start := time.Now()
+	if err := c.Call(context.Background(), "peek", nil, nil); !errors.Is(err, ErrNotRunning) {
+		t.Fatalf("Call() = %v, want ErrNotRunning", err)
+	}
+	if d := time.Since(start); d >= replacedLimit/2 {
+		t.Fatalf("Call() took %v, want it to give up at once", d)
+	}
+}
+
+// After a replaced answer, ErrNotRunning is asked again until replacedLimit or the end of the context.
+func TestNotRunningAfterReplacedEndsAtTheLimitAndTheContext(t *testing.T) {
+	for name, tc := range map[string]struct{ timeout, min, max time.Duration }{
+		"limit":   {time.Minute, replacedLimit - replacedPause, replacedLimit + time.Second},
+		"context": {replacedLimit / 4, replacedLimit / 4, replacedLimit / 2},
+	} {
+		t.Run(name, func(t *testing.T) {
+			h := newHandover(t, nil)
+			_, wait := h.commitHeld(t)
+			ctx, cancel := context.WithTimeout(context.Background(), tc.timeout)
+			defer cancel()
+			result := make(chan error, 1)
+			base := h.gate.loops.Load()
+			start := time.Now()
+			go func() { result <- h.client.Call(ctx, "peek", nil, nil) }()
+			// The client asks again only after an answer: a second accepted request means the first was replaced.
+			waitUntil(t, "the request was answered replaced and asked again", func() bool { return h.gate.loops.Load() >= base+2 })
+			_ = h.server.Close()
+			err := <-result
+			if d := time.Since(start); err == nil || d < tc.min || d > tc.max {
+				t.Fatalf("Call() = %v after %v, want a failure after %v to %v", err, d, tc.min, tc.max)
+			}
+			if name == "limit" && !errors.Is(err, ErrNotRunning) {
+				t.Fatalf("Call() = %v, want ErrNotRunning", err)
+			}
+			_ = wait()
+		})
 	}
 }
