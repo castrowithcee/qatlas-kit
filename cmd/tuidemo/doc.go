@@ -14,7 +14,9 @@
 // Operation: the digit of a tab opens it, left and right step through the tabs of the focused line, tab and
 // shift+tab move the focus between the tab line and the sub-tab line, and q or ctrl+c quits. The switches act
 // at once: t for the theme, T (shift+t) for the theme one step back, l for the language, I for the icons and
-// M for the mouse. The Dialogs tab opens a question with a destroying answer (a), an input (r) and a notice
+// M for the mouse; each also runs from the command line as theme, theme-back, language, icons and mouse. The
+// footer of a tab shows the keys of its own actions behind these: + counts clicks in the mouse probe of the
+// Frame tab. The Dialogs tab opens a question with a destroying answer (a), an input (r) and a notice
 // (o); the Help tab shows the help (?), the explanation of the sample data (i) and the command line (:),
 // which runs commands by name, such as the tabs and the switches, theme-back among them. The command line
 // stands over the dimmed screen, at the top and centred, with a key line of its own; where the terminal is
@@ -25,8 +27,8 @@
 // rows of the Settings tab (the theme row and, under it, the row that steps the theme back), the buttons of a
 // dialog and of the Dialogs and Help tabs, the topics and the key list of the help, and the commands of the
 // command line and the keys of its key line. The mouse switch is one of them: a click on its row or on its
-// footer hint switches the mouse off, and only its key M switches it on again, since a switched-off mouse
-// takes no click.
+// footer hint switches the mouse off, and only the keyboard (the key M or the command mouse) switches it on
+// again, since a switched-off mouse takes no click.
 //
 // The program uses the public API of the kit packages only, as a tool built on them would. Each tab belongs
 // to one group of blocks and is one entry of the list returned by groups, so a further group adds a tab

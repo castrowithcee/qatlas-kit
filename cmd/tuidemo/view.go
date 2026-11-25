@@ -77,7 +77,7 @@ func (m *model) areas() []tui.Area {
 	return areas
 }
 
-// footerHints are the key hints of the screen: the group's own behind the common ones, quit always.
+// footerHints are the key hints of the screen: the open tab's own behind the common ones, quit always.
 func (m *model) footerHints() []tui.Hint {
 	hints := []tui.Hint{
 		{Action: actLeft, Label: textHintStep, Kind: tui.HintNavigation},
@@ -89,7 +89,7 @@ func (m *model) footerHints() []tui.Hint {
 		{Action: actIcons, Label: textKeyIcons, Priority: 4},
 		{Action: actMouse, Label: textKeyMouse, Priority: 5},
 	}
-	hints = append(hints, m.group().hints...)
+	hints = append(hints, m.group().hints[m.tab()]...)
 	return append(hints, tui.Hint{Action: actQuit, Label: tui.TextKeyQuit, Kind: tui.HintAlways})
 }
 

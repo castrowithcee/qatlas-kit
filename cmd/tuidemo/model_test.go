@@ -352,3 +352,59 @@ func TestEveryCommandRunsLikeItsKey(t *testing.T) {
 		m.closeModal()
 	}
 }
+
+func TestNoKeyTakesAReservedKeyWithAnotherMeaning(t *testing.T) {
+	owners := map[string]tui.ActionID{}
+	for _, a := range tui.StandardActions() {
+		for _, key := range a.DefaultKeys {
+			owners[key] = a.ID
+		}
+	}
+	table := keyTable(len(groups()))
+	if _, err := tui.NewKeymap(table, tui.CharsetUnicode); err != nil {
+		t.Fatal(err)
+	}
+	same := 0
+	for _, a := range table {
+		if a.Level == tui.LevelConfirm || a.Level == tui.LevelHelp {
+			continue // overlay levels may repeat a key of the main levels
+		}
+		for _, key := range a.DefaultKeys {
+			switch owner, ok := owners[key]; {
+			case !ok:
+			case owner != a.ID:
+				t.Errorf("key %q of %q is reserved for %q", key, a.ID, owner)
+			default:
+				same++
+			}
+		}
+	}
+	if same == 0 {
+		t.Error("no key of the table is a standard key; the check found nothing to compare")
+	}
+}
+
+func TestEachTabHintsItsOwnActionsOnly(t *testing.T) {
+	m := testModel(t, uiprefs.IconsNone)
+	own := map[tui.ActionID]tui.TabID{}
+	for _, g := range m.groups {
+		for tab, hints := range g.hints {
+			for _, h := range hints {
+				own[h.Action] = tab
+			}
+		}
+	}
+	for _, g := range m.groups {
+		for _, tab := range g.area.Tabs {
+			m.area, m.tabs[g.area.ID] = g.area.ID, tab.ID
+			for _, h := range m.footerHints() {
+				if want, ok := own[h.Action]; ok && (want != tab.ID || len(g.hints[tab.ID]) == 0) {
+					t.Errorf("%s/%s shows the hint of %s", g.area.ID, tab.ID, h.Action)
+				}
+			}
+		}
+	}
+	if len(own) != 4 {
+		t.Errorf("%d tab actions, want ask, rename, notice and count", len(own))
+	}
+}

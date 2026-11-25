@@ -316,3 +316,54 @@ func screenRow(term *ptytest.Terminal, text string) string {
 	}
 	return ""
 }
+
+// command runs a command of the command line by its name.
+func command(t *testing.T, term *ptytest.Terminal, name, want string) {
+	t.Helper()
+	act(t, term, ":", "go overview")
+	send(t, term, name)
+	act(t, term, "\r", want)
+	gone(t, term, "search or run a command")
+}
+
+func TestSwitchesRunFromTheCommandLine(t *testing.T) {
+	term := startDemo(t, "")
+	command(t, term, "theme", "theme: demo-dark")
+	command(t, term, "icons", "icons: nerdfont")
+	command(t, term, "mouse", "mouse: off")
+	command(t, term, "mouse", "mouse: on")
+	command(t, term, "language", "Sprache: deutsch")
+	expect(t, term, "Terminal-Bausteine im Betrieb") // the icons are on, so the tab line has a glyph
+}
+
+// footerHint reports whether the footer of the screen shows text; the hints stand as key and label.
+func footerHint(term *ptytest.Terminal, text string) bool {
+	return onScreen(term.Output(), text)
+}
+
+// hintsOf checks that the open tab shows the footer hints in want and none of the others.
+func hintsOf(t *testing.T, term *ptytest.Terminal, want string, all ...string) {
+	t.Helper()
+	expect(t, term, want)
+	for _, h := range all {
+		if h != want && footerHint(term, h) {
+			t.Errorf("the footer shows %q beside %q:\n%s", h, want, strings.Join(screen(term.Output(), 100, 30), "\n"))
+		}
+	}
+}
+
+func TestFooterShowsTheKeysOfTheOpenTabOnly(t *testing.T) {
+	term := startDemo(t, "-icons none")
+	dialogs := []string{"a ask question", "r rename", "o show notice", "+ count"}
+	act(t, term, "4", "A question over the screen")
+	hintsOf(t, term, "a ask question", dialogs...)
+	act(t, term, "\t", "[Question]")
+	act(t, term, "\x1b[C", "A short input")
+	hintsOf(t, term, "r rename", dialogs...)
+	act(t, term, "\x1b[C", "A calm message")
+	hintsOf(t, term, "o show notice", dialogs...)
+	act(t, term, "2", tabsBody)
+	hintsOf(t, term, "q quit", dialogs...)
+	act(t, term, "\x1b[C", probeBody) // the focus stays on the sub-tab line
+	hintsOf(t, term, "+ count", dialogs...)
+}
