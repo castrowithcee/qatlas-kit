@@ -84,7 +84,7 @@ func (v *Vault) Update(change UpdateFunc) (undo func() error, err error) {
 		return nil, err
 	}
 	defer clearPending(pending)
-	saved, err := saveFile(v.documentPath())
+	saved, err := v.saveFile(v.documentPath())
 	if err != nil {
 		return nil, err
 	}
@@ -170,7 +170,7 @@ func (v *Vault) WriteWithUndo(document []byte) (undo func() error, err error) {
 		if err := checkSchema(v.plainPath(), document, v.opts.Schemas); err != nil {
 			return nil, err
 		}
-		saved, err := saveFile(v.plainPath())
+		saved, err := v.saveFile(v.plainPath())
 		if err != nil {
 			return nil, err
 		}
@@ -185,7 +185,7 @@ func (v *Vault) WriteWithUndo(document []byte) (undo func() error, err error) {
 	if err := checkSchema(v.documentPath(), document, v.opts.Schemas); err != nil {
 		return nil, err
 	}
-	saved, err := saveFile(v.documentPath())
+	saved, err := v.saveFile(v.documentPath())
 	if err != nil {
 		return nil, err
 	}

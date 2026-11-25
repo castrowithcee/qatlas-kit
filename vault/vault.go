@@ -251,13 +251,13 @@ func (v *Vault) state() (State, error) {
 	}
 	if v.opts.Files.Plain != "" {
 		// An interrupted Encrypt leaves the plain document beside a new key; the plain one still counts.
-		if exists, err := fileExists(v.plainPath()); err != nil {
+		if exists, err := v.fileExists(v.plainPath()); err != nil {
 			return "", err
 		} else if exists {
 			return StateUnencrypted, nil
 		}
 	}
-	if exists, err := fileExists(v.keyPath()); err != nil {
+	if exists, err := v.fileExists(v.keyPath()); err != nil {
 		return "", err
 	} else if exists {
 		return StateLocked, nil
@@ -302,8 +302,8 @@ func (v *Vault) Identity() (*age.X25519Identity, error) {
 	return v.identity.key, nil
 }
 
-func fileExists(path string) (bool, error) {
-	_, err := os.Stat(path)
+func (v *Vault) fileExists(path string) (bool, error) {
+	_, err := v.stat(path)
 	switch {
 	case err == nil:
 		return true, nil

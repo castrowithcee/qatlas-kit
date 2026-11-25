@@ -42,7 +42,7 @@ func (v *Vault) Encrypt(passphrase string) error {
 	if err := v.encryptNew(passphrase, out); err != nil {
 		return err
 	}
-	if err := removeAll(v.plainPath()); err != nil {
+	if err := v.removeAll(v.plainPath()); err != nil {
 		v.forget()
 		return err
 	}
@@ -115,10 +115,10 @@ func (v *Vault) Decrypt(passphrase string) error {
 		paths = append(paths, v.path(name))
 	}
 	paths = append(paths, v.documentPath(), v.keyPath(), v.recipientPath())
-	if err := removeAll(paths...); err != nil {
+	if err := v.removeAll(paths...); err != nil {
 		return err
 	}
-	_ = os.Remove(v.pendingPath())
+	_ = v.removeAll(v.pendingPath())
 	return nil
 }
 

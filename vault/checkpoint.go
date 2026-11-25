@@ -3,7 +3,6 @@ package vault
 import (
 	"errors"
 	"fmt"
-	"os"
 	"path/filepath"
 	"slices"
 )
@@ -30,7 +29,7 @@ func (v *Vault) Checkpoint() (restore func() error, err error) {
 	}
 	saved := map[string][]byte{}
 	for _, path := range files {
-		data, err := readFile(path)
+		data, err := v.readFile(path)
 		switch {
 		case err == nil:
 			saved[path] = data
@@ -42,11 +41,11 @@ func (v *Vault) Checkpoint() (restore func() error, err error) {
 	if err != nil {
 		return nil, err
 	}
-	dirExisted, err := fileExists(v.opts.Dir)
+	dirExisted, err := v.fileExists(v.opts.Dir)
 	if err != nil {
 		return nil, err
 	}
-	pendingExisted, err := fileExists(v.pendingPath())
+	pendingExisted, err := v.fileExists(v.pendingPath())
 	if err != nil {
 		return nil, err
 	}
@@ -71,7 +70,7 @@ func (v *Vault) Checkpoint() (restore func() error, err error) {
 				if err := v.write(path, data); err != nil {
 					failed = append(failed, err)
 				}
-			} else if err := removeAll(path); err != nil {
+			} else if err := v.removeAll(path); err != nil {
 				failed = append(failed, err)
 			}
 		}
@@ -81,18 +80,18 @@ func (v *Vault) Checkpoint() (restore func() error, err error) {
 		}
 		for _, name := range now {
 			if !slices.Contains(pending, name) {
-				if err := removeAll(filepath.Join(v.pendingPath(), name)); err != nil {
+				if err := v.removeAll(filepath.Join(v.pendingPath(), name)); err != nil {
 					failed = append(failed, err)
 				}
 			}
 		}
 		if !pendingExisted {
-			if err := os.Remove(v.pendingPath()); err != nil && !isNotExist(err) {
+			if err := v.removeAll(v.pendingPath()); err != nil {
 				failed = append(failed, err)
 			}
 		}
 		if !dirExisted {
-			if err := os.Remove(v.opts.Dir); err != nil && !isNotExist(err) {
+			if err := v.removeAll(v.opts.Dir); err != nil {
 				failed = append(failed, err)
 			}
 		}
@@ -161,7 +160,7 @@ func (v *Vault) restoreJournal(j *journal, c *checkpoint) (failed []error, refus
 				return nil, ErrSwitched
 			}
 		}
-		current, err := saveFile(path)
+		current, err := v.saveFile(path)
 		if err != nil {
 			return nil, err
 		}
@@ -186,7 +185,7 @@ func (v *Vault) restoreJournal(j *journal, c *checkpoint) (failed []error, refus
 		case ok:
 			err = v.write(p, saved)
 		default:
-			err = removeAll(p)
+			err = v.removeAll(p)
 		}
 		if err != nil {
 			failed, docFailed = append(failed, err), true
@@ -214,14 +213,14 @@ func (v *Vault) restoreJournal(j *journal, c *checkpoint) (failed []error, refus
 	}
 	var queued []string
 	for _, p := range j.queued {
-		if err := removeAll(p); err != nil {
+		if err := v.removeAll(p); err != nil {
 			failed, queued = append(failed, err), append(queued, p)
 		}
 	}
 	j.queued = queued
 	if !c.pendingExisted {
-		if entries, err := os.ReadDir(v.pendingPath()); err == nil && len(entries) == 0 {
-			if err := removeAll(v.pendingPath()); err != nil {
+		if entries, err := v.readDir(v.pendingPath()); err == nil && len(entries) == 0 {
+			if err := v.removeAll(v.pendingPath()); err != nil {
 				failed = append(failed, err)
 			}
 		}
@@ -264,7 +263,7 @@ func (v *Vault) holdRecorded(c *checkpoint, doc []byte) {
 // file; a directory another writer filled meanwhile stays. It runs after the lock is released, because an
 // open file cannot be removed on Windows.
 func (v *Vault) removeEmptyDir() error {
-	entries, err := os.ReadDir(v.opts.Dir)
+	entries, err := v.readDir(v.opts.Dir)
 	if isNotExist(err) {
 		return nil
 	}
@@ -272,11 +271,11 @@ func (v *Vault) removeEmptyDir() error {
 		return err
 	}
 	if len(entries) == 1 && entries[0].Name() == v.opts.Files.Lock {
-		if err := removeAll(v.path(v.opts.Files.Lock)); err != nil {
+		if err := v.removeAll(v.path(v.opts.Files.Lock)); err != nil {
 			return err
 		}
 	} else if len(entries) > 0 {
 		return nil
 	}
-	return removeAll(v.opts.Dir)
+	return v.removeAll(v.opts.Dir)
 }

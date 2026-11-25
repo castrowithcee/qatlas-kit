@@ -31,8 +31,8 @@ func (e *PermissionError) Error() string {
 }
 
 // readFile reads path after checking that nobody else can reach it.
-func readFile(path string) ([]byte, error) {
-	info, err := os.Stat(path)
+func (v *Vault) readFile(path string) ([]byte, error) {
+	info, err := v.stat(path)
 	if err != nil {
 		return nil, err
 	}
@@ -94,6 +94,20 @@ func (v *Vault) createDir() error {
 	}
 	if err := restrictDir(v.opts.Dir); err != nil {
 		return fmt.Errorf("cannot set the permissions of %s: %w", v.opts.Dir, err)
+	}
+	return nil
+}
+
+func (v *Vault) stat(path string) (os.FileInfo, error) { return os.Stat(path) }
+
+func (v *Vault) readDir(path string) ([]os.DirEntry, error) { return os.ReadDir(path) }
+
+// removeAll removes paths, files or empty directories, ignoring those that do not exist.
+func (v *Vault) removeAll(paths ...string) error {
+	for _, path := range paths {
+		if err := os.Remove(path); err != nil && !isNotExist(err) {
+			return err
+		}
 	}
 	return nil
 }
