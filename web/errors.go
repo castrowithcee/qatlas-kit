@@ -42,21 +42,31 @@ func Error(w http.ResponseWriter, status int) {
 	}{status, text})
 }
 
-// statusPage replaces the plain-text answer ServeMux gives for an unknown path or method with Error.
+// statusPage replaces the plain-text answer ServeMux gives for an unknown path or method with Error. The
+// redirects ServeMux sends to a cleaned path pass unchanged.
 type statusPage struct {
 	http.ResponseWriter
-	done bool
+	done, pass bool
 }
 
 func (p *statusPage) WriteHeader(code int) {
-	if !p.done {
-		p.done = true
-		Error(p.ResponseWriter, code)
+	if p.done {
+		return
 	}
+	p.done = true
+	if code < 400 {
+		p.pass = true
+		p.ResponseWriter.WriteHeader(code)
+		return
+	}
+	Error(p.ResponseWriter, code)
 }
 
 func (p *statusPage) Write(b []byte) (int, error) {
 	p.WriteHeader(http.StatusNotFound)
+	if p.pass {
+		return p.ResponseWriter.Write(b)
+	}
 	return len(b), nil
 }
 
