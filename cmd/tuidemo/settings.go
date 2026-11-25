@@ -11,6 +11,7 @@ const (
 	fieldIcons    tui.FieldID = "icons"
 	fieldLanguage tui.FieldID = "language"
 	fieldMouse    tui.FieldID = "mouse"
+	fieldNav      tui.FieldID = "navigation"
 )
 
 // choices lists the values of a choice field; the label of each is the text prefix+value.
@@ -28,7 +29,8 @@ func settingValues(m *model) map[tui.FieldID]string {
 	if m.prefs.MouseEnabled {
 		mouse = "on"
 	}
-	return map[tui.FieldID]string{fieldTheme: m.prefs.Theme, fieldIcons: m.prefs.Icons, fieldLanguage: m.prefs.Language, fieldMouse: mouse}
+	return map[tui.FieldID]string{fieldTheme: m.prefs.Theme, fieldIcons: m.prefs.Icons, fieldNav: m.prefs.Navigation,
+		fieldLanguage: m.prefs.Language, fieldMouse: mouse}
 }
 
 // settingsBlocks makes each settings tab a form whose choices take effect at once. The theme field steps
@@ -41,6 +43,7 @@ func settingsBlocks(m *model) (map[tui.TabID]block, error) {
 			{ID: fieldTheme, Kind: tui.FieldChoice, Label: tui.TextSettingTheme, Choices: choices("demo.theme.", themes...)},
 			{ID: fieldIcons, Kind: tui.FieldChoice, Label: tui.TextSettingIcons,
 				Choices: choices("demo.icons.", uiprefs.IconsUnicode, uiprefs.IconsNerdFont, uiprefs.IconsNone)},
+			{ID: fieldNav, Kind: tui.FieldChoice, Label: textSettingNav, Choices: choices("demo.navigation.", schema().Navigations...)},
 		},
 		"input": {
 			{ID: fieldLanguage, Kind: tui.FieldChoice, Label: tui.TextSettingLanguage,
@@ -89,6 +92,8 @@ func applySettings(tab tui.TabID) func(m *model, b *formBlock) {
 				m.setTheme(string(got.Choice))
 			case fieldIcons:
 				m.setIcons(string(got.Choice))
+			case fieldNav:
+				m.setNavigation(string(got.Choice))
 			case fieldLanguage:
 				m.setLanguage(string(got.Choice))
 			case fieldMouse:
