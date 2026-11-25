@@ -1,0 +1,309 @@
+package main
+
+import (
+	"strings"
+
+	tea "charm.land/bubbletea/v2"
+
+	"github.com/castrowithcee/qatlas-kit/helptopics"
+	"github.com/castrowithcee/qatlas-kit/tui"
+)
+
+// modal is what Dialog, Help and Explanation share: the part that stands over the screen, takes every key
+// and draws its targets alone.
+type modal interface {
+	Update(tea.KeyPressMsg) (tui.ActionID, bool)
+	Click(tui.MouseResult) (tui.ActionID, bool)
+	Wheel(steps int)
+	Overlay(styles tui.Styles, screen string, width, height int, room tui.Rect) (string, []tui.Target, bool)
+	View(styles tui.Styles, width, height int) (string, []tui.Target)
+	Hints() []tui.Hint
+}
+
+// modalKind says which part is open; the zero value is none.
+type modalKind uint8
+
+const (
+	kindQuestion modalKind = iota + 1
+	kindInput
+	kindNotice
+	kindHelp
+	kindExplain
+)
+
+// explanationURL is an invented address, shown in full and linked where the terminal takes escapes.
+const explanationURL = "https://example.org/garden-journal"
+
+// journalName is the name the sample table shows; an answered rename replaces it.
+func (m *model) journalName() string {
+	if m.journal != "" {
+		return m.journal
+	}
+	return m.text.Lookup(textSampleTitle)
+}
+
+func dialogKeys(ends bool) tui.DialogKeys {
+	k := tui.DialogKeys{Enter: actEnter, Up: actUp, Down: actDown, PageUp: actPageUp, PageDown: actPageDown}
+	if ends {
+		k.First, k.Last = actFirst, actLast
+	}
+	return k
+}
+
+// show opens part, or reports why it cannot be drawn.
+func (m *model) show(part modal, err error, kind modalKind, focus tui.InputFocus) {
+	if err != nil {
+		m.message = &tui.Message{Kind: tui.MessageError, Text: err.Error()}
+		return
+	}
+	m.modal, m.kind, m.focus = part, kind, focus
+}
+
+func (m *model) openQuestion() {
+	d, err := tui.NewDialog(tui.DialogSpec{
+		Title:       textAskTitle,
+		Question:    m.text.Lookup(textAskQuestion),
+		Consequence: m.text.Lookup(textAskConsequence),
+		Details:     []tui.DialogLine{{Text: m.text.Lookup(textAskDetail, m.count)}},
+		Answers:     []tui.Answer{{Action: actYes, Label: tui.TextKeyYes}, {Action: actNo, Label: tui.TextKeyNo}},
+		Default:     actNo,
+		Danger:      actYes,
+		Keys:        dialogKeys(true),
+	}, m.keys, m.text)
+	if err == nil {
+		m.dialog = d
+		m.show(d, nil, kindQuestion, d.Input())
+		return
+	}
+	m.show(nil, err, 0, 0)
+}
+
+func (m *model) openInput() {
+	d, err := tui.NewDialog(tui.DialogSpec{
+		Title:    textRenameTitle,
+		Question: m.text.Lookup(textRenameQuestion),
+		Input:    &tui.DialogInput{Value: m.journalName()},
+		Answers:  []tui.Answer{{Action: actEnter, Label: textOK}, {Action: actBack, Label: tui.TextKeyBack}},
+		Default:  actEnter,
+		Keys:     dialogKeys(false),
+	}, m.keys, m.text)
+	if err == nil {
+		m.dialog = d
+		m.show(d, nil, kindInput, d.Input())
+		return
+	}
+	m.show(nil, err, 0, 0)
+}
+
+func (m *model) openNotice() {
+	d, err := tui.NewDialog(tui.DialogSpec{
+		Title:    textNoticeTitle,
+		Question: m.text.Lookup(textNoticeLineOne),
+		Notice:   true,
+		Details:  []tui.DialogLine{{Text: m.text.Lookup(textNoticeLineTwo)}},
+		Answers:  []tui.Answer{{Action: actEnter, Label: textOK}},
+		Default:  actEnter,
+		Keys:     dialogKeys(true),
+	}, m.keys, m.text)
+	if err == nil {
+		m.dialog = d
+		m.show(d, nil, kindNotice, d.Input())
+		return
+	}
+	m.show(nil, err, 0, 0)
+}
+
+func (m *model) openHelp() {
+	topics := []helptopics.Topic{
+		{Name: m.text.Lookup(textHelpNameStart), Short: m.text.Lookup(textHelpNameStart), Text: m.text.Lookup(textHelpStart)},
+		{Name: m.text.Lookup(textHelpNameKeys), Short: m.text.Lookup(textHelpNameKeys), Text: m.text.Lookup(textHelpKeys)},
+		{Name: m.text.Lookup(textHelpNameMouse), Short: m.text.Lookup(textHelpNameMouse), Text: m.text.Lookup(textHelpMouse)},
+	}
+	h, err := tui.NewHelp(tui.HelpSpec{
+		Topics: topics, Screen: m.footerHints(), Global: []tui.ActionID{actQuit, actHelp, actCommands, actInfo},
+		Keys: tui.HelpKeys{Left: actLeft, Right: actRight, Next: actZoneNext, Prev: actZonePrev, Up: actUp, Down: actDown,
+			PageUp: actPageUp, PageDown: actPageDown, First: actFirst, Last: actLast, Back: actBack, Help: actHelp},
+		Note: textHelpNote,
+	}, m.keys, m.text)
+	if err == nil {
+		m.show(h, nil, kindHelp, tui.InputNavigation)
+		return
+	}
+	m.show(nil, err, 0, 0)
+}
+
+func (m *model) openExplanation() {
+	e, err := tui.NewExplanation(tui.ExplanationSpec{
+		Item: tui.ExplanationItem{
+			Title: m.text.Lookup(textExplainTitle), Body: m.text.Lookup(textExplainBody), URL: explanationURL,
+			Term: helptopics.Term{ID: "raised-bed", Title: m.text.Lookup(textTermTitle), Text: m.text.Lookup(textTermText)},
+		},
+		Keys: tui.ExplanationKeys{Back: actBack, Info: actInfo, Copy: actCopy, Up: actUp, Down: actDown,
+			PageUp: actPageUp, PageDown: actPageDown, First: actFirst, Last: actLast},
+	}, m.keys, m.text)
+	if err == nil {
+		m.explanation = e
+		m.show(e, nil, kindExplain, tui.InputNavigation)
+		return
+	}
+	m.show(nil, err, 0, 0)
+}
+
+func (m *model) closeModal() {
+	m.modal, m.kind, m.dialog, m.explanation = nil, 0, nil, nil
+}
+
+func (m *model) cancelled() {
+	m.message = &tui.Message{Kind: tui.MessageStatus, Text: m.text.Lookup(tui.TextCancelled)}
+}
+
+// modalKey gives a key to the open part. Keys it does not handle never reach the screen behind it; back
+// closes a part that has no answer of its own for it.
+func (m *model) modalKey(msg tea.KeyPressMsg) tea.Cmd {
+	if msg.String() == "ctrl+c" {
+		return tea.Quit
+	}
+	if act, ok := m.modal.Update(msg); ok {
+		return m.finish(act)
+	}
+	if m.keys.Is(msg, actBack, m.focus) {
+		m.closeModal()
+		m.cancelled()
+	}
+	return nil
+}
+
+// finish runs what the open part answered, for a key and for a click alike.
+func (m *model) finish(act tui.ActionID) tea.Cmd {
+	if act == "" {
+		return nil
+	}
+	switch m.kind {
+	case kindHelp, kindExplain:
+		switch act {
+		case actBack, actHelp, actInfo:
+			m.closeModal()
+		case actCopy:
+			m.message = &tui.Message{Kind: tui.MessageStatus, Text: m.text.Lookup(tui.TextCopyHandedOver)}
+			return tea.SetClipboard(m.explanation.Text())
+		default:
+			// An action of the key list of the help runs as its key does on the screen.
+			m.closeModal()
+			return m.run(act, "")
+		}
+	case kindQuestion:
+		if act == actYes {
+			m.count = 0
+			m.message = &tui.Message{Kind: tui.MessageResult, Text: m.text.Lookup(textAskDone)}
+		} else {
+			m.cancelled()
+		}
+		m.closeModal()
+	case kindInput:
+		if act != actEnter {
+			m.cancelled()
+			m.closeModal()
+			break
+		}
+		name := strings.TrimSpace(m.dialog.Value())
+		if name == "" {
+			m.dialog.SetMessage(&tui.Message{Kind: tui.MessageError, Text: m.text.Lookup(textRenameEmpty)})
+			break
+		}
+		m.journal = name
+		m.message = &tui.Message{Kind: tui.MessageResult, Text: m.text.Lookup(textRenameDone, name)}
+		m.closeModal()
+	case kindNotice:
+		m.closeModal()
+	}
+	return nil
+}
+
+// modalClick gives a click or a notch of the wheel to the open part, which holds the only targets.
+func (m *model) modalClick(msg tea.MouseMsg) tea.Cmd {
+	res := m.mouse.Handle(msg)
+	if _, ok := msg.(tea.MouseWheelMsg); ok {
+		// A dialog scrolls only under a notch over its details; help and explanation scroll under any notch.
+		if m.kind == kindHelp || m.kind == kindExplain || res.Zone == tui.ZoneDetail {
+			m.modal.Wheel(res.WheelSteps)
+		}
+		return nil
+	}
+	act, _ := m.modal.Click(res)
+	return m.finish(act)
+}
+
+// commands are what the command line runs: every tab, and the actions that have a name of their own. A
+// command names the action a key triggers, so the line is no second way to operate.
+func commands(groups []group, text tui.Translator) []tui.Command {
+	var cmds []tui.Command
+	for _, g := range groups {
+		cmds = append(cmds, tui.Command{Name: "go " + string(g.area.ID), Description: textCmdOpen,
+			DescriptionArgs: []any{text.Lookup(g.area.Title)}, Area: g.area.ID, Available: tui.Always})
+	}
+	for _, c := range []struct {
+		name   string
+		action tui.ActionID
+		text   tui.TextID
+	}{
+		{"theme", actTheme, textKeyTheme}, {"language", actLanguage, textKeyLanguage}, {"icons", actIcons, textKeyIcons},
+		{"mouse", actMouse, textKeyMouse}, {"ask", actAsk, textKeyAsk}, {"rename", actRename, tui.TextKeyRename},
+		{"notice", actNotice, textKeyNotice}, {"help", actHelp, tui.TextKeyHelp}, {"explain", actInfo, tui.TextKeyInfo},
+		{"quit", actQuit, tui.TextKeyQuit},
+	} {
+		cmds = append(cmds, tui.Command{Name: c.name, Description: c.text, Action: c.action, Available: tui.Always})
+	}
+	return cmds
+}
+
+func (m *model) openCommandLine() {
+	m.cmdline.Reset()
+	m.cmdline.SetContext(tui.Context{Area: m.area, Tab: m.tab(), Zone: m.zone, Focus: tui.InputNavigation})
+	m.cmdOpen = true
+}
+
+// commandKey gives a key to the open command line.
+func (m *model) commandKey(msg tea.KeyPressMsg) tea.Cmd {
+	if msg.String() == "ctrl+c" {
+		return tea.Quit
+	}
+	cmd, done := m.cmdline.Update(msg)
+	return m.commandDone(cmd, done)
+}
+
+// commandClick gives a click to the open command line: a match runs as enter does, the footer keys act as
+// theirs.
+func (m *model) commandClick(msg tea.MouseMsg) tea.Cmd {
+	res := m.mouse.Handle(msg)
+	if _, ok := msg.(tea.MouseClickMsg); !ok || !res.Handled {
+		return nil
+	}
+	switch res.Action {
+	case actBack:
+		m.cmdline.Reset()
+		return m.commandDone(tui.Command{}, true)
+	case actEnter:
+		cmd, done := m.cmdline.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+		return m.commandDone(cmd, done)
+	}
+	cmd, done := m.cmdline.Click(res)
+	return m.commandDone(cmd, done)
+}
+
+// commandDone closes the line and runs the command it chose, as its key or its tab click would.
+func (m *model) commandDone(cmd tui.Command, done bool) tea.Cmd {
+	if !done {
+		return nil
+	}
+	m.cmdOpen = false
+	switch {
+	case cmd.Area != "":
+		m.openArea(cmd.Area)
+		if cmd.Tab != "" {
+			m.tabs[cmd.Area] = cmd.Tab
+		}
+	case cmd.Action != "":
+		return m.run(cmd.Action, "")
+	}
+	return nil
+}
