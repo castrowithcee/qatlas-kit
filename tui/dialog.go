@@ -68,7 +68,7 @@ type DialogSpec struct {
 	// Title stands in the frame of the dialog.
 	Title TextID
 	// Question is the question, bold behind the warning glyph; in a dialog with an input it is the hint and
-	// carries no glyph.
+	// carries no glyph. In a Notice it is the bold heading.
 	Question string
 	// Consequence is one sentence on what follows from the answer. A question without an input has one.
 	Consequence string
@@ -77,8 +77,9 @@ type DialogSpec struct {
 	Details []DialogLine
 	// Irreversible draws the consequence in the warn colour instead of dimmed: the answer cannot be undone.
 	Irreversible bool
-	// Notice makes the dialog a calm message: no warning glyph, the consequence optional, and at least one
-	// detail line, since a dialog that interrupts has something to read. It cannot carry an input or a danger.
+	// Notice makes the dialog a calm message headed by Question: no warning glyph, the consequence optional,
+	// and at least one detail line, since a dialog that interrupts has something to read. It cannot carry an
+	// input or a danger.
 	Notice  bool
 	Answers []Answer
 	// Default is the answer the key Enter gives too; its button shows focused. Empty for a question that
@@ -143,7 +144,11 @@ func NewDialog(spec DialogSpec, keys *Keymap, text Translator) (*Dialog, error) 
 	var errs []error
 	fail := func(format string, args ...any) { errs = append(errs, fmt.Errorf("dialog: "+format, args...)) }
 	if strings.TrimSpace(spec.Question) == "" {
-		fail("no question")
+		if spec.Notice {
+			fail("a notice needs a heading in Question")
+		} else {
+			fail("no question")
+		}
 	}
 	if spec.Input == nil && !spec.Notice && strings.TrimSpace(spec.Consequence) == "" {
 		fail("a question says what follows from its answer")
