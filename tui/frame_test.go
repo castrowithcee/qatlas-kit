@@ -758,6 +758,45 @@ func TestCycleZoneFollowsTheFixedOrderAndWraps(t *testing.T) {
 	}
 }
 
+func TestStepZoneLevelMovesVerticallyWithoutWrap(t *testing.T) {
+	withSub := []FocusZone{ZoneTabs, ZoneSubtabs, ZoneRows}
+	noSub := []FocusZone{ZoneTabs, ZoneRows}
+	both := []FocusZone{ZoneDetail, ZoneRows, ZoneSubtabs, ZoneTabs}
+	for _, c := range []struct {
+		name    string
+		zones   []FocusZone
+		current FocusZone
+		step    int
+		want    FocusZone
+	}{
+		{"down to subtabs", withSub, ZoneTabs, 1, ZoneSubtabs},
+		{"down to rows", withSub, ZoneSubtabs, 1, ZoneRows},
+		{"up to subtabs", withSub, ZoneRows, -1, ZoneSubtabs},
+		{"up to tabs", withSub, ZoneSubtabs, -1, ZoneTabs},
+		{"skip missing subtabs down", noSub, ZoneTabs, 1, ZoneRows},
+		{"skip missing subtabs up", noSub, ZoneRows, -1, ZoneTabs},
+		{"clamp top", withSub, ZoneTabs, -1, ZoneTabs},
+		{"clamp bottom", withSub, ZoneRows, 1, ZoneRows},
+		{"detail up", both, ZoneDetail, -1, ZoneSubtabs},
+		{"detail down stays", both, ZoneDetail, 1, ZoneDetail},
+		{"subtabs down enters first work zone", both, ZoneSubtabs, 1, ZoneRows},
+		{"form only", []FocusZone{ZoneTabs, ZoneForm}, ZoneTabs, 1, ZoneForm},
+		{"step 2", withSub, ZoneTabs, 2, ZoneRows},
+		{"step 2 clamps", withSub, ZoneSubtabs, 2, ZoneRows},
+		{"step -2", withSub, ZoneRows, -2, ZoneTabs},
+		{"unknown current", withSub, "unknown", 1, ZoneTabs},
+		{"absent current", noSub, ZoneSubtabs, 1, ZoneTabs},
+		{"absent work zone", noSub, ZoneForm, -1, ZoneTabs},
+		{"step 0", withSub, ZoneSubtabs, 0, ZoneSubtabs},
+		{"no zones", nil, ZoneRows, 1, ZoneRows},
+		{"only unknown zones", []FocusZone{"unknown"}, ZoneRows, -1, ZoneRows},
+	} {
+		if got := StepZoneLevel(c.zones, c.current, c.step); got != c.want {
+			t.Errorf("%s: StepZoneLevel(%s, %d) = %s, want %s", c.name, c.current, c.step, got, c.want)
+		}
+	}
+}
+
 func TestStepAreaAndTabWrap(t *testing.T) {
 	areas := sampleAreas()
 	for _, c := range []struct {
