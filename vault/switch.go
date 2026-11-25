@@ -14,6 +14,11 @@ func (v *Vault) Encrypt(passphrase string) error {
 	}
 	v.mu.Lock()
 	defer v.mu.Unlock()
+	release, err := v.lockWrites(false)
+	if err != nil {
+		return err
+	}
+	defer release()
 	state, err := v.state()
 	if err != nil {
 		return err
@@ -52,6 +57,11 @@ func (v *Vault) Decrypt(passphrase string) error {
 	}
 	v.mu.Lock()
 	defer v.mu.Unlock()
+	release, err := v.lockWrites(false)
+	if err != nil {
+		return err
+	}
+	defer release()
 	state, err := v.state()
 	if err != nil {
 		return err
@@ -90,14 +100,17 @@ func (v *Vault) Decrypt(passphrase string) error {
 		return err
 	}
 	defer clear(out)
+	v.noteSwitch()
 	if err := v.write(v.plainPath(), out); err != nil {
 		return err
 	}
 	v.forget()
-	paths := []string{}
 	for _, name := range done {
-		paths = append(paths, filepath.Join(v.pendingPath(), name))
+		if err := v.removeEntry(os.Remove, filepath.Join(v.pendingPath(), name)); err != nil && !isNotExist(err) {
+			return err
+		}
 	}
+	paths := []string{}
 	for _, name := range v.opts.Files.Sealed {
 		paths = append(paths, v.path(name))
 	}
@@ -117,6 +130,11 @@ func (v *Vault) ChangePassphrase(oldPassphrase, newPassphrase string) error {
 	}
 	v.mu.Lock()
 	defer v.mu.Unlock()
+	release, err := v.lockWrites(false)
+	if err != nil {
+		return err
+	}
+	defer release()
 	if err := v.requireEncrypted(); err != nil {
 		return err
 	}
@@ -128,6 +146,7 @@ func (v *Vault) ChangePassphrase(oldPassphrase, newPassphrase string) error {
 	if err != nil {
 		return err
 	}
+	v.noteSwitch()
 	return v.write(v.keyPath(), keyData)
 }
 
