@@ -41,7 +41,8 @@
 // end go, those and tabs inside become one space, and other control characters, invalid UTF-8 and direction
 // marks such as U+202E are dropped, in a masked field too.
 //
-// The parts with state share one shape. NewX checks an XSpec, which holds the content and, in Keys, the
+// The parts with state share one shape, and Dialog, Help, Explanation and Form, which answer with an
+// ActionID, satisfy the interface Modal. NewX checks an XSpec, which holds the content and, in Keys, the
 // actions of the key table the part reads, against the Keymap and the Translator and refuses what cannot
 // work. Update reads a key press and Click the MouseResult of a target the part drew; both return what the
 // application runs. View draws with the Styles of that drawing in width by height cells and returns the lines
