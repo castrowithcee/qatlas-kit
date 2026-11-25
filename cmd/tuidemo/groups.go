@@ -17,8 +17,9 @@ type group struct {
 	draw func(m *model, tab tui.TabID, room tui.Rect) ([]string, []tui.Target)
 	// actions are the buttons of a tab in the order of the focus, as the actions their clicks run.
 	actions func(area tui.Area, tab tui.TabID) []tui.ActionID
-	// hints are the footer hints of the group, behind the common ones.
-	hints []tui.Hint
+	// hints are the footer hints of a tab, behind the common ones: each tab shows the keys of its own
+	// actions only.
+	hints map[tui.TabID][]tui.Hint
 }
 
 func groups() []group {
@@ -40,7 +41,7 @@ func groups() []group {
 				}
 				return nil
 			},
-			hints: []tui.Hint{{Action: actCount, Label: textKeyCount, Priority: 1}},
+			hints: map[tui.TabID][]tui.Hint{"mouse": {{Action: actCount, Label: textKeyCount, Priority: 1}}},
 		},
 		{
 			area: tui.Area{ID: "settings", Title: textAreaSettings,
@@ -61,8 +62,11 @@ func groups() []group {
 			icons:   [2]string{"▤", "\uf27a"},
 			draw:    drawDialogs,
 			actions: openerAction,
-			hints: []tui.Hint{{Action: actAsk, Label: textKeyAsk, Priority: 1}, {Action: actRename, Label: tui.TextKeyRename, Priority: 1},
-				{Action: actNotice, Label: textKeyNotice, Priority: 1}},
+			hints: map[tui.TabID][]tui.Hint{
+				"question": {{Action: actAsk, Label: textKeyAsk, Priority: 1}},
+				"input":    {{Action: actRename, Label: tui.TextKeyRename, Priority: 1}},
+				"notice":   {{Action: actNotice, Label: textKeyNotice, Priority: 1}},
+			},
 		},
 		{
 			area: tui.Area{ID: "help", Title: textAreaHelp,
