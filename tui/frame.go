@@ -108,7 +108,8 @@ type FrameSpec struct {
 	HeaderKeys []Hint
 	Areas      []Area
 	// Nav is the form of the navigation; the zero value is the tab line. With NavPathLine the path line
-	// replaces the tab line and the sub-tab line, and ModeTab stands in it as its only section.
+	// replaces the tab line and the sub-tab line, and ModeTab stands in it as its only section. With
+	// NavPathHeader the path stands in the header and no line is left for the navigation.
 	Nav        NavForm
 	ActiveArea AreaID
 	ActiveTab  TabID
@@ -172,10 +173,10 @@ func (f *frameRun) workspace(spec FrameSpec) Rect {
 // rows are the number of rows above the workspace, the rows of the workspace and the rows of the footer.
 func (f *frameRun) rows(spec FrameSpec) (top, workspace, footer int) {
 	top = 2 // header and rule
-	if len(spec.Areas) > 0 {
+	if len(spec.Areas) > 0 && spec.Nav != NavPathHeader {
 		top++
 	}
-	if _, ok := subTabs(spec); ok && spec.Nav != NavPathLine {
+	if _, ok := subTabs(spec); ok && spec.Nav != NavPathLine && spec.Nav != NavPathHeader {
 		top++
 	}
 	footer = footerRows(f.keys.Hints(spec.Footer, spec.Input, f.text), spec.Position, max(spec.Width, 0))
@@ -209,6 +210,8 @@ func (f *frameRun) render(spec FrameSpec) (string, []Target) {
 	}
 	add(f.header(spec, width))
 	switch {
+	case spec.Nav == NavPathHeader:
+		// The path stands in the header; no row is left for a navigation line.
 	case len(spec.Areas) > 0 && spec.Nav == NavPathLine:
 		add(f.pathLine(spec, width))
 	case len(spec.Areas) > 0:
@@ -267,6 +270,13 @@ func (f *frameRun) ruleChar() string {
 // headerGap stands between two parts of the header.
 const headerGap = "  "
 
+// noCut is the room of a path that no width cuts.
+const noCut = 1 << 30
+
+// pathFloor is the room, padding included, of the path where the product name gives way: a few letters of
+// the section and its mark.
+const pathFloor = 6
+
 // header is the header line: the product name and the status marks at the left, the back button and the
 // header keys dimmed at the right end. It stays one line and fills its room in the order MarkRank names.
 func (f *frameRun) header(spec FrameSpec, width int) (string, []Target) {
@@ -295,7 +305,25 @@ func (f *frameRun) header(spec FrameSpec, width int) (string, []Target) {
 			pick[i] = min(depth, len(forms[i])-1)
 		}
 	}
-	left := func(product string) string { return f.headerLeft(product, marks, forms, pick) }
+	// path is the path of NavPathHeader after the name. It starts as the current section alone, which stands
+	// at every width; the room left after the marks and the blocks below widens it.
+	var path []pathChip
+	var pathSecs []pathSection
+	mode := spec.ModeTab != ""
+	if spec.Nav == NavPathHeader && len(spec.Areas) > 0 {
+		if pathSecs = f.pathSections(spec); len(pathSecs) > 0 {
+			path = f.pathChips(pathSecs, mode, 3, noCut)
+		}
+	}
+	pathText := func() string {
+		text, _ := f.drawPathChips(spec, path, 0, width)
+		return text
+	}
+	left := func(product string) string { return f.headerLeft(product, pathText(), marks, forms, pick) }
+	pathTargets := func(product string) []Target {
+		_, ts := f.drawPathChips(spec, path, lipgloss.Width(product)+len(headerGap), width)
+		return ts
+	}
 
 	level(always, 0)
 	product := f.productName(spec.Icon, spec.Product)
@@ -308,6 +336,18 @@ func (f *frameRun) header(spec FrameSpec, width int) (string, []Target) {
 			product = f.productName(spec.Icon, spec.ProductShort)
 		}
 	}
+	var minPath []pathChip
+	if path != nil {
+		// Where the name and the section do not fit, the section keeps a few cells of its name and its mark and
+		// the name of the product gives way; where even that is short, the section is cut, never its mark.
+		if floor := f.pathChipsWidth(f.pathChips(pathSecs, mode, 3, pathFloor)); width-lipgloss.Width(product)-len(headerGap) < floor {
+			product = f.styles.Truncate(product, max(width-len(headerGap)-floor, 0))
+		}
+		if room := width - lipgloss.Width(product) - len(headerGap); f.pathChipsWidth(path) > room {
+			path = f.pathChips(pathSecs, mode, 3, room)
+		}
+		minPath = path
+	}
 	fits := false
 	for depth := range max(formDepth(forms, always), 1) {
 		level(always, depth)
@@ -315,11 +355,11 @@ func (f *frameRun) header(spec FrameSpec, width int) (string, []Target) {
 			break
 		}
 	}
-	if !fits && len(always) == 0 {
+	if !fits && len(always) == 0 && path == nil {
 		return f.styles.Render(StyleTitle, f.styles.Truncate(product, width)), nil
 	}
 	if !fits {
-		return f.styles.Truncate(left(product), width), nil
+		return f.styles.Truncate(left(product), width), pathTargets(product)
 	}
 	used := lipgloss.Width(left(product))
 	for _, i := range beforeKeys {
@@ -338,24 +378,39 @@ func (f *frameRun) header(spec FrameSpec, width int) (string, []Target) {
 			break
 		}
 	}
-	for depth := range max(formDepth(forms, normal), 1) {
-		level(normal, depth)
-		if lipgloss.Width(left(product)) <= room {
-			break
+	// The path takes the widest form that fits with the normal marks in their shortest form; the marks take
+	// the longest forms that fit with that path. Where none fits, the path stays at the section alone.
+	lastLevel := 0
+	if path != nil {
+		lastLevel = 2
+	}
+	fitted := false
+	for lvl := 0; lvl <= lastLevel && !fitted; lvl++ {
+		if path != nil {
+			path = f.pathChips(pathSecs, mode, lvl, noCut)
 		}
+		for depth := range max(formDepth(forms, normal), 1) {
+			level(normal, depth)
+			if fitted = lipgloss.Width(left(product)) <= room; fitted {
+				break
+			}
+		}
+	}
+	if !fitted {
+		path = minPath
 	}
 	for n := len(normal) - 1; n >= 0 && lipgloss.Width(left(product)) > room; n-- {
 		pick[normal[n]] = -1
 	}
 	line := left(product)
+	ts := pathTargets(product)
 	if block.text == "" {
-		return line, nil
+		return line, ts
 	}
 	x := width - lipgloss.Width(block.text)
-	ts := make([]Target, len(block.targets))
-	for i, t := range block.targets {
+	for _, t := range block.targets {
 		t.Rect.X += x
-		ts[i] = t
+		ts = append(ts, t)
 	}
 	return line + strings.Repeat(" ", x-lipgloss.Width(line)) + block.styled, ts
 }
@@ -453,9 +508,12 @@ func (f *frameRun) headerBlock(spec FrameSpec, h *Hint) (headerBlock, bool) {
 	}, true
 }
 
-// headerLeft is the name and every mark pick draws, in the order of the marks.
-func (f *frameRun) headerLeft(product string, marks []StatusMark, forms [][]string, pick []int) string {
+// headerLeft is the name, the path where there is one, and every mark pick draws, in the order of the marks.
+func (f *frameRun) headerLeft(product, path string, marks []StatusMark, forms [][]string, pick []int) string {
 	parts := []string{f.styles.Render(StyleTitle, product)}
+	if path != "" {
+		parts = append(parts, path)
+	}
 	for i, m := range marks {
 		if pick[i] >= 0 {
 			parts = append(parts, f.markText(m, forms[i][pick[i]]))
@@ -484,15 +542,15 @@ func (f *frameRun) icon(glyph string) string {
 }
 
 // CheckFrame reports why spec cannot be drawn as it is asked: an icon of the frame or of an area that fails
-// CheckIcon, and a navigation form the frame does not know. With the path line it also holds the areas to
-// CheckAreas, as the names of the path come from them. Applications run it in their tests or at start, with
-// CheckAreas.
+// CheckIcon, and a navigation form the frame does not know. With the path line or the path header it also
+// holds the areas to CheckAreas, as the names of the path come from them. Applications run it in their tests
+// or at start, with CheckAreas.
 func CheckFrame(spec FrameSpec) error {
 	var errs []error
 	switch spec.Nav {
 	case NavTabs:
 		errs = append(errs, checkAreaIcons(spec.Areas)...)
-	case NavPathLine:
+	case NavPathLine, NavPathHeader:
 		if err := CheckAreas(spec.Areas); err != nil {
 			errs = append(errs, err)
 		}

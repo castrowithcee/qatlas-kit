@@ -15,6 +15,9 @@ const (
 	// NavPathLine is one line that names the current place as "Area ▾ › Tab ▾" and takes the place of the tab
 	// line and the sub-tab line; the row they leave goes to the workspace.
 	NavPathLine
+	// NavPathHeader puts the path in the header after the product name and draws no navigation line: the
+	// tab line, the sub-tab line and the path line all give their rows to the workspace.
+	NavPathHeader
 )
 
 // pathSection is one part of the path line. A section without target is the mode text.
@@ -52,65 +55,72 @@ func (f *frameRun) pathSections(spec FrameSpec) []pathSection {
 	return out
 }
 
-// pathLine is the path line: the sections as "Area ▾ › Tab ▾", the focused one as the focused tab of the tab
-// line. Where the line does not fit, the sections but the last lose their mark, then only the last stands, and
-// its name is cut. Each section with a target is a click target of ZonePath.
-func (f *frameRun) pathLine(spec FrameSpec, width int) (string, []Target) {
-	all := f.pathSections(spec)
+// pathChip is one section of the path as drawn: its text with the mark where it keeps one.
+type pathChip struct {
+	sec  pathSection
+	word string
+}
+
+// pathChips are the chips of one level of shortening: 0 every section marked, 1 only the last marked, 2 the
+// last alone, 3 the last alone with its name cut to room cells, the padding included.
+func (f *frameRun) pathChips(all []pathSection, mode bool, level, room int) []pathChip {
+	arrow := " " + f.styles.Glyph(GlyphExpanded)
+	secs := all
+	if level >= 2 && len(secs) > 1 {
+		secs = secs[len(secs)-1:]
+	}
+	chips := make([]pathChip, len(secs))
+	for i, s := range secs {
+		chips[i] = pathChip{s, s.name}
+		if !mode && (level == 0 || i == len(secs)-1) {
+			chips[i].word += arrow
+		}
+	}
+	if level >= 3 && len(chips) == 1 {
+		c := &chips[0]
+		tail := ""
+		if !mode {
+			tail = arrow
+		}
+		c.word = f.styles.Truncate(c.sec.name, room-2-lipgloss.Width(tail)) + tail
+	}
+	return chips
+}
+
+// pathChipsWidth is the cells chips take: the padding of each, and the separators between.
+func (f *frameRun) pathChipsWidth(chips []pathChip) int {
+	sep := lipgloss.Width(f.styles.Glyph(GlyphPathSeparator))
+	n := 0
+	for i, c := range chips {
+		n += 2 + lipgloss.Width(c.word)
+		if i > 0 {
+			n += sep
+		}
+	}
+	return n
+}
+
+// pathChipsFit are the chips of the first level that fits room cells, the last cut to room where none does.
+func (f *frameRun) pathChipsFit(all []pathSection, mode bool, room int) []pathChip {
+	chips := f.pathChips(all, mode, 0, room)
+	for level := 1; level <= 3 && f.pathChipsWidth(chips) > room; level++ {
+		chips = f.pathChips(all, mode, level, room)
+	}
+	return chips
+}
+
+// drawPathChips draws chips from column x, the focused one as the focused tab of the tab line, and returns
+// the click targets of ZonePath of the sections with a target, clipped at width.
+func (f *frameRun) drawPathChips(spec FrameSpec, chips []pathChip, x, width int) (string, []Target) {
 	focused := spec.Focus == ZonePath
 	sep := f.styles.Glyph(GlyphPathSeparator)
-	arrow := " " + f.styles.Glyph(GlyphExpanded)
-	mode := spec.ModeTab != ""
-	// words are the chip texts of one level: every section, the last alone, or the last cut to room.
-	type chip struct {
-		sec  pathSection
-		word string
-	}
-	build := func(level int) []chip {
-		secs := all
-		if level >= 2 && len(secs) > 1 {
-			secs = secs[len(secs)-1:]
-		}
-		chips := make([]chip, len(secs))
-		for i, s := range secs {
-			chips[i] = chip{s, s.name}
-			if !mode && (level == 0 || i == len(secs)-1) {
-				chips[i].word += arrow
-			}
-		}
-		if level >= 3 && len(chips) == 1 {
-			c := &chips[0]
-			tail := ""
-			if !mode {
-				tail = arrow
-			}
-			c.word = f.styles.Truncate(c.sec.name, width-2-2-lipgloss.Width(tail)) + tail
-		}
-		return chips
-	}
-	size := func(chips []chip) int {
-		n := 2
-		for i, c := range chips {
-			n += 2 + lipgloss.Width(c.word)
-			if i > 0 {
-				n += lipgloss.Width(sep)
-			}
-		}
-		return n
-	}
-	chips := build(0)
-	for level := 1; level <= 3 && size(chips) > width; level++ {
-		chips = build(level)
-	}
 	focus := len(chips) - 1
 	if spec.PathFocusArea {
 		focus = 0
 	}
 	plain := f.styles.profile.Colorless()
 	var b strings.Builder
-	b.WriteString(f.focusMark(focused))
 	var targets []Target
-	x := 2
 	for i, c := range chips {
 		if i > 0 {
 			b.WriteString(f.styles.Render(StyleHint, sep))
@@ -134,4 +144,13 @@ func (f *frameRun) pathLine(spec FrameSpec, width int) (string, []Target) {
 		x += cells
 	}
 	return b.String(), targets
+}
+
+// pathLine is the path line: the sections as "Area ▾ › Tab ▾", the focused one as the focused tab of the tab
+// line. Where the line does not fit, the sections but the last lose their mark, then only the last stands,
+// and its name is cut. Each section with a target is a click target of ZonePath.
+func (f *frameRun) pathLine(spec FrameSpec, width int) (string, []Target) {
+	chips := f.pathChipsFit(f.pathSections(spec), spec.ModeTab != "", width-2)
+	line, targets := f.drawPathChips(spec, chips, 2, width)
+	return f.focusMark(spec.Focus == ZonePath) + line, targets
 }

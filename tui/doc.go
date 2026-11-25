@@ -73,21 +73,30 @@
 // areas as the active tab, whole at every level and no target, and the sub-tab line stays empty so the
 // workspace keeps its height. CheckAreas holds areas to what the tab line can draw. FrameSpec.Icon
 // stands before the product name and Area.Icon before the title of its tab, each as "icon name"; CheckFrame
-// and CheckAreas reject an icon that fails CheckIcon, and the frame draws no icon that fails it. The tab line gives
-// up its icons before it closes any gap, and the digit-only level holds none; no icon is drawn in an ASCII
-// terminal. The application chooses the icon set; the kit knows none. Nerd Font glyphs measure one cell, but
-// a font that draws them wider is the application's risk. FrameSpec.Nav chooses the form of the navigation:
-// NavTabs, the zero value, is the tab line with sub-tabs; NavPathLine replaces both by one line that names the
-// current place as "Area ▾ › Tab ▾", the tab only where the area has more than one, and gives the freed row to
-// the workspace. Each section is a click target of ZonePath that carries the area, and the tab for the last,
-// so the application handles it like a tab click; the focus mark stands at the line and the section named by
-// FrameSpec.PathFocusArea, else the last, is drawn as the focused tab. A line that runs short takes the mark
-// from all sections but the last, then keeps the last section alone and cuts its name; ModeTab stands as the
-// only section, without mark and target. CheckFrame refuses an unknown form and holds the areas of the path
-// line to CheckAreas. A screen reports ZonePath instead of ZoneTabs and ZoneSubtabs. The focus
-// zones have a fixed order that CycleZone walks with wrap-around, as StepArea and StepTab do for the tabs.
-// StepZoneLevel steps vertically between the tab line, the sub-tab line or the path line and the work area,
-// skips a missing line and does not wrap.
+// and CheckAreas reject an icon that fails CheckIcon, and the frame draws no icon that fails it. The tab line
+// gives up its icons before it closes any gap, and the digit-only level holds none; no icon is drawn in an
+// ASCII terminal. The application chooses the icon set; the kit knows none. Nerd Font glyphs measure one
+// cell, but a font that draws them wider is the application's risk. FrameSpec.Nav chooses the form of the
+// navigation: NavTabs, the zero value, is the tab line with sub-tabs; NavPathLine replaces both by one line
+// that names the current place as "Area ▾ › Tab ▾", the tab only where the area has more than one, and gives
+// the freed row to the workspace. Each section is a click target of ZonePath that carries the area, and the
+// tab for the last, so the application handles it like a tab click; the focus mark stands at the line and the
+// section named by FrameSpec.PathFocusArea, else the last, is drawn as the focused tab. A line that runs
+// short takes the mark from all sections but the last, then keeps the last section alone and cuts its name;
+// ModeTab stands as the only section, without mark and target. NavPathHeader draws the same path in the
+// header, after the product name and before the status marks, and no navigation line at all: the workspace
+// takes the rows of the tab line, the sub-tab line and the path line. Its targets, focus and mode tab are
+// those of the path line, the focus drawn as the focused tab without the focus mark. The header fills its
+// room in this order: the name and the marks that always stand, the marks before keys, the widest block at
+// the right, and the normal marks, as before, with the path as the current section alone standing at every
+// width. The rest of the room widens the path to the widest form of the path line that fits with the normal
+// marks in their shortest forms, and the marks take the longest forms that fit beside it. Where the product
+// name and the current section do not fit, the product name gives way down to nothing and the section is cut,
+// keeping its mark. CheckFrame refuses an unknown form and holds the areas of both path forms to CheckAreas.
+// A screen reports ZonePath instead of ZoneTabs and ZoneSubtabs. The focus zones have a fixed order that
+// CycleZone walks with wrap-around, as StepArea and StepTab do for the tabs. StepZoneLevel steps vertically
+// between the tab line, the sub-tab line or the path line and the work area, skips a missing line and does
+// not wrap.
 //
 // Header and footer show hints. Keymap.Hints resolves each hint to the keys of its action that act in the
 // input focus of the screen, so a line never names a key that does nothing, and folds hints whose labels
@@ -140,7 +149,8 @@
 // line: the actions of the list move the rows, and left and right its cursor where no group is left to fold.
 // Enter keeps a typed filter, the first back clears it, and the next one is left to the application. Groups
 // are presentation
-// only: they stand in alphabetical order of their shown title with the group without key last, left, right
+// only: they stand in alphabetical order of their shown title with the group without key last (an outline
+// keeps the order of SetGroups), left, right
 // and enter fold them, a filter opens the groups with hits without changing their fold state, and the
 // position counts entries only, "pos/total" or, with a filter, "pos/shown (N total)". SetGroups gives a group,
 // by the key in ListItem.Group, a title and cells; the row then shows the fold glyph, the box, the category
@@ -177,6 +187,24 @@
 // twice. A click on a button acts as its key does through Act: an action that is no list key comes back with
 // handled false, and the application runs the action of the MouseResult as it runs the key. What enter and
 // back mean, and the state from before the modal opened, are the application's.
+//
+// ListSpec.Search can also be SearchNone, a list without filter and without search key, for a short choice
+// such as a menu, and ListSpec.Outline draws grouped entries as an outline: the groups stand in the order of
+// SetGroups and a group row shows its fold glyph and title only.
+//
+// A PathNav holds the two overlays the path line opens, both a List in a modal with SearchNone and Outline,
+// centred over the screen like any Overlay, the current place marked, names escaped. The overview lists every
+// area of FrameSpec.Areas in order, each with its tabs below it, as a tree: enter or a click on an area with
+// tabs folds it, and on an area without tabs chooses it. The choice lists the tabs of the active area. The
+// application opens one from the state it already holds: OpenClick for the MouseResult of a ZonePath target
+// (the area section opens the overview, a tab section the choice), OpenFocused for enter while the focus is
+// at ZonePath, which follows FrameSpec.PathFocusArea, and OpenOverview for the standard action ActionMenu,
+// which acts only where nothing is typed. While Open is true the application gives PathNav
+// every key and click and the screen behind takes none, as under a Dialog, passing only the targets that
+// Overlay returns. Up, down, page up and down, first and last move, enter or a click on a tab chooses, back
+// closes. Update and Click return a PathChoice, the area and tab, which the application runs exactly as a
+// click on that tab; a PathChoice that is the zero value is no choice. PathNav answers with a PathChoice, so
+// it has the shape of Modal without satisfying the interface.
 //
 // The marked row is drawn as selected only while the rows have the focus, as SetFocused says (a new list has
 // it; the modal always draws the mark), so no second mark shows while the focus lies elsewhere. A click on a
