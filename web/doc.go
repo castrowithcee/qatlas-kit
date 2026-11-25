@@ -19,6 +19,13 @@
 // serves them without a session and is accepted only on loopback. Handlers keep the fixed headers they
 // receive.
 //
+// Static serves the files of an fs.FS such as an embed.FS for GET and HEAD, mounted as a route like
+// "GET /". It reads the files once and answers only for a path that names one of them: no directory
+// listing, no redirect, no path outside the file system and no file or directory whose name starts with a
+// dot. The Content-Type is fixed by extension, application/octet-stream for an unknown one, next to the
+// fixed nosniff header. Each file has an ETag of its content with Cache-Control: no-cache, so a browser
+// revalidates and receives 304 until the content changes. Static files cannot carry the CSP nonce.
+//
 // Error answers with a page that names only the status, also for unknown paths and methods and for every
 // refusal; Redirect sends a browser only to a path on this server. Refusals and server errors go to the
 // log through the Redactor, with request values quoted.
