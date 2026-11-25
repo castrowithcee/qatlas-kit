@@ -107,7 +107,9 @@
 // is typed, so a letter is always text; it edits its text as a text line does and moves the choice with the
 // actions of CommandLineKeys. View draws a panel with an optional icon before each name, in a Unicode
 // terminal only, and the key in force beside it, at most twelve rows that scroll with the choice and one
-// target per row; the application places it over the workspace, or on it where the terminal is too small.
+// target per row. Overlay draws it at the top of the room it may cover, centred across it, over the dimmed
+// screen, with a key line of its own from Hints whose keys a click answers like the keys do; where the room
+// is too small it returns ok false, and the application draws View in the workspace and Hints in the footer.
 //
 // A List shows the entries an application hands it, each with a stable ItemID, its cells and a group key, as
 // a table under dimmed upper-case column titles. The selection follows the ID, never the position, when the

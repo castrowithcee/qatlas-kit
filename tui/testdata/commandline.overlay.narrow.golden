@@ -1,0 +1,20 @@
+Garden  ok                                    
+  1 Plants  2 Beds                            
+  #= Commands =============================#  
+  | : search or run a command…             |  
+  |                                        |  
+  | > go overview    Open Overview       1 |  
+  |   go items       Open Items          2 |  
+  |   go settings    Open Settings       3 |  
+  |   reload         Read the data~ ctrl+r |  
+  |   upgrade        Install the n~      U |  
+  |   export config  Write the con~        |  
+  |   help           Show the help       ? |  
+  |   quit           End the progr~      q |  
+  |                                        |  
+  | enter open or confirm  esc back        |  
+  #========================================#  
+  basil  resting                              
+  basil  resting                              
+  basil  resting                              
+  basil  resting                              
