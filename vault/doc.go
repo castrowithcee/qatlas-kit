@@ -46,6 +46,13 @@
 // the previous state readable: the key file is written after the document, and pending files are removed
 // only after the merged document is written.
 //
+// Writes are serialized within one Vault value. With Files.Lock every write of the document, the key or the
+// recipient also holds an exclusive lock on that file across processes and reads what it changes from disk
+// under the lock, so no write rests on a state read before it. Update then works as compare-and-swap: its
+// UpdateFunc sees the document on disk and returns ErrNoChange to write nothing when the value it expects
+// has moved on. Write and WriteWithUndo replace the whole document and merge nothing. A write of an unlocked
+// value whose files another writer switched to unencrypted or to a new key meanwhile fails with ErrSwitched.
+//
 // A wrong passphrase reports ErrWrongPassphrase, a key file that does not match the recipient file
 // ErrKeyMismatch, and a file that does not decrypt or decode ErrDamaged. A problem with the document, on
 // read or write, is a *DocumentError that names the file and tells Kind (DocumentDecrypt, DocumentDecode or
@@ -70,16 +77,21 @@
 // and refuses with ErrNoTerminal when no standard stream is a terminal, so an agent or a CI job is never
 // asked. ReadHidden does the same for a secret typed while something else may answer first: as soon as
 // ctx ends it gives the terminal its echo back and returns ctx.Err(). ReadConfirm asks a yes-or-no
-// question under the same rule; both show control characters in the prompt as escapes. A Vault holds the key and the decrypted document in memory until Forget; Snapshot
-// hands both to a process that keeps the vault open, and OpenWithIdentity reopens it from the key alone.
+// question under the same rule; both show control characters in the prompt as escapes. A Vault holds the
+// key and the decrypted document in memory until Forget; Snapshot hands both to a process that keeps the
+// vault open, and OpenWithIdentity reopens it from the key alone.
 // ReadSealedWithIdentity reads one sealed file with the key alone and never touches the document, so a
 // damaged document does not stop it. It binds the key to the recipient file and reports ErrAbsent when that
 // file is missing; ReadSealedWithIdentityOptions with AllowMissingRecipient reads the sealed file with the
 // key alone in that case, and then the authenticity of the content is the application's to check.
-// Checkpoint records the vault files and returns a function that restores them without the passphrase,
-// removing every pending entry it did not record, also one another process added. Update and WriteWithUndo
-// instead return the undo of their own change: it puts back the document file and the pending files that
-// operation removed, byte for byte, and leaves every other entry pending.
+// Checkpoint records the vault files and returns a function that restores them without the passphrase;
+// without Files.Lock it removes every pending entry it did not record, also one another process added.
+// Update and WriteWithUndo return the undo of their own change: it puts back the document file and the
+// pending files that operation removed, byte for byte, and leaves every other entry pending. With
+// Files.Lock undo and restore take back only this value's change: they put bytes back only while nobody
+// else wrote the document since, and otherwise hand the change to Options.Revert, which takes it out of the
+// document on disk; without Revert they fail with ErrConflict and write nothing. restore then removes only
+// the pending entries this value added.
 //
 // Decrypt refuses a vault whose document file is missing, because a file that is only temporarily missing
 // would be unreadable once the key is gone. An application that means to turn such a vault into an empty

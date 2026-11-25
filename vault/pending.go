@@ -71,9 +71,11 @@ func (v *Vault) AddPending(payload []byte) (name string, err error) {
 	random := make([]byte, 16)
 	_, _ = rand.Read(random) // crypto/rand.Read never returns an error; it ends the program instead.
 	name = hex.EncodeToString(random) + pendingSuffix
-	if err := v.write(filepath.Join(v.pendingPath(), name), data); err != nil {
+	path := filepath.Join(v.pendingPath(), name)
+	if err := v.write(path, data); err != nil {
 		return "", err
 	}
+	v.noteQueued(path)
 	return name, nil
 }
 
@@ -143,7 +145,7 @@ func (v *Vault) mergePending(id *identity, doc []byte, all bool) ([]byte, int, e
 	}
 	// A file left behind merges again on the next unlock, which a MergeFunc treats as a repeat.
 	for _, name := range done {
-		_ = os.Remove(filepath.Join(v.pendingPath(), name))
+		_ = v.removeEntry(os.Remove, filepath.Join(v.pendingPath(), name))
 	}
 	clear(doc)
 	return merged, len(done), nil
