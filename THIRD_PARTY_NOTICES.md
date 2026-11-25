@@ -154,6 +154,7 @@ Components derived from `qatlas-cli`, `qatlas-connect` and `qatlas-sysmin` retai
 | `qatlas-connect/internal/vault/replace.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Write lock across processes taken once at the outermost call (`vault/lock.go`) |
 | `qatlas-connect/internal/vault/write.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Writes on the document read under the lock, undo of one write that keeps another writer's change (`vault/lock.go`, `vault/update.go`, `vault/undo.go`) |
 | `qatlas-connect/internal/vault/checkpoint.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Checkpoint journal of this value's writes and queued entries, removal of a directory holding only the lock file (`vault/journal.go`, `vault/checkpoint.go`) |
+| `qatlas-connect/internal/vault/fileio.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Retry of transient file failures on stat, read and replace (`vault/retry.go`) |
 | `qatlas-connect/internal/vault/concurrent_test.go`, `replace_test.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Concurrent write, undo and restore tests (`vault/lock_test.go`, `vault/revert_test.go`) |
 | `qatlas-cli/internal/vault/approval.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Labelled SHA-256 fingerprint over canonical JSON, approval record with state and time (`approval/fingerprint.go`, `approval/store.go`) |
 | `qatlas-cli/internal/approval/approval.go` | Copyright 2026 castrowithcee | AGPL-3.0 | Open changes between approved and current state (`approval/store.go`, `approval/diff.go`) |

@@ -138,6 +138,11 @@ type Options struct {
 	// WorkFactor is the scrypt work factor of a newly wrapped key. Zero is DefaultWorkFactor. Values below
 	// it are accepted only in test binaries, values above MaxWorkFactor never.
 	WorkFactor int
+	// RetryFiles repeats a file operation that fails because another process holds the file for a moment,
+	// such as a sharing violation on Windows, with fileretry.DefaultDelays. It covers stat, read, listing
+	// the pending directory, replace and remove, never the lock file or a missing file. Without it every
+	// such failure is returned at once.
+	RetryFiles bool
 }
 
 // Status describes a vault without any secret.
