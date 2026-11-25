@@ -106,6 +106,7 @@ type Server struct {
 	sessions  Sessions
 	login     Login
 	url       string
+	streams   context.Context
 
 	network bool
 	tls     bool
@@ -179,6 +180,10 @@ func Listen(opts Options) (*Server, error) {
 		MaxHeaderBytes:    s.limits.maxHeaderBytes,
 		ErrorLog:          s.log,
 	}
+	// Shutdown would otherwise wait for open event streams until its deadline.
+	var stopStreams context.CancelFunc
+	s.streams, stopStreams = context.WithCancel(context.Background())
+	s.server.RegisterOnShutdown(stopStreams)
 	if s.tls {
 		cfg := opts.Network.TLS.Clone()
 		cfg.MinVersion = max(cfg.MinVersion, tls.VersionTLS12)
@@ -325,6 +330,7 @@ func (s *Server) Serve(ctx context.Context) error {
 
 func (s *Server) serve(w http.ResponseWriter, r *http.Request) {
 	r = fixedHeaders(w, r)
+	r = r.WithContext(context.WithValue(r.Context(), serverKey{}, s))
 	r, ok := s.forwarded(w, r)
 	if !ok {
 		return
