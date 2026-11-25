@@ -74,6 +74,8 @@
 // terminal. The application chooses the icon set; the kit knows none. Nerd Font glyphs measure one cell, but
 // a font that draws them wider is the application's risk. The focus
 // zones have a fixed order that CycleZone walks with wrap-around, as StepArea and StepTab do for the tabs.
+// StepZoneLevel steps vertically between the tab line, the sub-tab line and the work area, skips a missing
+// line and does not wrap.
 //
 // Header and footer show hints. Keymap.Hints resolves each hint to the keys of its action that act in the
 // input focus of the screen, so a line never names a key that does nothing, and folds hints whose labels
