@@ -13,5 +13,6 @@
 //
 // Save refuses a value that is not valid and writes nothing then. It writes through the configfile
 // package: atomically under a lock file beside the target, with a backup of the replaced bytes, through a
-// symlink to its target and private to the user for a new file. The last writer wins.
+// symlink to its target and private to the user for a new file. The last writer wins. Validate is the check
+// of Save on its own, for preferences taken from flags or held only in memory.
 package uiprefs

@@ -416,3 +416,50 @@ func TestInvalidEditorFallsBackAndIsRefused(t *testing.T) {
 		}
 	}
 }
+
+func TestValidateNamesEveryInvalidValue(t *testing.T) {
+	s := testSchema(t)
+	if err := Validate(Default(s), s); err != nil {
+		t.Fatalf("Validate(defaults) = %v", err)
+	}
+	for name, tc := range map[string]struct {
+		change func(*Prefs)
+		want   string
+	}{
+		"theme":     {func(p *Prefs) { p.Theme = "neon" }, "theme"},
+		"start":     {func(p *Prefs) { p.Start = "gone" }, "start"},
+		"icons":     {func(p *Prefs) { p.Icons = "emoji" }, "icons"},
+		"language":  {func(p *Prefs) { p.Language = "fr" }, "language"},
+		"editor":    {func(p *Prefs) { p.Editor = "ed\x1b[0m" }, "editor"},
+		"collision": {func(p *Prefs) { p.Keys = map[tui.ActionID]string{"save": "f3", "info": "f3"} }, "keys."},
+	} {
+		p := Default(s)
+		tc.change(&p)
+		if err := Validate(p, s); err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("%s: Validate = %v; want an error naming %q", name, err, tc.want)
+		}
+	}
+	noKeys := s
+	noKeys.Keys = nil
+	p := Default(s)
+	p.Keys = map[tui.ActionID]string{"save": "f4"}
+	if err := Validate(p, noKeys); err == nil || !strings.Contains(err.Error(), "keys") {
+		t.Errorf("keys without a key table: Validate = %v", err)
+	}
+	p = Default(s)
+	p.Theme, p.Icons = "neon", "emoji"
+	if err := Validate(p, s); err == nil || !strings.Contains(err.Error(), "theme") || !strings.Contains(err.Error(), "icons") {
+		t.Errorf("Validate = %v; want both errors bundled", err)
+	}
+}
+
+func TestValidateReportsOnlyAnInvalidSchema(t *testing.T) {
+	s := testSchema(t)
+	s.DefaultArea = "gone"
+	p := Default(testSchema(t))
+	p.Theme = "neon"
+	err := Validate(p, s)
+	if err == nil || !strings.Contains(err.Error(), "schema") || strings.Contains(err.Error(), "theme \"neon\"") {
+		t.Errorf("Validate = %v; want only the schema error", err)
+	}
+}

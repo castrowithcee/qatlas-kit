@@ -126,6 +126,7 @@ func TestNewDialogRejectsWhatCannotWork(t *testing.T) {
 			s.Details = []DialogLine{{Text: "x", Style: StyleFail}}
 			return s
 		}, "is red"},
+		{"notice without heading", func() DialogSpec { s := noticeSpec(); s.Question = " "; return s }, "needs a heading"},
 		{"notice without detail", func() DialogSpec { s := noticeSpec(); s.Details = nil; return s }, "needs a detail line"},
 		{"notice with danger", func() DialogSpec { s := noticeSpec(); s.Danger = "yes"; return s }, "no danger"},
 		{"notice with input", func() DialogSpec { s := noticeSpec(); s.Input = &DialogInput{}; return s }, "no input"},
