@@ -46,7 +46,7 @@ func (v *Vault) ReadSealed(name string) ([]byte, error) {
 		return nil, ErrLocked
 	}
 	path := v.path(name)
-	data, err := readFile(path)
+	data, err := v.readFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("cannot read %s: %w", path, err)
 	}

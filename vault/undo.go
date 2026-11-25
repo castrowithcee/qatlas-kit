@@ -14,8 +14,8 @@ type savedFile struct {
 }
 
 // saveFile records path for an undo. It refuses a file others can reach, like every read.
-func saveFile(path string) (savedFile, error) {
-	data, err := readFile(path)
+func (v *Vault) saveFile(path string) (savedFile, error) {
+	data, err := v.readFile(path)
 	switch {
 	case err == nil:
 		return savedFile{path: path, data: data, exists: true}, nil
@@ -53,7 +53,7 @@ func (v *Vault) undo(files []savedFile, wrote savedFile, document bool) func() e
 		}
 		defer release()
 		if v.locking() {
-			current, err := saveFile(files[0].path)
+			current, err := v.saveFile(files[0].path)
 			if err != nil {
 				return err
 			}

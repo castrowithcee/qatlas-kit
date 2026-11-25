@@ -65,7 +65,7 @@ func (v *Vault) putDocument(f savedFile) error {
 	var found savedFile
 	if len(live) > 0 {
 		var err error
-		if found, err = saveFile(f.path); err != nil {
+		if found, err = v.saveFile(f.path); err != nil {
 			return err
 		}
 	}
@@ -73,7 +73,7 @@ func (v *Vault) putDocument(f savedFile) error {
 	if f.exists {
 		err = v.write(f.path, f.data)
 	} else {
-		err = removeAll(f.path)
+		err = v.removeAll(f.path)
 	}
 	if err != nil {
 		return err
@@ -101,7 +101,7 @@ func (v *Vault) removeEntry(remove func(string) error, path string) error {
 	var data []byte
 	if len(live) > 0 {
 		var err error
-		if data, err = readFile(path); err != nil && !isNotExist(err) {
+		if data, err = v.readFile(path); err != nil && !isNotExist(err) {
 			return err
 		}
 	}

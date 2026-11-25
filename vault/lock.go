@@ -46,18 +46,18 @@ func (v *Vault) lockWrites(create bool) (release func(), err error) {
 // caller holds the write lock.
 func (v *Vault) checkHeld() error {
 	if v.opts.Files.Plain != "" {
-		if exists, err := fileExists(v.plainPath()); err != nil {
+		if exists, err := v.fileExists(v.plainPath()); err != nil {
 			return err
 		} else if exists {
 			return ErrSwitched
 		}
 	}
-	if exists, err := fileExists(v.keyPath()); err != nil {
+	if exists, err := v.fileExists(v.keyPath()); err != nil {
 		return err
 	} else if !exists {
 		return ErrSwitched
 	}
-	text, err := readFile(v.recipientPath())
+	text, err := v.readFile(v.recipientPath())
 	if err != nil {
 		if isNotExist(err) {
 			return ErrSwitched
