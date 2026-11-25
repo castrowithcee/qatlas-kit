@@ -30,7 +30,7 @@ func sampleActions() []Action {
 		act("delete", LevelLetter, "d"),
 		act("new", LevelLetter, "n"),
 		act("quit", LevelLetter, "q"),
-		act("upgrade", LevelLetter, "U"),
+		act("update", LevelLetter, "U"),
 		act("reload", LevelCtrl, "ctrl+r"),
 		act("remove", LevelCtrl, "f8"),
 		second(act("suggest.prev", LevelCtrl, "ctrl+p"), "up"),
@@ -105,7 +105,7 @@ func TestSampleKeyNamesAreTheReportedOnes(t *testing.T) {
 func TestLabelsSpellTheKeysInForce(t *testing.T) {
 	k := sampleKeymap(t, CharsetUnicode)
 	for id, want := range map[ActionID]string{"save": "F2", "lock": "ctrl+l", "area": "1-6", "up": "↑", "info": "i",
-		"remove": "F8", "upgrade": "U", "toggle": "space"} {
+		"remove": "F8", "update": "U", "toggle": "space"} {
 		if got := k.Label(id); got != want {
 			t.Errorf("Label(%s) = %q, want %q", id, got, want)
 		}
@@ -239,7 +239,7 @@ func TestCheckBindingRejectsWithReason(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := other.CheckBinding("help", "/", nil); err == nil || !strings.Contains(err.Error(), "/ searches") {
+	if _, err := other.CheckBinding("help", "/", nil); err == nil || !strings.Contains(err.Error(), "reserved for the standard action search") {
 		t.Errorf("/ without a search action: %v", err)
 	}
 }
@@ -255,12 +255,9 @@ func TestCheckBindingAccepts(t *testing.T) {
 	if got, _ := k.CheckBinding("info", " F3 ", nil); got != "f3" {
 		t.Errorf("normalised = %q, want f3", got)
 	}
-	// The other rows of a form decide: the key of command is free once command holds another one.
-	if _, err := k.CheckBinding("help", ":", map[ActionID]string{"command": "ctrl+x"}); err != nil {
-		t.Errorf(": after command moved away: %v", err)
-	}
-	if _, err := k.CheckBinding("help", ":", nil); err == nil {
-		t.Error(": is accepted while command holds it")
+	// A reserved key stays with its standard action, also after that action moved away.
+	if _, err := k.CheckBinding("help", ":", map[ActionID]string{"command": "ctrl+x"}); err == nil {
+		t.Error(": is accepted after command moved away")
 	}
 	if _, err := k.CheckBinding("save", "ctrl+x", map[ActionID]string{"help": "ctrl+x"}); err == nil {
 		t.Error("ctrl+x is accepted while help holds it")
@@ -421,7 +418,6 @@ func TestResolveKeepsWhatIsValid(t *testing.T) {
 		want    map[ActionID]string
 		dropped []ActionID
 	}{
-		{"swap", map[ActionID]string{"save": "ctrl+l", "lock": "ctrl+x"}, map[ActionID]string{"save": "ctrl+l", "lock": "ctrl+x"}, nil},
 		{"collision drops both", map[ActionID]string{"save": "f3", "help": "f3", "info": "f5", "lock": "x"}, nil,
 			[]ActionID{"save", "help", "info", "lock"}},
 		{"cascade", map[ActionID]string{"save": "f3", "info": "f3", "lock": "f2"}, nil, []ActionID{"save", "info", "lock"}},
@@ -447,6 +443,20 @@ func TestResolveKeepsWhatIsValid(t *testing.T) {
 		if err := sampleKeymap(t, CharsetUnicode).Bind(got); err != nil {
 			t.Errorf("%s: the usable part does not bind: %v", c.name, err)
 		}
+	}
+}
+
+func TestResolveKeepsASwap(t *testing.T) {
+	zoom := func(id ActionID, key string) Action {
+		return Action{ID: id, Level: LevelCtrl, DefaultKeys: []string{key}, Help: "sample.zoom", Rebind: RebindReplace}
+	}
+	k, err := NewKeymap(append(sampleActions(), zoom("zoom.in", "f3"), zoom("zoom.out", "f4")), CharsetUnicode)
+	if err != nil {
+		t.Fatal(err)
+	}
+	in := map[ActionID]string{"zoom.in": "f4", "zoom.out": "f3"}
+	if got, errs := k.Resolve(in); !maps.Equal(got, in) || len(errs) != 0 {
+		t.Errorf("swap: usable = %v, errors %v, want %v", got, errs, in)
 	}
 }
 

@@ -43,7 +43,7 @@ func TestEveryIconSetPassesTheFrameChecks(t *testing.T) {
 
 func TestEveryKeyOfTheSwitchesActs(t *testing.T) {
 	m := testModel(t, uiprefs.IconsUnicode)
-	for _, key := range []string{"t", "l", "i", "m"} {
+	for _, key := range []string{"t", "l", "I", "M"} {
 		m.Update(tea.KeyPressMsg{Code: rune(key[0]), Text: key})
 	}
 	p := m.prefs
@@ -66,6 +66,46 @@ func TestSwitchesStepThroughEveryValueAndWrap(t *testing.T) {
 	}
 	if m.prefs.Theme != tui.ThemeTerminal {
 		t.Fatalf("theme %q after a full round of %d, want the first", m.prefs.Theme, len(names))
+	}
+}
+
+func TestThemeStepsBackByKeyAndWrapsAtBothEnds(t *testing.T) {
+	m := testModel(t, uiprefs.IconsUnicode)
+	names := m.themes.Names()
+	m.Update(tea.KeyPressMsg{Code: 'T', Text: "T", Mod: tea.ModShift})
+	if m.prefs.Theme != names[len(names)-1] {
+		t.Fatalf("theme %q after T from the first, want the last %q", m.prefs.Theme, names[len(names)-1])
+	}
+	m.Update(tea.KeyPressMsg{Code: 't', Text: "t"})
+	if m.prefs.Theme != names[0] {
+		t.Fatalf("theme %q after t from the last, want the first", m.prefs.Theme)
+	}
+	m.run(actThemeBack, "")
+	m.run(actThemeBack, "")
+	if m.prefs.Theme != names[len(names)-2] {
+		t.Fatalf("theme %q after two steps back", m.prefs.Theme)
+	}
+}
+
+func TestThemeStepsBackByClickAndCommand(t *testing.T) {
+	m := testModel(t, uiprefs.IconsUnicode)
+	m.openArea("settings")
+	m.refresh()
+	for _, action := range []tui.ActionID{actTheme, actThemeBack} {
+		if !clickable(m, action) {
+			t.Errorf("no click target runs %s", action)
+		}
+	}
+	names := m.themes.Names()
+	if !clickWhere(m, func(r tui.MouseResult) bool { return r.Action == actThemeBack }) {
+		t.Fatal("no click target runs back")
+	}
+	if m.prefs.Theme != names[len(names)-1] {
+		t.Fatalf("theme %q after a click on back, want %q", m.prefs.Theme, names[len(names)-1])
+	}
+	m.run(actThemeBack, "")
+	if i := slices.IndexFunc(commands(m.groups, m.text), func(c tui.Command) bool { return c.Action == actThemeBack }); i < 0 {
+		t.Fatal("no command steps the theme back")
 	}
 }
 
@@ -143,6 +183,31 @@ func TestArgumentsAreChecked(t *testing.T) {
 	}
 }
 
+func TestFlagValuesAreChecked(t *testing.T) {
+	for _, args := range [][]string{{"-theme", "nope"}, {"-language", "fr"}, {"-icons", "emoji"}} {
+		err := run(args, io.Discard, nil)
+		var usage usageError
+		if !errors.As(err, &usage) || !strings.Contains(err.Error(), args[1]) {
+			t.Errorf("%v: error %v, want a usage error naming the value", args, err)
+		}
+	}
+	for _, args := range []string{"-theme demo-light", "-language system", "-language deutsch", "-icons none"} {
+		prefs := uiprefs.Default(uiprefs.Schema{DefaultArea: "overview"})
+		f := strings.Fields(args)
+		switch f[0] {
+		case "-theme":
+			prefs.Theme = f[1]
+		case "-language":
+			prefs.Language = f[1]
+		case "-icons":
+			prefs.Icons = f[1]
+		}
+		if _, err := newModel(prefs, tui.ProfileNone, tui.CharsetUnicode); err != nil {
+			t.Errorf("%s: %v", args, err)
+		}
+	}
+}
+
 func modalOpeners() map[string]func(*model) {
 	return map[string]func(*model){
 		"question": (*model).openQuestion, "input": (*model).openInput, "notice": (*model).openNotice,
@@ -183,7 +248,7 @@ func TestKeysStayInThePartOverTheScreen(t *testing.T) {
 		m := testModel(t, uiprefs.IconsNone)
 		open(m)
 		before := m.prefs
-		for _, key := range []string{"t", "l", "i", "m", "2", "q"} {
+		for _, key := range []string{"t", "l", "I", "M", "+", "2", "q"} {
 			if cmd := m.handle(tea.KeyPressMsg{Code: rune(key[0]), Text: key}); cmd != nil && key == "q" && name != "input" {
 				t.Errorf("%s: q quit the program", name)
 			}
@@ -209,18 +274,70 @@ func TestBackClosesEveryPartAndCtrlCQuits(t *testing.T) {
 	}
 }
 
-func TestCommandLineTakesNoBackgroundClick(t *testing.T) {
+func TestCommandLineStandsOverTheScreenAndTakesOnlyItsOwnClicks(t *testing.T) {
 	m := testModel(t, uiprefs.IconsNone)
 	m.run(actCommands, "")
 	m.refresh()
-	for x := range m.width {
-		if res := m.mouse.Handle(tea.MouseClickMsg{X: x, Y: 1, Button: tea.MouseLeft}); res.Handled {
-			t.Fatalf("a click on the tab line at %d acted: %+v", x, res)
+	if !strings.Contains(m.view, "go overview") || !strings.Contains(m.view, "Kit workbench") {
+		t.Fatalf("the line does not stand over the screen:\n%s", m.view)
+	}
+	for y := range m.height {
+		for x := range m.width {
+			res := m.mouse.Handle(tea.MouseClickMsg{X: x, Y: y, Button: tea.MouseLeft})
+			if res.Area != "" && res.Zone != tui.ZoneRows || res.Handled && res.Zone != tui.ZoneRows && slices.Contains([]tui.ActionID{actTheme, actCommands, actHelp, actQuit}, res.Action) {
+				t.Fatalf("a click at %d,%d reaches the screen behind: %+v", x, y, res)
+			}
 		}
 	}
-	m.handle(tea.KeyPressMsg{Code: tea.KeyEscape})
-	if m.cmdOpen {
-		t.Fatal("esc did not close the command line")
+}
+
+// clickWhere clicks the first cell that carries action and reports whether there was one.
+func clickWhere(m *model, match func(tui.MouseResult) bool) bool {
+	for y := range m.height {
+		for x := range m.width {
+			if match(m.mouse.Handle(tea.MouseClickMsg{X: x, Y: y, Button: tea.MouseLeft})) {
+				m.handle(tea.MouseClickMsg{X: x, Y: y, Button: tea.MouseLeft})
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func TestCommandLineClicksRunAMatchAndCloseOnBack(t *testing.T) {
+	for _, size := range [][2]int{{100, 30}, {minWidth, minHeight}} {
+		m := testModel(t, uiprefs.IconsNone)
+		m.Update(tea.WindowSizeMsg{Width: size[0], Height: size[1]})
+		m.run(actCommands, "")
+		m.refresh()
+		if !clickWhere(m, func(r tui.MouseResult) bool { return r.Zone == tui.ZoneRows && r.Action == actTheme }) && size[0] == 100 {
+			t.Fatal("no match to click at 100 by 30")
+		}
+		if size[0] == 100 && (m.cmdOpen || m.prefs.Theme == tui.ThemeTerminal) {
+			t.Fatalf("a click on a match did not run it: open %v, theme %q", m.cmdOpen, m.prefs.Theme)
+		}
+		m.run(actCommands, "")
+		m.refresh()
+		if !clickWhere(m, func(r tui.MouseResult) bool { return r.Action == actBack }) {
+			t.Fatalf("%v: no close key to click", size)
+		}
+		if m.cmdOpen {
+			t.Fatalf("%v: a click on the close key left the line open", size)
+		}
+	}
+}
+
+func TestCommandLineFillsTheWorkspaceInASmallTerminal(t *testing.T) {
+	m := testModel(t, uiprefs.IconsNone)
+	m.Update(tea.WindowSizeMsg{Width: minWidth, Height: minHeight})
+	m.run(actCommands, "")
+	m.refresh()
+	lines := strings.Split(m.view, "\n")
+	if len(lines) != minHeight || !strings.Contains(m.view, "go overview") {
+		t.Fatalf("%d lines:\n%s", len(lines), m.view)
+	}
+	if strings.Contains(lines[len(lines)-1], "╚") || !strings.Contains(strings.Join(lines[len(lines)-2:], "\n"), "esc") {
+		t.Errorf("the keys are not in the footer:\n%s", m.view)
 	}
 }
 

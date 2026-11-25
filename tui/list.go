@@ -259,7 +259,7 @@ func NewList(spec ListSpec, keys *Keymap, text Translator) (*List, error) {
 		if n.id == "" && n.name == "search" && spec.Search != SearchByKey {
 			continue
 		}
-		if _, ok := keys.index[n.id]; !ok {
+		if !keys.known(n.id) {
 			errs = append(errs, fmt.Errorf("list key %s %q is no action of the key table", n.name, n.id))
 		}
 		if other, dup := used[n.id]; dup && n.id != "" {

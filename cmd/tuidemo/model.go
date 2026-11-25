@@ -46,7 +46,7 @@ type model struct {
 
 	// The part standing over the screen, if any: a dialog, the help or an explanation. dialog and explanation
 	// hold the same part as modal where it is one of them, for what only they offer.
-	modal       modal
+	modal       tui.Modal
 	kind        modalKind
 	focus       tui.InputFocus
 	dialog      *tui.Dialog
@@ -63,8 +63,9 @@ type model struct {
 func newModel(prefs uiprefs.Prefs, profile tui.ColorProfile, charset tui.CharsetMode) (*model, error) {
 	gs := groups()
 	areas := make([]tui.Area, len(gs))
+	ids := make([]string, len(gs))
 	for i, g := range gs {
-		areas[i] = g.area
+		areas[i], ids[i] = g.area, string(g.area.ID)
 	}
 	if err := tui.CheckAreas(areas); err != nil {
 		return nil, err
@@ -72,6 +73,9 @@ func newModel(prefs uiprefs.Prefs, profile tui.ColorProfile, charset tui.Charset
 	themes, err := tui.NewThemeSet([]tui.Theme{tui.DarkTheme("demo-dark"), tui.LightTheme("demo-light")})
 	if err != nil {
 		return nil, err
+	}
+	if err := uiprefs.Validate(prefs, uiprefs.Schema{Themes: themes.Names(), Areas: ids, DefaultArea: ids[0]}); err != nil {
+		return nil, usageError{err}
 	}
 	keys, err := tui.NewKeymap(keyTable(len(gs)), charset)
 	if err != nil {
@@ -218,7 +222,7 @@ func hitName(res tui.MouseResult) string {
 // run does one action; key is the key that triggered it, empty for a click.
 func (m *model) run(action tui.ActionID, key string) tea.Cmd {
 	switch action {
-	case actQuit:
+	case actQuit, actForceQuit:
 		return tea.Quit
 	case actArea:
 		if n, err := strconv.Atoi(key); err == nil && n >= 1 && n <= len(m.groups) {
@@ -233,10 +237,9 @@ func (m *model) run(action tui.ActionID, key string) tea.Cmd {
 	case actZonePrev:
 		m.zone = tui.CycleZone(m.zones(), m.zone, -1)
 	case actTheme:
-		names := m.themes.Names()
-		m.prefs.Theme = names[(slices.Index(names, m.prefs.Theme)+1)%len(names)]
-		m.restyle()
-		m.changed(tui.TextSettingTheme, m.prefs.Theme)
+		m.stepTheme(1)
+	case actThemeBack:
+		m.stepTheme(-1)
 	case actLanguage:
 		if m.prefs.Language == uiprefs.LanguageGerman {
 			m.prefs.Language = uiprefs.LanguageEnglish
@@ -271,6 +274,13 @@ func (m *model) run(action tui.ActionID, key string) tea.Cmd {
 		m.openNotice()
 	}
 	return nil
+}
+
+// stepTheme switches the theme by one place, with wrap-around at both ends.
+func (m *model) stepTheme(by int) {
+	m.prefs.Theme = m.themes.Step(m.prefs.Theme, by)
+	m.restyle()
+	m.changed(tui.TextSettingTheme, m.prefs.Theme)
 }
 
 func (m *model) changed(label tui.TextID, value string) {

@@ -18,16 +18,26 @@
 //
 // Keys come from one key table per TUI. NewKeymap takes the application's actions, each with a level,
 // default keys, a help text and whether a user may replace its key or add an extra one, and rejects a table
-// that would give one key two meanings: within the main levels, a key belongs to one action on every
-// screen, and only the overlay levels of a question's answers and of the help may repeat one. It also
-// rejects a key that terminals, multiplexers or text lines take for themselves, unless the action is the
-// second way of another. Screens ask the Keymap for an action, never for a key name; Match lets the overlay
+// that would give one key two meanings: within the main levels, a key belongs to one action everywhere,
+// except that an action tied to a page (Action.Page) may share it with an action of another page, never
+// with one of its own page or one without a page; only the overlay levels of a question's answers and of
+// the help may repeat one. Keymap.Page returns the view of one page, which Match, Is, Label, Hints and
+// every part that takes a Keymap read, so a footer and the help show the actions of the active page and
+// those without a page; the application decides which page is active. NewKeymap also rejects a key that
+// terminals, multiplexers or text lines take for themselves, unless the action is the second way of
+// another. Screens ask the Keymap for an action, never for a key name; Match lets the overlay
 // levels a screen names win over the main levels. The input focus decides what reaches the table: where
 // text is typed, every key that types a character is text, and that is the zero value; while a key is
 // captured as a new binding only ctrl+c and esc act; in an embedded terminal no key does. Bind applies the
 // user's keys as a whole or not at all, and CheckBinding and Resolve apply the same rules of a binding and
 // name the reason of every refusal. A Keymap satisfies KeyLabels, so labels and the key placeholders of
 // every text follow a binding at once; Keys and KeyNameLabel give a tool the keys in force and their labels.
+//
+// StandardActions returns the actions every tool shares, each with a level, one default key and a help text
+// in the catalog; an application adds them to its table with one append. Their keys are reserved: NewKeymap
+// rejects any other action of the main levels that holds one, whether or not the standard action is in the
+// table, and Resolve and CheckBinding refuse a user's key that belongs to another standard action. The
+// overlay levels may repeat them, and ctrl+s stays free as the second way of the save action.
 //
 // A one-line text field, the input of a Dialog, the text, masked and date fields of a Form, the search of a
 // LogView, the filter of a List and the input of a CommandLine edits with fixed keys that no action may hold:

@@ -93,7 +93,7 @@ func NewCommandLine(spec CommandLineSpec, keys *Keymap, text Translator) (*Comma
 	commands, nav := spec.Commands, spec.Keys
 	var errs []error
 	for _, id := range []ActionID{nav.Up, nav.Down, nav.Next, nav.Prev, nav.Enter, nav.Back} {
-		if _, ok := keys.index[id]; !ok {
+		if !keys.known(id) {
 			errs = append(errs, fmt.Errorf("command line key %q is no action of the key table", id))
 		}
 	}
@@ -148,7 +148,7 @@ func NewCommandLine(spec CommandLineSpec, keys *Keymap, text Translator) (*Comma
 		}
 		if c.Key != 0 {
 			i, ok := keys.index[c.Action]
-			if !ok || c.Key < 0 || c.Key > len(keys.actions[i].DefaultKeys) {
+			if !ok || !keys.visible(i) || c.Key < 0 || c.Key > len(keys.actions[i].DefaultKeys) {
 				fail("key %d is no key of action %q", c.Key, c.Action)
 			}
 		}
@@ -425,6 +425,9 @@ func (c *CommandLine) inputLine(styles Styles, width int) string {
 func (c *CommandLine) keyLabel(cmd Command) string {
 	if cmd.Key == 0 {
 		return Escape(c.keys.Label(cmd.Action))
+	}
+	if !c.keys.known(cmd.Action) {
+		return ""
 	}
 	// A replaced key takes the place of the single default key, and an extra key goes after the defaults, so
 	// the position of a default key holds under every binding.

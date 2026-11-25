@@ -152,13 +152,15 @@ func TestMouseProbeCountsClicks(t *testing.T) {
 	act(t, term, "2", tabsBody)
 	clickOn(t, term, "Mouse", probeBody)
 	clickOn(t, term, "[ Count ]", "Count: 1")
-	act(t, term, "c", "Count: 2")
+	act(t, term, "+", "Count: 2")
 }
 
 func TestThemeSwitchByKeyAndByClick(t *testing.T) {
 	term := startDemo(t, "-icons none")
 	act(t, term, "t", "theme: demo-dark")
 	clickOn(t, term, "switch theme", "theme: demo-light")
+	act(t, term, "T", "theme: demo-dark")
+	clickOn(t, term, "switch theme back", "theme: terminal")
 }
 
 func TestLanguageSwitchByKeyAndByClick(t *testing.T) {
@@ -173,12 +175,12 @@ func TestLanguageSwitchByKeyAndByClick(t *testing.T) {
 func TestIconsAndMouseSwitch(t *testing.T) {
 	term := startDemo(t, "")
 	act(t, term, "3", "[ unicode ]")
-	act(t, term, "i", "[ nerdfont ]")
+	act(t, term, "I", "[ nerdfont ]")
 	clickOn(t, term, "[ nerdfont ]", "[ none ]")
 	act(t, term, "\t", "[Look]")
 	act(t, term, "\x1b[C", "Language and mouse change at once")
-	act(t, term, "m", "[ off ]")
-	act(t, term, "m", "[ on ]")
+	act(t, term, "M", "[ off ]")
+	act(t, term, "M", "[ on ]")
 }
 
 func TestSettingsRowsSwitchByClick(t *testing.T) {
@@ -274,11 +276,11 @@ func TestHelpClosesByClickOnItsKeyLine(t *testing.T) {
 
 func TestExplanationOpensCopiesAndCloses(t *testing.T) {
 	term := startDemo(t, "-icons none")
-	act(t, term, "e", "Raised bed:")
+	act(t, term, "i", "Raised bed:")
 	act(t, term, "c", "Handed to the terminal for the clipboard")
-	send(t, term, "e")
+	send(t, term, "i")
 	gone(t, term, "Raised bed:")
-	clickOn(t, term, "[e] info", "Raised bed:")
+	clickOn(t, term, "[i] info", "Raised bed:")
 	clickOnly(t, term, "invented journal")
 	gone(t, term, "Raised bed:")
 }
@@ -286,6 +288,11 @@ func TestExplanationOpensCopiesAndCloses(t *testing.T) {
 func TestCommandLineRunsByKeyAndByClick(t *testing.T) {
 	term := startDemo(t, "-icons none")
 	act(t, term, ":", "go overview")
+	// The line stands over the dimmed screen: the text of the screen shows beside its frame.
+	row := screenRow(term, "go overview")
+	if before, _, _ := strings.Cut(row, "║"); strings.TrimSpace(before) == "" {
+		t.Errorf("the command line does not stand over the screen: %q", row)
+	}
 	act(t, term, "theme", "Open the tab") // typing filters; the theme command stays
 	act(t, term, "\r", "theme: demo-dark")
 	gone(t, term, "search or run a command")
@@ -296,6 +303,16 @@ func TestCommandLineRunsByKeyAndByClick(t *testing.T) {
 	act(t, term, "\x1b", "[2 Frame]")
 	gone(t, term, "search or run a command")
 	clickOn(t, term, "[:] commands", "go overview")
-	clickOnly(t, term, "close")
+	clickOnly(t, term, "esc back")
 	gone(t, term, "search or run a command")
+}
+
+// screenRow returns the line of the screen that holds text.
+func screenRow(term *ptytest.Terminal, text string) string {
+	for _, line := range screen(term.Output(), 100, 30) {
+		if strings.Contains(line, text) {
+			return line
+		}
+	}
+	return ""
 }

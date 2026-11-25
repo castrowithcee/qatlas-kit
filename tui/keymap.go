@@ -12,9 +12,10 @@ import (
 // KeyLevel is the set of actions that can be pressed in the same place.
 type KeyLevel string
 
-// The levels of a key table. The main levels share one key space: a key means one thing on every screen.
-// LevelConfirm and LevelHelp are overlays whose keys may repeat a key of the main levels, because a
-// question or the help overlay shows what they mean.
+// The levels of a key table. The main levels share one key space: a key means one thing everywhere, except
+// that an action tied to a page (Action.Page) may share it with an action of another page. LevelConfirm
+// and LevelHelp are overlays whose keys may repeat a key of the main levels, because a question or the help
+// overlay shows what they mean.
 const (
 	LevelGlobal  KeyLevel = "global"
 	LevelLetter  KeyLevel = "letter"
@@ -76,28 +77,56 @@ type Action struct {
 	// SecondWayOf names the action that does the same with keys no terminal or multiplexer takes. Only
 	// such a second way may hold a key that terminals, multiplexers or text lines take for themselves.
 	SecondWayOf ActionID
+	// Page ties the action to one page of the application, a name the application chooses; empty means no
+	// page. Two actions may share a key if both have a page and the pages differ.
+	Page string
 }
 
 // Keymap is the key table of one TUI: every action with its level, keys and help, and the keys bound
 // now. Screens ask for an action, never for a key name. Bind changes the keys in force; it must not run
-// concurrently with another method of the same Keymap.
+// concurrently with another method of the same Keymap. A Keymap from NewKeymap sees only the actions
+// without a page; Page returns the view of one page.
 type Keymap struct {
+	*keyState
+	page string
+}
+
+// keyState is the state a Keymap and its page views share.
+type keyState struct {
 	actions []Action
 	index   map[ActionID]int
 	bound   [][]string
 	charset CharsetMode
 }
 
+// Page returns a view of the same table for page: Match, Is, Label, KeyLabel, Labels, Hints and every
+// component that takes a *Keymap see the actions without a page and those of page, and no others. The view
+// shares the table and the bound keys, so a Bind through either shows in both. Keys, Actions, Bind,
+// Resolve and CheckBinding work on the whole table in every view. Page always starts from the whole table,
+// not from the page of k.
+func (k *Keymap) Page(page string) *Keymap { return &Keymap{k.keyState, page} }
+
+// visible reports whether the action at i is one this view sees.
+func (k *Keymap) visible(i int) bool {
+	p := k.actions[i].Page
+	return p == "" || p == k.page
+}
+
+// samePlace reports whether two actions could be pressed in the same place, if they have a key in common:
+// a page keeps its keys apart from the other pages, and an action without a page meets every page.
+func samePlace(a, b Action) bool { return a.Page == "" || b.Page == "" || a.Page == b.Page }
+
 // NewKeymap checks the table and binds the default keys. charset selects how Label spells the arrow
 // keys. It rejects an action without a valid placeholder ID, level, key or help text, an ID or a key
-// listed twice, a key that two actions of the main levels or of one overlay level share, a key that
-// terminals, multiplexers or text lines take for themselves unless the action is the second way of
-// another, and a rebindable action whose default key breaks the rules of a binding.
+// listed twice, a key that two actions of the main levels or of one overlay level share unless both have
+// a page and the pages differ, a key that terminals, multiplexers or text lines take for themselves unless
+// the action is the second way of another, a key of a standard action held by any other action of the main
+// levels, and a rebindable action whose default key breaks the rules of a binding.
 func NewKeymap(actions []Action, charset CharsetMode) (*Keymap, error) {
 	if len(actions) == 0 {
 		return nil, errors.New("the key table holds no action")
 	}
-	k := &Keymap{index: map[ActionID]int{}, charset: charset}
+	k := &Keymap{keyState: &keyState{index: map[ActionID]int{}, charset: charset}}
 	var errs []error
 	for _, a := range actions {
 		a.DefaultKeys = slices.Clone(a.DefaultKeys)
@@ -143,6 +172,8 @@ func (k *Keymap) actionErrors(a Action) []error {
 			fail("key %q is not a key name; names are lower case except single characters, and a space is \"space\"", key)
 		case slices.Contains(a.DefaultKeys[:i], key):
 			fail("key %q is listed twice", key)
+		case reservedKeys[key] != "" && reservedKeys[key] != a.ID && !a.Level.overlay():
+			fail("key %q is reserved for the standard action %q", key, reservedKeys[key])
 		case takenKeys[key] != "" && a.SecondWayOf == "":
 			fail("key %q %s; only a second way of another action may hold it", key, takenKeys[key])
 		}
@@ -173,22 +204,25 @@ func (k *Keymap) actionErrors(a Action) []error {
 // collisionErrors reports every key two actions share where both could be pressed at once.
 func (k *Keymap) collisionErrors() []error {
 	var errs []error
-	main := map[string]ActionID{}
-	overlay := map[KeyLevel]map[string]ActionID{}
+	// The main levels share one space; each overlay level has its own.
+	type space struct {
+		level KeyLevel
+		key   string
+	}
+	seen := map[space][]Action{}
 	for _, a := range k.actions {
-		seen := main
+		level := KeyLevel("")
 		if a.Level.overlay() {
-			if overlay[a.Level] == nil {
-				overlay[a.Level] = map[string]ActionID{}
-			}
-			seen = overlay[a.Level]
+			level = a.Level
 		}
 		for _, key := range a.DefaultKeys {
-			if other, ok := seen[key]; ok && other != a.ID {
-				errs = append(errs, fmt.Errorf("actions %q and %q share the key %q", other, a.ID, key))
+			at := space{level, key}
+			clash := slices.IndexFunc(seen[at], func(b Action) bool { return b.ID != a.ID && samePlace(a, b) })
+			if clash >= 0 {
+				errs = append(errs, fmt.Errorf("actions %q and %q share the key %q", seen[at][clash].ID, a.ID, key))
 				continue
 			}
-			seen[key] = a.ID
+			seen[at] = append(seen[at], a)
 		}
 	}
 	return errs
@@ -273,7 +307,7 @@ func (k *Keymap) Match(msg tea.KeyPressMsg, focus InputFocus, overlays ...KeyLev
 func (k *Keymap) Is(msg tea.KeyPressMsg, id ActionID, focus InputFocus) bool {
 	i, ok := k.index[id]
 	name := KeyName(msg)
-	return ok && k.reachable(msg, name, focus) && slices.Contains(k.keysUnder(i, focus), name)
+	return ok && k.visible(i) && k.reachable(msg, name, focus) && slices.Contains(k.keysUnder(i, focus), name)
 }
 
 // reachable reports whether a key press can trigger any action under focus.
@@ -291,7 +325,7 @@ func (k *Keymap) reachable(msg tea.KeyPressMsg, name string, focus InputFocus) b
 
 func (k *Keymap) find(name string, focus InputFocus, level func(KeyLevel) bool) (ActionID, bool) {
 	for i, a := range k.actions {
-		if level(a.Level) && slices.Contains(k.keysUnder(i, focus), name) {
+		if level(a.Level) && k.visible(i) && slices.Contains(k.keysUnder(i, focus), name) {
 			return a.ID, true
 		}
 	}
@@ -338,7 +372,7 @@ func (f focusLabels) KeyLabel(id ActionID) (string, bool) { return f.k.labelUnde
 
 func (k *Keymap) labelUnder(id ActionID, focus InputFocus) (string, bool) {
 	i, ok := k.index[id]
-	if !ok {
+	if !ok || !k.visible(i) {
 		return "", false
 	}
 	keys := k.keysUnder(i, focus)
