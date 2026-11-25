@@ -183,6 +183,20 @@
 // such as a menu, and ListSpec.Outline draws grouped entries as an outline: the groups stand in the order of
 // SetGroups and a group row shows its fold glyph and title only.
 //
+// A PathNav holds the two overlays the path line opens, both a List in a modal with SearchNone and Outline,
+// centred over the screen like any Overlay, the current place marked, names escaped. The overview lists every
+// area of FrameSpec.Areas in order, each with its tabs below it, as a tree: enter or a click on an area with
+// tabs folds it, and on an area without tabs chooses it. The choice lists the tabs of the active area. The
+// application opens one from the state it already holds: OpenClick for the MouseResult of a ZonePath target
+// (the area section opens the overview, a tab section the choice), OpenFocused for enter while the focus is
+// at ZonePath, which follows FrameSpec.PathFocusArea, and OpenOverview for the standard action ActionMenu,
+// which acts only where nothing is typed. While Open is true the application gives PathNav
+// every key and click and the screen behind takes none, as under a Dialog, passing only the targets that
+// Overlay returns. Up, down, page up and down, first and last move, enter or a click on a tab chooses, back
+// closes. Update and Click return a PathChoice, the area and tab, which the application runs exactly as a
+// click on that tab; a PathChoice that is the zero value is no choice. PathNav answers with a PathChoice, so
+// it has the shape of Modal without satisfying the interface.
+//
 // The marked row is drawn as selected only while the rows have the focus, as SetFocused says (a new list has
 // it; the modal always draws the mark), so no second mark shows while the focus lies elsewhere. A click on a
 // row marks it, and only a click on the marked row while the rows have the focus opens it, as enter does; a
