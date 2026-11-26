@@ -22,7 +22,9 @@ func fixedHeaders(w http.ResponseWriter, r *http.Request) *http.Request {
 	h.Set("Content-Security-Policy", "default-src 'self'; script-src 'self' 'nonce-"+nonce+"'; style-src 'self' 'nonce-"+
 		nonce+"'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'")
 	h.Set("X-Content-Type-Options", "nosniff")
-	h.Set("Referrer-Policy", "no-referrer")
+	// no-referrer would make browsers send Origin: null on a form post to the same page, which checkOrigin
+	// refuses; same-origin still tells other sites nothing.
+	h.Set("Referrer-Policy", "same-origin")
 	h.Set("Cross-Origin-Resource-Policy", "same-origin")
 	return r.WithContext(context.WithValue(r.Context(), nonceKey{}, nonce))
 }
