@@ -52,7 +52,7 @@ func TestListsGroupsFoldByKeyAndByClick(t *testing.T) {
 	clickOn(t, term, "East bed (2)", "▸")
 	gone(t, term, "Basil")
 	clickOn(t, term, "East bed (2)", "Basil")
-	act(t, term, "\x1b[B", ">   Basil")
+	act(t, term, "\x1b[B", ">     Basil")
 	act(t, term, "\x1b[D", "▸ ■ East bed") // left folds the group of the marked entry
 	gone(t, term, "Basil")
 }
