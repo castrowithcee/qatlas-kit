@@ -143,6 +143,9 @@ const (
 	textNoteListGroups tui.TextID = "demo.note.list.groups"
 	textNoteListTicks  tui.TextID = "demo.note.list.ticks"
 
+	textListTickRecent tui.TextID = "demo.list.tick.recent"
+	textListTickPot    tui.TextID = "demo.list.tick.pot"
+
 	textListEmpty     tui.TextID = "demo.list.empty"
 	textListBarGroup  tui.TextID = "demo.list.bar.group"
 	textListBarNone   tui.TextID = "demo.list.bar.none"
@@ -156,13 +159,21 @@ const (
 	textAreaForms     tui.TextID = "demo.area.forms"
 	textTabFormFields tui.TextID = "demo.tab.form.fields"
 	textTabFormDates  tui.TextID = "demo.tab.form.dates"
+	textTabFormPaths  tui.TextID = "demo.tab.form.paths"
 	textKeyReset      tui.TextID = "demo.key.reset"
 
 	textNoteFormFields tui.TextID = "demo.note.form.fields"
 	textNoteFormDates  tui.TextID = "demo.note.form.dates"
+	textNoteFormPaths  tui.TextID = "demo.note.form.paths"
 
 	textFormBedTitle         tui.TextID = "demo.form.bed.title"
 	textFormDatesTitle       tui.TextID = "demo.form.dates.title"
+	textFormPathsTitle       tui.TextID = "demo.form.paths.title"
+	textFormFolder           tui.TextID = "demo.form.folder"
+	textFormFolderHint       tui.TextID = "demo.form.folder.hint"
+	textFormFile             tui.TextID = "demo.form.file"
+	textFormFileHint         tui.TextID = "demo.form.file.hint"
+	textFormPathsSaved       tui.TextID = "demo.form.paths.saved"
 	textFormSave             tui.TextID = "demo.form.save"
 	textFormReset            tui.TextID = "demo.form.reset"
 	textFormName             tui.TextID = "demo.form.name"
@@ -394,7 +405,10 @@ func catalog() i18n.Catalogs[tui.TextID] {
 			textNoteListGroups: "{left} and {right} fold a group, so do {enter} and a click on its row. {search} types a filter; " +
 				"a filter opens the groups with hits. A click on an entry opens it at once.",
 			textNoteListTicks: "Typing filters. {toggle} ticks the marked row, a group or the row of all; a click on a box does the same. " +
-				"{back} clears the filter.",
+				"The rows under the row of all tick by a trait across the groups; Thyme stays out of the pot row. {back} clears the filter.",
+
+			textListTickRecent: "Recently watered",
+			textListTickPot:    "In a pot",
 
 			textListEmpty:     "No plants here; {back} clears the filter.",
 			textListBarGroup:  "Group",
@@ -409,15 +423,24 @@ func catalog() i18n.Catalogs[tui.TextID] {
 			textAreaForms:     "Forms",
 			textTabFormFields: "Fields",
 			textTabFormDates:  "Dates",
+			textTabFormPaths:  "Paths",
 			textKeyReset:      "reset",
 
 			textNoteFormFields: "A bed to add: {enter} goes on, opens the values of a choice, and {toggle} ticks an extra. {save} checks the form " +
 				"and reports what is missing; the name is required. The code is a masked field: what is typed never shows.",
 			textNoteFormDates: "{enter}, or a click on the calendar symbol, opens the month: {left} and {right} move a day, {up} and {down} a week, " +
 				"{page.up} and {page.down} a month, {first} goes to today. The planting day is required; a harvest has a time.",
+			textNoteFormPaths: "Type a path: the entries of the level show below the field, the known folders first. {up} and {down} mark an entry, " +
+				"{zone.next} takes it, and with a * the field searches over several levels. The entries come from the folders of this machine.",
 
 			textFormBedTitle:         "Add a bed",
 			textFormDatesTitle:       "Planting dates",
+			textFormPathsTitle:       "Garden paths",
+			textFormFolder:           "Folder",
+			textFormFolderHint:       "Type a path: the entries of the level show below. Add * to search, as in ~/*notes.",
+			textFormFile:             "File",
+			textFormFileHint:         "Folders to go on in and files; a * searches below the folder typed before it.",
+			textFormPathsSaved:       "Paths taken: folder %s, file %s",
 			textFormSave:             "Save",
 			textFormReset:            "Reset",
 			textFormName:             "Name",
@@ -650,7 +673,10 @@ func catalog() i18n.Catalogs[tui.TextID] {
 			textNoteListGroups: "{left} und {right} falten eine Gruppe, ebenso {enter} und ein Klick auf ihre Zeile. {search} tippt einen Filter; " +
 				"ein Filter öffnet die Gruppen mit Treffern. Ein Klick auf einen Eintrag öffnet ihn sofort.",
 			textNoteListTicks: "Tippen filtert. {toggle} kreuzt die markierte Zeile, eine Gruppe oder die Zeile für alle an; ein Klick auf ein Kästchen tut dasselbe. " +
-				"{back} löscht den Filter.",
+				"Die Zeilen unter der Zeile für alle kreuzen nach einem Merkmal quer durch die Gruppen an, die Topfzeile lässt Thyme aus. {back} löscht den Filter.",
+
+			textListTickRecent: "Zuletzt gegossen",
+			textListTickPot:    "Im Topf",
 
 			textListEmpty:     "Hier gibt es keine Pflanzen; {back} löscht den Filter.",
 			textListBarGroup:  "Gruppe",
@@ -665,15 +691,24 @@ func catalog() i18n.Catalogs[tui.TextID] {
 			textAreaForms:     "Formulare",
 			textTabFormFields: "Felder",
 			textTabFormDates:  "Datum",
+			textTabFormPaths:  "Pfade",
 			textKeyReset:      "zurücksetzen",
 
 			textNoteFormFields: "Ein Beet anlegen: {enter} geht weiter und öffnet die Werte eines Wahlfelds, {toggle} kreuzt ein Extra an. " +
 				"{save} prüft das Formular und meldet, was fehlt; der Name ist Pflicht. Der Code ist ein maskiertes Feld: Getipptes erscheint nie.",
 			textNoteFormDates: "{enter} oder ein Klick auf das Kalendersymbol öffnet den Monat: {left} und {right} bewegen einen Tag, {up} und {down} eine Woche, " +
 				"{page.up} und {page.down} einen Monat, {first} geht zu heute. Der Pflanztag ist Pflicht; die Ernte hat eine Uhrzeit.",
+			textNoteFormPaths: "Einen Pfad tippen: unter dem Feld stehen die Einträge der Ebene, zuerst die bekannten Ordner. {up} und {down} markieren einen Eintrag, " +
+				"{zone.next} übernimmt ihn, und mit einem * sucht das Feld über mehrere Ebenen. Die Einträge stammen aus den Ordnern dieses Rechners.",
 
 			textFormBedTitle:         "Beet anlegen",
 			textFormDatesTitle:       "Pflanzdaten",
+			textFormPathsTitle:       "Gartenpfade",
+			textFormFolder:           "Ordner",
+			textFormFolderHint:       "Pfad tippen: darunter stehen die Einträge der Ebene. Mit * wird gesucht, etwa ~/*notizen.",
+			textFormFile:             "Datei",
+			textFormFileHint:         "Ordner zum Weitergehen und Dateien; ein * sucht unterhalb des davor getippten Ordners.",
+			textFormPathsSaved:       "Pfade übernommen: Ordner %s, Datei %s",
 			textFormSave:             "Speichern",
 			textFormReset:            "Zurücksetzen",
 			textFormName:             "Name",

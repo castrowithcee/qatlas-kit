@@ -26,7 +26,7 @@
 // in the catalog; an application adds them to its table with one append. The overlay levels may repeat their
 // keys, and ctrl+s stays free as the second way of the save action.
 //
-// A one-line text field, the input of a Dialog, the text, masked and date fields of a Form, the search of a
+// A one-line text field, the input of a Dialog, the text, masked, date and path fields of a Form, the search of a
 // LogView, the filter of a List and the input of a CommandLine edit with a fixed set of keys. A screen asks
 // its own actions first, so a Form, a LogView and a List keep theirs for left, right, home and end, and a
 // second way of an action wins over an edit. The Paste of each of these parts and a suggestion a Dialog
@@ -195,7 +195,8 @@
 // below their title, for group rows as for entries; the first column and the group head are never cut, and the
 // widths come from every entry and described group, so they stay while a filter is typed. An empty list shows
 // the application's sentence with the next step, which SetEmpty sets for each state, and a filter without match
-// names the key that clears it.
+// names the key that clears it. Shown names the entries the filter lets through in the order they show, also
+// those of folded groups.
 //
 // The search field of a List, also the one in a filter bar, is a tinted field over its whole width that shows
 // its placeholder while empty; where there is no colour but attributes it is underlined, and without both it
@@ -212,6 +213,20 @@
 // every key of Toggle tick before the filter reads it, at the price that it types no character, and Hints
 // then names it in the text focus too through Hint.WhileTyping. Current gives the marked entry
 // with its cells for a panel beside the list.
+//
+// SetTickRows adds tick rows, each a ListTickRow, under the row of all and above the groups, flat or grouped,
+// in the order it was given and drawn like the row of all: tick box, title in the accent colour and, dimmed,
+// the number of entries its Match accepts whatever the filter. A tick row ticks the shown entries that Match
+// accepts across all groups, except those Exempt names, and stands only while one shown entry matches. Its box
+// is "[ ]" while no target is ticked, "[x]" when some are and every tickable one is, otherwise "[-]". The
+// toggle key and a click on the box step it as a group is stepped, partial selection, all tickable, none, but
+// none clears every target, exempt ones too, and the partial selection comes back without any exempt entry:
+// a tick row ticks an exempt entry by no key, click, Act or restore, only the box of the entry itself does.
+// The partial selection of tick rows, groups and the row of all, which overlap, is forgotten when another of
+// them is toggled, and by a single toggle of an entry they hold. Match and Exempt run when the entries or the
+// rows are set, never while drawing. The row of all and the groups still tick their exempt entries. A tick
+// row marks no entry, so Selected, Current and SelectedGroup are empty there, SelectedTickRow names it,
+// Position does not count it, and enter, left and right fold nothing.
 //
 // Overlay draws a list as a modal in the way of Dialog.Overlay: under ListSpec.Title the search line, which a
 // list that filters as typed always has, the table, one button per ListSpec.Buttons entry behind the key in
@@ -319,6 +334,29 @@
 // stands under the field once it is left, or at once where the save key was refused over it; the save key
 // stays in the form on that field. DateField.Now is the clock of the field, time.Now where nil, and gives
 // the calendar its today.
+//
+// A path field (FieldPath) is a file or folder path typed as text, with the kind PathDirs or PathFiles in
+// FormField.Path. While it has the focus, a list of up to five entries stands under it, scrolling with the
+// mark. The entries are the application's: it never gets the file system from tui. Every change of the text,
+// and the focus entering the field, makes a request (PathLoad: the field, the typed text, whether it holds
+// "*", the kind and a token) that the application takes with TakePathLoad after each key, paste, click,
+// SetValue and move of focus, answers asynchronously, as the file browser's FileLoad is answered, with
+// SetPath (PathResult: the token, the entries and, for a search, why it ended), and may cancel when the next
+// request comes. An answer whose token is not the latest is dropped, so typing never waits and a late answer
+// never shows. The priority entries of PathSpec stand first, those that start with the typed text, each
+// marked; an answered entry equal to one of them is shown once. Up and down mark an entry and stop at the
+// ends, up from the first takes the mark away and otherwise move between the fields as in a text field; tab
+// takes the marked entry where it differs from the text and otherwise goes to the next field, shift+tab never
+// takes; a click on an entry takes it. A folder ends with a separator when taken, so the next level follows at
+// once: every entry of PathDirs, and an entry that Continues of PathFiles; the application puts the path
+// separator of its system at the end of its entries, otherwise "/" is added. A text with "*" asks for a search
+// over several levels: the entries are the matches with their full path, and a search that ended by a limit
+// shows a line under them with the reason from the answer and a text of the catalog. Entries and the end line
+// are foreign text and are drawn escaped; a taken entry is cleaned as pasted text. The form checks no
+// path: whether it exists is the application's check when it saves. The hints name up, down and, with a marked
+// entry, tab as the key that takes it. With a projectpath.Suggester an application answers a request without
+// Search with its Suggest, and with Search with projectpath.SplitSearch and projectpath.Search, converting
+// each entry to a Suggestion and the end of the search to PathEnd.
 //
 // Enter, or a click on the calendar symbol at the right end of the value, opens a month view below the field,
 // above it where it does not fit. Left and right move the day, up and down the week, page up and page down
@@ -486,7 +524,7 @@
 // binding only ctrl+c and esc act; in an embedded terminal no key does. No action of a key table may hold
 // ctrl+enter, which the chat uses to send.
 //
-// Text editing. A one-line text field, the input of a Dialog, the text, masked and date fields of a Form, the
+// Text editing. A one-line text field, the input of a Dialog, the text, masked, date and path fields of a Form, the
 // search of a LogView, the filter of a List and the input of a CommandLine edit with keys that no action may
 // hold: the arrows, home, end, ctrl+a, ctrl+e, ctrl+b and ctrl+f move by a character and to the ends; ctrl or
 // alt with an arrow, alt+b and alt+f by a word; backspace, delete, ctrl+h, ctrl+d, ctrl+w, alt+d,
@@ -506,7 +544,8 @@
 // masked input starts empty and has no suggestions. A List has a first column that is never free text or
 // optional, at most one free text column, a text for its empty state, AllRow only with Ticks and
 // TickWhileTyping only with Ticks and SearchAsTyped. A Form refuses an unknown field kind, a missing or
-// repeated ID and an ID with a control character. A CommandLine refuses names that are not lower-case words,
+// repeated ID, an ID with a control character, and path settings with an unknown kind or an empty or
+// control-character priority entry, or on a field that is no path field. A CommandLine refuses names that are not lower-case words,
 // two commands that do the same and an icon that fails CheckIcon. An Explanation accepts only an absolute http
 // or https address of printable ASCII, so the address cannot end the link sequence. CheckAreas holds areas to
 // what the tab line can draw and refuses an entry key (Area.Key, Tab.Key) used twice in the overview, which
@@ -625,6 +664,7 @@
 //     groups as an outline. Default: false each.
 //   - ListSpec.Ticks, AllRow, TickWhileTyping and ListKeys.Toggle: tick boxes, the row of all and ticking in
 //     the text focus; Toggle is needed with Ticks. Default: false each, no tick boxes.
+//   - List.SetTickRows: tick rows by a trait with exempt entries; needs Ticks. Default: none, no row shows.
 //   - ListSpec.Title, NoGroup, Buttons: the title of the modal, the title of the group without key and the
 //     buttons of the modal. Default: no title, TextListNoGroup, no buttons.
 //   - Column.Optional, Flex, Right, Dimmed, Short, Tone: leave out the column on a narrow terminal, mark the
@@ -645,6 +685,8 @@
 //     to false.
 //   - DateField.Time, Min, Max, Now: adds the time of day, bounds the value and sets the clock. Default:
 //     false, no bound, time.Now; FormField.Date applies to a FieldDate only.
+//   - PathSpec.Kind and Priority: whether a path field takes folders only or files too, and the entries it
+//     always offers first. Default: PathDirs, none; FormField.Path applies to a FieldPath only.
 //   - Form.SetFocused, List.SetFocused, FileBrowser.SetFocused: draw without any sign of focus while the focus
 //     lies elsewhere. Default: focused.
 //   - Command.Aliases, Icon, DescriptionArgs, Key, Hidden: further names, a glyph, arguments of the

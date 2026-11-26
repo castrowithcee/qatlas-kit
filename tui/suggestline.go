@@ -11,11 +11,30 @@ import (
 // suggestionsShown is how many suggestions stand under a text line at once.
 const suggestionsShown = 5
 
+// maxAnswered is how many suggestions of one answer a line takes; the rest is dropped.
+const maxAnswered = 1000
+
 // suggestLine is a text line with the suggestions its source gives for the text. Every change of the text asks
 // the source anew and drops the mark. Without a source it is a plain text line.
+//
+// A line with ask gets its suggestions asynchronously: every change of the text calls ask, which returns the
+// token of the new request, and the suggestions of the application arrive later through receive; an answer of
+// another token is stale and dropped. Until then the line shows the priority entries that start with the text.
 type suggestLine struct {
 	textLine
 	source func(typed string) []Suggestion
+	ask    func(typed string) (token uint64)
+	// priority are the entries the application always offers first, shown while their text starts with the
+	// typed text, drawn with a mark of their own.
+	priority []Suggestion
+	// folder says which suggestion is a folder, which take ends with a separator; nil means none.
+	folder func(Suggestion) bool
+	// refPrefix leads the target items of the rows; suggestionRefPrefix where empty.
+	refPrefix string
+	token     uint64
+	// notice is a line under the suggestions that stands for no suggestion, such as why a search ended.
+	notice string
+	got    []Suggestion
 	items  []Suggestion
 	// mark is the marked suggestion where marked is set, top the first one shown.
 	mark, top int
@@ -30,9 +49,51 @@ func newSuggestLine(text string, source func(typed string) []Suggestion) suggest
 
 func (s *suggestLine) refresh() {
 	s.items, s.mark, s.top, s.marked = nil, 0, 0, false
-	if s.source != nil {
+	s.got, s.notice = nil, ""
+	switch {
+	case s.ask != nil:
+		s.token = s.ask(s.String())
+		s.items = s.lead()
+	case s.source != nil:
 		s.items = slices.Clone(s.source(s.String()))
 	}
+}
+
+// lead are the priority entries the typed text is the start of.
+func (s *suggestLine) lead() []Suggestion {
+	var out []Suggestion
+	typed := s.String()
+	for _, p := range s.priority {
+		if strings.HasPrefix(p.Text, typed) {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// reset replaces the text, which asks the source anew.
+func (s *suggestLine) reset(text string) {
+	s.textLine = newTextLine(text)
+	s.refresh()
+}
+
+// receive takes the answer to the request of token: the entries behind the priority entries, without one of
+// them twice, and the notice. The mark stays, as the priority entries keep their place. It reports false and
+// changes nothing for an answer of another token.
+func (s *suggestLine) receive(token uint64, entries []Suggestion, notice string) bool {
+	if s.ask == nil || token != s.token {
+		return false
+	}
+	lead := s.lead()
+	s.got = nil
+	for _, e := range entries[:min(len(entries), maxAnswered)] {
+		if !slices.ContainsFunc(lead, func(p Suggestion) bool { return p.Text == e.Text }) {
+			s.got = append(s.got, e)
+		}
+	}
+	s.items = append(slices.Clone(lead), s.got...)
+	s.notice = notice
+	return true
 }
 
 // shown reports whether suggestions stand under the line.
@@ -59,9 +120,9 @@ func (s *suggestLine) clear() {
 	s.refresh()
 }
 
-// move marks the suggestion step places on, with wrap-around; without a mark down starts at the first and up at
+// step marks the suggestion by places on, with wrap-around; without a mark down starts at the first and up at
 // the last. The window follows the mark.
-func (s *suggestLine) move(step int) {
+func (s *suggestLine) step(step int) {
 	n := len(s.items)
 	if n == 0 {
 		return
@@ -97,9 +158,17 @@ func (s *suggestLine) window() (start, end int) {
 func (s *suggestLine) take(i int) Suggestion {
 	chosen := s.items[i]
 	s.textLine.clear()
-	s.textLine.insert(chosen.Text)
+	s.textLine.insert(s.takenText(chosen))
 	s.refresh()
 	return chosen
+}
+
+// takenText is what taking c puts into the line: its text, and a separator behind a folder.
+func (s *suggestLine) takenText(c Suggestion) string {
+	if s.folder != nil && s.folder(c) && !strings.HasSuffix(c.Text, "/") && !strings.HasSuffix(c.Text, `\`) {
+		return c.Text + "/"
+	}
+	return c.Text
 }
 
 // complete takes the marked suggestion, the first without a mark.
@@ -110,11 +179,16 @@ func (s *suggestLine) complete() {
 // suggestionRefPrefix leads the target item of a suggestion row, followed by its index.
 const suggestionRefPrefix = "\x00S"
 
-func suggestionRef(i int) string { return suggestionRefPrefix + strconv.Itoa(i) }
+func (s *suggestLine) prefix() string {
+	if s.refPrefix != "" {
+		return s.refPrefix
+	}
+	return suggestionRefPrefix
+}
 
 // suggestionOf is the index of the suggestion a target item names, if it names one shown now.
 func (s *suggestLine) suggestionOf(item string) (int, bool) {
-	rest, ok := strings.CutPrefix(item, suggestionRefPrefix)
+	rest, ok := strings.CutPrefix(item, s.prefix())
 	if !ok {
 		return 0, false
 	}
@@ -130,8 +204,15 @@ func (s *suggestLine) rows(width int, styles Styles) ([]string, []Target) {
 	var targets []Target
 	start, end := s.window()
 	for i := start; i < end; i++ {
-		targets = append(targets, Target{Rect: Rect{Y: len(lines), Width: width, Height: 1}, Zone: ZoneForm, Item: suggestionRef(i)})
-		lines = append(lines, styles.Row(Escape(s.items[i].Text), width, s.marked && i == s.mark))
+		targets = append(targets, Target{Rect: Rect{Y: len(lines), Width: width, Height: 1}, Zone: ZoneForm, Item: s.prefix() + strconv.Itoa(i)})
+		text := Escape(s.items[i].Text)
+		if s.items[i].priority {
+			text = styles.Glyph(GlyphStatus) + " " + text
+		}
+		lines = append(lines, styles.Row(text, width, s.marked && i == s.mark))
+	}
+	if s.notice != "" {
+		lines = append(lines, styles.Render(StyleHint, "  "+styles.Truncate(Escape(s.notice), max(width-2, 0))))
 	}
 	return lines, targets
 }

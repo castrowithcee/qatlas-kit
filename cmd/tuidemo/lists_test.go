@@ -130,3 +130,16 @@ func TestListsGroupedOpensEntryAtOneClick(t *testing.T) {
 	gone(t, term, "Opened")
 	clickOn(t, term, "Mint", "Opened Mint") // a focused row opens at once
 }
+
+func TestListsTickRowsTickATraitAcrossGroupsAndSkipTheExemptPlant(t *testing.T) {
+	term := startDemo(t, "-icons none")
+	act(t, term, "6", "types a filter")
+	clickOn(t, term, "Ticks", "Ticked: 0")
+	expect(t, term, "Recently watered (4)")
+	expect(t, term, "In a pot (3)")
+	clickOn(t, term, "[ ] Thyme", "Ticked: 1")    // Thyme is exempt from the pot row, but a box of its own ticks it
+	clickOn(t, term, "[-] In a pot", "Ticked: 3") // Mint and Chive join; Thyme was ticked before
+	clickOn(t, term, "[x] In a pot", "Ticked: 0") // unticking clears the exempt plant too
+	clickOn(t, term, "[ ] In a pot", "Ticked: 2")
+	gone(t, term, "[x] Thyme")
+}
