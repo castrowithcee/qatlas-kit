@@ -3,6 +3,7 @@ package tui
 import (
 	"errors"
 	"fmt"
+	"io/fs"
 	"slices"
 	"strings"
 	"unicode"
@@ -10,28 +11,36 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 
+	"github.com/castrowithcee/qatlas-kit/helppages"
 	"github.com/castrowithcee/qatlas-kit/helptopics"
+	"github.com/castrowithcee/qatlas-kit/i18n"
 )
 
 // HelpKeys are the actions of the key table the help reads.
 type HelpKeys struct {
 	// Left and Right change the topic with wrap-around, and so do Next and Prev where the table has them,
-	// such as tab and shift+tab on the help level.
+	// such as tab and shift+tab on the help level. Over pages they change the page.
 	Left, Right, Next, Prev ActionID
 	// Up, Down, PageUp and PageDown scroll the text and stop at its ends; First and Last, where the table has
 	// them, jump there.
 	Up, Down, PageUp, PageDown, First, Last ActionID
-	// Back and Help close the help.
+	// Back and Help close the help, and so does a second way of either (Action.SecondWayOf), such as f1.
 	Back, Help ActionID
 }
 
-// HelpSpec is what the help shows.
+// HelpSpec is what the help shows: Topics or Pages, exactly one of them.
 type HelpSpec struct {
 	// Topics are the topics the command line and the manpage show, in their order.
 	Topics []helptopics.Topic
+	// Pages are the application's Markdown help pages as package helppages loads them; a placeholder
+	// {ActionID} in them must name an action of the key table.
+	Pages fs.FS
+	// Lang is the language of the pages; a page without it shows in English. Empty is English.
+	Lang i18n.Lang
 	// Screen are the hints of the screen the help was opened from, and Global the actions that act on every
-	// screen. The first topic ends with both lists, under the headings TextHelpKeysScreen and TextHelpKeysAll,
-	// with the keys bound now; a global action is named by its help text.
+	// screen. The first topic, or the context page of pages, ends with both lists, under the headings
+	// TextHelpKeysScreen and TextHelpKeysAll, with the keys bound now; a global action is named by its help
+	// text.
 	Screen []Hint
 	Global []ActionID
 	Keys   HelpKeys
@@ -56,31 +65,57 @@ const helpHeadingWidth = 40
 // helpTopicRef starts the target item of a topic tab.
 const helpTopicRef = "\x00t"
 
-// Help is the open help: one topic of the application's help topics at a time, scrolled within the room
-// it has. It holds the topic and the scroll position.
+// Help is the open help: one topic of the application's help topics, or one of its pages, at a time,
+// scrolled within the room it has. It holds the topic or page and the scroll position.
 type Help struct {
-	spec   HelpSpec
-	keys   *Keymap
-	text   Translator
-	topic  int
-	scroll textScroll
+	spec  HelpSpec
+	keys  *Keymap
+	text  Translator
+	topic int
+	// set and pages are the loaded pages, each topic's index first; nil for topics. page is the page shown
+	// and context the page that ends with the key lists.
+	set           *helppages.Set
+	pages         []helpPage
+	page, context int
+	scroll        textScroll
 	// doc is the text of the topic, for the selection with the mouse.
 	doc selDoc
 }
 
-// NewHelp checks spec and returns the help on its first topic. It rejects a help without topics, a topic
-// without name or text, a name with a blank or control character or one that two topics share, a missing
-// key of Left, Right, Up, Down, PageUp, PageDown, Back or Help, a key that names no action of keys or that two
-// help keys share, and a key list entry that names no action of keys or a global action listed twice. An
-// entry for an action that only another page sees is no error: the key lists leave it out.
+// helpPage is one page of a topic.
+type helpPage struct {
+	topic *helppages.Topic
+	page  *helppages.Page
+}
+
+// NewHelp checks spec and returns the help on its first topic or page. It rejects a help with both or neither
+// of topics and pages, pages that helppages.Load refuses or whose placeholder names no action of keys, an
+// unknown language, a topic without name or text, a name with a blank or control character or one that two
+// topics share, a missing key of Left, Right, Up, Down, PageUp, PageDown, Back or Help, a key that names no
+// action of keys or that two help keys share, and a key list entry that names no action of keys or a global
+// action listed twice. An entry for an action that only another page sees is no error: the key lists leave it
+// out.
 func NewHelp(spec HelpSpec, keys *Keymap, text Translator) (*Help, error) {
 	if keys == nil || text == nil {
 		return nil, errors.New("the help needs a key table and a translator")
 	}
 	var errs []error
 	fail := func(format string, args ...any) { errs = append(errs, fmt.Errorf("help: "+format, args...)) }
-	if len(spec.Topics) == 0 {
-		fail("no topic")
+	var set *helppages.Set
+	switch {
+	case spec.Pages != nil && len(spec.Topics) > 0:
+		fail("topics and pages exclude each other")
+	case spec.Pages != nil:
+		var err error
+		set, err = helppages.Load(spec.Pages, helppages.Options{Placeholder: func(name string) bool { return keys.known(ActionID(name)) }})
+		if err != nil {
+			fail("pages: %w", err)
+		}
+	case len(spec.Topics) == 0:
+		fail("no topic and no pages")
+	}
+	if l, ok := i18n.Parse(string(spec.Lang)); spec.Lang != "" && (!ok || l != spec.Lang) {
+		fail("unknown language %q", spec.Lang)
 	}
 	names := map[string]bool{}
 	for i, topic := range spec.Topics {
@@ -121,7 +156,15 @@ func NewHelp(spec HelpSpec, keys *Keymap, text Translator) (*Help, error) {
 	spec.Topics = slices.Clone(spec.Topics)
 	spec.Screen = slices.Clone(spec.Screen)
 	spec.Global = slices.Clone(spec.Global)
-	return &Help{spec: spec, keys: keys, text: text}, nil
+	h := &Help{spec: spec, keys: keys, text: text, set: set}
+	if set != nil {
+		for _, t := range set.Topics {
+			for _, p := range append([]*helppages.Page{t.Index}, t.Pages...) {
+				h.pages = append(h.pages, helpPage{t, p})
+			}
+		}
+	}
+	return h, nil
 }
 
 // namedKey is one key of a component's key set with the name its refusal uses.
@@ -152,12 +195,20 @@ func checkKeys(part string, keys *Keymap, set []namedKey) []error {
 	return errs
 }
 
-// Topic is the name of the topic shown.
-func (h *Help) Topic() string { return h.spec.Topics[h.topic].Name }
+// Topic is the name of the topic shown, over pages the ID of the topic of the page shown.
+func (h *Help) Topic() string {
+	if h.pages != nil {
+		return h.pages[h.page].topic.ID
+	}
+	return h.spec.Topics[h.topic].Name
+}
 
-// SetTopic shows the named topic from its top, such as the topic a command or a link asks for. It reports
-// false and keeps the topic for an unknown name.
+// SetTopic shows the named topic from its top, such as the topic a command or a link asks for, over pages
+// the index page of the topic with that ID. It reports false and keeps the topic for an unknown name.
 func (h *Help) SetTopic(name string) bool {
+	if h.pages != nil {
+		return h.SetPage(name, "index")
+	}
 	i := slices.IndexFunc(h.spec.Topics, func(t helptopics.Topic) bool { return t.Name == name })
 	if i < 0 {
 		return false
@@ -167,6 +218,65 @@ func (h *Help) SetTopic(name string) bool {
 	return true
 }
 
+// Page is the topic ID and the page name of the page shown, "index" for the page of the topic itself. Over
+// topics it is the topic name and an empty page name.
+func (h *Help) Page() (topic, name string) {
+	if h.pages == nil {
+		return h.Topic(), ""
+	}
+	p := h.pages[h.page]
+	return p.topic.ID, p.page.Name
+}
+
+// SetPage shows the named page of the topic with that ID from its top. It reports false and keeps the page
+// for an unknown one. Over topics only an empty page name is known, and SetPage is SetTopic.
+func (h *Help) SetPage(topic, name string) bool {
+	if h.pages == nil {
+		return name == "" && h.SetTopic(topic)
+	}
+	i := slices.IndexFunc(h.pages, func(p helpPage) bool { return p.topic.ID == topic && p.page.Name == name })
+	if i < 0 {
+		return false
+	}
+	h.showPage(i)
+	return true
+}
+
+// OpenScreen shows from its top the page of the first screen ID that a page carries, the most specific ID
+// first, such as dialog, form, tab, area; without one, the first page. That page then ends with the key
+// lists. It reports whether an ID had a page. Over topics it shows the first topic and reports false.
+func (h *Help) OpenScreen(ids ...string) bool {
+	if h.pages == nil {
+		h.SetTopic(h.spec.Topics[0].Name)
+		return false
+	}
+	h.context = 0
+	found := false
+	for _, id := range ids {
+		if _, p, ok := h.set.Screen(id); ok {
+			h.context = slices.IndexFunc(h.pages, func(hp helpPage) bool { return hp.page == p })
+			found = true
+			break
+		}
+	}
+	h.showPage(h.context)
+	return found
+}
+
+func (h *Help) showPage(i int) {
+	h.page = i
+	h.scroll.offset = 0
+}
+
+// turn shows the topic or page by steps from the one shown, with wrap-around.
+func (h *Help) turn(by int) {
+	if h.pages != nil {
+		h.showPage(wrap(h.page+by, len(h.pages)))
+		return
+	}
+	h.SetTopic(h.spec.Topics[wrap(h.topic+by, len(h.spec.Topics))].Name)
+}
+
 // Update handles a key. act is the action the application runs as that key while the help is open: Back or
 // Help, which close it. The keys that change the topic or scroll are handled inside; handled is false for
 // every other key, which the application handles or drops.
@@ -174,6 +284,14 @@ func (h *Help) Update(msg tea.KeyPressMsg) (act ActionID, handled bool) {
 	for _, id := range h.navKeys() {
 		if h.keys.Is(msg, id, InputNavigation) {
 			return h.Act(id)
+		}
+	}
+	// The second way of the help or back key, such as f1, closes the help as the first way does.
+	for _, id := range []ActionID{h.spec.Keys.Help, h.spec.Keys.Back} {
+		for _, second := range h.keys.SecondWays(id) {
+			if h.keys.Is(msg, second, InputNavigation) {
+				return id, true
+			}
 		}
 	}
 	return "", false
@@ -201,9 +319,9 @@ func (h *Help) Act(id ActionID) (act ActionID, handled bool) {
 	case k.Back, k.Help:
 		return id, true
 	case k.Left, k.Prev:
-		h.SetTopic(h.spec.Topics[wrap(h.topic-1, len(h.spec.Topics))].Name)
+		h.turn(-1)
 	case k.Right, k.Next:
-		h.SetTopic(h.spec.Topics[wrap(h.topic+1, len(h.spec.Topics))].Name)
+		h.turn(1)
 	case k.Up:
 		h.scroll.by(-1)
 	case k.Down:
@@ -285,8 +403,16 @@ type textRow struct {
 }
 
 // rows is the text of the topic shown in width cells: its lines wrapped as the command line wraps them, a
-// heading in bold, and after the first topic the key list with one target per key.
+// heading in bold, and after the first topic the key list with one target per key. Over pages it is the
+// page shown, and the context page ends with the key list.
 func (h *Help) rows(width int, styles Styles) []textRow {
+	if h.pages != nil {
+		rows := h.pageRows(width, styles)
+		if h.page == h.context {
+			rows = append(rows, h.keyLists(width, styles)...)
+		}
+		return rows
+	}
 	var rows []textRow
 	h.doc.reset("")
 	for _, line := range strings.Split(h.spec.Topics[h.topic].Text, "\n") {
@@ -305,14 +431,19 @@ func (h *Help) rows(width int, styles Styles) []textRow {
 		}
 	}
 	if h.topic == 0 {
-		global := make([]Hint, len(h.spec.Global))
-		for i, id := range h.spec.Global {
-			global[i] = Hint{Action: id, Label: h.keys.actions[h.keys.index[id]].Help}
-		}
-		rows = append(rows, h.keyList(TextHelpKeysScreen, h.spec.Screen, width, styles)...)
-		rows = append(rows, h.keyList(TextHelpKeysAll, global, width, styles)...)
+		rows = append(rows, h.keyLists(width, styles)...)
 	}
 	return rows
+}
+
+// keyLists are the keys of the screen and the keys that act everywhere.
+func (h *Help) keyLists(width int, styles Styles) []textRow {
+	global := make([]Hint, len(h.spec.Global))
+	for i, id := range h.spec.Global {
+		global[i] = Hint{Action: id, Label: h.keys.actions[h.keys.index[id]].Help}
+	}
+	return append(h.keyList(TextHelpKeysScreen, h.spec.Screen, width, styles),
+		h.keyList(TextHelpKeysAll, global, width, styles)...)
 }
 
 // keyList is one list of keys under its heading, after a blank line, one group a line; nothing where no hint
@@ -413,18 +544,22 @@ func placeText(lines []string, targets []Target, rows []textRow, doc *selDoc, wi
 }
 
 // Overlay draws the help with styles over screen, the drawn screen of width by height cells: the screen
-// dimmed and the help in its frame centred in room, the part of the screen it may cover, with the topic tabs,
-// the text of the topic shown, the position where it scrolls, and the key line. The targets are the help's
-// alone. ok is false where room is too small; the application then draws View in the workspace and Hints in
-// the footer.
+// dimmed and the help in its frame centred in room, the part of the screen it may cover, with the topic tabs
+// (none over pages), the text of the topic or page shown, the position where it scrolls, and the key line.
+// The targets are the help's alone. ok is false where room is too small; the application then draws View in
+// the workspace and Hints in the footer.
 func (h *Help) Overlay(styles Styles, screen string, width, height int, room Rect) (view string, targets []Target, ok bool) {
 	inner := min(helpMaxInner, room.Width-8)
-	textRoom := room.Height - 2 - 2 - 4
+	var lines []string
+	var ts []Target
+	if h.pages == nil {
+		strip, st := h.strip(max(inner, 1), styles)
+		lines, ts = []string{strip, ""}, st
+	}
+	textRoom := room.Height - 2 - 2 - 2 - len(lines)
 	if inner < dialogMinInner || textRoom < helpMinText {
 		return "", nil, false
 	}
-	strip, st := h.strip(inner, styles)
-	lines, ts := []string{strip, ""}, st
 	note := h.noteRows(styles, inner, textRoom)
 	lines, ts = place(lines, ts, note, 0)
 	lines, ts = placeText(lines, ts, h.window(h.rows(inner, styles), textRoom-len(note), inner, styles), &h.doc, inner)
@@ -440,17 +575,20 @@ func (h *Help) Overlay(styles Styles, screen string, width, height int, room Rec
 }
 
 // View draws the help with styles as the content of a workspace of width by height cells, for a terminal too
-// small to draw it over the screen: the title and the topic tabs, then the text; the keys stand in the
-// footer.
+// small to draw it over the screen: the title and the topic tabs (none over pages), then the text; the keys
+// stand in the footer.
 func (h *Help) View(styles Styles, width, height int) (string, []Target) {
 	width, height = max(width, 0), max(height, 0)
 	if height == 0 || width == 0 {
 		return finishPage(nil, nil, width, height)
 	}
-	title := styles.Render(StyleTitle, Escape(h.text.Lookup(TextHelpTitle))) + "  "
-	tw := lipgloss.Width(title)
-	strip, st := h.strip(max(width-tw, 1), styles)
-	lines, targets := []string{title + strip, ""}, OffsetTargets(st, tw, 0)
+	title := styles.Render(StyleTitle, Escape(h.text.Lookup(TextHelpTitle)))
+	lines, targets := []string{title, ""}, []Target(nil)
+	if h.pages == nil {
+		tw := lipgloss.Width(title) + 2
+		strip, st := h.strip(max(width-tw, 1), styles)
+		lines[0], targets = title+"  "+strip, OffsetTargets(st, tw, 0)
+	}
 	if height > len(lines) {
 		note := h.noteRows(styles, width, height-len(lines))
 		lines, targets = place(lines, targets, note, 0)

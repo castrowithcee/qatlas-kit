@@ -138,6 +138,7 @@ const (
 	TextHelpScroll     TextID = "tui.help.scroll"
 	TextHelpPage       TextID = "tui.help.page"
 	TextHelpClose      TextID = "tui.help.close"
+	TextHelpMore       TextID = "tui.help.more"
 	TextInfoLink       TextID = "tui.info.link"
 	TextInfoOpenLink   TextID = "tui.info.openlink"
 
@@ -350,6 +351,7 @@ func ModuleCatalog() i18n.Catalogs[TextID] {
 			TextHelpScroll:     "scroll",
 			TextHelpPage:       "page",
 			TextHelpClose:      "close",
+			TextHelpMore:       "More",
 			TextInfoLink:       "Documentation:",
 			TextInfoOpenLink:   "open link",
 
@@ -583,6 +585,7 @@ func ModuleCatalog() i18n.Catalogs[TextID] {
 			TextHelpScroll:     "Scrollen",
 			TextHelpPage:       "Seite",
 			TextHelpClose:      "Schließen",
+			TextHelpMore:       "Mehr dazu",
 			TextInfoLink:       "Dokumentation:",
 			TextInfoOpenLink:   "Link öffnen",
 

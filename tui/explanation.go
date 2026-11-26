@@ -317,7 +317,7 @@ func (e *Explanation) rows(width int, styles Styles, body TextStyle) []textRow {
 		for _, piece := range strings.Split(helptopics.Wrap(Escape(label), width), "\n") {
 			rows = append(rows, textRow{text: styles.Render(StyleHint, Clip(piece, width))})
 		}
-		linked := styles.profile != ProfileNone && styles.profile <= ProfileTrueColor
+		linked := styles.hyperlinks()
 		pieces := strings.Split(ansi.Hardwrap(item.URL, max(width, 1), true), "\n")
 		sels := e.doc.para(item.URL, pieces, 0, false)
 		for i, piece := range pieces {

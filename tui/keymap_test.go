@@ -167,6 +167,9 @@ func TestNewKeymapRejectsBrokenTables(t *testing.T) {
 // second way of another action.
 func TestTakenKeysAreOnlySecondWays(t *testing.T) {
 	for key, reason := range takenKeys {
+		if reservedKeys[key] != "" {
+			continue // a standard action owns it, and its owner is refused first, see TestReservedKeyIsRefused
+		}
 		table := sampleActions()
 		table = append(table, Action{ID: "probe", Level: LevelCtrl, DefaultKeys: []string{key}, Help: "x"})
 		if _, err := NewKeymap(table, CharsetUnicode); err == nil || !strings.Contains(err.Error(), reason) {
@@ -208,7 +211,8 @@ func TestCheckBindingRejectsWithReason(t *testing.T) {
 		{"info", "3", "already the key of area"},
 		{"help", "9", "digits"},
 		{"info", "f5", "terminals take"},
-		{"lock", "f1", "terminals take"},
+		{"lock", "f10", "terminals take"},
+		{"lock", "f1", "reserved for the standard action help.f1"},
 		{"info", "f21", "F1 to F20"},
 		{"info", "f0", "F1 to F20"},
 		{"info", "ctrl+a", "free are ctrl+l, ctrl+x, ctrl+] and ctrl+\\"},

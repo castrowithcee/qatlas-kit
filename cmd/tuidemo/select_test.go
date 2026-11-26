@@ -79,12 +79,12 @@ func TestDialogHelpAndExplanationDragCopyText(t *testing.T) {
 	expect(t, term, "Reset the counter?")
 	act(t, term, "n", "Cancelled")
 	gone(t, term, "Reset the counter?")
-	act(t, term, "?", "About the workbench:")
-	if got := copiedBy(t, term, "About the workbench:", "workbench:"); got != "About the workbench:" {
+	act(t, term, "?", "Tabs and switches")
+	if got := copiedBy(t, term, "Tabs and switches", "switches"); got != "Tabs and switches" {
 		t.Errorf("help: %q", got)
 	}
 	send(t, term, "?")
-	gone(t, term, "About the workbench:")
+	gone(t, term, "Tabs and switches")
 	act(t, term, "i", "Raised bed:")
 	if got := copiedBy(t, term, "Raised bed:", "bed:"); got != "Raised bed:" {
 		t.Errorf("explanation: %q", got)

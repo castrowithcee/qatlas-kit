@@ -364,7 +364,7 @@ func (m *model) run(action tui.ActionID, key string) tea.Cmd {
 	case actBack:
 		// Back goes up from a block to the line above it; a block that needs it took the key before.
 		m.zone = tui.StepZoneLevel(m.zones(), m.zone, -1)
-	case actHelp:
+	case actHelp, actHelpF1:
 		m.openHelp()
 	case actInfo:
 		m.openExplanation()

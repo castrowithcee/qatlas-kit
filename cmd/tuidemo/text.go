@@ -116,13 +116,7 @@ const (
 	textNoticeLineOne tui.TextID = "demo.notice.lineone"
 	textNoticeLineTwo tui.TextID = "demo.notice.linetwo"
 
-	textHelpNameStart tui.TextID = "demo.help.namestart"
-	textHelpNameKeys  tui.TextID = "demo.help.namekeys"
-	textHelpNameMouse tui.TextID = "demo.help.namemouse"
-	textHelpStart     tui.TextID = "demo.help.start"
-	textHelpKeys      tui.TextID = "demo.help.keys"
-	textHelpMouse     tui.TextID = "demo.help.mouse"
-	textHelpNote      tui.TextID = "demo.help.note"
+	textHelpNote tui.TextID = "demo.help.note"
 
 	textExplainTitle tui.TextID = "demo.explain.title"
 	textExplainBody  tui.TextID = "demo.explain.body"
@@ -373,17 +367,7 @@ func catalog() i18n.Catalogs[tui.TextID] {
 			textNoticeLineOne: "This is a calm message without a question.",
 			textNoticeLineTwo: "Nothing was changed.",
 
-			textHelpNameStart: "Start",
-			textHelpNameKeys:  "Keys",
-			textHelpNameMouse: "Mouse",
-			textHelpStart: "About the workbench:\n" +
-				"Every tab shows one group of building blocks with invented data. Open a tab with its digit and move between the tabs with the arrow keys.\n" +
-				"The switches for theme, language, icons and mouse act at once.",
-			textHelpKeys: "Keys:\n" +
-				"The key table has one place for every key. The footer names the keys that act on the screen you see, and the list at the end of this topic names all of them.",
-			textHelpMouse: "Mouse:\n" +
-				"A click does what its key does, with the same checks. Keys, tabs, rows and buttons are click targets. The wheel scrolls where text is longer than its room.",
-			textHelpNote: "Invented help topics.",
+			textHelpNote: "Invented help pages.",
 
 			textExplainTitle: "Garden journal",
 			textExplainBody:  "The sample data of this workbench is an invented journal of herbs and vegetables in a few beds and pots. No real garden is behind it.",
@@ -641,17 +625,7 @@ func catalog() i18n.Catalogs[tui.TextID] {
 			textNoticeLineOne: "Das ist eine ruhige Meldung ohne Frage.",
 			textNoticeLineTwo: "Es wurde nichts geändert.",
 
-			textHelpNameStart: "Start",
-			textHelpNameKeys:  "Tasten",
-			textHelpNameMouse: "Maus",
-			textHelpStart: "Über die Werkbank:\n" +
-				"Jeder Reiter zeigt eine Gruppe von Bausteinen mit erfundenen Daten. Öffne einen Reiter mit seiner Ziffer und wechsle mit den Pfeiltasten zwischen den Reitern.\n" +
-				"Die Schalter für Theme, Sprache, Icons und Maus wirken sofort.",
-			textHelpKeys: "Tasten:\n" +
-				"Die Tastentabelle hat für jede Taste einen Platz. Die Fußzeile nennt die Tasten, die auf dem sichtbaren Bild wirken, die Liste am Ende dieses Themas nennt alle.",
-			textHelpMouse: "Maus:\n" +
-				"Ein Klick tut, was seine Taste tut, mit denselben Prüfungen. Tasten, Reiter, Zeilen und Schaltflächen sind Klickziele. Das Rad scrollt, wo ein Text länger als sein Platz ist.",
-			textHelpNote: "Erfundene Hilfethemen.",
+			textHelpNote: "Erfundene Hilfeseiten.",
 
 			textExplainTitle: "Gartentagebuch",
 			textExplainBody:  "Die Beispieldaten dieser Werkbank sind ein erfundenes Tagebuch über Kräuter und Gemüse in einigen Beeten und Töpfen. Kein echter Garten steht dahinter.",
