@@ -117,7 +117,7 @@ func (m *model) openHelp() {
 		Screen: m.footerHints(), Global: []tui.ActionID{actQuit, actHelp, actCommands, actInfo},
 		Keys: tui.HelpKeys{Left: actLeft, Right: actRight, Next: actZoneNext, Prev: actZonePrev, Up: actUp, Down: actDown,
 			PageUp: actPageUp, PageDown: actPageDown, First: actFirst, Last: actLast, Back: actBack, Help: actHelp,
-			Outline: actOutline, Enter: actEnter},
+			Outline: actOutline, Enter: actEnter, Search: actSearch},
 		Note: textHelpNote, CloseOutside: true,
 	}, m.keys, m.text)
 	if err == nil {
@@ -161,7 +161,9 @@ func (m *model) modalKey(msg tea.KeyPressMsg) tea.Cmd {
 	if msg.String() == "ctrl+c" {
 		return tea.Quit
 	}
-	if act, ok := m.modal.Update(msg); ok {
+	act, ok := m.modal.Update(msg)
+	m.takeHelpFocus()
+	if ok {
 		return m.finish(act)
 	}
 	if m.keys.Is(msg, actBack, m.focus) {
@@ -169,6 +171,13 @@ func (m *model) modalKey(msg tea.KeyPressMsg) tea.Cmd {
 		m.cancelled()
 	}
 	return nil
+}
+
+// takeHelpFocus follows the input focus of the help, which takes text while its search is open.
+func (m *model) takeHelpFocus() {
+	if h, ok := m.modal.(*tui.Help); ok {
+		m.focus = h.Input()
+	}
 }
 
 // finish runs what the open part answered, for a key and for a click alike.
@@ -238,6 +247,7 @@ func (m *model) modalClick(msg tea.MouseMsg) tea.Cmd {
 		return nil
 	}
 	act, _ := m.modal.Click(res)
+	m.takeHelpFocus()
 	return m.finish(act)
 }
 

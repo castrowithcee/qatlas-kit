@@ -199,6 +199,8 @@ func (m *model) handle(msg tea.Msg) tea.Cmd {
 			m.cmdline.Paste(msg.Content)
 		case m.dialog != nil:
 			m.dialog.Paste(msg.Content)
+		case m.kind == kindHelp && m.modal != nil:
+			m.modal.(*tui.Help).Paste(msg.Content)
 		case m.modal == nil:
 			if b := m.inBlock(m.zone); b != nil {
 				b.paste(msg.Content)

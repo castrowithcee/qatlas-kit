@@ -30,10 +30,10 @@
 // it out as well. A Form or Dialog does not handle f1.
 //
 // A one-line text field, the input of a Dialog, the text, masked and date fields of a Form, the search of a
-// LogView, the filter of a List and the input of a CommandLine edit with a fixed set of keys. A screen asks
-// its own actions first, so a Form, a LogView and a List keep theirs for left, right, home and end, and a
-// second way of an action wins over an edit. The Paste of each of these parts and a suggestion a Dialog
-// takes insert whole at the cursor, never as keys.
+// LogView, the filter of a List, the search of a Help and the input of a CommandLine edit with a fixed set
+// of keys. A screen asks its own actions first, so a Form, a LogView and a List keep theirs for left, right,
+// home and end, and a second way of an action wins over an edit. The Paste of each of these parts and a
+// suggestion a Dialog takes insert whole at the cursor, never as keys.
 //
 // The parts with state share one shape, and Dialog, Help, Explanation and Form, which answer with an ActionID,
 // satisfy the interface Modal. NewX takes an XSpec, which holds the content and, in Keys, the actions of the
@@ -377,8 +377,18 @@
 // the order of helppages, the page shown marked. Enter or a click on an entry opens that page from its top,
 // back closes only the overview, and the help key closes the whole help; over topics the key does nothing and
 // no key line names it. The application's table should give the key to an action of LevelHelp, which may
-// repeat a letter of the main levels, such as "o". Outside the overview, back and the help key close the
-// help. A click on a line of the key list
+// repeat a letter of the main levels, such as "o". HelpKeys.Search opens a search over all pages inside the
+// frame: a line of input that searches as it is typed, case-insensitively, in the title, the keywords and the
+// text without marks, with the keys as drawn, of every page in HelpSpec.Lang and in English where a page has
+// no translation. The hits come in the rank title, keywords, text, and within a rank in the order of the
+// pages; each shows its topic, its page and a line of text cut around the first place found, the match marked
+// and control characters masked. Empty input has no hits, and no match shows TextHelpSearchNone. Up and down
+// choose a hit, enter or a click opens its page and, for a match in the text, scrolls to the first place of
+// it; back closes only the search, the help key the whole help. The application's table should give the key
+// to ActionSearch. While the input takes text, Help.Input is InputText, so the application reads keys under
+// that focus: the help key "?" then types, and its second way, such as f1, still closes. Help.Paste inserts
+// into the input. Over topics the key does nothing and no key line names it. Outside the overview and the
+// search, back and the help key close the help. A click on a line of the key list
 // yields its action, and the application closes the help and then runs it. An Explanation shows a title, the
 // long text, a helptopics.Term and the address of the documentation, which is shown in full and, where the
 // terminal takes escapes, also linked; Back and the info key close it, its scroll keys may page and jump to
@@ -498,15 +508,15 @@
 // ctrl+enter, which the chat uses to send.
 //
 // Text editing. A one-line text field, the input of a Dialog, the text, masked and date fields of a Form, the
-// search of a LogView, the filter of a List and the input of a CommandLine edit with keys that no action may
-// hold: the arrows, home, end, ctrl+a, ctrl+e, ctrl+b and ctrl+f move by a character and to the ends; ctrl or
-// alt with an arrow, alt+b and alt+f by a word; backspace, delete, ctrl+h, ctrl+d, ctrl+w, alt+d,
-// alt+backspace and alt+delete delete a character or a word; ctrl+u and ctrl+k delete to the start or end. A
-// word ends at white space; in a masked field a word jump goes to an end and a word deletion takes everything
-// on that side, so no boundary shows. The Paste of each of these parts and a suggestion a Dialog takes insert
-// whole at the cursor, never as keys: line breaks at the end go, those and tabs inside become one space, and
-// other control characters, invalid UTF-8 and direction marks such as U+202E are dropped, in a masked field
-// too.
+// search of a LogView, the filter of a List, the search of a Help and the input of a CommandLine edit with
+// keys that no action may hold: the arrows, home, end, ctrl+a, ctrl+e, ctrl+b and ctrl+f move by a character
+// and to the ends; ctrl or alt with an arrow, alt+b and alt+f by a word; backspace, delete, ctrl+h, ctrl+d,
+// ctrl+w, alt+d, alt+backspace and alt+delete delete a character or a word; ctrl+u and ctrl+k delete to the
+// start or end. A word ends at white space; in a masked field a word jump goes to an end and a word deletion
+// takes everything on that side, so no boundary shows. The Paste of each of these parts and a suggestion a
+// Dialog takes insert whole at the cursor, never as keys: line breaks at the end go, those and tabs inside
+// become one space, and other control characters, invalid UTF-8 and direction marks such as U+202E are
+// dropped, in a masked field too.
 //
 // Specs. Every NewX checks its XSpec against the Keymap and the Translator and refuses what cannot work: a
 // missing key or one that names no action of the key table, two keys that name one action, a missing text or
@@ -666,6 +676,8 @@
 //     further keys. Default: no key list, no note, no further key.
 //   - HelpKeys.Outline, Enter: the key of the overview of the pages and the key that opens its entry; with
 //     Outline, First and Last are needed too. Default: no key, no overview.
+//   - HelpKeys.Search: the key of the search over the pages; with Search, Enter is needed too. Default: no
+//     key, no search.
 //   - ExplanationItem.Term, URL, LinkText and ExplanationKeys.PageUp, PageDown, First, Last, Link: the term,
 //     the documentation address, the text above it and further keys. Default: none, none, TextInfoLink, no
 //     key.
