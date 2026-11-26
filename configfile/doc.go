@@ -1,33 +1,46 @@
 // Package configfile provides schema-independent file operations for configuration documents.
 //
 // A Store reads and writes one file through a caller-supplied Codec. Reads take no lock and return the
-// SHA-256 revision of the bytes read. Every write runs under a stable cross-process lock file beside the
-// resolved target and only while the file still has the revision the change was based on; otherwise it
-// fails with a *ConflictError and nothing is merged. Writes validate, encode, decode the encoding again,
-// back up the current bytes, and replace the target atomically. Any failure before the rename leaves the
-// file byte-identical.
-//
-// A symlinked file is replaced at its target, and a dangling final link is an error. New files are
-// private to the current user (0600, directories 0700, a user-only ACL on Windows), and existing
-// permissions are kept. A lock file that is not private is rejected without being changed; on Windows, a
-// regular lock file owned by the current user is first given the user-only ACL and then checked again.
-//
-// Backups lie in a backups directory beside the configured path and are never overwritten. The ten newest
-// regular backups and the first hand-edited version are kept. RestoreBackup returns a Restored that
-// UndoRestore can put back. Copies made with BackupCopy are kept apart from rotation.
-//
-// Callers may choose the file names. WithBackupNaming selects the scheme for reading and writing backups
-// (prefixes, marker of later hand-edited versions, suffix, sequence width, copy marker and an optional
-// copy suffix that replaces the suffix on BackupCopy names only) and WithTempPrefix the prefix of the
-// temporary file; without them the neutral defaults apply, and NewStore rejects invalid
-// choices before it creates anything. Files outside the selected scheme are not backups. Codec.Canonicalize
-// replaces the decode-and-encode comparison that recognizes hand-edited versions, so files from before a
-// rename or migration need not count as hand-edited. Choosing names never bypasses the lock or the
-// revision check.
-//
-// WithPrivateReplace makes every replacement of the file private (0600, a user-only ACL on Windows)
-// instead of keeping the permissions of the replaced file. It covers every write of the store, including
-// RestoreBackup and UndoRestore. Without it, existing permissions are kept.
+// SHA-256 revision of the bytes read. RestoreBackup returns a Restored that UndoRestore can put back. Copies
+// made with BackupCopy are kept apart from rotation.
 //
 // The file path and the document schema belong to the caller.
+//
+// # Always enforced
+//
+// Every write runs under a stable cross-process lock file beside the resolved target and only while the
+// file still has the revision the change was based on; otherwise it fails with a *ConflictError and nothing
+// is merged. Writes validate, encode, decode the encoding again, validate the decoded document, back up the
+// current bytes, and replace the target atomically. Any failure before the rename leaves the file
+// byte-identical. Choosing names never bypasses the lock or the revision check.
+//
+// A symlinked file is replaced at its target, and a dangling final link is an error. New files are private
+// to the current user (0600, directories 0700, a user-only ACL on Windows), and a replacement keeps the
+// permissions of the replaced file. A lock file that is not private is rejected without being changed; on
+// Windows, a regular lock file owned by the current user is first given the user-only ACL and then checked
+// again. WriteNewPrivateFile restricts access before it writes data, never replaces or follows anything at
+// its path (an existing file or link is an *ExistsError) and removes a file it could not write completely.
+//
+// Backups lie in a backups directory beside the configured path and are never overwritten. The ten newest
+// regular backups and the first hand-edited version are kept. Files outside the selected naming scheme are
+// not backups, and a copy name never parses as a backup of the store. Rotation, permissions and the
+// sequence rules do not depend on the naming.
+//
+// NewStore rejects an invalid naming or prefix before it creates anything. ResolvePath refuses a file name
+// that is not a plain name.
+//
+// # Options
+//
+//   - WithBackupNaming: selects the scheme for reading and writing backups (prefixes, marker of later
+//     hand-edited versions, suffix, sequence width, copy marker and an optional copy suffix that replaces the
+//     suffix on BackupCopy names only). Default: neutral names <file>-<stamp>-<six digits>.bak.
+//   - WithTempPrefix: the prefix of the temporary file a write creates beside the target. Default: "." followed
+//     by the target name and "-".
+//   - WithPrivateReplace: makes every replacement private (0600, a user-only ACL on Windows), including
+//     RestoreBackup and UndoRestore. Default: a replacement keeps the permissions of the replaced file.
+//   - Codec.Canonicalize: replaces the decode-and-encode comparison that recognizes hand-edited versions, so
+//     files from before a rename or migration need not count as hand-edited. Default: the decode-and-encode
+//     comparison.
+//   - Store.Observed: an Observer with FileRetry and LockWaited callbacks for measurement. Default: no
+//     callbacks.
 package configfile
