@@ -23,7 +23,10 @@ reference.
 
 ## Documentation
 
-- Each package documents its purpose, contract and security boundary in English in `doc.go`.
+- Each package documents its purpose, contract and security boundary in English in `doc.go`. Its package
+  comment ends with two sections in this order: `# Always enforced` holds the checks, limits and fixed
+  defaults that no application can switch off; `# Options` lists every option, one item each, with what it
+  changes and its default. A section without content says so in one sentence.
 - Comments are English and explain only a non-obvious why.
 - A new package adds one line to the package list in `README.md`.
 - User documentation states the current contract only; history belongs in Git and release notes.
