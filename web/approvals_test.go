@@ -113,7 +113,7 @@ func TestApprovalOnlyWithSessionTokenAndOrigin(t *testing.T) {
 	ch := f.ask(t, context.Background(), "unlock")
 	good := f.form(t)
 
-	wrongToken := url.Values{CSRFField: {"x" + good.Get(CSRFField)[1:]}, "request": good["request"], "passphrase": good["passphrase"]}
+	wrongToken := url.Values{CSRFField: {"x" + good.Get(CSRFField)}, "request": good["request"], "passphrase": good["passphrase"]}
 	noToken := url.Values{"request": good["request"], "passphrase": good["passphrase"]}
 	cases := []struct {
 		name   string
