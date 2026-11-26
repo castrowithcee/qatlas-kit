@@ -30,6 +30,13 @@
 // locks; the package imports neither. The application calls Touch when it uses the vault. Lock and Close
 // lock at once; call Close after Serve returns so the vault does not outlive the server.
 //
+// Approvals lets a person approve in the browser: its PersonChannel is a function with the signature of
+// approval.AuthorizeOptions.PersonChannel, and web does not import approval. A call shows its prompt on a
+// page at the configured path and waits for the form, and ends with the passphrase, ErrApprovalDeclined,
+// ErrApprovalTimeout, ErrApprovalBusy (one request is shown at a time) or the error of the context the tool
+// passes, which it ties to the shutdown of its server. Approvals asks for no recent sign-in; a tool that
+// wants one wraps the routes with RequireRecent.
+//
 // Static serves the files of an fs.FS such as an embed.FS for GET and HEAD, mounted as a route like
 // "GET /". It reads the files once and answers only for a path that names one of them.
 //
@@ -127,6 +134,15 @@
 // save a field, and an extension can read what is typed, which is why there is no Unlocker unless the
 // application makes one.
 //
+// The routes of Approvals are not public: the form is accepted only with a valid session, the CSRF token of
+// that session and the origin check of the server, and a refusal leaves the request waiting. On a server with
+// LoginOff, which has no sessions, they refuse every request. The prompt is escaped. The page has no script
+// and no prefilled value and asks the browser not to save or fill the field, and neither it, the answer, a
+// log nor a protocol entry holds the passphrase. Audit receives approval-submitted, approval-declined,
+// approval-expired and approval-cancelled with the peer host only. Submitted means the form delivered a
+// passphrase: whether Authorize accepts it is for approval to decide, and a tool that wants that verdict in
+// its protocol records it itself.
+//
 // Static answers no directory listing, no redirect, no path outside the file system and no file or
 // directory whose name starts with a dot. The Content-Type is fixed by extension, application/octet-stream
 // for an unknown one, next to the fixed nosniff header. Each file has an ETag of its content with
@@ -180,6 +196,8 @@
 //   - UnlockOptions.Window: how long a failed unlock attempt counts. Default: 10 minutes.
 //   - UnlockOptions.Attempts: the failed unlock attempts from all addresses together per Window. Default: 5.
 //   - UnlockOptions.Audit: receives the unlock and lock events. Default: no protocol.
+//   - ApprovalOptions.Timeout: how long a request waits for an answer. Default: 2 minutes.
+//   - ApprovalOptions.Audit: receives the outcomes of approvals. Default: no protocol.
 //   - Options.Log: receives refusals and the errors of the HTTP server. Default: they are discarded.
 //   - Options.Redactor: removes known secrets from every log line. Default: the text is logged as it is.
 package web
