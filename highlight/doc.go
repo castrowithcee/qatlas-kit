@@ -27,14 +27,12 @@
 //     the AS of FROM and the CMD of HEALTHCHECK; flags and the names of ENV, ARG and LABEL are keys; quoted
 //     strings; numbers; comment lines.
 //
-// # Contract
+// # Always enforced
 //
 // The sections of a line are ascending, do not overlap, lie inside the line and start and end on UTF-8
 // character boundaries. The package never sets Masked: what to hide is for the application to decide.
 // There is no package state, and the time is linear in the length of the text. The state between lines is
 // small and holds nothing but the mode of the block, quote or here-document that is open.
-//
-// # Limits
 //
 // Spans returns nil, so the text view draws plain text, for an unknown format, an empty text and binary text,
 // which is one with a NUL byte or more than a tenth of invalid UTF-8 in its first 64 KiB. A line longer than
@@ -43,4 +41,8 @@
 // the format has a block or quote that is closed explicitly: YAML block scalars, quoted values of Env, TOML
 // multi-line strings, and in shell quotes and the first here-document of a line. A plain or quoted YAML scalar
 // that continues on the next line is not.
+//
+// # Options
+//
+// The package has no options.
 package highlight
