@@ -69,6 +69,20 @@
 // or the Authenticator (for the sign-in page) has one. A public route other than those of Pages carries no
 // token check of its own.
 //
+// Approvals lets a person approve in the browser: its PersonChannel is a function with the signature of
+// approval.AuthorizeOptions.PersonChannel, and web does not import approval. A call shows its prompt,
+// escaped, on a page at the configured path and waits for the form, for 2 minutes unless ApprovalOptions say
+// otherwise, and ends with the passphrase, ErrApprovalDeclined, ErrApprovalTimeout, ErrApprovalBusy (one
+// request is shown at a time) or the error of the context the tool passes, which it ties to the shutdown of
+// its server. The routes are not public: the form is accepted only with a valid session, the CSRF token of
+// that session and the origin check of the server, and a refusal leaves the request waiting. The page has no
+// script and no prefilled value and asks the browser not to save or fill the field, and neither it, the
+// answer, a log nor a protocol entry holds the passphrase. Audit receives approval-submitted,
+// approval-declined, approval-expired and approval-cancelled with the peer host only. Submitted means the
+// form delivered a passphrase: whether Authorize accepts it is for approval to decide, and a tool that wants
+// that verdict in its protocol records it itself. Approvals asks for no recent sign-in; a tool that wants
+// one wraps the routes with RequireRecent.
+//
 // RequireRecent marks a route that is not public as one for sensitive steps: it runs only if the session was
 // signed in or confirmed within PagesOptions.ReauthWithin, five minutes by default, and the session store
 // keeps that time as SignedIn. An older sign-in sends a GET or HEAD request to the confirmation page at
