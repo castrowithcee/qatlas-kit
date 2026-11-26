@@ -14,6 +14,7 @@ import (
 	"go.yaml.in/yaml/v3"
 
 	"github.com/castrowithcee/qatlas-kit/configfile"
+	"github.com/castrowithcee/qatlas-kit/i18n"
 	"github.com/castrowithcee/qatlas-kit/tui"
 )
 
@@ -151,38 +152,77 @@ type fileForm struct {
 	Extra      map[string]any    `yaml:",inline"`
 }
 
+// Warning is one warning of loading, as a text of tui.ModuleCatalog and the values its format verbs take. A
+// warning about a value of the file also names the file in Path, which is not a format value: the full text
+// is Path, ": " and the text of ID. A tool shows it in its language with Format, or with
+// tui.Translator.Lookup(w.ID, w.Args...) and the Path prefix itself. Values that come from the file are
+// masked by the %q verbs of the texts.
+type Warning struct {
+	ID   tui.TextID
+	Args []any
+	// Path is the preferences file; empty where the text names the file itself or no file is involved.
+	Path string
+}
+
+// String returns the English text of the warning.
+func (w Warning) String() string {
+	return w.prefixed(fmt.Sprintf(tui.ModuleCatalog()[i18n.English][w.ID], w.Args...))
+}
+
+// Format returns the text of the warning in the language of tr.
+func (w Warning) Format(tr tui.Translator) string { return w.prefixed(tr.Lookup(w.ID, w.Args...)) }
+
+func (w Warning) prefixed(text string) string {
+	if w.Path == "" {
+		return text
+	}
+	return w.Path + ": " + text
+}
+
 // Load reads the preferences at path. It never fails: a missing file gives the defaults without a warning;
 // an unreadable or malformed file gives the defaults and a value that is not valid gives the default for
-// that part, each with a warning that names it.
+// that part, each with a warning that names it. The warnings are English texts; LoadWarnings returns them
+// as translatable values.
 func Load(path string, schema Schema) (Prefs, []string) {
+	prefs, warnings := LoadWarnings(path, schema)
+	var texts []string
+	for _, w := range warnings {
+		texts = append(texts, w.String())
+	}
+	return prefs, texts
+}
+
+// LoadWarnings is Load with the warnings as values a tool can translate.
+func LoadWarnings(path string, schema Schema) (Prefs, []Warning) {
 	prefs := Default(schema)
 	if err := schema.check(); err != nil {
-		return prefs, []string{err.Error()}
+		// check wraps the joined reasons once; the text of the warning carries the lead-in itself.
+		return prefs, []Warning{{ID: tui.TextPrefsSchemaInvalid, Args: []any{errors.Unwrap(err).Error()}}}
 	}
 	store, err := configfile.NewStore(path, codec(schema))
 	if err != nil {
-		return prefs, []string{fmt.Sprintf("cannot read %s, using the defaults: %v", path, err)}
+		return prefs, []Warning{{ID: tui.TextPrefsUnreadable, Args: []any{path, err.Error()}}}
 	}
 	data, _, err := store.Snapshot()
 	if errors.Is(err, fs.ErrNotExist) {
 		return prefs, nil
 	}
 	if err != nil {
-		return prefs, []string{fmt.Sprintf("cannot read %s, using the defaults: %v", path, err)}
+		return prefs, []Warning{{ID: tui.TextPrefsUnreadable, Args: []any{path, err.Error()}}}
 	}
 	prefs, warnings, err := parse(data, schema)
 	if err != nil {
-		return Default(schema), []string{fmt.Sprintf("cannot parse %s, using the defaults: %v", path, err)}
+		return Default(schema), []Warning{{ID: tui.TextPrefsUnparsable, Args: []any{path, err.Error()}}}
 	}
-	for i, w := range warnings {
-		warnings[i] = path + ": " + w
+	for i := range warnings {
+		warnings[i].Path = path
 	}
 	return prefs, warnings
 }
 
 // parse reads the values of data one by one. A value that is not valid keeps its default and adds a
 // warning; keys this version does not know, also action IDs under keys, are ignored.
-func parse(data []byte, schema Schema) (Prefs, []string, error) {
+func parse(data []byte, schema Schema) (Prefs, []Warning, error) {
 	prefs := Default(schema)
 	data, err := rewrite(data, schema)
 	if err != nil {
@@ -201,13 +241,13 @@ func parse(data []byte, schema Schema) (Prefs, []string, error) {
 	if err = yaml.Unmarshal(data, &raw); err != nil {
 		return prefs, nil, err
 	}
-	var warnings []string
+	var warnings []Warning
 	choose := func(name string, value *string, valid []string, target *string) {
 		if value == nil {
 			return
 		}
 		if !slices.Contains(valid, *value) {
-			warnings = append(warnings, fmt.Sprintf("%s %q is not one of %q, using %s", name, *value, valid, *target))
+			warnings = append(warnings, Warning{ID: tui.TextPrefsNotOneOf, Args: []any{name, *value, valid, *target}})
 			return
 		}
 		*target = *value
@@ -223,14 +263,14 @@ func parse(data []byte, schema Schema) (Prefs, []string, error) {
 	}
 	if raw.Navigation != nil {
 		if len(schema.Navigations) == 0 {
-			warnings = append(warnings, "navigation: this application does not offer the setting, using its own form")
+			warnings = append(warnings, Warning{ID: tui.TextPrefsNavigationNotOffered})
 		} else {
 			choose("navigation", raw.Navigation, schema.Navigations, &prefs.Navigation)
 		}
 	}
 	if raw.Editor != nil {
-		if err := checkEditor(*raw.Editor); err != nil {
-			warnings = append(warnings, fmt.Sprintf("%v, using none", err))
+		if checkEditor(*raw.Editor) != nil {
+			warnings = append(warnings, Warning{ID: tui.TextPrefsEditorInvalid, Args: []any{*raw.Editor}})
 		} else {
 			prefs.Editor = *raw.Editor
 		}
@@ -257,12 +297,12 @@ func rewrite(data []byte, schema Schema) ([]byte, error) {
 
 // loadKeys keeps the bindings the key table accepts. A binding that breaks a rule or collides keeps the
 // default of its action and adds a warning; the result never collides.
-func loadKeys(given map[string]string, keymap *tui.Keymap, warnings []string) (map[tui.ActionID]string, []string) {
+func loadKeys(given map[string]string, keymap *tui.Keymap, warnings []Warning) (map[tui.ActionID]string, []Warning) {
 	if len(given) == 0 {
 		return nil, warnings
 	}
 	if keymap == nil {
-		return nil, append(warnings, "keys: this application has no keys to rebind, using the defaults")
+		return nil, append(warnings, Warning{ID: tui.TextPrefsKeysNone})
 	}
 	actions := keymap.Actions()
 	overrides := map[tui.ActionID]string{}
@@ -273,13 +313,13 @@ func loadKeys(given map[string]string, keymap *tui.Keymap, warnings []string) (m
 	}
 	usable, errs := keymap.Resolve(overrides)
 	for _, err := range errs {
-		standard := "no extra key"
+		w := Warning{ID: tui.TextPrefsKeyInvalidNoExtra, Args: []any{string(err.Action), err.Error()}}
 		for _, a := range actions {
 			if a.ID == err.Action && a.Rebind != tui.RebindExtra {
-				standard = keymap.Label(a.ID)
+				w = Warning{ID: tui.TextPrefsKeyInvalid, Args: []any{string(err.Action), err.Error(), keymap.Label(a.ID)}}
 			}
 		}
-		warnings = append(warnings, fmt.Sprintf("keys.%s %v, using %s", err.Action, err, standard))
+		warnings = append(warnings, w)
 	}
 	return usable, warnings
 }
@@ -366,7 +406,7 @@ func codec(schema Schema) configfile.Codec[Prefs] {
 				return Prefs{}, err
 			}
 			if len(warnings) > 0 {
-				return Prefs{}, fmt.Errorf("%s", warnings[0])
+				return Prefs{}, errors.New(warnings[0].String())
 			}
 			return p, nil
 		},

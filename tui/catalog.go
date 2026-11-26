@@ -210,20 +210,29 @@ const (
 	TextFileUp          TextID = "tui.file.up"
 	TextFileUnreadable  TextID = "tui.file.unreadable"
 
-	TextSettingsTitle    TextID = "tui.settings.title"
-	TextSettingsGeneral  TextID = "tui.settings.general"
-	TextSettingTheme     TextID = "tui.setting.theme"
-	TextSettingStart     TextID = "tui.setting.start"
-	TextSettingIcons     TextID = "tui.setting.icons"
-	TextSettingLanguage  TextID = "tui.setting.language"
-	TextSettingMouse     TextID = "tui.setting.mouse"
-	TextSettingDefault   TextID = "tui.setting.default"
-	TextSettingsSaved    TextID = "tui.settings.saved"
-	TextSettingsNotSaved TextID = "tui.settings.notsaved"
-	TextValueOn          TextID = "tui.value.on"
-	TextValueOff         TextID = "tui.value.off"
-	TextValueNone        TextID = "tui.value.none"
-	TextThemeUnknown     TextID = "tui.theme.unknown"
+	TextSettingsTitle             TextID = "tui.settings.title"
+	TextSettingsGeneral           TextID = "tui.settings.general"
+	TextSettingTheme              TextID = "tui.setting.theme"
+	TextSettingStart              TextID = "tui.setting.start"
+	TextSettingIcons              TextID = "tui.setting.icons"
+	TextSettingLanguage           TextID = "tui.setting.language"
+	TextSettingMouse              TextID = "tui.setting.mouse"
+	TextSettingDefault            TextID = "tui.setting.default"
+	TextSettingsSaved             TextID = "tui.settings.saved"
+	TextSettingsNotSaved          TextID = "tui.settings.notsaved"
+	TextValueOn                   TextID = "tui.value.on"
+	TextValueOff                  TextID = "tui.value.off"
+	TextValueNone                 TextID = "tui.value.none"
+	TextThemeUnknown              TextID = "tui.theme.unknown"
+	TextPrefsSchemaInvalid        TextID = "tui.prefs.schema"
+	TextPrefsUnreadable           TextID = "tui.prefs.unreadable"
+	TextPrefsUnparsable           TextID = "tui.prefs.unparsable"
+	TextPrefsNotOneOf             TextID = "tui.prefs.notoneof"
+	TextPrefsNavigationNotOffered TextID = "tui.prefs.navigation.notoffered"
+	TextPrefsEditorInvalid        TextID = "tui.prefs.editor.invalid"
+	TextPrefsKeysNone             TextID = "tui.prefs.keys.none"
+	TextPrefsKeyInvalid           TextID = "tui.prefs.key.invalid"
+	TextPrefsKeyInvalidNoExtra    TextID = "tui.prefs.key.invalidnoextra"
 )
 
 // ModuleCatalog returns the general texts of this package in English and German. Each call returns a new
@@ -435,20 +444,29 @@ func ModuleCatalog() i18n.Catalogs[TextID] {
 			TextFileUp:          "up",
 			TextFileUnreadable:  "unreadable",
 
-			TextSettingsTitle:    "Settings",
-			TextSettingsGeneral:  "General",
-			TextSettingTheme:     "theme",
-			TextSettingStart:     "start view",
-			TextSettingIcons:     "icons",
-			TextSettingLanguage:  "language",
-			TextSettingMouse:     "mouse",
-			TextSettingDefault:   "(default)",
-			TextSettingsSaved:    "Saved on this device.",
-			TextSettingsNotSaved: "The preferences could not be written.",
-			TextValueOn:          "on",
-			TextValueOff:         "off",
-			TextValueNone:        "none",
-			TextThemeUnknown:     "theme %q is not a theme of this version, using %s",
+			TextSettingsTitle:             "Settings",
+			TextSettingsGeneral:           "General",
+			TextSettingTheme:              "theme",
+			TextSettingStart:              "start view",
+			TextSettingIcons:              "icons",
+			TextSettingLanguage:           "language",
+			TextSettingMouse:              "mouse",
+			TextSettingDefault:            "(default)",
+			TextSettingsSaved:             "Saved on this device.",
+			TextSettingsNotSaved:          "The preferences could not be written.",
+			TextValueOn:                   "on",
+			TextValueOff:                  "off",
+			TextValueNone:                 "none",
+			TextThemeUnknown:              "theme %q is not a theme of this version, using %s",
+			TextPrefsSchemaInvalid:        "invalid preferences schema: %s",
+			TextPrefsUnreadable:           "cannot read %s, using the defaults: %s",
+			TextPrefsUnparsable:           "cannot parse %s, using the defaults: %s",
+			TextPrefsNotOneOf:             "%s %q is not one of %q, using %s",
+			TextPrefsNavigationNotOffered: "navigation: this application does not offer the setting, using its own form",
+			TextPrefsEditorInvalid:        "editor %q holds a control character or invalid UTF-8, using none",
+			TextPrefsKeysNone:             "keys: this application has no keys to rebind, using the defaults",
+			TextPrefsKeyInvalid:           "keys.%s %s, using %s",
+			TextPrefsKeyInvalidNoExtra:    "keys.%s %s, using no extra key",
 		},
 		i18n.German: {
 			TextKeyUp:       "Hoch",
@@ -655,20 +673,29 @@ func ModuleCatalog() i18n.Catalogs[TextID] {
 			TextFileUp:          "Hoch",
 			TextFileUnreadable:  "nicht lesbar",
 
-			TextSettingsTitle:    "Einstellungen",
-			TextSettingsGeneral:  "Allgemein",
-			TextSettingTheme:     "Theme",
-			TextSettingStart:     "Startansicht",
-			TextSettingIcons:     "Symbole",
-			TextSettingLanguage:  "Sprache",
-			TextSettingMouse:     "Maus",
-			TextSettingDefault:   "(Standard)",
-			TextSettingsSaved:    "Auf diesem Gerät gespeichert.",
-			TextSettingsNotSaved: "Die Einstellungen ließen sich nicht schreiben.",
-			TextValueOn:          "an",
-			TextValueOff:         "aus",
-			TextValueNone:        "keine",
-			TextThemeUnknown:     "Theme %q gibt es in dieser Version nicht, verwendet wird %s",
+			TextSettingsTitle:             "Einstellungen",
+			TextSettingsGeneral:           "Allgemein",
+			TextSettingTheme:              "Theme",
+			TextSettingStart:              "Startansicht",
+			TextSettingIcons:              "Symbole",
+			TextSettingLanguage:           "Sprache",
+			TextSettingMouse:              "Maus",
+			TextSettingDefault:            "(Standard)",
+			TextSettingsSaved:             "Auf diesem Gerät gespeichert.",
+			TextSettingsNotSaved:          "Die Einstellungen ließen sich nicht schreiben.",
+			TextValueOn:                   "an",
+			TextValueOff:                  "aus",
+			TextValueNone:                 "keine",
+			TextThemeUnknown:              "Theme %q gibt es in dieser Version nicht, verwendet wird %s",
+			TextPrefsSchemaInvalid:        "Ungültiges Schema der Einstellungen: %s",
+			TextPrefsUnreadable:           "%s lässt sich nicht lesen, verwendet werden die Standardwerte: %s",
+			TextPrefsUnparsable:           "%s lässt sich nicht auswerten, verwendet werden die Standardwerte: %s",
+			TextPrefsNotOneOf:             "%s %q ist keiner von %q, verwendet wird %s",
+			TextPrefsNavigationNotOffered: "navigation: Diese Anwendung bietet die Einstellung nicht an, verwendet wird ihre eigene Form",
+			TextPrefsEditorInvalid:        "Der Editor %q enthält ein Steuerzeichen oder ungültiges UTF-8, verwendet wird keiner",
+			TextPrefsKeysNone:             "keys: Diese Anwendung hat keine Tasten zum Umbelegen, verwendet werden die Standardtasten",
+			TextPrefsKeyInvalid:           "keys.%s %s, verwendet wird %s",
+			TextPrefsKeyInvalidNoExtra:    "keys.%s %s, verwendet wird keine zusätzliche Taste",
 		},
 	}
 }

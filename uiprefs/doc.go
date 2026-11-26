@@ -32,6 +32,14 @@
 // section that breaks a rule of the key table or collides keeps the default of its action with a warning,
 // so the loaded keys never collide.
 //
+// Every warning of Load is a text of tui.ModuleCatalog under the "tui.prefs." IDs, in English and German. Load
+// returns its English text; LoadWarnings returns the same warnings as Warning values, each with the text ID and
+// the values of its format verbs: the key, the value from the file, the allowed values and the default that
+// applies. A warning about a value of the file names the file in Warning.Path, which is not a format value: the
+// full text is the path, ": " and the text. A tool shows one in the language of its interface with
+// Warning.Format, or with tui.Translator.Lookup(w.ID, w.Args...) and the path prefix it adds itself. The %q
+// verbs mask control characters of values from the file.
+//
 // Save refuses a value that is not valid, with the same checks as Validate, and writes nothing then. It
 // writes through the configfile package: atomically under a lock file beside the target, with a backup of
 // the replaced bytes, through a symlink to its target and private to the user for a new file. When another
