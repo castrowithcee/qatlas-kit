@@ -16,6 +16,7 @@ One line per package, in alphabetical order. The package documentation holds the
 - [`cli`](cli): maps errors to exit codes and diagnostics and checks the confirmation of commands.
 - [`cmd/releasebuild`](cmd/releasebuild): runs `release/releasebuild` for the module in the current directory.
 - [`cmd/tuidemo`](cmd/tuidemo): shows the terminal building blocks at work with invented data, started with `go run ./cmd/tuidemo`.
+- [`cmd/webdemo`](cmd/webdemo): serves a small browser interface on loopback to try the one-time-code sign-in with invented content, started with `go run ./cmd/webdemo`.
 - [`cobracli`](cobracli): applies the shared flags, help, version and error conventions to a Cobra command tree.
 - [`configfile`](configfile): writes configuration documents atomically, with locking, transactions and backups.
 - [`docker`](docker): reads containers from a Docker Engine over its Unix socket, groups them by Compose project, finds those that use a path, reads their CPU and memory use, streams their logs, starts, stops and restarts them and waits until they are healthy.
@@ -46,7 +47,7 @@ One line per package, in alphabetical order. The package documentation holds the
 - [`uiprefs`](uiprefs): loads and saves the device-local preferences of a terminal user interface.
 - [`vault`](vault): stores secrets in an age-encrypted directory unlocked by a passphrase.
 - [`vaultproc`](vaultproc): keeps an unlocked vault in a hardened background process and hands it to the program an update installs.
-- [`web`](web): serves the browser interface of an application on loopback or, with TLS or declared proxies, on the network, with fixed host, origin and session checks, strict headers with a CSP nonce, size and time limits, detail-free error pages and redirects that stay on the server.
+- [`web`](web): serves the browser interface of an application on loopback or, with TLS or declared proxies, on the network, with fixed host, origin and session checks, cookie sessions with a one-time-code sign-in, strict headers with a CSP nonce, size and time limits, detail-free error pages and redirects that stay on the server.
 
 ## Installation
 
