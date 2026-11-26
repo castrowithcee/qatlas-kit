@@ -116,12 +116,13 @@
 // session a marked route is refused.
 //
 // The routes of Approvals are not public: the form is accepted only with a valid session, the CSRF token of
-// that session and the origin check of the server, and a refusal leaves the request waiting. The prompt is
-// escaped. The page has no script and no prefilled value and asks the browser not to save or fill the
-// field, and neither it, the answer, a log nor a protocol entry holds the passphrase. Audit receives
-// approval-submitted, approval-declined, approval-expired and approval-cancelled with the peer host only.
-// Submitted means the form delivered a passphrase: whether Authorize accepts it is for approval to decide,
-// and a tool that wants that verdict in its protocol records it itself.
+// that session and the origin check of the server, and a refusal leaves the request waiting. On a server with
+// LoginOff, which has no sessions, they refuse every request. The prompt is escaped. The page has no script
+// and no prefilled value and asks the browser not to save or fill the field, and neither it, the answer, a
+// log nor a protocol entry holds the passphrase. Audit receives approval-submitted, approval-declined,
+// approval-expired and approval-cancelled with the peer host only. Submitted means the form delivered a
+// passphrase: whether Authorize accepts it is for approval to decide, and a tool that wants that verdict in
+// its protocol records it itself.
 //
 // Static answers no directory listing, no redirect, no path outside the file system and no file or
 // directory whose name starts with a dot. The Content-Type is fixed by extension, application/octet-stream

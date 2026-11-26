@@ -123,9 +123,10 @@ func NewApprovals(opts ApprovalOptions) (*Approvals, error) {
 // Path is the path of the approval page.
 func (a *Approvals) Path() string { return a.path }
 
-// Routes returns the page (GET) and its form (POST). Neither is public: they run behind the session, the
-// CSRF token and the origin check of the server, none of which Approvals replaces. A tool may wrap the
-// handlers with Pages.RequireRecent to ask for a recent sign-in first; Approvals asks for none itself.
+// Routes returns the page (GET) and its form (POST). Neither is public: they run behind the session, the CSRF
+// token and the origin check of the server, none of which Approvals replaces; without a session, as on a
+// server with LoginOff, they refuse the request. A tool may wrap the handlers with Pages.RequireRecent to ask
+// for a recent sign-in first; Approvals asks for none itself.
 func (a *Approvals) Routes() []Route {
 	return []Route{
 		{Pattern: "GET " + a.path, Handler: http.HandlerFunc(a.show)},
@@ -194,11 +195,27 @@ func (a *Approvals) record(kind LoginEventKind, remote string) {
 	}
 }
 
+// sessionOK refuses a request without a session. A server with LoginOff serves every route without one, and
+// then neither the session nor its CSRF token would guard an approval.
+func sessionOK(w http.ResponseWriter, r *http.Request) bool {
+	if _, ok := SessionFrom(r); !ok {
+		Error(w, http.StatusForbidden)
+		return false
+	}
+	return true
+}
+
 func (a *Approvals) show(w http.ResponseWriter, r *http.Request) {
+	if !sessionOK(w, r) {
+		return
+	}
 	a.render(w, r, http.StatusOK, false, false)
 }
 
 func (a *Approvals) submit(w http.ResponseWriter, r *http.Request) {
+	if !sessionOK(w, r) {
+		return
+	}
 	id := r.PostFormValue(approvalRequestField)
 	declined := r.PostFormValue("decision") == approvalDeclineValue
 	pass := r.PostFormValue(approvalPassField)

@@ -170,6 +170,35 @@ func TestApprovalOnlyWithSessionTokenAndOrigin(t *testing.T) {
 	}
 }
 
+func TestApprovalRefusedWithoutSessionOnLoginOff(t *testing.T) {
+	ap, err := NewApprovals(ApprovalOptions{Path: "/approve", Timeout: time.Minute})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := newServer(t, Options{Login: LoginOff, Routes: ap.Routes()})
+	f := &approvalFixture{ap: ap}
+	ch := f.ask(t, context.Background(), "unlock")
+	ap.mu.Lock()
+	id := ap.cur.id
+	ap.mu.Unlock()
+
+	if rec := do(s, getWith("/approve")); rec.Code != http.StatusForbidden || strings.Contains(rec.Body.String(), id) {
+		t.Errorf("page without session: status %d", rec.Code)
+	}
+	form := url.Values{"request": {id}, "passphrase": {testApprovalPass}}
+	if rec := do(s, browserPost("/approve", form)); rec.Code != http.StatusForbidden {
+		t.Errorf("post without session: status %d, want %d", rec.Code, http.StatusForbidden)
+	}
+	if !f.pending() {
+		t.Fatal("a post without session answered the request")
+	}
+	select {
+	case r := <-ch:
+		t.Fatalf("a refused post delivered %+v", r)
+	default:
+	}
+}
+
 func TestApprovalProtocolHoldsNoSecret(t *testing.T) {
 	f := newApprovalFixture(t, time.Minute)
 	f.audit.events = nil
