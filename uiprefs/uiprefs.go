@@ -57,7 +57,18 @@ type Schema struct {
 	// DefaultNavigation is the form that holds without a choice; it is one of Navigations, and empty where
 	// there are none.
 	DefaultNavigation string
+	// Rewrite changes the keys of the file before any value is checked, so a value the application wrote
+	// in an earlier form can load without a warning. It gets every key of the file, also keys this package
+	// does not know and the keys section as a map[string]any, and may add, change or delete entries. A value
+	// it leaves invalid still gets the usual warning. Nil leaves the file as it is.
+	Rewrite func(raw map[string]any)
+	// WriteKeys are extra keys with fixed values that every save writes, such as a format marker. A name
+	// must not be one of the keys of this package. Loading ignores them.
+	WriteKeys map[string]any
 }
+
+// reservedKeys are the keys of the file that this package owns.
+var reservedKeys = []string{"theme", "start", "icons", "language", "mouse", "editor", "navigation", "keys"}
 
 func (s Schema) check() error {
 	var errs []error
@@ -80,6 +91,11 @@ func (s Schema) check() error {
 	}
 	if len(s.Navigations) > 0 && !slices.Contains(s.Navigations, s.DefaultNavigation) {
 		errs = append(errs, fmt.Errorf("the default navigation %q is none of the navigations", s.DefaultNavigation))
+	}
+	for name := range s.WriteKeys {
+		if name == "" || slices.Contains(reservedKeys, name) {
+			errs = append(errs, fmt.Errorf("the extra key %q is empty or a key of this package", name))
+		}
 	}
 	if err := errors.Join(errs...); err != nil {
 		return fmt.Errorf("invalid preferences schema: %w", err)
@@ -132,6 +148,7 @@ type fileForm struct {
 	// Navigation is left out while the schema offers none.
 	Navigation string            `yaml:"navigation,omitempty"`
 	Keys       map[string]string `yaml:"keys,omitempty"`
+	Extra      map[string]any    `yaml:",inline"`
 }
 
 // Load reads the preferences at path. It never fails: a missing file gives the defaults without a warning;
@@ -167,6 +184,10 @@ func Load(path string, schema Schema) (Prefs, []string) {
 // warning; keys this version does not know, also action IDs under keys, are ignored.
 func parse(data []byte, schema Schema) (Prefs, []string, error) {
 	prefs := Default(schema)
+	data, err := rewrite(data, schema)
+	if err != nil {
+		return prefs, nil, err
+	}
 	var raw struct {
 		Theme      *string           `yaml:"theme"`
 		Start      *string           `yaml:"start"`
@@ -177,7 +198,7 @@ func parse(data []byte, schema Schema) (Prefs, []string, error) {
 		Navigation *string           `yaml:"navigation"`
 		Keys       map[string]string `yaml:"keys"`
 	}
-	if err := yaml.Unmarshal(data, &raw); err != nil {
+	if err = yaml.Unmarshal(data, &raw); err != nil {
 		return prefs, nil, err
 	}
 	var warnings []string
@@ -216,6 +237,22 @@ func parse(data []byte, schema Schema) (Prefs, []string, error) {
 	}
 	prefs.Keys, warnings = loadKeys(raw.Keys, schema.Keys, warnings)
 	return prefs, warnings, nil
+}
+
+// rewrite applies Schema.Rewrite to the keys of data; without one the bytes pass through untouched.
+func rewrite(data []byte, schema Schema) ([]byte, error) {
+	if schema.Rewrite == nil {
+		return data, nil
+	}
+	raw := map[string]any{}
+	if err := yaml.Unmarshal(data, &raw); err != nil {
+		return nil, err
+	}
+	if raw == nil {
+		raw = map[string]any{}
+	}
+	schema.Rewrite(raw)
+	return yaml.Marshal(raw)
 }
 
 // loadKeys keeps the bindings the key table accepts. A binding that breaks a rule or collides keeps the
@@ -302,7 +339,7 @@ func codec(schema Schema) configfile.Codec[Prefs] {
 		Validate: func(p Prefs) error { return validate(p, schema) },
 		Encode: func(p Prefs) ([]byte, error) {
 			form := fileForm{Theme: p.Theme, Start: p.Start, Icons: p.Icons, Language: p.Language, Mouse: p.MouseEnabled,
-				Editor: p.Editor, Navigation: p.Navigation}
+				Editor: p.Editor, Navigation: p.Navigation, Extra: schema.WriteKeys}
 			if schema.Keys != nil {
 				usable, _ := schema.Keys.Resolve(p.Keys)
 				for id, key := range usable {

@@ -11,12 +11,17 @@
 // save leaves the key out while the value is empty. Validate is the check of Save on its own, for preferences
 // taken from flags or held only in memory.
 //
+// An application that stored values in an earlier form can set Schema.Rewrite, which changes the keys of the
+// file before any value is checked, and Schema.WriteKeys, fixed extra keys such as a format marker that every
+// save writes so that an earlier version still reads the file.
+//
 // # Always enforced
 //
 // An invalid Schema is refused by Load, Validate and Save: the themes must include tui.ThemeTerminal, theme and
 // area names are not empty or listed twice, DefaultArea is one of the areas, every navigation is one of
 // NavigationTabs, NavigationPathLine, NavigationPathHeader and NavigationHeaderChoice, and DefaultNavigation is
-// one of the offered navigations and empty where there are none.
+// one of the offered navigations and empty where there are none. A name in WriteKeys is not empty and none of
+// the keys of this package.
 //
 // Load never fails. A missing file yields the defaults. An unreadable or malformed file yields the defaults
 // and a warning. A value that is not valid yields the default for that part and a warning that names it:
@@ -43,4 +48,9 @@
 //     file with a warning.
 //   - Schema.DefaultNavigation: the form that holds without a choice, one of Schema.Navigations. Default:
 //     empty, which is valid only where no navigation is offered.
+//   - Schema.Rewrite: a function that gets every key of the file as a map, unknown keys and the keys section
+//     included, before any value is checked, and may change it. A value that is still invalid after it keeps
+//     the usual warning. Default: nil, the file is read as it is.
+//   - Schema.WriteKeys: extra keys with fixed values that Save writes next to the keys of this package. Load
+//     ignores them. Default: empty, a save writes only the keys of this package.
 package uiprefs
