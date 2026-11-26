@@ -143,6 +143,9 @@ const (
 	textNoteListGroups tui.TextID = "demo.note.list.groups"
 	textNoteListTicks  tui.TextID = "demo.note.list.ticks"
 
+	textListTickRecent tui.TextID = "demo.list.tick.recent"
+	textListTickPot    tui.TextID = "demo.list.tick.pot"
+
 	textListEmpty     tui.TextID = "demo.list.empty"
 	textListBarGroup  tui.TextID = "demo.list.bar.group"
 	textListBarNone   tui.TextID = "demo.list.bar.none"
@@ -402,7 +405,10 @@ func catalog() i18n.Catalogs[tui.TextID] {
 			textNoteListGroups: "{left} and {right} fold a group, so do {enter} and a click on its row. {search} types a filter; " +
 				"a filter opens the groups with hits. A click on an entry opens it at once.",
 			textNoteListTicks: "Typing filters. {toggle} ticks the marked row, a group or the row of all; a click on a box does the same. " +
-				"{back} clears the filter.",
+				"The rows under the row of all tick by a trait across the groups; Thyme stays out of the pot row. {back} clears the filter.",
+
+			textListTickRecent: "Recently watered",
+			textListTickPot:    "In a pot",
 
 			textListEmpty:     "No plants here; {back} clears the filter.",
 			textListBarGroup:  "Group",
@@ -667,7 +673,10 @@ func catalog() i18n.Catalogs[tui.TextID] {
 			textNoteListGroups: "{left} und {right} falten eine Gruppe, ebenso {enter} und ein Klick auf ihre Zeile. {search} tippt einen Filter; " +
 				"ein Filter öffnet die Gruppen mit Treffern. Ein Klick auf einen Eintrag öffnet ihn sofort.",
 			textNoteListTicks: "Tippen filtert. {toggle} kreuzt die markierte Zeile, eine Gruppe oder die Zeile für alle an; ein Klick auf ein Kästchen tut dasselbe. " +
-				"{back} löscht den Filter.",
+				"Die Zeilen unter der Zeile für alle kreuzen nach einem Merkmal quer durch die Gruppen an, die Topfzeile lässt Thyme aus. {back} löscht den Filter.",
+
+			textListTickRecent: "Zuletzt gegossen",
+			textListTickPot:    "Im Topf",
 
 			textListEmpty:     "Hier gibt es keine Pflanzen; {back} löscht den Filter.",
 			textListBarGroup:  "Gruppe",
