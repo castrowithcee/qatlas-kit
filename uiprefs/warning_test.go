@@ -112,7 +112,9 @@ func TestDecodeErrorNamesThePathOnce(t *testing.T) {
 	if err == nil {
 		t.Fatal("the codec accepted a file with an invalid value")
 	}
-	if n := strings.Count(err.Error(), path); n != 1 || !strings.Contains(err.Error(), `theme "nowhere" is not one of`) {
+	// The store may spell the folder otherwise than t.TempDir, as a long name on Windows, so the file name
+	// stands for the path.
+	if n := strings.Count(err.Error(), FileName); n != 1 || !strings.Contains(err.Error(), `theme "nowhere" is not one of`) {
 		t.Errorf("err = %v; want the path once and the warning", err)
 	}
 }
