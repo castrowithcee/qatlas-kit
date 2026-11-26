@@ -42,6 +42,7 @@ const (
 	actYes      tui.ActionID = "answer.yes"
 	actNo       tui.ActionID = "answer.no"
 	actCopy     tui.ActionID = "copy"
+	actOutline  tui.ActionID = "help.outline"
 	actSearch   tui.ActionID = tui.ActionSearch
 	actFilter   tui.ActionID = tui.ActionFilter
 	actToggle   tui.ActionID = "toggle"
@@ -109,6 +110,8 @@ func keyTable(areas int) []tui.Action {
 		act(actYes, tui.LevelConfirm, tui.TextKeyYes, "y"),
 		act(actNo, tui.LevelConfirm, tui.TextKeyNo, "n"),
 		act(actCopy, tui.LevelHelp, tui.TextKeyCopy, "c"),
+		// The overview key of the help repeats the letter of actNotice, which an overlay level may.
+		act(actOutline, tui.LevelHelp, tui.TextHelpOutline, "o"),
 		act(actChatThanks, tui.LevelLetter, textChatThanks, "k"),
 		act(actChatLater, tui.LevelLetter, textChatLater, "z"),
 	}

@@ -371,8 +371,14 @@
 // the page under TextHelpMore. Pages have no tabs: the topic keys turn the pages topic by topic, the page of
 // each topic first, with wrap-around. OpenScreen shows the page of the first screen ID that a page carries,
 // else the first page, and that page instead of the first one ends with the key lists. Left and right, and
-// the topic keys of the help level, change the topic with wrap-around; the scroll
-// keys and the wheel stop at the ends; back and the help key close it. A click on a line of the key list
+// the topic keys of the help level, change the topic with wrap-around; the scroll keys and the wheel stop at
+// the ends. Over pages HelpKeys.Outline opens the overview inside the frame of the help: an outline List
+// without filter, a group per topic titled as its index page, under it the index page and the other pages in
+// the order of helppages, the page shown marked. Enter or a click on an entry opens that page from its top,
+// back closes only the overview, and the help key closes the whole help; over topics the key does nothing and
+// no key line names it. The application's table should give the key to an action of LevelHelp, which may
+// repeat a letter of the main levels, such as "o". Outside the overview, back and the help key close the
+// help. A click on a line of the key list
 // yields its action, and the application closes the help and then runs it. An Explanation shows a title, the
 // long text, a helptopics.Term and the address of the documentation, which is shown in full and, where the
 // terminal takes escapes, also linked; Back and the info key close it, its scroll keys may page and jump to
@@ -658,6 +664,8 @@
 //     the pages. Default: no pages, English.
 //   - HelpSpec.Screen, Global, Note and HelpKeys.Next, Prev, First, Last: the key lists, the fixed note and
 //     further keys. Default: no key list, no note, no further key.
+//   - HelpKeys.Outline, Enter: the key of the overview of the pages and the key that opens its entry; with
+//     Outline, First and Last are needed too. Default: no key, no overview.
 //   - ExplanationItem.Term, URL, LinkText and ExplanationKeys.PageUp, PageDown, First, Last, Link: the term,
 //     the documentation address, the text above it and further keys. Default: none, none, TextInfoLink, no
 //     key.

@@ -116,7 +116,8 @@ func (m *model) openHelp() {
 		Pages: helpPages(), Lang: uiprefs.Language(m.prefs.Language),
 		Screen: m.footerHints(), Global: []tui.ActionID{actQuit, actHelp, actCommands, actInfo},
 		Keys: tui.HelpKeys{Left: actLeft, Right: actRight, Next: actZoneNext, Prev: actZonePrev, Up: actUp, Down: actDown,
-			PageUp: actPageUp, PageDown: actPageDown, First: actFirst, Last: actLast, Back: actBack, Help: actHelp},
+			PageUp: actPageUp, PageDown: actPageDown, First: actFirst, Last: actLast, Back: actBack, Help: actHelp,
+			Outline: actOutline, Enter: actEnter},
 		Note: textHelpNote, CloseOutside: true,
 	}, m.keys, m.text)
 	if err == nil {
