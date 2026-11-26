@@ -228,6 +228,8 @@ type Form struct {
 	capture bool
 	// outside is FormSpec.CloseOutside.
 	outside bool
+	// docs hold the value each field shows, for the selection with the mouse.
+	docs []selDoc
 }
 
 // NewForm checks spec and returns the form with the focus on its first field that takes input. It rejects a

@@ -221,10 +221,17 @@ func (m *model) handle(msg tea.Msg) tea.Cmd {
 			return m.run(action, tui.KeyName(msg))
 		}
 	case tea.MouseMsg:
-		// The selection reads every mouse event first; a click without motion falls through to the click below.
+		// The selection reads every mouse event first. A press on selectable text is held back, so a drag never
+		// acts as a click; the release without motion hands the click on, as the press would have.
 		if text, copied := m.sel.Mouse(m.mouse, msg); copied {
 			m.message = &tui.Message{Kind: tui.MessageStatus, Text: m.text.Lookup(tui.TextCopyHandedOver)}
 			return tea.SetClipboard(text)
+		}
+		if _, ok := msg.(tea.MouseClickMsg); ok && m.sel.Holds() {
+			return nil
+		}
+		if click, ok := m.sel.Replay(); ok {
+			msg = click
 		}
 		switch {
 		case m.cmdOpen:

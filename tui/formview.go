@@ -666,9 +666,9 @@ func (f *Form) block(i, width, labelCol int, boxed bool, styles Styles) formBloc
 	return b
 }
 
-// valueLines draws the value of field i in width cells and returns the targets of its tick boxes, counted
+// valueRows draws the value of field i in width cells and returns the targets of its tick boxes, counted
 // from the top left of the value.
-func (f *Form) valueLines(i, width int, styles Styles) ([]string, []Target) {
+func (f *Form) valueRows(i, width int, styles Styles) ([]string, []Target) {
 	field := &f.fields[i]
 	focused := f.showsFocus(i)
 	hint := func(id TextID) []string {
