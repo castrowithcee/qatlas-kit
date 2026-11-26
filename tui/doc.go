@@ -567,6 +567,8 @@
 //   - Column.Optional, Flex, Right, Dimmed, Short, Tone: leave out the column on a narrow terminal, mark the
 //     free text column, align right, dim, shorter labels, style of a cell by value. Default: false, false,
 //     false, false, nil, nil.
+//   - ListSpec.ClickOpens: a click on any entry row opens it at once while the rows have the focus. Default:
+//     false, a click marks the row and only a click on the marked row opens it.
 //   - ListGroup.Keep: shows a described group without entries. Default: false, the row is not drawn.
 //   - FilterBarKeys.PageUp, PageDown and FilterBarSpec.List: page keys of the value list and the list the bar
 //     stands above. Default: empty, nil.
