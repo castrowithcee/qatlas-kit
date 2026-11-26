@@ -96,6 +96,17 @@
 // over a dialog whose details scroll reports ZoneDetail, which the application hands to Dialog.Wheel; beside
 // the dialog it reports no zone, so nothing scrolls.
 //
+// With CloseOutside, a click outside the frame of an open modal acts as Esc, the back key of the overlay, does
+// (for a dialog the answer Esc gives): the overlay then adds targets of ZoneOutside, which cover the screen
+// around the frame and none of the frame itself, to the targets its Overlay returns, and Click reads a
+// MouseResult of that zone. A click inside the frame that hits no target never closes, since it lies beside
+// those targets. A form reports Keys.Back with handled false, as Esc does, so the application asks before it
+// discards a changed form, and an open list of values or calendar closes first. A list acts as Back does
+// through Act: it clears a filter and otherwise comes back unhandled, which the application closes the modal on
+// as on the key. A click on the footer or the header behind the modal is outside as well and runs nothing.
+// Explanation closes on a click outside its keys and address already and has no option; the View drawn in a
+// terminal too small for an overlay has no frame and no such targets.
+//
 // Mouse reports never become text. An InputFilter, installed with tea.WithFilter and attached to the program,
 // drops the pieces of a report that a terminal behind SSH or tmux delivered in more than one read, so a text
 // or passphrase field never receives them, and merges a wheel notch the terminal reports twice. Characters
@@ -477,7 +488,8 @@
 // text does not reach 3:1, and a scheme that cannot be derived. A filled syntax role of a Palette must read
 // 4.5:1 on the base and the panel, a comment 3:1. The mouse acts on a press of the left button and on the wheel
 // only, and a MouseMap holds the targets of one drawn frame, so a target no longer on screen cannot act; a
-// click is never stronger than the key it stands for.
+// click is never stronger than the key it stands for. A dialog with a Danger ignores CloseOutside and adds no
+// target outside its frame, so a click beside a destructive question never answers it.
 //
 // Boundary. The package holds neither application content nor package state and reads no file system. It
 // protects against foreign text driving the terminal, against secrets showing on screen and against a key
@@ -532,6 +544,9 @@
 //     value and its suggestions. Default: nil, no input; not masked, empty, no suggestions.
 //   - DialogSpec.Extra, DialogLine.Prefix and Style: hints of the application behind the answers, a prefix
 //     before a detail and its style. Default: none, none, StyleText.
+//   - DialogSpec.CloseOutside, and the same option of HelpSpec, FormSpec, ListSpec and PathNavKeys: a click
+//     outside the frame of the open modal gives the named answer of a dialog, one of its answers, and acts as
+//     the back key of the others. Default: empty or false, such a click does nothing.
 //   - DialogKeys.Up, Down, PageUp, PageDown, First, Last: scroll keys for details that do not fit. Default:
 //     empty, only the wheel scrolls.
 //   - DialogKeys.Complete, SuggestUp, SuggestDown, Suggestion.Continues: take and move through suggestions,

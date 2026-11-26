@@ -132,7 +132,7 @@ func (m *model) rebuildText() error {
 		return err
 	}
 	nav, err := tui.NewPathNav(tui.PathNavKeys{Up: actUp, Down: actDown, PageUp: actPageUp, PageDown: actPageDown,
-		First: actFirst, Last: actLast, Left: actLeft, Right: actRight, Enter: actEnter, Back: actBack}, m.keys, text)
+		First: actFirst, Last: actLast, Left: actLeft, Right: actRight, Enter: actEnter, Back: actBack, CloseOutside: true}, m.keys, text)
 	if err != nil {
 		return err
 	}

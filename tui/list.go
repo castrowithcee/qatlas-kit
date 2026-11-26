@@ -119,6 +119,10 @@ type ListSpec struct {
 	// Buttons stand below the list in the modal, each an action of the key table and a label drawn behind
 	// the key in force. A click on one acts as its key does.
 	Buttons []FormButton
+	// CloseOutside makes a click outside the frame of Overlay act as the Back key does through Act: it clears
+	// a filter and otherwise comes back with handled false, which the application closes the modal on as it
+	// does on the key. The default leaves such a click to do nothing.
+	CloseOutside bool
 }
 
 // flexFloor is the narrowest a free text column is cut to before anything else of the row gives way.
@@ -673,6 +677,12 @@ func (l *List) Act(id ActionID) (open ItemID, handled bool) {
 func (l *List) Click(r MouseResult) (open ItemID, handled bool) {
 	if !r.Handled {
 		return "", false
+	}
+	if r.Zone == ZoneOutside {
+		if !l.spec.CloseOutside {
+			return "", false
+		}
+		return l.Act(l.spec.Keys.Back)
 	}
 	if j, ok := strings.CutPrefix(r.Item, listButtonRef); ok {
 		n, err := strconv.Atoi(j)
@@ -1493,5 +1503,6 @@ func (l *List) Overlay(styles Styles, screen string, width, height int, room Rec
 	box := styles.Panel(title, "", lines, inner+4, len(lines)+2, true)
 	top := room.Y + (room.Height-len(box))/2
 	left := room.X + (room.Width-inner-4)/2
-	return overlay(screen, box, width, height, top, left, styles), OffsetTargets(ts, left+2, top+1), true
+	ts = withOutside(l.spec.CloseOutside, OffsetTargets(ts, left+2, top+1), width, height, Rect{X: left, Y: top, Width: inner + 4, Height: len(box)})
+	return overlay(screen, box, width, height, top, left, styles), ts, true
 }

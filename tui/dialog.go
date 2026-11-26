@@ -87,8 +87,12 @@ type DialogSpec struct {
 	Default ActionID
 	// Danger is the answer of a destructive question that destroys; its button is drawn in the fail colour.
 	Danger ActionID
-	Input  *DialogInput
-	Keys   DialogKeys
+	// CloseOutside is the answer a click outside the frame gives, as Esc gives it, and so names that answer;
+	// empty, the default, leaves the click to do nothing. A dialog with a Danger ignores the option, so a
+	// click beside the question never answers it.
+	CloseOutside ActionID
+	Input        *DialogInput
+	Keys         DialogKeys
 	// Extra are hints of the application for the key line, such as the command line and the help. They stand
 	// behind the answers in the order given and give way before them where the line is short, by Priority as
 	// the other normal hints do. Each is a click target, but the dialog does not act on it: Update and Click
@@ -213,6 +217,9 @@ func NewDialog(spec DialogSpec, keys *Keymap, text Translator) (*Dialog, error) 
 		case spec.Danger == spec.Default:
 			fail("danger %q is the default; enter never destroys", spec.Danger)
 		}
+	}
+	if spec.CloseOutside != "" && !slices.Contains(answers, spec.CloseOutside) {
+		fail("close outside %q is no answer", spec.CloseOutside)
 	}
 	suggests := spec.Input != nil && spec.Input.Suggest != nil
 	if spec.Input != nil && spec.Input.Masked {
@@ -443,6 +450,9 @@ func (d *Dialog) Click(r MouseResult) (answer ActionID, handled bool) {
 	if !r.Handled {
 		return "", false
 	}
+	if r.Zone == ZoneOutside {
+		return d.outside(), d.outside() != ""
+	}
 	if r.Item == dialogInputRef && d.spec.Input != nil {
 		return "", true
 	}
@@ -472,6 +482,14 @@ func (d *Dialog) Click(r MouseResult) (answer ActionID, handled bool) {
 		return "", true
 	}
 	return "", false
+}
+
+// outside is the answer of a click outside the frame, empty where the dialog gives none.
+func (d *Dialog) outside() ActionID {
+	if d.spec.Danger != "" {
+		return ""
+	}
+	return d.spec.CloseOutside
 }
 
 // Value is the text of the input.
@@ -801,7 +819,8 @@ func (d *Dialog) Overlay(styles Styles, screen string, width, height int, room R
 	}
 	top := room.Y + (room.Height-len(box))/2
 	left := room.X + (room.Width-inner-4)/2
-	return overlay(screen, box, width, height, top, left, styles), OffsetTargets(ts, left+2, top+1), true
+	targets = withOutside(d.outside() != "", OffsetTargets(ts, left+2, top+1), width, height, Rect{X: left, Y: top, Width: inner + 4, Height: len(box)})
+	return overlay(screen, box, width, height, top, left, styles), targets, true
 }
 
 // View draws the dialog with styles as the content of a workspace of width by height cells, for a terminal
