@@ -19,6 +19,9 @@ type group struct {
 	// hints are the footer hints of a tab, behind the common ones: each tab shows the keys of its own
 	// actions only.
 	hints map[tui.TabID][]tui.Hint
+	// bar is the action bar of a tab: its most important actions as buttons above the work area. A tab that
+	// shows a block takes the bar of the block instead, see barer.
+	bar map[tui.TabID][]tui.BarAction
 	// blocks returns the live block of each tab that shows one, see block; nil for a group without any. A
 	// tab shows either a block or buttons.
 	blocks func(m *model) (map[tui.TabID]block, error)
@@ -62,6 +65,11 @@ func groups() []group {
 				"question": {{Action: actAsk, Label: textKeyAsk, Priority: 1}},
 				"input":    {{Action: actRename, Label: tui.TextKeyRename, Priority: 1}},
 				"notice":   {{Action: actNotice, Label: textKeyNotice, Priority: 1}},
+			},
+			bar: map[tui.TabID][]tui.BarAction{
+				"question": {{Action: actAsk, Label: textKeyAsk, Kind: tui.ButtonPrimary}},
+				"input":    {{Action: actRename, Label: tui.TextKeyRename, Kind: tui.ButtonPrimary}},
+				"notice":   {{Action: actNotice, Label: textKeyNotice, Kind: tui.ButtonPrimary}},
 			},
 		},
 		{

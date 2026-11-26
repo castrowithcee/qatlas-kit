@@ -210,6 +210,7 @@ const (
 
 	textFileRoot      tui.TextID = "demo.file.root"
 	textFileTake      tui.TextID = "demo.file.take"
+	textFileClear     tui.TextID = "demo.file.clear"
 	textFileChosen    tui.TextID = "demo.file.chosen"
 	textFileChosenMsg tui.TextID = "demo.file.chosen.msg"
 	textFileNeedFile  tui.TextID = "demo.file.need"
@@ -465,6 +466,7 @@ func catalog() i18n.Catalogs[tui.TextID] {
 
 			textFileRoot:      "sample folder",
 			textFileTake:      "choose file",
+			textFileClear:     "clear chosen file",
 			textFileChosen:    "File: %s",
 			textFileChosenMsg: "File %s chosen",
 			textFileNeedFile:  "Mark a file, not a folder.",
@@ -721,6 +723,7 @@ func catalog() i18n.Catalogs[tui.TextID] {
 
 			textFileRoot:      "Beispielordner",
 			textFileTake:      "Datei wählen",
+			textFileClear:     "Auswahl aufheben",
 			textFileChosen:    "Datei: %s",
 			textFileChosenMsg: "Datei %s gewählt",
 			textFileNeedFile:  "Markiere eine Datei, keinen Ordner.",

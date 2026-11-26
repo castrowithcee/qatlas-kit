@@ -62,8 +62,8 @@ type FileBrowserKeys struct {
 type FileBrowserSpec struct {
 	Keys FileBrowserKeys
 	// Actions are what the application offers on the marked entry or the folder, such as open, edit, new,
-	// rename, copy and delete. Each is an action of the key table with a label, stands as a button below the
-	// list and acts by its key or a click.
+	// rename, copy and delete. Each is an action of the key table with a label, goes to the action bar of the
+	// frame as BarActions gives it and acts by its key or a click on its button.
 	Actions []FormButton
 	// RootLabel is the plain text the path line shows for the root; empty takes TextFileRoot.
 	RootLabel string
@@ -93,8 +93,8 @@ type FileResult struct {
 	Action *FileAction
 }
 
-// FileBrowser shows the folders and files below a root as a table with a clickable path line and the
-// actions of the application as buttons. It reads no file system: the application answers a FileLoad with
+// FileBrowser shows the folders and files below a root as a table with a clickable path line. The actions of
+// the application stand in the action bar of the frame, see BarActions. It reads no file system: the application answers a FileLoad with
 // SetEntries or SetError and runs the actions. The browser walks only within the root, as a list of name
 // parts, never as a joined string. Update, Act and Click return the result.
 type FileBrowser struct {
@@ -112,9 +112,7 @@ type FileBrowser struct {
 
 // The target items of a file browser.
 const (
-	fileCrumbRef  = "\x00p"
-	fileButtonRef = "\x00F"
-	fileUpRef     = "\x00U"
+	fileCrumbRef = "\x00p"
 )
 
 // NewFileBrowser checks spec and returns a browser at the root with nothing loaded; Load asks for the first
@@ -400,7 +398,8 @@ func (b *FileBrowser) Act(id ActionID) (FileResult, bool) {
 }
 
 // Click handles a click on a target the browser drew, as the MouseMap of its targets reports it: a part of
-// the path line goes to that folder, a button acts as its key does, and a row is the list's own click.
+// the path line goes to that folder and a row is the list's own click. A button of the action bar is no target
+// of the browser: its click comes as MouseResult.Action, which the application runs with Act.
 func (b *FileBrowser) Click(r MouseResult) (FileResult, bool) {
 	if !r.Handled {
 		return FileResult{}, false
@@ -415,16 +414,6 @@ func (b *FileBrowser) Click(r MouseResult) (FileResult, bool) {
 		}
 		return b.request(slices.Clone(b.dir[:depth]), ""), true
 	}
-	if r.Item == fileUpRef {
-		return b.up(), true
-	}
-	if n, ok := strings.CutPrefix(r.Item, fileButtonRef); ok {
-		i, err := strconv.Atoi(n)
-		if err != nil || i < 0 || i >= len(b.spec.Actions) {
-			return FileResult{}, false
-		}
-		return b.Act(b.spec.Actions[i].Action)
-	}
 	open, handled := b.list.Click(r)
 	if open != "" {
 		return b.activate(open), true
@@ -432,8 +421,22 @@ func (b *FileBrowser) Click(r MouseResult) (FileResult, bool) {
 	return FileResult{}, handled
 }
 
+// BarActions are the actions of the application for the action bar of the frame, in the order of
+// FileBrowserSpec.Actions; the primary one is drawn as a primary button. The footer folds the hints of these
+// actions away while they stand in the bar.
+func (b *FileBrowser) BarActions() []BarAction {
+	out := make([]BarAction, len(b.spec.Actions))
+	for i, a := range b.spec.Actions {
+		out[i] = BarAction{Action: a.Action, Label: a.Label}
+		if a.Primary {
+			out[i].Kind = ButtonPrimary
+		}
+	}
+	return out
+}
+
 // Hints are the keys of the browser for the footer: the actions of the application first, then the keys of
-// the list and the reload key.
+// the list and the reload key. Each carries its action, so the frame leaves out those that stand in the bar.
 func (b *FileBrowser) Hints() []Hint {
 	var hints []Hint
 	for _, a := range b.spec.Actions {
@@ -506,52 +509,16 @@ func (b *FileBrowser) pathLine(styles Styles, width int) (string, []Target) {
 	return out.String(), targets
 }
 
-// View draws the browser with styles in width by height cells: the path line, the table and, where the height
-// allows, the buttons. It returns a target for every part of the path, every row and every button, counted
-// from the top left.
+// View draws the browser with styles in width by height cells: the path line and the table. It returns a
+// target for every part of the path and every row, counted from the top left.
 func (b *FileBrowser) View(styles Styles, width, height int) (string, []Target) {
 	width, height = max(width, 0), max(height, 0)
 	if width == 0 || height == 0 {
 		return finishPage(nil, nil, width, height)
 	}
 	path, targets := b.pathLine(styles, width)
-	lines := []string{path}
-	var rows []string
-	var bt []Target
-	if height >= 6 {
-		rows, bt = b.buttonRows(width, styles)
-		if height-1-len(rows) < 5 {
-			rows, bt = nil, nil
-		}
-	}
-	body, ts := b.list.View(styles, width, height-1-len(rows))
-	lines = append(lines, strings.Split(body, "\n")...)
+	body, ts := b.list.View(styles, width, height-1)
+	lines := append([]string{path}, strings.Split(body, "\n")...)
 	targets = append(targets, OffsetTargets(ts, 0, 1)...)
-	targets = append(targets, OffsetTargets(bt, 0, len(lines))...)
-	lines = append(lines, rows...)
 	return finishPage(lines, targets, width, height)
-}
-
-// buttonRows draws the buttons of the application behind the key now in force, and the one that goes up while
-// a folder is open.
-func (b *FileBrowser) buttonRows(width int, styles Styles) ([]string, []Target) {
-	var cells []buttonCell
-	draw := func(kind ButtonKind, action ActionID, label TextID, ref string) {
-		text := b.text.Lookup(label)
-		if key := b.keys.Label(action); key != "" {
-			text = key + " " + text
-		}
-		cells = append(cells, buttonCell{styles.Button(kind, text, false), Target{Zone: ZoneRows, Action: action, Item: ref}})
-	}
-	for i, a := range b.spec.Actions {
-		kind := ButtonNormal
-		if a.Primary {
-			kind = ButtonPrimary
-		}
-		draw(kind, a.Action, a.Label, fileButtonRef+strconv.Itoa(i))
-	}
-	if len(b.dir) > 0 {
-		draw(ButtonNormal, b.spec.Keys.Back, TextFileUp, fileUpRef)
-	}
-	return flowButtons(cells, width)
 }

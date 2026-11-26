@@ -176,7 +176,7 @@ func (m *model) frameSpec() tui.FrameSpec {
 		Areas: m.areas(), ActiveArea: m.area, ActiveTab: m.tab(),
 		Nav: m.navForm(), PathFocusArea: m.pathArea,
 		Focus: m.zone, Input: m.input(),
-		Message: m.message, Footer: m.footerHints(),
+		Message: m.message, Footer: m.footerHints(), Bar: m.barActions(),
 	}
 }
 
@@ -256,7 +256,7 @@ func (m *model) drawOver(spec tui.FrameSpec, part interface {
 	if view, targets, ok := part.Overlay(m.styles, screen, m.width, m.height, tui.Rect{Width: m.width, Height: m.height}); ok {
 		return view, targets
 	}
-	spec.Footer, spec.Input, spec.HeaderKeys = part.Hints(), focus, nil
+	spec.Footer, spec.Input, spec.HeaderKeys, spec.Bar = part.Hints(), focus, nil, nil
 	room := m.frame.Workspace(spec)
 	body, bt := part.View(m.styles, room.Width, room.Height)
 	spec.Workspace = body

@@ -447,7 +447,9 @@
 // A FileBrowser shows the folders and files below a root from entries the application hands it; it reads no
 // file system. A folder is a list of name parts below the root, never a joined string. It asks
 // for a folder with a FileLoad and shows only the answer to the last one; actions come back as a FileAction.
-// The application still joins the parts below its own root and checks the result, and runs every action.
+// The application still joins the parts below its own root and checks the result, and runs every action. The
+// actions of the application stand in the action bar of the frame: BarActions gives them for FrameSpec.Bar, and a
+// click on a button comes back as MouseResult.Action, which the application runs with Act as its key.
 //
 // Colours come from themes. Screen code names roles, never colour values: a Palette assigns one colour per
 // role, Styles build text styles and widgets on it. A ThemeSet holds the terminal theme, the application's own
@@ -678,8 +680,8 @@
 //   - TextViewKeys.First, Last, Reveal: jump to the ends and ask to uncover masked sections. Default: empty,
 //     no key; the application calls SetRevealed.
 //   - ChatSpec.Actions, Now: quick replies and the clock. Default: none, time.Now.
-//   - FileBrowserSpec.Actions, RootLabel, FileBrowserKeys.Reload: the buttons on the marked entry, the label of
-//     the root and the reload key. Default: none, TextFileRoot, none.
+//   - FileBrowserSpec.Actions, RootLabel, FileBrowserKeys.Reload: the actions on the marked entry, which
+//     BarActions gives to the action bar, the label of the root and the reload key. Default: none, TextFileRoot, none.
 //
 // Input and colour:
 //

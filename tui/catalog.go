@@ -207,7 +207,6 @@ const (
 	TextFileFailed      TextID = "tui.file.failed"
 	TextFileBadName     TextID = "tui.file.badname"
 	TextFileRoot        TextID = "tui.file.root"
-	TextFileUp          TextID = "tui.file.up"
 	TextFileUnreadable  TextID = "tui.file.unreadable"
 
 	TextSettingsTitle             TextID = "tui.settings.title"
@@ -441,7 +440,6 @@ func ModuleCatalog() i18n.Catalogs[TextID] {
 			TextFileFailed:      "Could not read this folder: %s",
 			TextFileBadName:     "This folder lists an entry with an invalid name: %s",
 			TextFileRoot:        "root",
-			TextFileUp:          "up",
 			TextFileUnreadable:  "unreadable",
 
 			TextSettingsTitle:             "Settings",
@@ -670,7 +668,6 @@ func ModuleCatalog() i18n.Catalogs[TextID] {
 			TextFileFailed:      "Der Ordner ließ sich nicht lesen: %s",
 			TextFileBadName:     "Der Ordner enthält einen Eintrag mit ungültigem Namen: %s",
 			TextFileRoot:        "Wurzel",
-			TextFileUp:          "Hoch",
 			TextFileUnreadable:  "nicht lesbar",
 
 			TextSettingsTitle:             "Einstellungen",
