@@ -15,7 +15,8 @@ const pageCSS = `:root { --bg: #fff; --text: #1a1a1a; --muted: #4a4a4a; --border
   :root { --bg: #121212; --text: #ececec; --muted: #b8b8b8; --border: #8a8a8a; --accent: #8ab4f8; --on-accent: #0b1220; --error: #ff9a9a; }
 }
 * { box-sizing: border-box; }
-body { margin: 0; background: var(--bg); color: var(--text); font: 1rem/1.5 system-ui, sans-serif; }
+html { height: 100%; background: var(--bg); }
+body { margin: 0; min-height: 100%; background: var(--bg); color: var(--text); font: 1rem/1.5 system-ui, sans-serif; }
 main { max-width: 28rem; margin: 0 auto; padding: 1rem; }
 p { overflow-wrap: anywhere; }
 .hint { color: var(--muted); }
