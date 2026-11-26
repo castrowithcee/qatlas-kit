@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 	"net/url"
+	"time"
 )
 
 // maxNext bounds the target a confirmation carries.
@@ -17,14 +18,17 @@ func (p *Pages) ReauthPath() string { return p.prefix + "/reauth" }
 // request goes to the confirmation page and back afterwards, and any other method gets 403 without the
 // handler running. Without a session the route is refused, also on a server without sign-in. The check is
 // no protection for a route that is Public, which has no session.
-func (p *Pages) RequireRecent(h http.Handler) http.Handler {
+func (p *Pages) RequireRecent(h http.Handler) http.Handler { return p.requireWithin(h, p.within) }
+
+// requireWithin is RequireRecent with its own limit, for a step that needs a fresher sign-in.
+func (p *Pages) requireWithin(h http.Handler, within time.Duration) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		s, ok := SessionFrom(r)
 		if !ok {
 			Error(w, http.StatusForbidden)
 			return
 		}
-		if p.auth.sessions.now().Sub(s.SignedIn) <= p.within {
+		if p.auth.sessions.now().Sub(s.SignedIn) <= within {
 			h.ServeHTTP(w, r)
 			return
 		}

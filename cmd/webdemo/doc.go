@@ -9,6 +9,12 @@
 // works once and for five minutes; press Enter in the terminal for a new one. The terminal also shows the
 // protocol entries of sign-ins, sign-outs and failed attempts, which hold no code. Ctrl+C quits.
 //
-// The optional flag -port sets the loopback port; 0 picks a free one. The program keeps everything in
-// memory and uses the public API of the kit only, as a tool built on it would.
+// The program also offers a demo vault, which is only a flag and holds nothing. It prints a passphrase
+// made up for the run. The link "Unlock the demo vault" asks for the code again if the sign-in is older
+// than two minutes, then shows a passphrase field the browser is asked never to save or fill. The
+// terminal reports the unlock and the lock after the idle time.
+//
+// The optional flag -port sets the loopback port; 0 picks a free one. The flag -vault-idle sets the idle
+// time of the demo vault, five minutes by default. The program keeps everything in memory and uses the
+// public API of the kit only, as a tool built on it would.
 package main
