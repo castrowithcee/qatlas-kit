@@ -154,7 +154,7 @@ func TestRetryRemove(t *testing.T) {
 		}
 		return os.Remove(p)
 	}
-	if err := v.removeEntry(remove, path); err != nil {
+	if err := v.removeEntry(remove, path, false); err != nil {
 		t.Fatal(err)
 	}
 	if calls != 3 || *slept != 2 {

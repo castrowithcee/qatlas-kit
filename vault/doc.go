@@ -119,6 +119,13 @@
 //     most per operation: stat, read, listing the pending directory, replace and remove. A missing file is
 //     never repeated, nor is the lock file or writing the temporary file. Default: every failure is returned
 //     at once.
+//   - ExemptFromCheckpoints, passed to UpdateWithOptions: keeps the restore of every open Checkpoint of this
+//     value from taking this update or its undo back; the checkpoint counts it as another writer's write, so
+//     its restore needs Options.Revert to take this value's other writes back and leaves the document alone
+//     when there are none. A restore after a Create, CreateUnencrypted, Encrypt, Decrypt or ChangePassphrase
+//     of this value fails with ErrConflict once such an update happened. It needs Files.Lock; without it the
+//     update fails with ErrExemptNeedsLock and writes nothing. Default: every open checkpoint takes the
+//     update back.
 //   - AllowMissingRecipient, passed to ReadSealedWithIdentityOptions: reads the sealed file with the key alone
 //     when the recipient file is missing, and then the authenticity of the content is the application's to
 //     check. Default: ReadSealedWithIdentity reports ErrAbsent in that case.
