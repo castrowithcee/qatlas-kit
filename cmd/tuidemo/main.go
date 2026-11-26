@@ -27,7 +27,8 @@ func main() {
 // schema is what the workbench offers the preferences check besides themes and areas, which newModel adds.
 func schema() uiprefs.Schema {
 	return uiprefs.Schema{DefaultArea: "overview", DefaultNavigation: uiprefs.NavigationTabs,
-		Navigations: []string{uiprefs.NavigationTabs, uiprefs.NavigationPathLine, uiprefs.NavigationPathHeader}}
+		Navigations: []string{uiprefs.NavigationTabs, uiprefs.NavigationPathLine, uiprefs.NavigationPathHeader,
+			uiprefs.NavigationHeaderChoice}}
 }
 
 type usageError struct{ error }
@@ -38,7 +39,7 @@ func run(args []string, out io.Writer, environ []string) error {
 	flags.StringVar(&prefs.Theme, "theme", prefs.Theme, "start theme")
 	flags.StringVar(&prefs.Language, "language", prefs.Language, "start language: english, deutsch or system")
 	flags.StringVar(&prefs.Icons, "icons", prefs.Icons, "start icons: unicode, nerdfont or none")
-	flags.StringVar(&prefs.Navigation, "navigation", prefs.Navigation, "start navigation: tabs, pathline or header")
+	flags.StringVar(&prefs.Navigation, "navigation", prefs.Navigation, "start navigation: tabs, pathline, header or choice")
 	flags.BoolVar(&prefs.MouseEnabled, "mouse", prefs.MouseEnabled, "start with the mouse on")
 	if err := flags.Parse(args); err != nil {
 		return usageError{err}

@@ -262,6 +262,9 @@ func (m *model) click(msg tea.MouseMsg) tea.Cmd {
 	case m.pathForm() && res.Zone == tui.ZonePath && res.Area != "":
 		m.zone, m.pathArea = tui.ZonePath, res.Tab == ""
 		m.pathnav.OpenClick(m.frameSpec(), res)
+	case m.choiceForm() && res.Zone == tui.ZoneTabs && res.Area != "":
+		m.zone = tui.ZoneTabs
+		m.pathnav.OpenAreas(m.frameSpec())
 	case res.Area != "":
 		m.openArea(res.Area)
 		if res.Tab != "" {
@@ -313,7 +316,7 @@ func (m *model) run(action tui.ActionID, key string) tea.Cmd {
 		forms := schema().Navigations
 		m.setNavigation(forms[(slices.Index(forms, m.prefs.Navigation)+1)%len(forms)])
 	case actMenu:
-		if m.pathForm() {
+		if m.pathForm() || m.choiceForm() {
 			m.pathnav.OpenOverview(m.frameSpec())
 		}
 	case actZoneNext:

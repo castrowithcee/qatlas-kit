@@ -2,6 +2,7 @@ package tui
 
 import (
 	"errors"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -28,8 +29,9 @@ type PathChoice struct {
 }
 
 // PathNav is the pair of overlays the path line opens: the overview of all areas with their tabs as a tree,
-// and the choice among the tabs of the current area. Both are a List in a modal, centred over the screen, with
-// the current place marked and no search. It has the shape of Modal, but answers with a PathChoice instead of
+// and the choice among the tabs of the current area; OpenAreas adds the flat list of the areas that the choice
+// field of NavHeaderChoice opens. Each is a List in a modal, centred over the screen, with the current place
+// marked and no search. It has the shape of Modal, but answers with a PathChoice instead of
 // an ActionID. While one is open the application gives it every key and click and the screen behind it takes
 // none, as with a Dialog.
 type PathNav struct {
@@ -176,6 +178,44 @@ func (p *PathNav) OpenChoice(spec FrameSpec) bool {
 		return true
 	}
 	return false
+}
+
+// OpenAreas opens the choice among the areas of spec, a flat list without their tabs with the active area
+// marked, which the choice field of NavHeaderChoice opens. A choice is the area alone, which the application
+// runs as the click on its tab. It reports false where spec has no area or shows the mode text.
+func (p *PathNav) OpenAreas(spec FrameSpec) bool {
+	if len(spec.Areas) == 0 || spec.ModeTab != "" {
+		return false
+	}
+	keyed := p.entryKeys(spec.Areas) != nil && slices.ContainsFunc(spec.Areas, func(a Area) bool { return a.Key != "" })
+	l, err := p.newList(TextPathNavOverview, keyed)
+	if err != nil {
+		return false
+	}
+	places, keys := map[ItemID]PathChoice{}, map[string]entryKey{}
+	var items []ListItem
+	var current ItemID
+	for i, a := range spec.Areas {
+		id := ItemID("a" + strconv.Itoa(i))
+		places[id] = PathChoice{Area: a.ID}
+		cells := []string{lookup(p.text, a.Title)}
+		if keyed {
+			cells = append(cells, a.Key)
+			if a.Key != "" {
+				keys[a.Key] = entryKey{item: id}
+			}
+		}
+		items = append(items, ListItem{ID: id, Cells: cells})
+		if a.ID == spec.ActiveArea {
+			current = id
+		}
+	}
+	if l.SetItems(items) != nil {
+		return false
+	}
+	l.Select(current)
+	p.list, p.places, p.bare, p.keyed = l, places, map[string]PathChoice{}, keys
+	return true
 }
 
 // OpenClick opens the overlay for a click on a section of the path line, as the MouseResult of its target

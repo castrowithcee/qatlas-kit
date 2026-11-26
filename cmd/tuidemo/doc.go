@@ -7,7 +7,7 @@
 //	go run ./cmd/tuidemo
 //
 // Optional flags set the start values of the switches: -theme, -language (english, deutsch or system), -icons
-// (unicode, nerdfont or none), -navigation (tabs, pathline or header) and -mouse=false; the kit checks the
+// (unicode, nerdfont or none), -navigation (tabs, pathline, header or choice) and -mouse=false; the kit checks the
 // values and an invalid one ends the program with an error that names it. The switches keep their values in
 // memory only; the program reads and writes no configuration file.
 //
@@ -56,17 +56,22 @@
 // whose quick replies answer the selected message.
 //
 // The form of the navigation switches at run time: the key N, the command navigation and the field in the
-// Settings tab step through the tab lines, the path line (one line below the header, "Area ▾ › Tab ▾") and
-// the path in the header, and -navigation sets the start form. On both path forms the path takes the place
-// of the tab lines in the focus: left and right move the focus between its area and its tab section, enter
-// opens the overview of all areas for the area section and the choice among the tabs of the area for the tab
-// section, down and tab lead into the work area and up and esc lead back to the path as to the sub-tab line,
-// and m opens the overview from anywhere nothing is typed; on the tab lines m does nothing. A click on a
-// section opens the same, a click on a place of an overlay chooses it as a click on that tab would, a click
-// on an area with tabs folds it, and esc closes the overlay. Each area has a letter of its own in the overlay
-// (o, f, s, d, h, l, r, p, v), shown at its row, and the tabs of Settings have a and i: in the open overlay the
-// key does what enter does on that row, folding an area and choosing a tab. Nothing behind an overlay takes a
-// key or a click. The digits still open the tabs.
+// Settings tab step through the tab lines, the path line (one line below the header, "Area ▾ › Tab ▾"), the path
+// in the header and the choice field in the header, and -navigation sets the start form. On both path forms the
+// path takes the place of the tab lines in the focus: left and right move the focus between its area and its tab
+// section, enter opens the overview of all areas for the area section and the choice among the tabs of the area
+// for the tab section, down and tab lead into the work area and up and esc lead back to the path as to the
+// sub-tab line, and m opens the overview from anywhere nothing is typed; on the tab lines m does nothing. A
+// click on a section opens the same, a click on a place of an overlay chooses it as a click on that tab would, a
+// click on an area with tabs folds it, and esc closes the overlay. Each area has a letter of its own in the
+// overlay (o, f, s, d, h, l, r, p, v), shown at its row, and the tabs of Settings have a and i: in the open
+// overlay the key does what enter does on that row, folding an area and choosing a tab. Nothing behind an
+// overlay takes a key or a click. The digits still open the tabs. The choice field shows only the current area
+// in the header, after the product name, with its icon, and keeps the sub-tab line below the header; it has the
+// focus zones of the tab lines: the field, the sub-tab line and the work area. Down and up walk them, left and
+// right step the areas on the field and the tabs on the sub-tab line, enter or a click on the field opens a list
+// of the areas (each with its letter, chosen at once, as in the overview), and m opens the overview and esc
+// closes either.
 //
 // Every function can be clicked while the mouse is on: tabs, the key hints of the header and the footer, the
 // fields of the Settings tab, the buttons of a dialog and of the tabs, the topics and the key list of the help,

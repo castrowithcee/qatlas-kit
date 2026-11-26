@@ -30,7 +30,15 @@ func (m *model) tab() tui.TabID {
 }
 
 // pathForm reports whether the navigation is a path, in the line or in the header.
-func (m *model) pathForm() bool { return m.prefs.Navigation != uiprefs.NavigationTabs }
+func (m *model) pathForm() bool {
+	return m.prefs.Navigation == uiprefs.NavigationPathLine || m.prefs.Navigation == uiprefs.NavigationPathHeader
+}
+
+// choiceForm reports whether the areas are a choice field in the header, above the sub-tab line.
+func (m *model) choiceForm() bool { return m.prefs.Navigation == uiprefs.NavigationHeaderChoice }
+
+// onChoice reports whether the focus lies on the choice field of the header.
+func (m *model) onChoice() bool { return m.choiceForm() && m.zone == tui.ZoneTabs }
 
 // navForm is the frame's form of the navigation in force.
 func (m *model) navForm() tui.NavForm {
@@ -39,6 +47,8 @@ func (m *model) navForm() tui.NavForm {
 		return tui.NavPathLine
 	case uiprefs.NavigationPathHeader:
 		return tui.NavPathHeader
+	case uiprefs.NavigationHeaderChoice:
+		return tui.NavHeaderChoice
 	}
 	return tui.NavTabs
 }
@@ -137,7 +147,7 @@ func (m *model) footerHints() []tui.Hint {
 		tui.Hint{Action: actMouse, Label: textKeyMouse, Priority: 5},
 		tui.Hint{Action: actNavigate, Label: textKeyNavigation, Priority: 5},
 	)
-	if m.pathForm() {
+	if m.pathForm() || m.choiceForm() {
 		hints = append(hints, tui.Hint{Action: actMenu, Label: tui.TextKeyMenu, Priority: 1})
 	}
 	hints = append(hints, m.navHints()...)

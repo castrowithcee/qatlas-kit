@@ -11,6 +11,7 @@ type FocusZone string
 // The focus zones in their fixed order: tab and shift+tab walk through the zones a screen has in this
 // order, with wrap-around.
 const (
+	// ZoneTabs is the tab line, or the choice field of NavHeaderChoice in the header.
 	ZoneTabs    FocusZone = "tabs"
 	ZoneSubtabs FocusZone = "subtabs"
 	// ZonePath is the path line, which a screen reports instead of ZoneTabs and ZoneSubtabs.

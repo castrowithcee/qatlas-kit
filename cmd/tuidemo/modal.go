@@ -337,4 +337,10 @@ func (m *model) choose(c tui.PathChoice) {
 		m.tabs[c.Area] = c.Tab
 	}
 	m.zone, m.pathArea = tui.ZonePath, false
+	if m.choiceForm() {
+		m.zone = tui.ZoneTabs
+		if c.Tab != "" {
+			m.zone = tui.ZoneSubtabs
+		}
+	}
 }

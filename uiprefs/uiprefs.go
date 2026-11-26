@@ -27,12 +27,13 @@ const (
 	IconsNone     = "none"
 )
 
-// The values of the navigation preference: the tab line, the path line and the path in the header of
-// tui.NavForm.
+// The values of the navigation preference: the tab line, the path line, the path in the header and the choice
+// field in the header of tui.NavForm.
 const (
-	NavigationTabs       = "tabs"
-	NavigationPathLine   = "pathline"
-	NavigationPathHeader = "header"
+	NavigationTabs         = "tabs"
+	NavigationPathLine     = "pathline"
+	NavigationPathHeader   = "header"
+	NavigationHeaderChoice = "choice"
 )
 
 // saveAttempts bounds how often Save starts over when another writer replaced the file meanwhile.
@@ -48,8 +49,8 @@ type Schema struct {
 	DefaultArea string
 	// Keys is the key table whose rebindable actions the keys section binds; nil allows no keys section.
 	Keys *tui.Keymap
-	// Navigations are the navigation forms the application offers: NavigationTabs, NavigationPathLine and
-	// NavigationPathHeader.
+	// Navigations are the navigation forms the application offers: NavigationTabs, NavigationPathLine,
+	// NavigationPathHeader and NavigationHeaderChoice.
 	// Empty means the application does not offer the setting; Prefs.Navigation is then empty and the
 	// application chooses the form itself.
 	Navigations []string
@@ -69,7 +70,8 @@ func (s Schema) check() error {
 	}
 	errs = append(errs, namesError("navigation", s.Navigations))
 	for _, n := range s.Navigations {
-		if n != NavigationTabs && n != NavigationPathLine && n != NavigationPathHeader {
+		if n != NavigationTabs && n != NavigationPathLine && n != NavigationPathHeader &&
+			n != NavigationHeaderChoice {
 			errs = append(errs, fmt.Errorf("the navigation %q is unknown", n))
 		}
 	}

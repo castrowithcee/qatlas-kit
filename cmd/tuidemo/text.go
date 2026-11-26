@@ -32,6 +32,7 @@ const (
 	textNavTabs         tui.TextID = "demo.navigation.tabs"
 	textNavPathLine     tui.TextID = "demo.navigation.pathline"
 	textNavHeader       tui.TextID = "demo.navigation.header"
+	textNavChoice       tui.TextID = "demo.navigation.choice"
 
 	textHintStep tui.TextID = "demo.hint.step"
 	textHintZone tui.TextID = "demo.hint.zone"
@@ -273,6 +274,7 @@ func catalog() i18n.Catalogs[tui.TextID] {
 			textNavTabs:         "tabs",
 			textNavPathLine:     "path line",
 			textNavHeader:       "path in header",
+			textNavChoice:       "choice in header",
 
 			textHintStep: "step",
 			textHintZone: "focus",
@@ -528,6 +530,7 @@ func catalog() i18n.Catalogs[tui.TextID] {
 			textNavTabs:         "Reiter",
 			textNavPathLine:     "Pfadzeile",
 			textNavHeader:       "Pfad in der Kopfzeile",
+			textNavChoice:       "Auswahl in der Kopfzeile",
 
 			textHintStep: "wechseln",
 			textHintZone: "Fokus",
