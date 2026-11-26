@@ -199,7 +199,11 @@
 // widths come from every entry and described group, so they stay while a filter is typed. An empty list shows
 // the application's sentence with the next step, which SetEmpty sets for each state, and a filter without match
 // names the key that clears it. Shown names the entries the filter lets through in the order they show, also
-// those of folded groups.
+// those of folded groups. SetNote adds a note that stays above the column titles, under the search line,
+// whatever the list shows below: while it scrolls, filters, finds nothing or is empty. The text is finished
+// and translated like the empty sentence, wraps to the width with two cells of indent, and has its control
+// characters escaped always. With warn it stands in the warning style behind the warning sign, as the
+// question of a Dialog does, otherwise dimmed; empty text removes it. Without a note nothing is drawn for it.
 //
 // The search field of a List, also the one in a filter bar, is a tinted field over its whole width that shows
 // its placeholder while empty; where there is no colour but attributes it is underlined, and without both it
@@ -233,9 +237,10 @@
 //
 // Overlay draws a list as a modal in the way of Dialog.Overlay: under ListSpec.Title the search line, which a
 // list that filters as typed always has, the table, one button per ListSpec.Buttons entry behind the key in
-// force, and the key line. The frame keeps its height while a filter is typed, the table scrolls with the
+// force, and the key line. A note of SetNote stands under the search line, fixed, and the table takes the rest
+// of the height. The frame keeps its height while a filter is typed, note included, the table scrolls with the
 // marked row in view, and the targets are the modal's alone. Where the room is too small for the search line,
-// the titles, one row, the buttons and the key line, ok is false; the application then draws View in the
+// the note, the titles, one row, the buttons and the key line, ok is false; the application then draws View in the
 // workspace and Hints in the footer. Hints lists the buttons first and the list keys after them, no action
 // twice. A click on a button acts as its key does through Act: an action that is no list key comes back with
 // handled false, and the application runs the action of the MouseResult as it runs the key. What enter and
@@ -689,6 +694,8 @@
 //   - Column.Optional, Flex, Right, Dimmed, Short, Tone: leave out the column on a narrow terminal, mark the
 //     free text column, align right, dim, shorter labels, style of a cell by value. Default: false, false,
 //     false, false, nil, nil.
+//   - List.SetNote: a note above the column titles, fixed, in View and Overlay. Default: no note; a note
+//     is dimmed unless warn is set.
 //   - ListSpec.ClickOpens: a click on any entry row opens it at once while the rows have the focus. Default:
 //     false, a click marks the row and only a click on the marked row opens it.
 //   - ListGroup.Keep: shows a described group without entries. Default: false, the row is not drawn.

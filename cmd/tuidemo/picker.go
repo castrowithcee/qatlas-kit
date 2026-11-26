@@ -67,6 +67,7 @@ func (m *model) openPicker() {
 		m.show(nil, err, 0, 0)
 		return
 	}
+	list.SetNote(m.text.Lookup(textPickNote), true)
 	list.Select(tui.ItemID(m.bed))
 	m.picker = list
 	m.show(pickModal{list}, nil, kindPick, tui.InputText)
