@@ -241,3 +241,35 @@ func privateToken(t *testing.T, f *pagesFixture, c *http.Cookie) string {
 	}
 	return rec.Body.String()
 }
+
+// The pages paint their background over the whole window, also below short content.
+func TestPagesFillTheWindowHeight(t *testing.T) {
+	login := newPagesFixture(t, PagesOptions{})
+	reauthCookie := signedIn(t, login)
+	unlock := newUnlockFixture(t, PagesOptions{}, UnlockOptions{})
+	unlockCookie := signedIn(t, unlock.pagesFixture)
+	approval := newApprovalFixture(t, time.Minute)
+	pages := map[string]func() *httptest.ResponseRecorder{
+		"login":  func() *httptest.ResponseRecorder { return do(login.server, get("/login")) },
+		"reauth": func() *httptest.ResponseRecorder { return do(login.server, getWith("/reauth?next=/x", reauthCookie)) },
+		"unlock": func() *httptest.ResponseRecorder { return do(unlock.server, getWith("/unlock", unlockCookie)) },
+		"unlocked": func() *httptest.ResponseRecorder {
+			do(unlock.server, unlock.post(t, unlockCookie, unlock.secret))
+			return do(unlock.server, getWith("/unlock", unlockCookie))
+		},
+		"approval": func() *httptest.ResponseRecorder { return do(approval.server, getWith("/approve", approval.cookie)) },
+	}
+	for _, name := range []string{"login", "reauth", "unlock", "unlocked", "approval"} {
+		rec := pages[name]()
+		body := rec.Body.String()
+		if rec.Code != http.StatusOK {
+			t.Errorf("%s: status %d", name, rec.Code)
+			continue
+		}
+		for _, want := range []string{`html { height: 100%; background: var(--bg); }`, `body { margin: 0; min-height: 100%; background: var(--bg);`} {
+			if !strings.Contains(body, want) {
+				t.Errorf("%s: style lacks %q", name, want)
+			}
+		}
+	}
+}
