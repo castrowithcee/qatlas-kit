@@ -1025,39 +1025,42 @@ func TestTickBoxesShowThreeStatesWithoutColour(t *testing.T) {
 }
 
 func TestClickOnTitleFoldsAndClickOnBoxTicks(t *testing.T) {
-	l := tickList(t, nil)
-	l.SetTicked([]ItemID{"basil"})
-	at := func(item string) (Target, *MouseMap) {
-		_, targets := l.View(Styles{}, 60, 12)
-		for i := len(targets) - 1; i >= 0; i-- {
-			if targets[i].Item == item {
-				return targets[i], NewMouseMap(targets, true)
+	// ClickOpens changes neither the fold of a group nor the toggle of a tick box.
+	for _, opens := range []bool{false, true} {
+		l := tickList(t, func(s *ListSpec) { s.ClickOpens = opens })
+		l.SetTicked([]ItemID{"basil"})
+		at := func(item string) (Target, *MouseMap) {
+			_, targets := l.View(Styles{}, 60, 12)
+			for i := len(targets) - 1; i >= 0; i-- {
+				if targets[i].Item == item {
+					return targets[i], NewMouseMap(targets, true)
+				}
 			}
+			t.Fatalf("no target for %q", item)
+			return Target{}, nil
 		}
-		t.Fatalf("no target for %q", item)
-		return Target{}, nil
-	}
-	tg, m := at(groupRef + "herbs")
-	if _, handled := l.Click(m.Handle(click(tg.Rect.X+30, tg.Rect.Y))); !handled || shownRows(l) != "[herbs],[trees],oak,[],fern" || ticks(l) != "basil" {
-		t.Fatalf("a click on the title: rows %s, ticks %q", shownRows(l), ticks(l))
-	}
-	tg, m = at(tickRef + groupRef + "herbs")
-	if _, handled := l.Click(m.Handle(click(tg.Rect.X+1, tg.Rect.Y))); !handled {
-		t.Fatal("the click on the group box was not handled")
-	}
-	if ticks(l) != "basil,mint,thyme" || shownRows(l) != "[herbs],[trees],oak,[],fern" {
-		t.Errorf("a click on the group box: ticks %q, rows %s (it ticks the folded entries too and folds nothing)", ticks(l), shownRows(l))
-	}
-	if _, handled := l.Click(m.Handle(click(tg.Rect.X+2, tg.Rect.Y))); !handled || ticks(l) != "" {
-		t.Errorf("the second click on the box: ticks %q", ticks(l))
-	}
-	l.SetFocused(true)
-	tg, m = at(tickRef + "oak")
-	if open, _ := l.Click(m.Handle(click(tg.Rect.X, tg.Rect.Y))); open != "" || ticks(l) != "oak" {
-		t.Errorf("a click on the box of an entry: open %q, ticks %q", open, ticks(l))
-	}
-	if open, _ := l.Click(m.Handle(click(tg.Rect.X+2, tg.Rect.Y))); open != "" || ticks(l) != "" {
-		t.Errorf("a click on the box of the marked entry opened it or did not toggle: open %q, ticks %q", open, ticks(l))
+		tg, m := at(groupRef + "herbs")
+		if _, handled := l.Click(m.Handle(click(tg.Rect.X+30, tg.Rect.Y))); !handled || shownRows(l) != "[herbs],[trees],oak,[],fern" || ticks(l) != "basil" {
+			t.Fatalf("a click on the title: rows %s, ticks %q", shownRows(l), ticks(l))
+		}
+		tg, m = at(tickRef + groupRef + "herbs")
+		if _, handled := l.Click(m.Handle(click(tg.Rect.X+1, tg.Rect.Y))); !handled {
+			t.Fatal("the click on the group box was not handled")
+		}
+		if ticks(l) != "basil,mint,thyme" || shownRows(l) != "[herbs],[trees],oak,[],fern" {
+			t.Errorf("a click on the group box: ticks %q, rows %s (it ticks the folded entries too and folds nothing)", ticks(l), shownRows(l))
+		}
+		if _, handled := l.Click(m.Handle(click(tg.Rect.X+2, tg.Rect.Y))); !handled || ticks(l) != "" {
+			t.Errorf("the second click on the box: ticks %q", ticks(l))
+		}
+		l.SetFocused(true)
+		tg, m = at(tickRef + "oak")
+		if open, _ := l.Click(m.Handle(click(tg.Rect.X, tg.Rect.Y))); open != "" || ticks(l) != "oak" {
+			t.Errorf("a click on the box of an entry: open %q, ticks %q", open, ticks(l))
+		}
+		if open, _ := l.Click(m.Handle(click(tg.Rect.X+2, tg.Rect.Y))); open != "" || ticks(l) != "" {
+			t.Errorf("a click on the box of the marked entry opened it or did not toggle: open %q, ticks %q", open, ticks(l))
+		}
 	}
 }
 
@@ -2274,5 +2277,27 @@ func TestListClicksHitTheirRowBelowTheRule(t *testing.T) {
 	l.View(st, 100, 8)
 	if l.page != 5 {
 		t.Errorf("page = %d, want 5", l.page)
+	}
+}
+
+// ClickOpens opens a focused entry row at the first click; the default needs the marked row; without the
+// focus neither form opens.
+func TestRowClickOpensAtOnceWithOption(t *testing.T) {
+	for _, opens := range []bool{false, true} {
+		for _, focused := range []bool{false, true} {
+			l := filledList(t, func(s *ListSpec) { s.ClickOpens = opens })
+			l.SetFocused(focused)
+			_, targets := l.View(Styles{}, 60, 10)
+			m := NewMouseMap(targets, true)
+			for _, tg := range targets {
+				if tg.Item != "mint" {
+					continue
+				}
+				open, handled := l.Click(m.Handle(click(tg.Rect.X+1, tg.Rect.Y)))
+				if want := opens && focused; (open == "mint") != want || !handled || selected(t, l) != "mint" {
+					t.Errorf("ClickOpens %v focused %v: open %q handled %v marked %q", opens, focused, open, handled, selected(t, l))
+				}
+			}
+		}
 	}
 }

@@ -197,30 +197,31 @@
 // click on that tab; a PathChoice that is the zero value is no choice. PathNav answers with a PathChoice, so
 // it has the shape of Modal without satisfying the interface.
 //
-// The marked row is drawn as selected only while the rows have the focus, as SetFocused says (a new list has
-// it; the modal always draws the mark), so no second mark shows while the focus lies elsewhere. A click on a
-// row marks it, and only a click on the marked row while the rows have the focus opens it, as enter does; a
-// click on a group row folds it and never changes the ticks, a click on a
-// tick box does what the toggle key does, and one on the search line starts the search. Each such target
-// carries the action of its key and an Item the list reads back in Click; a target with a zone alone is the
-// free area of the zone. A FilterBar holds choice fields of one value or more: left and right change the
-// value, and tab and shift+tab step through the fields and leave the bar at its ends. Enter opens the list of
-// values: a search line as its first row filters them by part of their text in any case, up, down and the
-// optional page keys move the cursor in a few rows that scroll, enter takes the value under it and
-// back closes it without change. The panel shows the position at its top edge, as a List does, a check mark
-// at the value in force and, for a search without match, the way out; ValueList is given the room it may
-// fill. An action field shows a text, set with SetActionText, in the same order; enter, left, right or a
-// click report its action once to TakeAction, which the application runs, and it never counts as a changed
-// filter. Its values change only what the application hands to the list, never its data. SetOptions replaces
-// a field's values; the value, the open list with its search and the modal's draft stay on their IDs, and a
-// call that drops the value is rejected unchanged. A click opens a field's values, one on a value takes it;
-// the search field of a list may stand at its right end. On a narrow terminal the values are cut first; where
-// the fields still do not fit, a single button with the number of fields off their first value takes their
-// place, always, with the search field beside it or, with little room, only the search key. The button is one
-// stop of the focus. Enter or a click opens a modal with all fields one under the other: up and down choose a
-// field, left and right change its value, enter takes all changes at once and back drops them all; pressing
-// an action field there takes them first, then reports the action. The modal takes every key and is drawn
-// over the screen where it fits, else in the workspace with its keys in the footer.
+// The marked row is drawn as selected only while the rows have the focus, as SetFocused says (a new list has it;
+// the modal always draws the mark), so no second mark shows while the focus lies elsewhere. A click on a row
+// marks it, and only a click on the marked row while the rows have the focus opens it, as enter does; with
+// ListSpec.ClickOpens a click on any entry row opens it at once instead, while the rows have the focus. In both
+// forms a click on a list without the focus only focuses and marks it; a click on a group row folds it and never
+// changes the ticks, a click on a tick box does what the toggle key does, and one on the search line starts the
+// search. Each such target carries the action of its key and an Item the list reads back in Click; a target with
+// a zone alone is the free area of the zone. A FilterBar holds choice fields of one value or more: left and
+// right change the value, and tab and shift+tab step through the fields and leave the bar at its ends. Enter
+// opens the list of values: a search line as its first row filters them by part of their text in any case, up,
+// down and the optional page keys move the cursor in a few rows that scroll, enter takes the value under it and
+// back closes it without change. The panel shows the position at its top edge, as a List does, a check mark at
+// the value in force and, for a search without match, the way out; ValueList is given the room it may fill. An
+// action field shows a text, set with SetActionText, in the same order; enter, left, right or a click report its
+// action once to TakeAction, which the application runs, and it never counts as a changed filter. Its values
+// change only what the application hands to the list, never its data. SetOptions replaces a field's values; the
+// value, the open list with its search and the modal's draft stay on their IDs, and a call that drops the value
+// is rejected unchanged. A click opens a field's values, one on a value takes it; the search field of a list may
+// stand at its right end. On a narrow terminal the values are cut first; where the fields still do not fit, a
+// single button with the number of fields off their first value takes their place, always, with the search field
+// beside it or, with little room, only the search key. The button is one stop of the focus. Enter or a click
+// opens a modal with all fields one under the other: up and down choose a field, left and right change its
+// value, enter takes all changes at once and back drops them all; pressing an action field there takes them
+// first, then reports the action. The modal takes every key and is drawn over the screen where it fits, else in
+// the workspace with its keys in the footer.
 //
 // A Form shows the fields an application hands it, each with a stable ID, a kind, a label and a value, and
 // knows no schema: the application checks the values when the save key is pressed, from any field, and hands
@@ -566,6 +567,8 @@
 //   - Column.Optional, Flex, Right, Dimmed, Short, Tone: leave out the column on a narrow terminal, mark the
 //     free text column, align right, dim, shorter labels, style of a cell by value. Default: false, false,
 //     false, false, nil, nil.
+//   - ListSpec.ClickOpens: a click on any entry row opens it at once while the rows have the focus. Default:
+//     false, a click marks the row and only a click on the marked row opens it.
 //   - ListGroup.Keep: shows a described group without entries. Default: false, the row is not drawn.
 //   - FilterBarKeys.PageUp, PageDown and FilterBarSpec.List: page keys of the value list and the list the bar
 //     stands above. Default: empty, nil.
