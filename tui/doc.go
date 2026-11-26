@@ -114,6 +114,20 @@
 // Explanation closes on a click outside its keys and address already and has no option; the View drawn in a
 // terminal too small for an overlay has no frame and no such targets.
 //
+// A TextSelection selects text with the mouse, one for the screen. The application hands it every mouse event
+// with the MouseMap of the frame on screen before it hands a click to Handle as before, and calls Clear on every
+// key. Dragging with the left button held from the text of a part that supports it selects characters of that
+// part, over several lines too, and the part highlights them in the selection fill, reverse video without one;
+// a terminal without colour shows no highlight. The release returns the text, which the application hands to the
+// clipboard and reports. A click without motion selects nothing and does what it did, and the next click or key
+// ends the selection. A press starts one only where that text is the topmost target, so a button, an overlay or
+// a part drawn later keeps its click; the selection stays within the rows shown and does not scroll. TextView
+// and LogView support it. The text holds content only: line numbers, the mark, time and source columns, the
+// mark of a cut line, the ellipsis and the fill right of a line never come with it. A line break ends each
+// line of the content, never a row where the view wraps, and a drag right of the end of a line or onto its
+// ellipsis takes the line to its end. It is the text as drawn: a control character as its escape, a tab of a
+// TextView as its spaces and a wide character whole.
+//
 // Mouse reports never become text. An InputFilter, installed with tea.WithFilter and attached to the program,
 // drops the pieces of a report that a terminal behind SSH or tmux delivered in more than one read, so a text
 // or passphrase field never receives them, and merges a wheel notch the terminal reports twice. Characters
@@ -475,19 +489,20 @@
 // change nothing then; an entry of a FileBrowser whose name is empty, ".", "..", or holds "/", "\" or NUL
 // refuses the whole folder, so no step leaves the root.
 //
-// Escaping and secrets. Control characters and escape sequences never reach the terminal as such: Escape
-// writes every control or otherwise unprintable character as its Go escape, and widgets and parts escape
-// every plain text they take, among them cells, group keys and titles of a List, the empty sentence, the typed
-// filter, the lines, sources and search text of a LogView, every character of a TextView, every text of a
-// Chat message, a FileBrowser entry, the suggestions and details of a Dialog and the names of a PathNav. A
-// part that takes styled content leaves the escaping of its data to the application. Only an icon that
-// passed CheckIcon appears unmasked. A masked field or dialog input never shows what is typed, not in its
-// row, a target or a problem, and is never handed a stored secret. FieldMaskedBlock shows a placeholder with
-// the number of lines, never the content or its length, and refuses whole a paste or key with a character
-// other than line break and tab. A masked section of a TextView stays hidden in every drawing and out of
-// every match until the application calls SetRevealed, and hiding again needs no permission. A Dialog acts
-// only on its answers, the scroll keys and the suggestion keys; every other key goes back to the
-// application, so a stray key neither saves nor destroys.
+// Escaping and secrets. Control characters and escape sequences never reach the terminal as such: Escape writes
+// every control or otherwise unprintable character as its Go escape, and widgets and parts escape every plain
+// text they take, among them cells, group keys and titles of a List, the empty sentence, the typed filter, the
+// lines, sources and search text of a LogView, every character of a TextView, every text of a Chat message, a
+// FileBrowser entry, the suggestions and details of a Dialog and the names of a PathNav. A part that takes
+// styled content leaves the escaping of its data to the application. Only an icon that passed CheckIcon appears
+// unmasked. A masked field or dialog input never shows what is typed, not in its row, a target or a problem,
+// and is never handed a stored secret. FieldMaskedBlock shows a placeholder with the number of lines, never the
+// content or its length, and refuses whole a paste or key with a character other than line break and tab. A
+// masked section of a TextView stays hidden in every drawing and out of every match until the application calls
+// SetRevealed, and hiding again needs no permission. A TextSelection takes a masked section, hidden or
+// revealed, as the mask of fixed length, so neither its content nor its length leaves the view. A Dialog acts
+// only on its answers, the scroll keys and the suggestion keys; every other key goes back to the application,
+// so a stray key neither saves nor destroys.
 //
 // Limits. A FieldMaskedBlock holds at most 64 KiB, counted after line breaks are normalized. The TextView
 // keeps at most TextViewMaxLines lines of at most TextViewMaxLineRunes characters, a longer line is cut with

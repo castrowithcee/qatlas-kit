@@ -53,7 +53,10 @@
 // workbench uncovers only after a question (V, answered by y or n); a log of invented lines over time with
 // following, search, wrapping, a time column and a period dialog (P) with a calendar for a range; and a chat
 // whose field takes several lines (enter breaks the line, tab leads to the send button, where enter sends) and
-// whose quick replies answer the selected message.
+// whose quick replies answer the selected message. In the text and the log, dragging with the left button held
+// marks characters across lines; on release the workbench hands the content alone, without frame, line numbers
+// or columns and with a masked section still masked, to the terminal for the clipboard and says so. A click
+// without motion acts as before, and the next click or any key ends the mark.
 //
 // The form of the navigation switches at run time: the key N, the command navigation and the field in the
 // Settings tab step through the tab lines, the path line (one line below the header, "Area ▾ › Tab ▾"), the path

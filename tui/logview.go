@@ -146,8 +146,11 @@ type LogView struct {
 	now     func() time.Time
 	pending bool            // the filter was changed by the user and the application has not taken it yet
 	fm      *logFilterModal // the open choice of the period
-	// What the last drawing found, for the keys and the wheel.
+	// What the last drawing found, for the keys and the wheel, and for a selection with the mouse.
 	width, body, page int
+	layout            selLayout
+
+	sel textRange
 }
 
 // NewLogView checks spec and returns an empty log view that follows. It rejects a negative or too large
@@ -275,7 +278,7 @@ func (l *LogView) applyFilter(f LogFilter) {
 		}
 	}
 	l.buf, l.start = kept, 0
-	l.hasCur, l.unseen = false, 0
+	l.hasCur, l.unseen, l.sel = false, 0, textRange{}
 	l.top = l.first()
 	l.queryChanged()
 	if l.canFollow() {
@@ -290,7 +293,7 @@ func (l *LogView) applyFilter(f LogFilter) {
 // The application calls it before it supplies the lines of a new period.
 func (l *LogView) Clear() {
 	l.buf, l.start, l.srcWidth = nil, 0, 0
-	l.hits, l.hasCur, l.unseen = l.hits[:0], false, 0
+	l.hits, l.hasCur, l.unseen, l.sel = l.hits[:0], false, 0, textRange{}
 	l.top = l.first()
 	l.following = false
 	l.resume()
@@ -751,6 +754,7 @@ func (l *LogView) View(styles Styles, width, height int) (string, []Target) {
 	if height >= 2 {
 		l.body = height - 1
 	}
+	l.layout = l.layout[:0]
 	g := l.geometry(width)
 	var lines []string
 	first, at := l.first(), l.topIndex()
@@ -768,8 +772,10 @@ func (l *LogView) View(styles Styles, width, height int) (string, []Target) {
 	l.page = max(shown, 1)
 	if len(lines) > l.body {
 		lines = lines[:l.body]
+		l.layout = l.layout[:l.body]
 	}
-	targets := []Target{{Rect: Rect{Width: width, Height: height}, Zone: ZoneRows}}
+	targets := []Target{{Rect: Rect{Width: width, Height: height}, Zone: ZoneRows},
+		{Rect: Rect{Width: width, Height: l.body}, Zone: ZoneRows, selection: l}}
 	if height >= 2 {
 		for len(lines) < l.body {
 			lines = append(lines, "")
@@ -814,28 +820,43 @@ func (l *LogView) rows(ln logLine, seq uint64, g logGeometry, styles Styles) []s
 	if ln.cut {
 		mark = []rune(l.mark())
 	}
+	sa, sb := l.sel.cells(seq, len(runes))
+	widths := func(from, to int) []int {
+		w := make([]int, 0, to-from)
+		for _, r := range runes[from:to] {
+			w = append(w, runeCells(r))
+		}
+		return w
+	}
+	x := g.gutter + g.stamp + g.source
 	if !l.wrap {
-		return []string{lead + l.clipped(runes, mark, mask, isCur, g.text, styles)}
+		row, end := l.clipped(runes, mark, mask, isCur, sa, sb, g.text, styles)
+		l.layout = append(l.layout, selRow{line: seq, x: x, widths: widths(0, end), end: true, lineLen: len(runes)})
+		return []string{lead + row}
 	}
 	all := append(slices.Clone(runes), mark...)
 	var out []string
-	for i, rg := range wrapRanges(all, g.text) {
+	ranges := wrapRanges(all, g.text)
+	for i, rg := range ranges {
 		prefix := indent
 		if i == 0 {
 			prefix = lead
 		}
-		out = append(out, prefix+segments(all, rg[0], rg[1], len(runes), mask, isCur, styles))
+		out = append(out, prefix+segments(all, rg[0], rg[1], len(runes), mask, isCur, sa, sb, styles))
+		from, to := min(rg[0], len(runes)), min(rg[1], len(runes))
+		l.layout = append(l.layout, selRow{line: seq, x: x, from: from, widths: widths(from, to),
+			end: i == len(ranges)-1 || rg[1] >= len(runes), lineLen: len(runes)})
 	}
 	return out
 }
 
-// clipped is the text of a line that does not wrap, cut to room cells with the ellipsis glyph; the mark of a
-// cut line stays at the end.
-func (l *LogView) clipped(runes, mark []rune, mask []bool, isCur bool, room int, styles Styles) string {
+// clipped is the text of a line that does not wrap, cut to room cells with the ellipsis glyph, and how many
+// characters of it stand; the mark of a cut line stays at the end.
+func (l *LogView) clipped(runes, mark []rune, mask []bool, isCur bool, sa, sb, room int, styles Styles) (string, int) {
 	room -= cells(mark)
-	tail := segments(mark, 0, len(mark), 0, nil, false, styles)
+	tail := segments(mark, 0, len(mark), 0, nil, false, 0, 0, styles)
 	if cells(runes) <= room {
-		return segments(runes, 0, len(runes), len(runes), mask, isCur, styles) + tail
+		return segments(runes, 0, len(runes), len(runes), mask, isCur, sa, sb, styles) + tail, len(runes)
 	}
 	ellipsis := styles.Glyph(GlyphEllipsis)
 	room = max(room-lipgloss.Width(ellipsis), 0)
@@ -844,15 +865,18 @@ func (l *LogView) clipped(runes, mark []rune, mask []bool, isCur bool, room int,
 		used += runeCells(runes[end])
 		end++
 	}
-	return segments(runes, 0, end, len(runes), mask, isCur, styles) + styles.Render(StyleHint, ellipsis) + tail
+	return segments(runes, 0, end, len(runes), mask, isCur, sa, sb, styles) + styles.Render(StyleHint, ellipsis) + tail, end
 }
 
-// segments draws runes[from:to]: text, matches and, from bodyLen on, the mark of a cut line.
-func segments(runes []rune, from, to, bodyLen int, mask []bool, isCur bool, styles Styles) string {
+// segments draws runes[from:to]: text, matches, the selection [sa, sb) and, from bodyLen on, the mark of a cut
+// line.
+func segments(runes []rune, from, to, bodyLen int, mask []bool, isCur bool, sa, sb int, styles Styles) string {
 	kind := func(i int) int {
 		switch {
 		case i >= bodyLen:
 			return 2
+		case i >= sa && i < sb:
+			return 3
 		case i < len(mask) && mask[i]:
 			return 1
 		}
@@ -873,6 +897,8 @@ func segments(runes []rune, from, to, bodyLen int, mask []bool, isCur bool, styl
 			}
 		case 2:
 			style = StyleWarn
+		case 3:
+			style = StyleActiveRow
 		}
 		b.WriteString(styles.Render(style, string(runes[i:j])))
 		i = j
@@ -1187,4 +1213,24 @@ func statusLine(styles Styles, width int, items []statusItem, pos string) (strin
 		line.WriteString(styles.Render(StyleHint, pos))
 	}
 	return line.String(), targets
+}
+
+func (l *LogView) selectPos(x, y int) (textPos, bool) { return l.layout.pos(x, y) }
+func (l *LogView) setSelection(sel textRange)         { l.sel = sel }
+
+// selectionText is the selected text of the lines still held, as escaped and drawn, a line break at the end of
+// each line; the time, source and mark of a cut line are not text of the line.
+func (l *LogView) selectionText(sel textRange) string {
+	var b strings.Builder
+	first := l.first()
+	start := max(sel.from.line, first)
+	for seq := start; seq <= sel.to.line && seq < l.nextSeq; seq++ {
+		if seq > start {
+			b.WriteByte('\n')
+		}
+		runes := []rune(l.line(int(seq - first)).text)
+		from, to := sel.cells(seq, len(runes))
+		b.WriteString(string(runes[from:to]))
+	}
+	return b.String()
 }

@@ -76,7 +76,9 @@ type model struct {
 	pathArea bool
 
 	mouse *tui.MouseMap
-	view  string
+	// The text the mouse selects in the text and log views.
+	sel  tui.TextSelection
+	view string
 }
 
 func newModel(prefs uiprefs.Prefs, profile tui.ColorProfile, charset tui.CharsetMode, root string, now func() time.Time) (*model, error) {
@@ -203,6 +205,7 @@ func (m *model) handle(msg tea.Msg) tea.Cmd {
 			}
 		}
 	case tea.KeyPressMsg:
+		m.sel.Clear()
 		switch {
 		case m.cmdOpen:
 			return m.commandKey(msg)
@@ -218,6 +221,11 @@ func (m *model) handle(msg tea.Msg) tea.Cmd {
 			return m.run(action, tui.KeyName(msg))
 		}
 	case tea.MouseMsg:
+		// The selection reads every mouse event first; a click without motion falls through to the click below.
+		if text, copied := m.sel.Mouse(m.mouse, msg); copied {
+			m.message = &tui.Message{Kind: tui.MessageStatus, Text: m.text.Lookup(tui.TextCopyHandedOver)}
+			return tea.SetClipboard(text)
+		}
 		switch {
 		case m.cmdOpen:
 			return m.commandClick(msg)

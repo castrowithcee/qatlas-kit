@@ -54,6 +54,8 @@ type Target struct {
 	// Item names the element a click hit inside a part that draws many, such as a row of a list or a field
 	// of a filter bar. It is opaque: the part that drew the target reads it back in its Click.
 	Item string
+	// selection is the part whose text a TextSelection selects under the target.
+	selection selectable
 }
 
 // StatusMark is a part of the header after the product name; the marks stand in the order of

@@ -120,6 +120,7 @@ type textCell struct {
 	r      rune
 	role   TextRole
 	hidden bool // a mask glyph
+	masked bool // part of a masked section, hidden or revealed
 }
 
 // TextView shows a text read-only: line numbers, scrolling, wrapping, search with highlighted matches and a
@@ -153,8 +154,12 @@ type TextView struct {
 	askedReveal   bool
 	hasMasked     bool
 
-	// What the last drawing found, for the keys and the wheel.
+	// What the last drawing found, for the keys and the wheel, and for a selection with the mouse.
 	width, body, page int
+	layout            selLayout
+	maskGlyph         string
+
+	sel textRange
 }
 
 // NewTextView checks spec and returns an empty text view. It rejects a negative or too large limit, a
@@ -205,6 +210,7 @@ func (v *TextView) SetText(text string, spans [][]TextSpan) {
 	text = strings.TrimSuffix(text, "\n")
 	v.lines, v.total, v.short = nil, 0, 0
 	v.top, v.hasCur, v.revealed, v.askedReveal, v.hasMasked = 0, false, false, false, false
+	v.sel = textRange{}
 	if text != "" {
 		v.total = strings.Count(text, "\n") + 1
 		for i := 0; i < v.total && len(v.lines) < v.spec.MaxLines; i++ {
@@ -317,16 +323,16 @@ func (v *TextView) cellsOf(ln textViewLine) []textCell {
 		case masked && !v.revealed:
 			if len(out) == 0 || !out[len(out)-1].hidden {
 				for range textMaskCells {
-					out = append(out, textCell{hidden: true})
+					out = append(out, textCell{hidden: true, masked: true})
 				}
 			}
 		case r == '\t':
 			for range textTabCells {
-				out = append(out, textCell{r: ' ', role: role})
+				out = append(out, textCell{r: ' ', role: role, masked: masked})
 			}
 		default:
 			for _, e := range Escape(ln.text[i : i+size]) {
-				out = append(out, textCell{r: e, role: role})
+				out = append(out, textCell{r: e, role: role, masked: masked})
 			}
 		}
 		i += size
@@ -382,7 +388,7 @@ func (v *TextView) SetRevealed(on bool) {
 	if v.revealed == on {
 		return
 	}
-	v.revealed = on
+	v.revealed, v.sel = on, textRange{}
 	v.queryChanged()
 }
 
@@ -669,6 +675,7 @@ func (v *TextView) View(styles Styles, width, height int) (string, []Target) {
 	if height >= 2 {
 		v.body = height - 1
 	}
+	v.layout, v.maskGlyph = v.layout[:0], styles.Glyph(GlyphMask)
 	g := v.geometry(width)
 	var lines []string
 	at := v.topIndex()
@@ -684,8 +691,10 @@ func (v *TextView) View(styles Styles, width, height int) (string, []Target) {
 	v.page = max(shown, 1)
 	if len(lines) > v.body {
 		lines = lines[:v.body]
+		v.layout = v.layout[:v.body]
 	}
-	targets := []Target{{Rect: Rect{Width: width, Height: height}, Zone: ZoneRows}}
+	targets := []Target{{Rect: Rect{Width: width, Height: height}, Zone: ZoneRows},
+		{Rect: Rect{Width: width, Height: v.body}, Zone: ZoneRows, selection: v}}
 	if height >= 2 {
 		for len(lines) < v.body {
 			lines = append(lines, "")
@@ -720,29 +729,43 @@ func (v *TextView) rows(ln textViewLine, idx int, g textGeometry, styles Styles)
 		lead += number
 	}
 	indent := strings.Repeat(" ", g.mark+g.num)
+	sa, sb := v.sel.cells(uint64(idx), text)
+	widths := func(from, to int) []int {
+		w := make([]int, 0, to-from)
+		for _, c := range cells[from:to] {
+			w = append(w, runeCells(cellRune(c)))
+		}
+		return w
+	}
 	if !v.wrap {
-		return []string{lead + v.clipped(cells, text, hit, isCur, g.text, styles)}
+		row, end := v.clipped(cells, text, hit, isCur, sa, sb, g.text, styles)
+		v.layout = append(v.layout, selRow{line: uint64(idx), x: g.mark + g.num, widths: widths(0, end), end: true, lineLen: text})
+		return []string{lead + row}
 	}
 	var out []string
-	for i, rg := range wrapRanges(runesOf(cells), g.text) {
+	ranges := wrapRanges(runesOf(cells), g.text)
+	for i, rg := range ranges {
 		prefix := indent
 		if i == 0 {
 			prefix = lead
 		}
-		out = append(out, prefix+textSegments(cells, rg[0], rg[1], text, hit, isCur, styles))
+		out = append(out, prefix+textSegments(cells, rg[0], rg[1], text, hit, isCur, sa, sb, styles))
+		from, to := min(rg[0], text), min(rg[1], text)
+		v.layout = append(v.layout, selRow{line: uint64(idx), x: g.mark + g.num, from: from, widths: widths(from, to),
+			end: i == len(ranges)-1 || rg[1] >= text, lineLen: text})
 	}
 	return out
 }
 
-// clipped is the text of a line that does not wrap, cut to room cells with the ellipsis glyph; the mark of a
-// cut line stays at the end.
-func (v *TextView) clipped(cells []textCell, text int, hit []bool, isCur bool, room int, styles Styles) string {
+// clipped is the text of a line that does not wrap, cut to room cells with the ellipsis glyph, and how many
+// characters of it stand; the mark of a cut line stays at the end.
+func (v *TextView) clipped(cells []textCell, text int, hit []bool, isCur bool, sa, sb, room int, styles Styles) (string, int) {
 	mark := cells[text:]
 	room -= cellsWidth(mark)
-	tail := textSegments(mark, 0, len(mark), 0, nil, false, styles)
+	tail := textSegments(mark, 0, len(mark), 0, nil, false, 0, 0, styles)
 	body := cells[:text]
 	if cellsWidth(body) <= room {
-		return textSegments(body, 0, len(body), len(body), hit, isCur, styles) + tail
+		return textSegments(body, 0, len(body), len(body), hit, isCur, sa, sb, styles) + tail, len(body)
 	}
 	ellipsis := styles.Glyph(GlyphEllipsis)
 	room = max(room-lipgloss.Width(ellipsis), 0)
@@ -751,7 +774,7 @@ func (v *TextView) clipped(cells []textCell, text int, hit []bool, isCur bool, r
 		used += runeCells(cellRune(body[end]))
 		end++
 	}
-	return textSegments(body, 0, end, len(body), hit, isCur, styles) + styles.Render(StyleHint, ellipsis) + tail
+	return textSegments(body, 0, end, len(body), hit, isCur, sa, sb, styles) + styles.Render(StyleHint, ellipsis) + tail, end
 }
 
 // cellRune is the character a cell takes room for: a mask glyph takes one cell.
@@ -770,14 +793,16 @@ func cellsWidth(cells []textCell) int {
 	return w
 }
 
-// textSegments draws cells[from:to]: text in its role, matches, mask glyphs and, from textLen on, the mark of
-// a cut line. A mask glyph is drawn from the styles' glyph, never from the text.
-func textSegments(cells []textCell, from, to, textLen int, hit []bool, isCur bool, styles Styles) string {
+// textSegments draws cells[from:to]: text in its role, matches, the selection [sa, sb), mask glyphs and,
+// from textLen on, the mark of a cut line. A mask glyph is drawn from the styles' glyph, never from the text.
+func textSegments(cells []textCell, from, to, textLen int, hit []bool, isCur bool, sa, sb int, styles Styles) string {
 	style := func(i int) TextStyle {
 		c := cells[i]
 		switch {
 		case i >= textLen:
 			return StyleWarn
+		case i >= sa && i < sb:
+			return StyleActiveRow
 		case c.hidden:
 			return StyleHint
 		case i < len(hit) && hit[i]:
@@ -922,4 +947,30 @@ func (v *TextView) status(styles Styles, width, at, shown int) (string, []Target
 		items, pos = fitButtons(styles, width, v.buttons(styles), long, short)
 	}
 	return statusLine(styles, width, items, pos)
+}
+
+func (v *TextView) selectPos(x, y int) (textPos, bool) { return v.layout.pos(x, y) }
+func (v *TextView) setSelection(sel textRange)         { v.sel = sel }
+
+// selectionText is the selected text as it is drawn, a line break at the end of each line of the text: a tab
+// is its spaces, a control character its escape, and a masked section the mask of fixed length even while it
+// is revealed, so its content and its length never leave the view.
+func (v *TextView) selectionText(sel textRange) string {
+	var b strings.Builder
+	for line := sel.from.line; line <= sel.to.line && line < uint64(len(v.lines)); line++ {
+		if line > sel.from.line {
+			b.WriteByte('\n')
+		}
+		cells := v.cellsOf(v.lines[line])
+		from, to := sel.cells(line, len(cells))
+		for i := from; i < to; i++ {
+			switch c := cells[i]; {
+			case !c.masked:
+				b.WriteRune(c.r)
+			case i == from || !cells[i-1].masked:
+				b.WriteString(strings.Repeat(v.maskGlyph, textMaskCells))
+			}
+		}
+	}
+	return b.String()
 }
