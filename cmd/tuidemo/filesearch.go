@@ -53,8 +53,11 @@ func (b *filesBlock) answer(d searchDone) {
 		return
 	}
 	found := tui.FileFound{}
+	// The search reports canonical paths, so the root is compared in the same form, as /var is
+	// /private/var on macOS.
+	root := projectpath.Canonical(b.root)
 	for _, mt := range d.res.Matches {
-		rel, err := filepath.Rel(b.root, mt.Path)
+		rel, err := filepath.Rel(root, mt.Path)
 		if err != nil || !filepath.IsLocal(rel) {
 			continue
 		}
