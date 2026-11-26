@@ -390,7 +390,7 @@ func catalog() i18n.Catalogs[tui.TextID] {
 			textNoteListFilter: "{search} types a filter, {filter} moves to the filter bar: {left} and {right} change a value, " +
 				"{enter} opens its values. {enter} or a click on the marked row opens it.",
 			textNoteListGroups: "{left} and {right} fold a group, so do {enter} and a click on its row. {search} types a filter; " +
-				"a filter opens the groups with hits.",
+				"a filter opens the groups with hits. A click on an entry opens it at once.",
 			textNoteListTicks: "Typing filters. {toggle} ticks the marked row, a group or the row of all; a click on a box does the same. " +
 				"{back} clears the filter.",
 
@@ -645,7 +645,7 @@ func catalog() i18n.Catalogs[tui.TextID] {
 			textNoteListFilter: "{search} tippt einen Filter, {filter} geht zur Filterleiste: {left} und {right} ändern einen Wert, " +
 				"{enter} öffnet seine Werte. {enter} oder ein Klick auf die markierte Zeile öffnet sie.",
 			textNoteListGroups: "{left} und {right} falten eine Gruppe, ebenso {enter} und ein Klick auf ihre Zeile. {search} tippt einen Filter; " +
-				"ein Filter öffnet die Gruppen mit Treffern.",
+				"ein Filter öffnet die Gruppen mit Treffern. Ein Klick auf einen Eintrag öffnet ihn sofort.",
 			textNoteListTicks: "Tippen filtert. {toggle} kreuzt die markierte Zeile, eine Gruppe oder die Zeile für alle an; ein Klick auf ein Kästchen tut dasselbe. " +
 				"{back} löscht den Filter.",
 

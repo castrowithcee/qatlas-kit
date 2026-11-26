@@ -123,6 +123,10 @@ type ListSpec struct {
 	// a filter and otherwise comes back with handled false, which the application closes the modal on as it
 	// does on the key. The default leaves such a click to do nothing.
 	CloseOutside bool
+	// ClickOpens makes a click on an entry row open it at once, as enter does, while the rows have the focus.
+	// The default marks the row first and opens it on a click on the marked row. Either way a click on a
+	// list without the focus only takes the focus and marks, and never opens.
+	ClickOpens bool
 }
 
 // flexFloor is the narrowest a free text column is cut to before anything else of the row gives way.
@@ -667,13 +671,13 @@ func (l *List) Act(id ActionID) (open ItemID, handled bool) {
 }
 
 // Click handles a click on a target the list drew, as the MouseMap of its targets reports it. A click marks a
-// row; only a click on the marked row while the rows have the focus, as SetFocused said before the click,
-// opens it, as enter does, so a click meant to scroll or to take the focus opens nothing. A click on a group
-// row folds or unfolds it, and one on the search line starts the search. A filter being typed is kept and
-// stops. A click on a tick box ticks or unticks its entry, group or the row of all and opens and folds
-// nothing; a click on the title of a group only folds it. A click on a button acts as its key does through
-// Act, so an action that is no list key comes back with handled false, and the application runs the Action of
-// the MouseResult as it runs the key.
+// row; only a click on the marked row (on any entry row with ListSpec.ClickOpens) while the rows have the focus,
+// as SetFocused said before the click, opens it, as enter does, so a click meant to scroll or to take the focus
+// opens nothing. A click on a group row folds or unfolds it, and one on the search line starts the search. A
+// filter being typed is kept and stops. A click on a tick box ticks or unticks its entry, group or the row of
+// all and opens and folds nothing; a click on the title of a group only folds it. A click on a button acts as
+// its key does through Act, so an action that is no list key comes back with handled false, and the application
+// runs the Action of the MouseResult as it runs the key.
 func (l *List) Click(r MouseResult) (open ItemID, handled bool) {
 	if !r.Handled {
 		return "", false
@@ -721,7 +725,7 @@ func (l *List) Click(r MouseResult) (open ItemID, handled bool) {
 		l.toggleRow()
 	case target.isGroup && l.folds():
 		l.setFolded(target.group, !l.folded[target.group])
-	case !target.isGroup && !target.all && l.focused && marked == target:
+	case !target.isGroup && !target.all && l.focused && (l.spec.ClickOpens || marked == target):
 		return target.id, true
 	}
 	return "", true

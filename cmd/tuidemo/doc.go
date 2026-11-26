@@ -39,7 +39,8 @@
 // does, without running what stands behind. The question with the destroying answer ignores it and stays
 // open; the explanation keeps its own way of closing.
 //
-// The Lists tab shows a list with a filter bar, a grouped list that folds and a list with tick boxes. The Forms
+// The Lists tab shows a list with a filter bar, a grouped list that folds and opens an entry at one click (the
+// others mark first and open on a click on the marked row) and a list with tick boxes. The Forms
 // tab shows a form that adds a bed (text, choice, tick boxes and a masked field) and one with date fields and
 // their calendar, opened by enter or a click on its symbol. F2 or the save button checks the values and reports
 // what is missing; the reset button starts the form again.
