@@ -195,7 +195,8 @@
 // below their title, for group rows as for entries; the first column and the group head are never cut, and the
 // widths come from every entry and described group, so they stay while a filter is typed. An empty list shows
 // the application's sentence with the next step, which SetEmpty sets for each state, and a filter without match
-// names the key that clears it. SetNote adds a note that stays above the column titles, under the search line,
+// names the key that clears it. Shown names the entries the filter lets through in the order they show, also
+// those of folded groups. SetNote adds a note that stays above the column titles, under the search line,
 // whatever the list shows below: while it scrolls, filters, finds nothing or is empty. The text is finished
 // and translated like the empty sentence, wraps to the width with two cells of indent, and has its control
 // characters escaped always. With warn it stands in the warning style behind the warning sign, as the

@@ -2479,3 +2479,85 @@ func TestListNoteEmptyRemovesIt(t *testing.T) {
 		t.Error("an emptied note changes the output")
 	}
 }
+
+// entryRows are the IDs of the shown entry rows in their order.
+func entryRows(l *List) []ItemID {
+	ids := []ItemID{}
+	for _, r := range l.rows {
+		if r.item >= 0 {
+			ids = append(ids, l.items[r.item].ID)
+		}
+	}
+	return ids
+}
+
+// Without a folded group Shown is exactly the entry rows in their order, flat and grouped, with and without
+// a filter and with an outline; the row of all and group rows stay out.
+func TestShownFollowsTheEntryRows(t *testing.T) {
+	outline := func(t *testing.T) *List {
+		l, _ := newSampleList(t, Styles{}, i18n.English, func(s *ListSpec) { s.Outline = true })
+		l.SetGrouped(true)
+		if err := l.SetGroups([]ListGroup{{Key: "trees", Title: "Zeta"}, {Key: "herbs", Title: "Alpha"}}); err != nil {
+			t.Fatal(err)
+		}
+		if err := l.SetItems(samplePlants()); err != nil {
+			t.Fatal(err)
+		}
+		return l
+	}
+	for _, tt := range []struct {
+		name string
+		list func(*testing.T) *List
+		want string
+	}{
+		{"flat", func(t *testing.T) *List { return filledList(t, nil) }, "basil,mint,oak,thyme,fern"},
+		{"grouped", func(t *testing.T) *List { return groupedList(t, nil) }, "oak,basil,mint,thyme,fern"},
+		{"ticks", func(t *testing.T) *List { return tickList(t, func(s *ListSpec) { s.AllRow = true }) }, "basil,mint,thyme,oak,fern"},
+		{"outline", outline, "oak,basil,mint,thyme,fern"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			l := tt.list(t)
+			for _, query := range []string{"", "resting", "s"} {
+				l.SetFilter(query)
+				got, want := l.Shown(), entryRows(l)
+				if !slices.Equal(got, want) {
+					t.Errorf("filter %q: Shown = %v, rows %s", query, got, shownRows(l))
+				}
+				if query == "" && tt.want != "" && fmt.Sprint(got) != "["+strings.ReplaceAll(tt.want, ",", " ")+"]" {
+					t.Errorf("Shown = %v, want %s", got, tt.want)
+				}
+			}
+		})
+	}
+}
+
+// Without a filter the entries of a folded group count at the place of their group.
+func TestShownCountsFoldedGroups(t *testing.T) {
+	l := groupedList(t, nil)
+	l.setFolded("herbs", true)
+	if got := shownRows(l); got != "[trees],oak,[herbs],[],fern" {
+		t.Fatalf("rows = %s", got)
+	}
+	if got := fmt.Sprint(l.Shown()); got != "[oak basil mint thyme fern]" {
+		t.Errorf("Shown = %s", got)
+	}
+	l.SetFilter("resting")
+	if got := fmt.Sprint(l.Shown()); got != "[oak mint fern]" {
+		t.Errorf("Shown with a filter = %s", got)
+	}
+}
+
+// A filter without match gives an empty slice, and a change to the result leaves the list alone.
+func TestShownIsACopy(t *testing.T) {
+	l := groupedList(t, nil)
+	l.SetFilter("no such plant")
+	if got := l.Shown(); got == nil || len(got) != 0 {
+		t.Errorf("Shown without match = %#v, want an empty slice", got)
+	}
+	l.SetFilter("")
+	got := l.Shown()
+	got[0] = "changed"
+	if again := l.Shown(); again[0] != "oak" || shownRows(l) != "[trees],oak,[herbs],basil,mint,thyme,[],fern" {
+		t.Errorf("a change to the result reached the list: %v, rows %s", again, shownRows(l))
+	}
+}
