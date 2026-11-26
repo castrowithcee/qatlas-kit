@@ -426,14 +426,13 @@ func TestUpdateRejections(t *testing.T) {
 	}
 
 	plain := newVault(t, testOptions(filepath.Join(t.TempDir(), "vault")))
-	if err := plain.CreateUnencrypted(encodeDoc(t, nil)); err != nil {
+	if err := plain.CreateUnencrypted(encodeDoc(t, map[string]string{"old": "example-1"})); err != nil {
 		t.Fatal(err)
 	}
-	before := vaultFiles(t, plain.Dir())
-	if _, err := plain.Update(rename); !errors.Is(err, ErrNotEncrypted) {
-		t.Fatalf("Update() of an unencrypted vault error = %v, want ErrNotEncrypted", err)
+	if _, err := plain.Update(rename); err != nil {
+		t.Fatalf("Update() of an unencrypted vault error = %v", err)
 	}
-	wantFiles(t, vaultFiles(t, plain.Dir()), before)
+	wantValues(t, decodeDoc(t, heldDocument(t, plain)), map[string]string{"new": "example-1"})
 	if _, err := newVault(t, testOptions(t.TempDir())).Update(rename); !errors.Is(err, ErrAbsent) {
 		t.Fatalf("Update() of an absent vault error = %v, want ErrAbsent", err)
 	}

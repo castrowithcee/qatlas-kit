@@ -28,18 +28,19 @@ func (v *Vault) saveFile(path string) (savedFile, error) {
 
 // restoreFiles writes every saved file back privately, or removes it when it did not exist; files[0] is the
 // document file, the others are pending files. It goes on after a failure so as much as possible is
-// restored. The caller holds the mutex.
-func (v *Vault) restoreFiles(files []savedFile) error {
-	return errors.Join(v.putDocument(files[0]), v.putBackEntries(files[1:]))
+// restored. exempt is as for putDocument. The caller holds the mutex.
+func (v *Vault) restoreFiles(files []savedFile, exempt bool) error {
+	return errors.Join(v.putDocument(files[0], exempt), v.putBackEntries(files[1:]))
 }
 
 // undo returns the undo of one operation: it puts back files and nothing else. files[0] is the document
 // file, encrypted with document, and wrote is what the operation left in it. While this value is unlocked
 // the document it holds is decrypted afresh from the restored bytes, so the undo keeps no plaintext of the
 // encrypted document. With Files.Lock it takes the write lock and puts the bytes back only while the file
-// still holds wrote; otherwise Options.Revert takes the change out of the document on disk. Once a call has
+// still holds wrote; otherwise Options.Revert takes the change out of the document on disk. The undo of an
+// exempt write is exempt too, so a checkpoint's restore does not bring the write back. Once a call has
 // taken effect, further calls do nothing; a call that failed may be repeated.
-func (v *Vault) undo(files []savedFile, wrote savedFile, document bool) func() error {
+func (v *Vault) undo(files []savedFile, wrote savedFile, document, exempt bool) func() error {
 	done := false
 	return func() error {
 		v.mu.Lock()
@@ -59,7 +60,7 @@ func (v *Vault) undo(files []savedFile, wrote savedFile, document bool) func() e
 			}
 			defer clear(current.data)
 			if !sameFile(current, wrote) {
-				if err := v.undoRevert(files, current, wrote, document); err != nil {
+				if err := v.undoRevert(files, current, wrote, document, exempt); err != nil {
 					return err
 				}
 				done = true
@@ -67,7 +68,7 @@ func (v *Vault) undo(files []savedFile, wrote savedFile, document bool) func() e
 				return nil
 			}
 		}
-		if err := v.restoreFiles(files); err != nil {
+		if err := v.restoreFiles(files, exempt); err != nil {
 			return err
 		}
 		done = true
@@ -88,13 +89,13 @@ func clearSaved(files []savedFile, wrote savedFile) {
 
 // undoRevert takes one write out of the document file another writer changed since and puts back the
 // pending files it removed. The caller holds the mutex and the write lock.
-func (v *Vault) undoRevert(files []savedFile, current, wrote savedFile, document bool) error {
+func (v *Vault) undoRevert(files []savedFile, current, wrote savedFile, document, exempt bool) error {
 	doc, data, err := v.revertWrites([]docWrite{{found: files[0], wrote: wrote}}, current)
 	if err != nil {
 		return err
 	}
 	defer clear(data)
-	if err := v.putDocument(savedFile{path: current.path, data: data, exists: true}); err != nil {
+	if err := v.putDocument(savedFile{path: current.path, data: data, exists: true}, exempt); err != nil {
 		clear(doc)
 		return err
 	}

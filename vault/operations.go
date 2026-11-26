@@ -209,7 +209,7 @@ func (v *Vault) Write(document []byte) error {
 		if err := checkSchema(v.plainPath(), document, v.opts.Schemas); err != nil {
 			return err
 		}
-		return v.putDocument(savedFile{path: v.plainPath(), data: document, exists: true})
+		return v.putDocument(savedFile{path: v.plainPath(), data: document, exists: true}, false)
 	}
 	if err := checkSchema(v.documentPath(), document, v.opts.Schemas); err != nil {
 		return err
@@ -223,17 +223,18 @@ func (v *Vault) Write(document []byte) error {
 }
 
 func (v *Vault) writeDocument(id *identity, document []byte) error {
-	_, err := v.writeEncrypted(id, document)
+	_, err := v.writeEncrypted(id, document, false)
 	return err
 }
 
-// writeEncrypted encrypts document to id, writes it and returns the bytes written.
-func (v *Vault) writeEncrypted(id *identity, document []byte) ([]byte, error) {
+// writeEncrypted encrypts document to id, writes it and returns the bytes written. exempt is as for
+// putDocument.
+func (v *Vault) writeEncrypted(id *identity, document []byte, exempt bool) ([]byte, error) {
 	data, err := encryptTo(document, id.recipient)
 	if err != nil {
 		return nil, err
 	}
-	if err := v.putDocument(savedFile{path: v.documentPath(), data: data, exists: true}); err != nil {
+	if err := v.putDocument(savedFile{path: v.documentPath(), data: data, exists: true}, exempt); err != nil {
 		return nil, err
 	}
 	return data, nil

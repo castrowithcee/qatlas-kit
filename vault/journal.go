@@ -19,6 +19,8 @@ type journal struct {
 	clean bool
 	// switched is set by a Create, CreateUnencrypted, Encrypt, Decrypt or ChangePassphrase of this value.
 	switched bool
+	// exempt is set by a write of this value exempt from checkpoints, which counts as another writer's.
+	exempt bool
 	// consumed are the pending files this value removed, to be put back.
 	consumed []savedFile
 	// queued are the paths of the pending entries this value added.
@@ -59,11 +61,12 @@ func (v *Vault) openJournal(saved map[string][]byte) *journal {
 }
 
 // putDocument writes f, a document file, back or removes it when it did not exist, and records the write in
-// every open checkpoint. The caller holds the mutex and, with Files.Lock, the write lock.
-func (v *Vault) putDocument(f savedFile) error {
+// every open checkpoint. An exempt write is recorded as another writer's: it ends a clean checkpoint and is
+// not taken back. The caller holds the mutex and, with Files.Lock, the write lock.
+func (v *Vault) putDocument(f savedFile, exempt bool) error {
 	live := v.liveJournals()
 	var found savedFile
-	if len(live) > 0 {
+	if len(live) > 0 && !exempt {
 		var err error
 		if found, err = v.saveFile(f.path); err != nil {
 			return err
@@ -77,6 +80,12 @@ func (v *Vault) putDocument(f savedFile) error {
 	}
 	if err != nil {
 		return err
+	}
+	if exempt {
+		for _, j := range live {
+			j.clean, j.exempt = false, true
+		}
+		return nil
 	}
 	wrote := savedFile{path: f.path, data: slices.Clone(f.data), exists: f.exists}
 	for _, j := range live {
@@ -95,9 +104,13 @@ func (v *Vault) putDocument(f savedFile) error {
 }
 
 // removeEntry removes the pending file path with remove and records it in every open checkpoint, so its
-// restore can put the entry back. The caller holds the mutex.
-func (v *Vault) removeEntry(remove func(string) error, path string) error {
-	live := v.liveJournals()
+// restore can put the entry back; an exempt removal is not recorded, since the write that merged the entry
+// stays. The caller holds the mutex.
+func (v *Vault) removeEntry(remove func(string) error, path string, exempt bool) error {
+	var live []*journal
+	if !exempt {
+		live = v.liveJournals()
+	}
 	var data []byte
 	if len(live) > 0 {
 		var err error

@@ -17,9 +17,13 @@ import (
 // While nobody else wrote the document file in between, it puts the recorded document back byte for byte;
 // otherwise Options.Revert takes this value's writes out of the document on disk, which needs the value
 // unlocked, and without Revert restore fails with ErrConflict and writes nothing. It puts back the pending
-// entries this value merged and removes only those it added. After a Create, Encrypt, Decrypt or
-// ChangePassphrase of this value it puts every recorded file back. A vault directory the checkpoint did not
-// find is removed once only the lock file is left. restore then takes effect once.
+// entries this value merged and removes only those it added. An update exempt from checkpoints (see
+// ExemptFromCheckpoints) counts as another writer's and stays; when this value wrote nothing else, restore
+// leaves the document as it is. After a Create, CreateUnencrypted, Encrypt, Decrypt or ChangePassphrase of
+// this value it puts every recorded file back, and once such a switch and an exempt update both happened it
+// fails with ErrConflict and writes nothing, since putting the files back would take the update back. A
+// vault directory the checkpoint did not find is removed once only the lock file is left. restore then
+// takes effect once.
 func (v *Vault) Checkpoint() (restore func() error, err error) {
 	v.mu.Lock()
 	defer v.mu.Unlock()
@@ -164,11 +168,16 @@ func (v *Vault) restoreLocked(j *journal, c *checkpoint) error {
 // pending files this value removed and removes the entries it added. Every part that succeeds is dropped
 // from j, so a failed restore may be repeated. It reports refusal apart from the failures of its writes.
 // The caller holds the mutex and the write lock.
+//
+// An exempt write is not in j.writes, so the revert leaves it; after a switch it refuses instead, because
+// only putting every file back takes a switch back.
 func (v *Vault) restoreJournal(j *journal, c *checkpoint) (failed []error, refused error) {
 	var paths []string // the files to put back byte for byte
 	var reverted, data []byte
 	var path string
 	switch {
+	case j.switched && j.exempt:
+		return nil, ErrConflict
 	case j.switched:
 		paths = c.files
 	case len(j.writes) > 0:
@@ -199,7 +208,7 @@ func (v *Vault) restoreJournal(j *journal, c *checkpoint) (failed []error, refus
 		var err error
 		switch {
 		case !j.switched:
-			err = v.putDocument(savedFile{path: p, data: saved, exists: ok})
+			err = v.putDocument(savedFile{path: p, data: saved, exists: ok}, false)
 		case ok:
 			err = v.write(p, saved)
 		default:
@@ -213,7 +222,7 @@ func (v *Vault) restoreJournal(j *journal, c *checkpoint) (failed []error, refus
 		v.noteSwitch()
 	}
 	if data != nil {
-		err := v.putDocument(savedFile{path: path, data: data, exists: true})
+		err := v.putDocument(savedFile{path: path, data: data, exists: true}, false)
 		clear(data)
 		if err != nil {
 			failed, docFailed = append(failed, err), true
@@ -259,6 +268,18 @@ func (v *Vault) restoreJournal(j *journal, c *checkpoint) (failed []error, refus
 			failed = append(failed, err)
 		} else {
 			v.doc = doc
+		}
+	case j.exempt && c.unlocked:
+		// The recorded document lacks the exempt write that stays on disk.
+		v.holdRecorded(c, nil)
+		current, err := v.saveFile(v.documentPath())
+		if err == nil {
+			v.doc, err = v.documentOf(current)
+			clear(current.data)
+		}
+		if err != nil {
+			v.forget()
+			failed = append(failed, err)
 		}
 	default:
 		v.holdRecorded(c, slices.Clone(c.doc))

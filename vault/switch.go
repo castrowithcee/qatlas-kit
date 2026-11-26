@@ -106,7 +106,7 @@ func (v *Vault) Decrypt(passphrase string) error {
 	}
 	v.forget()
 	for _, name := range done {
-		if err := v.removeEntry(os.Remove, filepath.Join(v.pendingPath(), name)); err != nil && !isNotExist(err) {
+		if err := v.removeEntry(os.Remove, filepath.Join(v.pendingPath(), name), false); err != nil && !isNotExist(err) {
 			return err
 		}
 	}

@@ -145,7 +145,7 @@ func (v *Vault) mergePending(id *identity, doc []byte, all bool) ([]byte, int, e
 	}
 	// A file left behind merges again on the next unlock, which a MergeFunc treats as a repeat.
 	for _, name := range done {
-		_ = v.removeEntry(os.Remove, filepath.Join(v.pendingPath(), name))
+		_ = v.removeEntry(os.Remove, filepath.Join(v.pendingPath(), name), false)
 	}
 	clear(doc)
 	return merged, len(done), nil
