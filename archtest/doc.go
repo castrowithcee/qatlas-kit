@@ -11,14 +11,26 @@
 // (ForbidKeyLiterals). An application can add its own Checker. CheckCatalog compares the text IDs a TUI
 // package declares with its catalogs and adds the checks of tui.CheckCatalogs.
 //
-// Violations that exist today are listed as exceptions, each with a reason. The list can only shrink: a new
-// violation fails, and so does an exception that no longer matches anything, one listed twice or one
-// without a reason. A rule that selects no file and an Except pattern that leaves out nothing are errors, so
-// renaming a directory cannot silence a rule.
+// Violations that exist today are listed as exceptions, each with a reason.
+//
+// # Always enforced
+//
+// Exceptions can only shrink: a new violation fails, and so does an exception that no longer matches
+// anything, one listed twice or one without a reason. A rule that selects no file and an Except pattern
+// that leaves out nothing are errors, so renaming a directory cannot silence a rule.
 //
 // The checks read syntax, not types. Build constraints are ignored, so every platform checks the same
 // files, and directories the go tool ignores are skipped. A package is recognised by its import path
 // through any alias; a package whose name differs from the last element of its path is recognised only
 // under an alias. Reflection, code generation at run time and values built from pieces stay out of
 // reach; the checks keep honest code in its layer and are no defence against code that hides on purpose.
+//
+// # Options
+//
+//   - Files.Under: the directories a rule applies to. Default: required, a rule that selects no file is an
+//     error.
+//   - Files.Except: files or directories a rule leaves out. Default: none.
+//   - Files.Tests: whether test files are checked (SkipTests, WithTests, OnlyTests). Default: SkipTests.
+//   - Rule.Hint: what to do instead, shown with a finding. Default: no hint.
+//   - Exception: a listed violation with its reason. Default: no violation is excused.
 package archtest
