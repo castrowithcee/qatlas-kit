@@ -139,8 +139,12 @@ const (
 	listButtonRef = "\x00B"
 )
 
-// groupIndent is the indent of the entries below their group row.
-const groupIndent = "  "
+// groupIndent is the indent of the entries below their group row. The row of all keeps the shallower
+// allIndent, in line with the boxes of the group rows.
+const (
+	groupIndent = "    "
+	allIndent   = "  "
+)
 
 // tickWidth is the room of a tick box and the space after it.
 const tickWidth = 4
@@ -717,7 +721,7 @@ func (l *List) Click(r MouseResult) (open ItemID, handled bool) {
 func (l *List) Wheel(steps int) { l.cursor = WheelStep(l.cursor, len(l.rows), steps) }
 
 // View draws the list with styles in width by height cells: the search line where the list has one, the
-// dimmed column titles, and the rows that fit, the selection always among them; an empty list shows its
+// bold column titles over a rule, and the rows that fit, the selection always among them; an empty list shows its
 // sentence, a filter without match names the text and the key that clears it. The scroll position stays while
 // the selection is on the page. It returns a target for the free area of the rows, one per drawn row and one
 // for the search line, counted from the top left of the list.
@@ -740,9 +744,9 @@ func (l *List) view(styles Styles, width, height int, modal bool) (string, []Tar
 		}
 		lines = append(lines, l.searchField(width, styles))
 	}
-	indent := ""
+	indent, allAt := "", ""
 	if l.grouped {
-		indent = groupIndent
+		indent, allAt = groupIndent, allIndent
 	}
 	tick := 0
 	if l.spec.Ticks {
@@ -758,7 +762,9 @@ func (l *List) view(styles Styles, width, height int, modal bool) (string, []Tar
 		}
 		lines = append(lines, l.note(empty, width, styles)...)
 	default:
-		lines = append(lines, "  "+indent+strings.Repeat(" ", tick)+styles.Render(StyleHint, l.header(layout, styles)))
+		lead := "  " + indent + strings.Repeat(" ", tick)
+		lines = append(lines, lead+styles.Render(StyleTitle, l.header(layout, styles)),
+			lead+styles.Render(StyleHint, strings.Repeat(styles.Glyph(GlyphRule), min(tableWidth(layout.widths), room))))
 		if len(l.rows) == 0 {
 			lines = append(lines, l.note(l.text.Lookup(TextListNoMatch, l.query.String(), l.keys.Label(l.spec.Keys.Back)), width, styles)...)
 		}
@@ -771,7 +777,7 @@ func (l *List) view(styles Styles, width, height int, modal bool) (string, []Tar
 		switch {
 		case r.all:
 			box := l.box(tickScope{all: true}, styles)
-			ref, text, boxAt = allRef, indent+box+" "+l.allRow(styles), len(indent)
+			ref, text, boxAt = allRef, allAt+box+" "+l.allRow(styles), len(allAt)
 		case r.item < 0:
 			ref, text, boxAt = groupRef+r.group, l.groupLine(r.group, layout, styles), lipgloss.Width(styles.Glyph(GlyphExpanded))+1
 		default:
@@ -825,10 +831,10 @@ func (l *List) searchField(width int, styles Styles) string {
 		if l.spec.Search == SearchByKey {
 			hint = l.text.Lookup(TextSearchKey, l.keys.Label(l.spec.Keys.Search))
 		}
-		return Pad(styles.Render(StyleHint, styles.Truncate(Escape(hint), width)), width)
+		return styles.Field(Pad(styles.Render(StyleHint, styles.Truncate(Escape(hint), width)), width))
 	}
 	room := max(width-lipgloss.Width(lead), 0)
-	return Pad(Clip(lead+l.query.view(room, styles, typing, ""), width), width)
+	return styles.Field(Pad(Clip(lead+l.query.view(room, styles, typing, ""), width), width))
 }
 
 // note is a dimmed sentence wrapped into width cells.
@@ -1413,7 +1419,7 @@ func (l *List) buttonRows(width int, styles Styles) ([]string, []Target) {
 	return flowButtons(cells, width)
 }
 
-// wanted is the height the list asks for in the modal: the search line, the titles and every row without a
+// wanted is the height the list asks for in the modal: the search line, the titles with their rule and every row without a
 // filter, so the frame keeps its size while a filter is typed.
 func (l *List) wanted() int {
 	rows := len(l.items)
@@ -1432,7 +1438,7 @@ func (l *List) wanted() int {
 	if l.spec.AllRow {
 		rows++
 	}
-	return 1 + 1 + max(rows, 2)
+	return 1 + 2 + max(rows, 2)
 }
 
 // Overlay draws the list with styles over screen, the drawn screen of width by height cells, in the way of
@@ -1459,7 +1465,7 @@ func (l *List) Overlay(styles Styles, screen string, width, height int, room Rec
 	}
 	avail := room.Height - 2 - fixed
 	listH := min(l.wanted(), avail)
-	if listH < 3 {
+	if listH < 4 {
 		return "", nil, false
 	}
 	body, ts := l.view(styles, inner, listH, true)

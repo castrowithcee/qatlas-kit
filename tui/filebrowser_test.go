@@ -370,7 +370,7 @@ func TestFileBrowserEveryControlIsAClickTarget(t *testing.T) {
 		}
 	}
 	// Every shown row has one too.
-	for row := 2; row < 7; row++ {
+	for row := 3; row < 8; row++ {
 		if res := NewMouseMap(targets, true).Handle(click(4, row)); res.Item == "" {
 			t.Errorf("row %d has no target", row)
 		}
