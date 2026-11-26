@@ -92,11 +92,19 @@
 // width. The rest of the room widens the path to the widest form of the path line that fits with the normal
 // marks in their shortest forms, and the marks take the longest forms that fit beside it. Where the product
 // name and the current section do not fit, the product name gives way down to nothing and the section is cut,
-// keeping its mark. CheckFrame refuses an unknown form and holds the areas of both path forms to CheckAreas.
-// A screen reports ZonePath instead of ZoneTabs and ZoneSubtabs. The focus zones have a fixed order that
-// CycleZone walks with wrap-around, as StepArea and StepTab do for the tabs. StepZoneLevel steps vertically
-// between the tab line, the sub-tab line or the path line and the work area, skips a missing line and does
-// not wrap.
+// keeping its mark. NavHeaderChoice puts only the current area in the header, after the product name, as a
+// choice field "Icon Area ▾" with the icon of the area as on the tab line, and draws no tab line; the sub-tab
+// line of the area stays below the header as with NavTabs, and an area with one tab has none. The field is a
+// click target of ZoneTabs that carries the area, it is drawn as the focused tab while ZoneTabs has the focus,
+// it shortens as the section of NavPathHeader does, and the mode tab stands in it as text without mark and
+// target. A screen with this form reports ZoneTabs for the field and ZoneSubtabs for the sub-tab line, so the
+// application runs left and right at ZoneTabs as a step through the areas and StepZoneLevel walks field,
+// sub-tab line and work area; it opens PathNav.OpenAreas for enter and for a click on the field. CheckFrame
+// refuses an unknown form and holds the areas of the three forms that take their names from them to CheckAreas.
+// A screen with a path form reports ZonePath instead of ZoneTabs and ZoneSubtabs. The focus zones have a fixed
+// order that CycleZone walks with wrap-around, as StepArea and StepTab do for the tabs. StepZoneLevel steps
+// vertically between the tab line, the sub-tab line or the path line and the work area, skips a missing line
+// and does not wrap.
 //
 // Header and footer show hints. Keymap.Hints resolves each hint to the keys of its action that act in the
 // input focus of the screen, so a line never names a key that does nothing, and folds hints whose labels
@@ -236,7 +244,9 @@
 // Overlay returns. Up, down, page up and down, first and last move, enter or a click on a tab chooses, back
 // closes. Update and Click return a PathChoice, the area and tab, which the application runs exactly as a
 // click on that tab; a PathChoice that is the zero value is no choice. PathNav answers with a PathChoice, so
-// it has the shape of Modal without satisfying the interface.
+// it has the shape of Modal without satisfying the interface. OpenAreas opens a third overlay for the choice
+// field of NavHeaderChoice: the areas alone as a flat list, without their tabs, the active one marked; a
+// choice is the area, with no tab, and enter, a click and the key of an area choose it at once.
 //
 // Area.Key and Tab.Key give an entry of the overview and of the choice a key of its own: one ASCII letter or
 // digit, shown dimmed in a column of its own at the entry and chosen at once as enter on the entry does, so it

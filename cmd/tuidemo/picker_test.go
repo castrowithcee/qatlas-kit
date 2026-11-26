@@ -124,7 +124,7 @@ func TestTemporaryFolderIsRemovedOnAnErrorPath(t *testing.T) {
 	for _, name := range []string{"TMPDIR", "TMP", "TEMP"} {
 		t.Setenv(name, tmp)
 	}
-	if err := run([]string{"-theme", "no-such-theme"}, os.Stdout, nil); err == nil {
+	if err := run([]string{"-theme", "no-such-theme"}, os.Stdout, nil, sampleToday); err == nil {
 		t.Fatal("an unknown theme did not end the program")
 	}
 	if entries, _ := os.ReadDir(tmp); len(entries) != 0 {

@@ -117,7 +117,8 @@ type FrameSpec struct {
 	Areas      []Area
 	// Nav is the form of the navigation; the zero value is the tab line. With NavPathLine the path line
 	// replaces the tab line and the sub-tab line, and ModeTab stands in it as its only section. With
-	// NavPathHeader the path stands in the header and no line is left for the navigation.
+	// NavPathHeader the path stands in the header and no line is left for the navigation. With NavHeaderChoice
+	// the current area stands there as a choice field and only the sub-tab line is left.
 	Nav        NavForm
 	ActiveArea AreaID
 	ActiveTab  TabID
@@ -181,7 +182,7 @@ func (f *frameRun) workspace(spec FrameSpec) Rect {
 // rows are the number of rows above the workspace, the rows of the workspace and the rows of the footer.
 func (f *frameRun) rows(spec FrameSpec) (top, workspace, footer int) {
 	top = 2 // header and rule
-	if len(spec.Areas) > 0 && spec.Nav != NavPathHeader {
+	if len(spec.Areas) > 0 && spec.Nav != NavPathHeader && spec.Nav != NavHeaderChoice {
 		top++
 	}
 	if _, ok := subTabs(spec); ok && spec.Nav != NavPathLine && spec.Nav != NavPathHeader {
@@ -220,6 +221,10 @@ func (f *frameRun) render(spec FrameSpec) (string, []Target) {
 	switch {
 	case spec.Nav == NavPathHeader:
 		// The path stands in the header; no row is left for a navigation line.
+	case len(spec.Areas) > 0 && spec.Nav == NavHeaderChoice:
+		if area, ok := subTabs(spec); ok {
+			add(f.subTabLine(spec, area, width))
+		}
 	case len(spec.Areas) > 0 && spec.Nav == NavPathLine:
 		add(f.pathLine(spec, width))
 	case len(spec.Areas) > 0:
@@ -313,13 +318,16 @@ func (f *frameRun) header(spec FrameSpec, width int) (string, []Target) {
 			pick[i] = min(depth, len(forms[i])-1)
 		}
 	}
-	// path is the path of NavPathHeader after the name. It starts as the current section alone, which stands
-	// at every width; the room left after the marks and the blocks below widens it.
+	// path is the path of NavPathHeader after the name, the area alone for NavHeaderChoice. It starts as the
+	// current section alone, which stands at every width; the room left after the marks and the blocks below widens it.
 	var path []pathChip
 	var pathSecs []pathSection
 	mode := spec.ModeTab != ""
-	if spec.Nav == NavPathHeader && len(spec.Areas) > 0 {
-		if pathSecs = f.pathSections(spec); len(pathSecs) > 0 {
+	if (spec.Nav == NavPathHeader || spec.Nav == NavHeaderChoice) && len(spec.Areas) > 0 {
+		if pathSecs = f.pathSections(spec); spec.Nav == NavHeaderChoice && len(pathSecs) > 1 {
+			pathSecs = pathSecs[:1]
+		}
+		if len(pathSecs) > 0 {
 			path = f.pathChips(pathSecs, mode, 3, noCut)
 		}
 	}
@@ -550,7 +558,7 @@ func (f *frameRun) icon(glyph string) string {
 }
 
 // CheckFrame reports why spec cannot be drawn as it is asked: an icon of the frame or of an area that fails
-// CheckIcon, and a navigation form the frame does not know. With the path line or the path header it also
+// CheckIcon, and a navigation form the frame does not know. With a path form or the choice field it also
 // holds the areas to CheckAreas, as the names of the path come from them. Applications run it in their tests
 // or at start, with CheckAreas.
 func CheckFrame(spec FrameSpec) error {
@@ -558,7 +566,7 @@ func CheckFrame(spec FrameSpec) error {
 	switch spec.Nav {
 	case NavTabs:
 		errs = append(errs, checkAreaIcons(spec.Areas)...)
-	case NavPathLine, NavPathHeader:
+	case NavPathLine, NavPathHeader, NavHeaderChoice:
 		if err := CheckAreas(spec.Areas); err != nil {
 			errs = append(errs, err)
 		}
