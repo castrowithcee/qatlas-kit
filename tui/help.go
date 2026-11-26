@@ -26,6 +26,18 @@ type HelpKeys struct {
 	Up, Down, PageUp, PageDown, First, Last ActionID
 	// Back and Help close the help, and so does a second way of either (Action.SecondWayOf), such as f1.
 	Back, Help ActionID
+	// Outline opens the overview of the pages as an outline of topics and pages, and closes it again. Over
+	// topics it does nothing. It needs Enter, which opens the page marked, and First and Last, which the
+	// outline list moves by; Left and Right fold and unfold the topics there. Back closes the overview, Help
+	// the whole help.
+	Outline, Enter ActionID
+	// Search opens the search over the text of all pages: a line of input that searches as it is typed, and
+	// under it the hits. Over topics it does nothing. It needs Enter, which opens the hit marked and
+	// scrolls to its first place in the text, and Up, Down, PageUp and PageDown, which move among the hits;
+	// Back closes only the search, a second way of the help key the whole help. While the input takes text,
+	// Help.Input is InputText: a key that types a character, such as the help key "?", types it, and the
+	// left and right keys move the cursor.
+	Search ActionID
 }
 
 // HelpSpec is what the help shows: Topics or Pages, exactly one of them.
@@ -77,7 +89,14 @@ type Help struct {
 	set           *helppages.Set
 	pages         []helpPage
 	page, context int
-	scroll        textScroll
+	// outline is the open overview of the pages, nil while a page shows.
+	outline *List
+	// search is the open search of the pages, nil while a page or the overview shows. find is what the page
+	// opened by a hit scrolls to when it is drawn first, and findRow its row, -1 until it is found.
+	search  *helpSearch
+	find    []rune
+	findRow int
+	scroll  textScroll
 	// doc is the text of the topic, for the selection with the mouse.
 	doc selDoc
 }
@@ -134,8 +153,9 @@ func NewHelp(spec HelpSpec, keys *Keymap, text Translator) (*Help, error) {
 	errs = append(errs, checkKeys("help", keys, []namedKey{
 		{"left", k.Left, true}, {"right", k.Right, true}, {"next", k.Next, false},
 		{"prev", k.Prev, false}, {"up", k.Up, true}, {"down", k.Down, true},
-		{"page up", k.PageUp, true}, {"page down", k.PageDown, true}, {"first", k.First, false},
-		{"last", k.Last, false}, {"back", k.Back, true}, {"help", k.Help, true},
+		{"page up", k.PageUp, true}, {"page down", k.PageDown, true}, {"first", k.First, k.Outline != ""},
+		{"last", k.Last, k.Outline != ""}, {"back", k.Back, true}, {"help", k.Help, true},
+		{"outline", k.Outline, false}, {"search", k.Search, false}, {"enter", k.Enter, k.Outline != "" || k.Search != ""},
 	})...)
 	for _, h := range spec.Screen {
 		if h.Action != "" && !keys.known(h.Action) && !keys.otherPage(h.Action) {
@@ -162,6 +182,12 @@ func NewHelp(spec HelpSpec, keys *Keymap, text Translator) (*Help, error) {
 			for _, p := range append([]*helppages.Page{t.Index}, t.Pages...) {
 				h.pages = append(h.pages, helpPage{t, p})
 			}
+		}
+		if spec.Keys.Outline == "" {
+			return h, nil
+		}
+		if _, err := h.newOutline(); err != nil {
+			return nil, fmt.Errorf("help: outline: %w", err)
 		}
 	}
 	return h, nil
@@ -264,7 +290,7 @@ func (h *Help) OpenScreen(ids ...string) bool {
 }
 
 func (h *Help) showPage(i int) {
-	h.page = i
+	h.page, h.outline, h.search, h.find = i, nil, nil, nil
 	h.scroll.offset = 0
 }
 
@@ -281,30 +307,50 @@ func (h *Help) turn(by int) {
 // Help, which close it. The keys that change the topic or scroll are handled inside; handled is false for
 // every other key, which the application handles or drops.
 func (h *Help) Update(msg tea.KeyPressMsg) (act ActionID, handled bool) {
+	focus := h.Input()
 	for _, id := range h.navKeys() {
-		if h.keys.Is(msg, id, InputNavigation) {
+		if h.keys.Is(msg, id, focus) {
 			return h.Act(id)
 		}
 	}
 	// The second way of the help or back key, such as f1, closes the help as the first way does.
 	for _, id := range []ActionID{h.spec.Keys.Help, h.spec.Keys.Back} {
 		for _, second := range h.keys.SecondWays(id) {
-			if h.keys.Is(msg, second, InputNavigation) {
-				return id, true
+			if h.keys.Is(msg, second, focus) {
+				return h.Act(id)
 			}
 		}
+	}
+	if h.search != nil {
+		handled, changed := h.search.query.edit(msg, false)
+		if changed {
+			h.research()
+		}
+		return "", handled
 	}
 	return "", false
 }
 
 func (h *Help) navKeys() []ActionID {
 	k := h.spec.Keys
+	if h.search != nil {
+		return h.searchKeys()
+	}
 	var ids []ActionID
 	for _, id := range []ActionID{k.Back, k.Help, k.Left, k.Right, k.Next, k.Prev, k.Up, k.Down,
 		k.PageUp, k.PageDown, k.First, k.Last} {
 		if id != "" {
 			ids = append(ids, id)
 		}
+	}
+	if h.pages != nil && k.Outline != "" {
+		ids = append(ids, k.Outline)
+	}
+	if h.pages != nil && k.Search != "" && h.outline == nil {
+		ids = append(ids, k.Search)
+	}
+	if h.outline != nil {
+		ids = append(ids, k.Enter)
 	}
 	return ids
 }
@@ -314,6 +360,12 @@ func (h *Help) Act(id ActionID) (act ActionID, handled bool) {
 	k := h.spec.Keys
 	if id == "" {
 		return "", false
+	}
+	if h.search != nil {
+		return h.searchAct(id)
+	}
+	if h.outline != nil {
+		return h.outlineAct(id)
 	}
 	switch id {
 	case k.Back, k.Help:
@@ -334,6 +386,16 @@ func (h *Help) Act(id ActionID) (act ActionID, handled bool) {
 		h.scroll.offset = 0
 	case k.Last:
 		h.scroll.offset = h.scroll.last
+	case k.Outline:
+		if h.pages == nil {
+			return "", false
+		}
+		h.openOutline()
+	case k.Search:
+		if h.pages == nil {
+			return "", false
+		}
+		h.openSearch()
 	default:
 		return "", false
 	}
@@ -351,7 +413,13 @@ func (h *Help) Click(r MouseResult) (act ActionID, handled bool) {
 		if !h.spec.CloseOutside {
 			return "", false
 		}
-		return h.spec.Keys.Back, true
+		return h.Act(h.spec.Keys.Back)
+	}
+	if h.search != nil {
+		return h.searchClick(r)
+	}
+	if h.outline != nil {
+		return h.outlineClick(r)
 	}
 	if name, ok := strings.CutPrefix(r.Item, helpTopicRef); ok {
 		return "", h.SetTopic(name)
@@ -371,12 +439,28 @@ func (h *Help) listed(id ActionID) bool {
 }
 
 // Wheel scrolls the text by the notches of the wheel, WheelTextLines a notch, and stops at its ends.
-func (h *Help) Wheel(steps int) { h.scroll.by(steps * WheelTextLines) }
+func (h *Help) Wheel(steps int) {
+	if h.search != nil {
+		h.search.move(steps)
+		return
+	}
+	if h.outline != nil {
+		h.outline.Wheel(steps)
+		return
+	}
+	h.scroll.by(steps * WheelTextLines)
+}
 
 // Hints are the help keys as hints of a key line. The help drawn over the screen shows them itself; where it
 // fills the workspace, the application puts them into the footer.
 func (h *Help) Hints() []Hint {
 	k := h.spec.Keys
+	if h.search != nil {
+		return h.searchHints()
+	}
+	if h.outline != nil {
+		return append(h.outline.Hints(), Hint{Action: k.Help, Label: TextHelpClose, Priority: 0, Kind: HintAlways})
+	}
 	var hints []Hint
 	add := func(label TextID, priority int, kind HintKind, ids ...ActionID) {
 		for _, id := range ids {
@@ -384,6 +468,10 @@ func (h *Help) Hints() []Hint {
 				hints = append(hints, Hint{Action: id, Label: label, Priority: priority, Kind: kind})
 			}
 		}
+	}
+	if h.pages != nil {
+		add(TextHelpOutline, 0, HintNormal, k.Outline)
+		add(TextKeySearch, 0, HintNormal, k.Search)
 	}
 	add(TextHelpTopic, 0, HintNormal, k.Left, k.Right, k.Next, k.Prev)
 	add(TextHelpScroll, 1, HintNormal, k.Up, k.Down)
@@ -560,10 +648,17 @@ func (h *Help) Overlay(styles Styles, screen string, width, height int, room Rec
 	if inner < dialogMinInner || textRoom < helpMinText {
 		return "", nil, false
 	}
-	note := h.noteRows(styles, inner, textRoom)
-	lines, ts = place(lines, ts, note, 0)
-	lines, ts = placeText(lines, ts, h.window(h.rows(inner, styles), textRoom-len(note), inner, styles), &h.doc, inner)
-	keyLine, kt := styles.footer(h.keys.Hints(h.Hints(), InputNavigation, h.text), "", inner)
+	switch {
+	case h.search != nil:
+		lines, ts = h.placeSearch(lines, ts, inner, textRoom, styles)
+	case h.outline != nil:
+		lines, ts = h.placeOutline(lines, ts, inner, textRoom, styles)
+	default:
+		note := h.noteRows(styles, inner, textRoom)
+		lines, ts = place(lines, ts, note, 0)
+		lines, ts = placeText(lines, ts, h.window(h.rows(inner, styles), textRoom-len(note), inner, styles), &h.doc, inner)
+	}
+	keyLine, kt := styles.footer(h.keys.Hints(h.Hints(), h.Input(), h.text), "", inner)
 	lines = append(lines, "")
 	ts = append(ts, OffsetTargets(kt, 0, len(lines))...)
 	lines = append(lines, keyLine)
@@ -589,7 +684,13 @@ func (h *Help) View(styles Styles, width, height int) (string, []Target) {
 		strip, st := h.strip(max(width-tw, 1), styles)
 		lines[0], targets = title+"  "+strip, OffsetTargets(st, tw, 0)
 	}
-	if height > len(lines) {
+	switch {
+	case height <= len(lines):
+	case h.search != nil:
+		lines, targets = h.placeSearch(lines, targets, width, height-len(lines), styles)
+	case h.outline != nil:
+		lines, targets = h.placeOutline(lines, targets, width, height-len(lines), styles)
+	default:
 		note := h.noteRows(styles, width, height-len(lines))
 		lines, targets = place(lines, targets, note, 0)
 		lines, targets = placeText(lines, targets, h.window(h.rows(width, styles), height-len(lines), width, styles), &h.doc, width)

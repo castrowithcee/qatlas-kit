@@ -22,7 +22,11 @@ type pageLook struct {
 func (h *Help) pageRows(width int, styles Styles) []textRow {
 	h.doc.reset("")
 	c := h.pages[h.page].page.In(h.spec.Lang)
+	// The title never counts as the place a search found.
+	find := h.find
+	h.find = nil
 	rows := h.pageBlock(nil, []helppages.Span{{Text: c.Title}}, StyleActive, 0, "", width, styles)
+	h.find = find
 	rows = append(rows, textRow{})
 	bullet := "-"
 	if styles.charset == CharsetUnicode {
@@ -46,6 +50,9 @@ func (h *Help) pageRows(width int, styles Styles) []textRow {
 		default:
 			rows = h.pageBlock(rows, b.Spans, StyleText, 0, "", width, styles)
 		}
+	}
+	if find != nil {
+		h.scroll.offset, h.find = max(h.findRow, 0), nil
 	}
 	if c.Link != "" {
 		rows = append(rows, textRow{})
@@ -102,6 +109,17 @@ func (h *Help) pageBlock(rows []textRow, spans []helppages.Span, base TextStyle,
 		pieces = append(pieces, Clip(p, room))
 	}
 	sels := h.doc.para(string(text), pieces, x, false)
+	if h.find != nil && h.findRow < 0 {
+		if at := foldIndex(text, h.find); at >= 0 {
+			h.findRow = len(rows)
+			for i, sel := range sels {
+				if at < sel.from+len(sel.widths) {
+					h.findRow += i
+					break
+				}
+			}
+		}
+	}
 	linked := styles.hyperlinks()
 	for i, piece := range pieces {
 		prefix := strings.Repeat(" ", indent) + mark

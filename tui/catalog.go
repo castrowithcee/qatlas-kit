@@ -139,6 +139,10 @@ const (
 	TextHelpPage       TextID = "tui.help.page"
 	TextHelpClose      TextID = "tui.help.close"
 	TextHelpMore       TextID = "tui.help.more"
+	TextHelpOutline    TextID = "tui.help.outline"
+	TextHelpOutlineCol TextID = "tui.help.outlinecolumn"
+	TextHelpOutlineNil TextID = "tui.help.outlineempty"
+	TextHelpSearchNone TextID = "tui.help.searchnone"
 	TextInfoLink       TextID = "tui.info.link"
 	TextInfoOpenLink   TextID = "tui.info.openlink"
 
@@ -362,6 +366,10 @@ func ModuleCatalog() i18n.Catalogs[TextID] {
 			TextHelpPage:       "page",
 			TextHelpClose:      "close",
 			TextHelpMore:       "More",
+			TextHelpOutline:    "overview",
+			TextHelpOutlineCol: "Page",
+			TextHelpOutlineNil: "No help pages.",
+			TextHelpSearchNone: "No page matches %q.",
 			TextInfoLink:       "Documentation:",
 			TextInfoOpenLink:   "open link",
 
@@ -605,6 +613,10 @@ func ModuleCatalog() i18n.Catalogs[TextID] {
 			TextHelpPage:       "Seite",
 			TextHelpClose:      "Schließen",
 			TextHelpMore:       "Mehr dazu",
+			TextHelpOutline:    "Übersicht",
+			TextHelpOutlineCol: "Seite",
+			TextHelpOutlineNil: "Keine Hilfeseiten.",
+			TextHelpSearchNone: "Keine Seite passt zu %q.",
 			TextInfoLink:       "Dokumentation:",
 			TextInfoOpenLink:   "Link öffnen",
 

@@ -62,3 +62,30 @@ func TestHelpAnswersToF1AndOpensFromAnywhere(t *testing.T) {
 		t.Error("? does not close the open help")
 	}
 }
+
+func TestHelpSearchTakesTextAndFindsPages(t *testing.T) {
+	m := testModel(t, uiprefs.IconsNone)
+	m.openHelp()
+	m.Update(tea.KeyPressMsg{Code: '/', Text: "/"})
+	if m.focus != tui.InputText {
+		t.Fatalf("the focus after the search key is %v, want text", m.focus)
+	}
+	// Letters that are actions elsewhere, such as q for quit, are typed.
+	for _, r := range "quit" {
+		m.Update(tea.KeyPressMsg{Code: r, Text: string(r)})
+	}
+	if m.modal == nil || m.kind != kindHelp {
+		t.Fatal("a typed letter closed the help")
+	}
+	view, _ := m.modal.(*tui.Help).View(m.styles, 80, 24)
+	if plain := ansi.Strip(view); !strings.Contains(plain, "About the workbench") {
+		t.Errorf("the search found no page for the word quit:\n%s", plain)
+	}
+	m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	if m.focus != tui.InputNavigation {
+		t.Errorf("the focus after a hit opened is %v, want navigation", m.focus)
+	}
+	if topic, page := m.modal.(*tui.Help).Page(); topic != "start" || page != "index" {
+		t.Errorf("enter opened %s/%s", topic, page)
+	}
+}
