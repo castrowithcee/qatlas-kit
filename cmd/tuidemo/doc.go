@@ -35,9 +35,9 @@
 // it fills the workspace and its keys stand in the footer. Esc closes whatever stands over the screen, and
 // nothing behind it takes a key or a click meanwhile. The workbench turns on the CloseOutside option of the
 // kit, so a click beside the input and the notice of the Dialogs tab, the reveal question of the Views tab
-// (it answers no), the help, the list of beds, the sample paths and the path overlays closes them as Esc
-// does, without running what stands behind. The question with the destroying answer ignores it and stays
-// open; the explanation keeps its own way of closing.
+// (it answers no), the help, the explanation, the command line, the list of beds, the sample paths and the
+// path overlays closes them as Esc does, without running what stands behind. The question with the
+// destroying answer ignores it and stays open.
 //
 // The Lists tab shows a list with a filter bar, a grouped list that folds and opens an entry at one click (the
 // others mark first and open on a click on the marked row) and a list with tick boxes. The Forms

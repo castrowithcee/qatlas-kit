@@ -137,6 +137,7 @@ func (m *model) openExplanation() {
 		},
 		Keys: tui.ExplanationKeys{Back: actBack, Info: actInfo, Copy: actCopy, Up: actUp, Down: actDown,
 			PageUp: actPageUp, PageDown: actPageDown, First: actFirst, Last: actLast},
+		CloseOutside: true,
 	}, m.keys, m.text)
 	if err == nil {
 		m.explanation = e
