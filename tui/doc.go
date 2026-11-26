@@ -204,6 +204,8 @@
 // and translated like the empty sentence, wraps to the width with two cells of indent, and has its control
 // characters escaped always. With warn it stands in the warning style behind the warning sign, as the
 // question of a Dialog does, otherwise dimmed; empty text removes it. Without a note nothing is drawn for it.
+// Drawing costs only the visible rows and the groups; SetItems and each change of the filter run once over all
+// entries.
 //
 // The search field of a List, also the one in a filter bar, is a tinted field over its whole width that shows
 // its placeholder while empty; where there is no colour but attributes it is underlined, and without both it
