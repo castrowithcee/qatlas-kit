@@ -11,7 +11,8 @@
 // document before it removes the merged files. An unlocked vault merges selectively without the
 // passphrase: ReadPending reads the entries, and Update hands them with the document to the application,
 // writes the document it returns once and only then removes the entries it reports; if a removal fails,
-// Update puts everything back, because an entry left behind would merge again. Sealed files are further
+// Update puts everything back, because an entry left behind would merge again. Update works on an
+// unencrypted vault as well, with its plain document and no pending entries. Sealed files are further
 // documents encrypted to the recipient, such as settings. A change of passphrase rewraps only the key
 // file. Every file is a plain age file, so the age tool can decrypt it in an emergency.
 //
@@ -34,8 +35,8 @@
 // ReadSealedWithIdentity reads one sealed file with the key alone and never touches the document, so a
 // damaged document does not stop it. Checkpoint records the vault files and pending entries and returns a
 // function that restores them without the passphrase, also an entry merged since. Update and WriteWithUndo
-// return the undo of their own change: it puts back the document file and the pending files that operation
-// removed, byte for byte, and leaves every other entry pending.
+// return the undo of their own change, encrypted or unencrypted: it puts back the document file and the
+// pending files that operation removed, byte for byte, and leaves every other entry pending.
 //
 // # Always enforced
 //

@@ -3,6 +3,7 @@ package vault
 import (
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"slices"
 )
@@ -49,15 +50,19 @@ func (v *Vault) ReadPending(fn func(pending []Pending) error) error {
 // document stay as they were. The document copy and the payloads are cleared after change returns. change
 // runs while the vault is held and must not call it.
 //
-// With Files.Lock the value first takes the document as it is on disk under the write lock and holds it from
-// then on, even when the update ends without a write, so change sees what another process wrote meanwhile
-// and can compare it with what it expects before it changes anything.
+// An unencrypted vault hands change the plain document and no pending entries, since it has none; an entry
+// reported anyway is an error. It holds no document, as with Write.
+//
+// With Files.Lock the value first takes the document as it is on disk under the write lock, and an
+// unlocked value holds it from then on, even when the update ends without a write, so change sees what
+// another process wrote meanwhile and can compare it with what it expects before it changes anything.
+// Without it updates are serialized within this value alone.
 //
 // undo puts back the document file and the pending files this call removed, byte for byte and private,
 // and leaves every other pending entry alone. It needs no passphrase and restores the files after Forget
 // too; while the value is unlocked it holds the restored document again. It takes effect once. With
 // Files.Lock it puts the bytes back only while the document file holds what this call wrote; otherwise
-// Options.Revert takes the change out of the document on disk, which needs the value unlocked, and
+// Options.Revert takes the change out of the document on disk, which needs an encrypted vault unlocked, and
 // without Revert undo fails with ErrConflict and writes nothing.
 func (v *Vault) Update(change UpdateFunc) (undo func() error, err error) {
 	v.mu.Lock()
@@ -67,13 +72,17 @@ func (v *Vault) Update(change UpdateFunc) (undo func() error, err error) {
 		return nil, err
 	}
 	defer release()
-	if err := v.requireUnlocked(); err != nil {
+	state, err := v.writeState()
+	if err != nil {
 		return nil, err
 	}
-	if v.locking() {
-		if err := v.checkHeld(); err != nil {
-			return nil, err
-		}
+	switch state {
+	case StateAbsent:
+		return nil, ErrAbsent
+	case StateLocked:
+		return nil, ErrLocked
+	case StateUnencrypted:
+		return v.updatePlain(change)
 	}
 	names, err := v.pendingFiles()
 	if err != nil {
@@ -142,6 +151,50 @@ func (v *Vault) Update(change UpdateFunc) (undo func() error, err error) {
 	clear(v.doc)
 	v.doc = updated
 	return v.undo(files, savedFile{path: v.documentPath(), data: wrote, exists: true}, true), nil
+}
+
+// updatePlain is Update of an unencrypted vault. The caller holds the mutex and, with Files.Lock, the write
+// lock.
+func (v *Vault) updatePlain(change UpdateFunc) (undo func() error, err error) {
+	saved, err := v.saveFile(v.plainPath())
+	if err != nil {
+		return nil, err
+	}
+	if !saved.exists {
+		return nil, fmt.Errorf("cannot read %s: %w", v.plainPath(), os.ErrNotExist)
+	}
+	kept := false
+	defer func() {
+		if !kept {
+			clear(saved.data)
+		}
+	}()
+	document, err := v.readDocument(v.plainPath(), slices.Clone(saved.data))
+	if err != nil {
+		return nil, err
+	}
+	defer clear(document)
+
+	updated, done, err := change(document, nil)
+	if errors.Is(err, ErrNoChange) {
+		return func() error { return nil }, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	if len(done) > 0 {
+		return nil, fmt.Errorf("vault: the update reported %q, which is not a pending entry", done[0])
+	}
+	if err := checkSchema(v.plainPath(), updated, v.opts.Schemas); err != nil {
+		return nil, err
+	}
+	wrote := savedFile{path: v.plainPath(), data: slices.Clone(updated), exists: true}
+	if err := v.putDocument(wrote); err != nil {
+		clear(wrote.data)
+		return nil, err
+	}
+	kept = true
+	return v.undo([]savedFile{saved}, wrote, false), nil
 }
 
 // WriteWithUndo replaces the document of an unlocked or unencrypted vault like Write and returns undo,
