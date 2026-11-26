@@ -24,7 +24,10 @@
 //
 // StandardActions returns the actions every tool shares, each with a level, one default key and a help text
 // in the catalog; an application adds them to its table with one append. The overlay levels may repeat their
-// keys, and ctrl+s stays free as the second way of the save action.
+// keys, and ctrl+s stays free as the second way of the save action. ActionHelpF1 is the second way of the
+// help action on f1, which reaches the help from a text field where "?" types a character; the Help closes
+// on it as on the help key, and Keymap.SecondWays finds such actions. A table without the help action leaves
+// it out as well. A Form or Dialog does not handle f1.
 //
 // A one-line text field, the input of a Dialog, the text, masked, date and path fields of a Form, the search of a
 // LogView, the filter of a List and the input of a CommandLine edit with a fixed set of keys. A screen asks
@@ -196,7 +199,11 @@
 // widths come from every entry and described group, so they stay while a filter is typed. An empty list shows
 // the application's sentence with the next step, which SetEmpty sets for each state, and a filter without match
 // names the key that clears it. Shown names the entries the filter lets through in the order they show, also
-// those of folded groups.
+// those of folded groups. SetNote adds a note that stays above the column titles, under the search line,
+// whatever the list shows below: while it scrolls, filters, finds nothing or is empty. The text is finished
+// and translated like the empty sentence, wraps to the width with two cells of indent, and has its control
+// characters escaped always. With warn it stands in the warning style behind the warning sign, as the
+// question of a Dialog does, otherwise dimmed; empty text removes it. Without a note nothing is drawn for it.
 //
 // The search field of a List, also the one in a filter bar, is a tinted field over its whole width that shows
 // its placeholder while empty; where there is no colour but attributes it is underlined, and without both it
@@ -230,9 +237,10 @@
 //
 // Overlay draws a list as a modal in the way of Dialog.Overlay: under ListSpec.Title the search line, which a
 // list that filters as typed always has, the table, one button per ListSpec.Buttons entry behind the key in
-// force, and the key line. The frame keeps its height while a filter is typed, the table scrolls with the
+// force, and the key line. A note of SetNote stands under the search line, fixed, and the table takes the rest
+// of the height. The frame keeps its height while a filter is typed, note included, the table scrolls with the
 // marked row in view, and the targets are the modal's alone. Where the room is too small for the search line,
-// the titles, one row, the buttons and the key line, ok is false; the application then draws View in the
+// the note, the titles, one row, the buttons and the key line, ok is false; the application then draws View in the
 // workspace and Hints in the footer. Hints lists the buttons first and the list keys after them, no action
 // twice. A click on a button acts as its key does through Act: an action that is no list key comes back with
 // handled false, and the application runs the action of the MouseResult as it runs the key. What enter and
@@ -398,7 +406,14 @@
 // line that ends in a colon as a heading. An optional dimmed Note stands fixed between the tabs and the text
 // of every topic where three text rows remain below it, and is otherwise left out whole. The first topic ends
 // with the keys of the screen the help was opened from and the keys that act everywhere, in the binding in
-// force. Left and right, and the topic keys of the help level, change the topic with wrap-around; the scroll
+// force. In place of topics the Help can show the application's Markdown pages from an fs.FS, as package
+// helppages loads and splits them, in HelpSpec.Lang and in English where a page has no translation. A page
+// shows its title and its text escaped, with every key placeholder spelt in the binding in force when it is
+// drawn, the address of a link after its text and linked where the terminal takes escapes, and the link of
+// the page under TextHelpMore. Pages have no tabs: the topic keys turn the pages topic by topic, the page of
+// each topic first, with wrap-around. OpenScreen shows the page of the first screen ID that a page carries,
+// else the first page, and that page instead of the first one ends with the key lists. Left and right, and
+// the topic keys of the help level, change the topic with wrap-around; the scroll
 // keys and the wheel stop at the ends; back and the help key close it. A click on a line of the key list
 // yields its action, and the application closes the help and then runs it. An Explanation shows a title, the
 // long text, a helptopics.Term and the address of the documentation, which is shown in full and, where the
@@ -670,6 +685,8 @@
 //   - Column.Optional, Flex, Right, Dimmed, Short, Tone: leave out the column on a narrow terminal, mark the
 //     free text column, align right, dim, shorter labels, style of a cell by value. Default: false, false,
 //     false, false, nil, nil.
+//   - List.SetNote: a note above the column titles, fixed, in View and Overlay. Default: no note; a note
+//     is dimmed unless warn is set.
 //   - ListSpec.ClickOpens: a click on any entry row opens it at once while the rows have the focus. Default:
 //     false, a click marks the row and only a click on the marked row opens it.
 //   - ListGroup.Keep: shows a described group without entries. Default: false, the row is not drawn.
@@ -692,6 +709,8 @@
 //   - Command.Aliases, Icon, DescriptionArgs, Key, Hidden: further names, a glyph, arguments of the
 //     description, the position of the one key to show and whether the empty line hides the command. Default:
 //     none, none, none, 0 (all keys of the action), false.
+//   - HelpSpec.Pages, Lang: Markdown pages in place of Topics, exactly one of the two, and the language of
+//     the pages. Default: no pages, English.
 //   - HelpSpec.Screen, Global, Note and HelpKeys.Next, Prev, First, Last: the key lists, the fixed note and
 //     further keys. Default: no key list, no note, no further key.
 //   - ExplanationItem.Term, URL, LinkText and ExplanationKeys.PageUp, PageDown, First, Last, Link: the term,

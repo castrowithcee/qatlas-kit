@@ -138,6 +138,9 @@ func (s Styles) Style(t TextStyle) lipgloss.Style {
 // Render draws text in the style t.
 func (s Styles) Render(t TextStyle, text string) string { return s.Style(t).Render(text) }
 
+// hyperlinks reports whether the terminal takes the escapes of a hyperlink.
+func (s Styles) hyperlinks() bool { return s.profile != ProfileNone && s.profile <= ProfileTrueColor }
+
 // Glyph names a character that carries meaning; each has a Unicode and an ASCII form.
 type Glyph uint8
 
