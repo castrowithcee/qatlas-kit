@@ -253,10 +253,22 @@ func (s Styles) Button(kind ButtonKind, label string, focused bool) string {
 	if focused {
 		text = "> " + label + " <"
 	}
-	if s.profile == ProfileNone || s.profile > ProfileTrueColor {
+	style, ok := s.buttonStyle(kind)
+	if !ok {
 		return text
 	}
+	if focused {
+		style = style.Bold(true).Reverse(true)
+	}
+	return style.Render(text)
+}
+
+// buttonStyle is the style of a button of kind; false where the profile draws no style at all.
+func (s Styles) buttonStyle(kind ButtonKind) (lipgloss.Style, bool) {
 	style := lipgloss.NewStyle()
+	if s.profile == ProfileNone || s.profile > ProfileTrueColor {
+		return style, false
+	}
 	p := s.palette
 	colored := !s.profile.Colorless()
 	switch kind {
@@ -277,10 +289,7 @@ func (s Styles) Button(kind ButtonKind, label string, focused bool) string {
 			style = style.Foreground(lipgloss.Color(string(p.Text)))
 		}
 	}
-	if focused {
-		style = style.Bold(true).Reverse(true)
-	}
-	return style.Render(text)
+	return style, true
 }
 
 // TickBox is the box of an entry of a multiple choice: "[x]" in the OK colour or "[ ]". The characters alone

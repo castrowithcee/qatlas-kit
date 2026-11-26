@@ -21,6 +21,7 @@ func frameCatalogs() i18n.Catalogs[TextID] {
 			"ex.help": "help", "ex.cmd": "cmd", "ex.back": "back", "ex.quit": "quit", "ex.save": "save",
 			"ex.move": "move", "ex.open": "open", "ex.openarea": "areas", "ex.yes": "yes, remove it",
 			"ex.no": "no, keep it", "ex.info": "info", "ex.type": "type to filter",
+			"ex.new": "New", "ex.remove": "Remove",
 		},
 		i18n.German: {
 			"ex.overview": "Übersicht", "ex.items": "Einträge", "ex.settings": "Einstellungen",
@@ -28,6 +29,7 @@ func frameCatalogs() i18n.Catalogs[TextID] {
 			"ex.help": "Hilfe", "ex.cmd": "Befehle", "ex.back": "zurück", "ex.quit": "Ende", "ex.save": "speichern",
 			"ex.move": "bewegen", "ex.open": "öffnen", "ex.openarea": "öffnen", "ex.yes": "ja, entfernen",
 			"ex.no": "nein, behalten", "ex.info": "Info", "ex.type": "tippen zum Filtern",
+			"ex.new": "Neu", "ex.remove": "Entfernen",
 		},
 	}
 }

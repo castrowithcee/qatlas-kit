@@ -136,6 +136,11 @@ type FrameSpec struct {
 	Workspace string
 	Message   *Message
 	Footer    []Hint
+	// Bar is the action bar: the most important actions of the page in the order of their weight, as buttons
+	// "[ key label ]" in one row between the navigation and the rule. The bar keeps the actions that fit the
+	// width from the front and never wraps; what does not fit stands in Footer as before, and an action
+	// that stands in the bar is left out of the footer. Without a button there is no row. Default: empty.
+	Bar []BarAction
 	// Position is the position in a list, such as "3/12", dimmed at the right end of the footer.
 	Position string
 }
@@ -160,7 +165,8 @@ type frameRun struct {
 }
 
 // Workspace is the room the content of spec has: the full width between the rule and the footer, less the
-// rows of the message. The footer takes one row, or two where its hints do not fit one.
+// rows of the message. The action bar takes one row above the rule. The footer takes one row, or two where
+// its hints do not fit one.
 func (f *Frame) Workspace(spec FrameSpec) Rect {
 	// The rows of the footer and the message do not depend on the styles.
 	return (&frameRun{text: f.text, keys: f.keys}).workspace(spec)
@@ -188,7 +194,10 @@ func (f *frameRun) rows(spec FrameSpec) (top, workspace, footer int) {
 	if _, ok := subTabs(spec); ok && spec.Nav != NavPathLine && spec.Nav != NavPathHeader {
 		top++
 	}
-	footer = footerRows(f.keys.Hints(spec.Footer, spec.Input, f.text), spec.Position, max(spec.Width, 0))
+	if len(f.actionBar(spec)) > 0 {
+		top++
+	}
+	footer = footerRows(f.footerHints(spec), spec.Position, max(spec.Width, 0))
 	return top, max(spec.Height-top-footer, 0), footer
 }
 
@@ -233,6 +242,9 @@ func (f *frameRun) render(spec FrameSpec) (string, []Target) {
 			add(f.subTabLine(spec, area, width))
 		}
 	}
+	if bar := f.actionBar(spec); len(bar) > 0 {
+		add(f.barLine(bar))
+	}
 	add(f.styles.Render(StyleBorder, strings.Repeat(f.ruleChar(), width)), nil)
 	_, rows, footerRows := f.rows(spec)
 	message := f.messageLines(spec, rows)
@@ -247,7 +259,7 @@ func (f *frameRun) render(spec FrameSpec) (string, []Target) {
 	for _, line := range message {
 		add(line, nil)
 	}
-	foot, footTargets := f.styles.footerLines(f.keys.Hints(spec.Footer, spec.Input, f.text), spec.Position, width, footerRows)
+	foot, footTargets := f.styles.footerLines(f.footerHints(spec), spec.Position, width, footerRows)
 	// A terminal lower than the frame loses the rows above the footer first, then the first footer row.
 	if drop := len(foot) - spec.Height; drop > 0 {
 		foot = foot[drop:]

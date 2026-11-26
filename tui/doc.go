@@ -91,6 +91,19 @@
 // two lines run short, navigation and position go first, then the normal hints by priority; a hint that
 // always stays, such as help, is never dropped, and the answers of an open question are shortened instead.
 //
+// FrameSpec.Bar is the action bar: the most important actions of a page, in the order of their weight, as one
+// row between the navigation and the rule in every form of the navigation, so Workspace is one row lower
+// while the bar has a button. Each BarAction draws as "[ key label ]" through Styles.KeyButton: the first key
+// of the action that acts in the input focus of the screen, as the footer spells it and so after a
+// rebinding the new one, in the footer key style, then the label; without colour the place tells them apart.
+// KeyButton is the variant of Styles.Button that carries its key; primary is bold and danger takes the colour
+// of failure, neither is filled, so the key keeps its colour. An action without such a key, an unknown one and
+// one without a label do not appear. The bar never wraps: it keeps the actions that fit the width from the
+// front and ends at the first that does not, and without a button there is no row. Render folds the footer
+// by action ID: a hint whose action stands in the bar is left out, so no action stands in both, and an
+// action the bar cut stays in the footer. Each button is a click target with its action and no focus zone;
+// the keys stay the way to every action without a mouse.
+//
 // The mouse is a second way to the same actions and never stronger than a key. Render and the other drawing
 // parts return the targets they drew; a MouseMap holds the targets of one drawn frame. A click reports the
 // action, area, tab or item of the target it hit, which the application runs exactly as it runs the key or the
@@ -582,6 +595,8 @@
 //   - FrameSpec.PathFocusArea: puts the focus of ZonePath on the area section. Default: false, the section of
 //     the current place.
 //   - FrameSpec.Input: the input focus of the screen, which decides what the hints show. Default: InputText.
+//   - FrameSpec.Bar: the actions of the action bar, each with its text and ButtonKind. Default: empty, no bar
+//     row.
 //   - FrameSpec.HeaderKeys, Footer and Position: the header keys, the footer hints and the position text.
 //     Default: none.
 //   - Area.Icon, Tab.GroupStart: an icon before the tab title and a separator before a sub-tab. Default: none.
