@@ -52,7 +52,7 @@ func TestListsGroupsFoldByKeyAndByClick(t *testing.T) {
 	clickOn(t, term, "East bed (2)", "▸")
 	gone(t, term, "Basil")
 	clickOn(t, term, "East bed (2)", "Basil")
-	act(t, term, "\x1b[B", ">   Basil")
+	act(t, term, "\x1b[B", ">     Basil")
 	act(t, term, "\x1b[D", "▸ ■ East bed") // left folds the group of the marked entry
 	gone(t, term, "Basil")
 }
@@ -120,4 +120,13 @@ func equalZones(a, b []tui.FocusZone) bool {
 		}
 	}
 	return true
+}
+
+func TestListsGroupedOpensEntryAtOneClick(t *testing.T) {
+	term := startDemo(t, "-icons none")
+	clickOn(t, term, "6 Lists", "types a filter")
+	clickOn(t, term, "Groups", "East bed (2)")
+	clickOn(t, term, "Fennel", ">     Fennel") // the first click takes the focus and marks, it never opens
+	gone(t, term, "Opened")
+	clickOn(t, term, "Mint", "Opened Mint") // a focused row opens at once
 }

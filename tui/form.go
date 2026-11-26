@@ -168,6 +168,10 @@ type FormSpec struct {
 	Sections []FormSection
 	Keys     FormKeys
 	Buttons  []FormButton
+	// CloseOutside makes a click outside the frame of Overlay act as Back does: it reports Keys.Back with
+	// handled false, so the application asks before it discards a changed form, and it closes an open list of
+	// values or calendar first. The default leaves such a click to do nothing.
+	CloseOutside bool
 }
 
 // The target items of a form start with a control character, which no ID holds.
@@ -222,6 +226,10 @@ type Form struct {
 	cal     bool
 	calDay  time.Time
 	capture bool
+	// outside is FormSpec.CloseOutside.
+	outside bool
+	// docs hold the value each field shows, for the selection with the mouse.
+	docs []selDoc
 }
 
 // NewForm checks spec and returns the form with the focus on its first field that takes input. It rejects a
@@ -326,7 +334,7 @@ func NewForm(spec FormSpec, keys *Keymap, text Translator) (*Form, error) {
 		return nil, err
 	}
 	f := &Form{keys: k, table: keys, text: text, sections: slices.Clone(spec.Sections),
-		buttons: slices.Clone(spec.Buttons), title: spec.Title, lead: spec.Lead, btn: -1, focused: true, pinned: map[SectionID]bool{}, problems: map[FieldID][]FormProblem{}, focus: -1}
+		buttons: slices.Clone(spec.Buttons), title: spec.Title, lead: spec.Lead, outside: spec.CloseOutside, btn: -1, focused: true, pinned: map[SectionID]bool{}, problems: map[FieldID][]FormProblem{}, focus: -1}
 	fields := slices.Clone(spec.Fields)
 	slices.SortStableFunc(fields, func(a, b FormField) int { return order[a.Section] - order[b.Section] })
 	for _, field := range fields {
@@ -979,6 +987,12 @@ func (f *Form) enterSection(id SectionID) bool {
 func (f *Form) Click(r MouseResult) (act ActionID, handled bool) {
 	if !r.Handled || f.capture {
 		return "", false
+	}
+	if r.Zone == ZoneOutside {
+		if !f.outside {
+			return "", false
+		}
+		return f.Act(f.keys.Back)
 	}
 	if f.cal {
 		return f.calendarClick(r)

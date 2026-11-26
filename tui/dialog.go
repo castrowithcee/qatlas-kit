@@ -87,8 +87,12 @@ type DialogSpec struct {
 	Default ActionID
 	// Danger is the answer of a destructive question that destroys; its button is drawn in the fail colour.
 	Danger ActionID
-	Input  *DialogInput
-	Keys   DialogKeys
+	// CloseOutside is the answer a click outside the frame gives, as Esc gives it, and so names that answer;
+	// empty, the default, leaves the click to do nothing. A dialog with a Danger ignores the option, so a
+	// click beside the question never answers it.
+	CloseOutside ActionID
+	Input        *DialogInput
+	Keys         DialogKeys
 	// Extra are hints of the application for the key line, such as the command line and the help. They stand
 	// behind the answers in the order given and give way before them where the line is short, by Priority as
 	// the other normal hints do. Each is a click target, but the dialog does not act on it: Update and Click
@@ -123,6 +127,8 @@ type Dialog struct {
 	msg   *Message
 	// scroll is the first shown detail line and what the last drawing found.
 	scroll textScroll
+	// doc is the text of the question, the consequence and the details, for the selection with the mouse.
+	doc selDoc
 }
 
 // NewDialog checks spec and returns the open dialog. It rejects a dialog without question, a question without
@@ -213,6 +219,9 @@ func NewDialog(spec DialogSpec, keys *Keymap, text Translator) (*Dialog, error) 
 		case spec.Danger == spec.Default:
 			fail("danger %q is the default; enter never destroys", spec.Danger)
 		}
+	}
+	if spec.CloseOutside != "" && !slices.Contains(answers, spec.CloseOutside) {
+		fail("close outside %q is no answer", spec.CloseOutside)
 	}
 	suggests := spec.Input != nil && spec.Input.Suggest != nil
 	if spec.Input != nil && spec.Input.Masked {
@@ -443,6 +452,9 @@ func (d *Dialog) Click(r MouseResult) (answer ActionID, handled bool) {
 	if !r.Handled {
 		return "", false
 	}
+	if r.Zone == ZoneOutside {
+		return d.outside(), d.outside() != ""
+	}
 	if r.Item == dialogInputRef && d.spec.Input != nil {
 		return "", true
 	}
@@ -472,6 +484,14 @@ func (d *Dialog) Click(r MouseResult) (answer ActionID, handled bool) {
 		return "", true
 	}
 	return "", false
+}
+
+// outside is the answer of a click outside the frame, empty where the dialog gives none.
+func (d *Dialog) outside() ActionID {
+	if d.spec.Danger != "" {
+		return ""
+	}
+	return d.spec.CloseOutside
 }
 
 // Value is the text of the input.
@@ -562,21 +582,33 @@ func redactSecret(text, secret string) string {
 type dialogParts struct {
 	head, details, tail []string
 	tailTargets         []Target
+	// headSel and detailSel are the selection rows of head and details.
+	headSel, detailSel []selRow
 }
 
 // parts draws the content above the buttons in width cells.
 func (d *Dialog) parts(width int, styles Styles) dialogParts {
 	var lines, details []string
 	var targets []Target
+	var sels []selRow
+	d.doc.reset("")
+	blank := func() {
+		lines = append(lines, "")
+		sels = append(sels, selRow{line: holeLine})
+	}
 	wrapped := func(style TextStyle, text, lead string) {
 		indent := strings.Repeat(" ", lipgloss.Width(lead))
-		for i, l := range Wrap(Escape(d.redact(text)), max(width-lipgloss.Width(lead), 1)) {
+		escaped := Escape(d.redact(text))
+		pieces := Wrap(escaped, max(width-lipgloss.Width(lead), 1))
+		rows := d.doc.para(escaped, pieces, lipgloss.Width(lead), false)
+		for i, l := range pieces {
 			prefix := indent
 			if i == 0 {
 				prefix = lead
 			}
-			lines = append(lines, prefix+styles.Render(style, l))
+			lines = append(lines, d.doc.mark(prefix+styles.Render(style, l), rows[i], styles))
 		}
+		sels = append(sels, rows...)
 	}
 	consequence := StyleHint
 	if d.spec.Irreversible {
@@ -585,13 +617,13 @@ func (d *Dialog) parts(width int, styles Styles) dialogParts {
 	switch {
 	case d.spec.Notice:
 		wrapped(StyleTitle, d.spec.Question, "")
-		lines = append(lines, "")
+		blank()
 		if strings.TrimSpace(d.spec.Consequence) != "" {
 			wrapped(consequence, d.spec.Consequence, "")
 		}
 	case d.spec.Input == nil:
 		wrapped(StyleTitle, d.spec.Question, styles.Render(StyleWarn, styles.Glyph(GlyphWarning))+" ")
-		lines = append(lines, "")
+		blank()
 		wrapped(consequence, d.spec.Consequence, "")
 	default:
 		wrapped(StyleText, d.spec.Question, "")
@@ -599,21 +631,26 @@ func (d *Dialog) parts(width int, styles Styles) dialogParts {
 			wrapped(consequence, d.spec.Consequence, "")
 		}
 	}
-	head := lines
-	lines = nil
+	head, headSel := lines, sels
+	lines, sels = nil, nil
 	for _, detail := range d.spec.Details {
 		// Escape and measure the prefix before wrapping, so the continuation stands under the text as drawn.
 		lead := Escape(d.redact(detail.Prefix))
 		indent := strings.Repeat(" ", lipgloss.Width(lead))
-		for i, l := range wrapWords(Escape(d.redact(detail.Text)), max(width-lipgloss.Width(lead), 1)) {
+		escaped := Escape(d.redact(detail.Text))
+		pieces := wrapWords(escaped, max(width-lipgloss.Width(lead), 1))
+		rows := d.doc.para(escaped, pieces, lipgloss.Width(lead), false)
+		for i, l := range pieces {
 			row := indent
 			if i == 0 {
 				row = styles.Render(detail.Style, lead)
 			}
-			lines = append(lines, row+styles.Render(detail.Style, l))
+			lines = append(lines, d.doc.mark(row+styles.Render(detail.Style, l), rows[i], styles))
 		}
+		sels = append(sels, rows...)
 	}
 	details, lines = lines, nil
+	detailSel := sels
 	if d.spec.Input != nil {
 		mask := ""
 		if d.spec.Input.Masked {
@@ -630,30 +667,33 @@ func (d *Dialog) parts(width int, styles Styles) dialogParts {
 		lines = append(lines, "")
 		lines = append(lines, strings.Split(styles.Message(d.msg.Kind, d.redact(d.msg.Text), width), "\n")...)
 	}
-	return dialogParts{head: head, details: details, tail: lines, tailTargets: targets}
+	return dialogParts{head: head, details: details, tail: lines, tailTargets: targets, headSel: headSel, detailSel: detailSel}
 }
 
 // compose joins the parts with the details cut to room rows: where they do not fit, they scroll and a position
 // line stands under them, which takes one of the rows. A room below zero shows every detail. scrolls reports
-// that the details scroll.
-func (d *Dialog) compose(p dialogParts, room, width int, styles Styles) (lines []string, targets []Target, scrolls bool) {
-	details := p.details
+// that the details scroll. sel is the selection target over the question, the consequence and the shown details;
+// the caller places it after its other targets.
+func (d *Dialog) compose(p dialogParts, room, width int, styles Styles) (lines []string, targets []Target, scrolls bool, sel Target) {
+	details, detailSel := p.details, p.detailSel
 	if room >= 0 {
 		start, end, position := d.scroll.window(len(details), room, d.text)
-		details = slices.Clone(details[start:end])
+		details, detailSel = slices.Clone(details[start:end]), p.detailSel[start:end]
 		if position != "" {
 			details = append(details, styles.Render(StyleHint, styles.Truncate(Escape(position), width)))
 		}
 		scrolls = d.scroll.last > 0
 	}
 	lines = append(append(slices.Clone(p.head), details...), p.tail...)
-	return lines, OffsetTargets(p.tailTargets, 0, len(p.head)+len(details)), scrolls
+	rows := append(slices.Clone(p.headSel), detailSel...)
+	sel = d.doc.target(rows, Rect{Width: width, Height: len(rows)}, "")
+	return lines, OffsetTargets(p.tailTargets, 0, len(p.head)+len(details)), scrolls, sel
 }
 
 // body is the content above the buttons in width cells with every detail, and the target of the input line,
 // counted from its top left.
 func (d *Dialog) body(width int, styles Styles) ([]string, []Target) {
-	lines, targets, _ := d.compose(d.parts(width, styles), -1, width, styles)
+	lines, targets, _, _ := d.compose(d.parts(width, styles), -1, width, styles)
 	return lines, targets
 }
 
@@ -725,8 +765,9 @@ func flowButtons(cells []buttonCell, width int) ([]string, []Target) {
 	return rows, targets
 }
 
-// buttons draws one button per answer label in rows of width cells, the default focused and the danger in the fail
-// colour, and returns a target per button, counted from the top left of the rows.
+// buttons draws one button per answer label in rows of width cells, the default behind the enter key and the
+// danger in the fail colour, none focused since a dialog has no focus to move, and returns a target per button,
+// counted from the top left of the rows.
 func (d *Dialog) buttons(width int, styles Styles) ([]string, []Target) {
 	var cells []buttonCell
 	seen := map[string]bool{}
@@ -743,8 +784,12 @@ func (d *Dialog) buttons(width int, styles Styles) ([]string, []Target) {
 			kind = ButtonDanger
 		case d.spec.Default:
 			kind = ButtonPrimary
+			// The key stands in the text so the default reads without colour and apart from a focus.
+			if key := d.keys.Label(d.spec.Keys.Enter); key != "" {
+				label = key + " " + label
+			}
 		}
-		cells = append(cells, buttonCell{styles.Button(kind, label, a.Action == d.spec.Default), Target{Action: a.Action}})
+		cells = append(cells, buttonCell{styles.Button(kind, label, false), Target{Action: a.Action}})
 	}
 	return flowButtons(cells, width)
 }
@@ -752,7 +797,7 @@ func (d *Dialog) buttons(width int, styles Styles) ([]string, []Target) {
 // content is the whole dialog in width cells: the body with the details cut to room rows, the buttons and the
 // key line. A scrolling dialog also has a target over all of it, which the wheel reports as ZoneDetail.
 func (d *Dialog) content(width int, styles Styles, p dialogParts, room int) ([]string, []Target) {
-	lines, targets, scrolls := d.compose(p, room, width, styles)
+	lines, targets, scrolls, sel := d.compose(p, room, width, styles)
 	lines = append(lines, "")
 	rows, bt := d.buttons(width, styles)
 	targets = append(targets, OffsetTargets(bt, 0, len(lines))...)
@@ -766,7 +811,7 @@ func (d *Dialog) content(width int, styles Styles, p dialogParts, room int) ([]s
 	if scrolls {
 		targets = append(targets, Target{Rect: Rect{Width: width, Height: len(lines)}, Zone: ZoneDetail})
 	}
-	return lines, targets
+	return lines, append(targets, sel)
 }
 
 // Overlay draws the dialog with styles over screen, the drawn screen of width by height cells: the screen
@@ -796,7 +841,8 @@ func (d *Dialog) Overlay(styles Styles, screen string, width, height int, room R
 	}
 	top := room.Y + (room.Height-len(box))/2
 	left := room.X + (room.Width-inner-4)/2
-	return overlay(screen, box, width, height, top, left, styles), OffsetTargets(ts, left+2, top+1), true
+	targets = withOutside(d.outside() != "", OffsetTargets(ts, left+2, top+1), width, height, Rect{X: left, Y: top, Width: inner + 4, Height: len(box)})
+	return overlay(screen, box, width, height, top, left, styles), targets, true
 }
 
 // View draws the dialog with styles as the content of a workspace of width by height cells, for a terminal
@@ -813,7 +859,7 @@ func (d *Dialog) View(styles Styles, width, height int) (string, []Target) {
 	if room < 2 {
 		room = -1
 	}
-	lines, targets, scrolls := d.compose(p, room, inner, styles)
+	lines, targets, scrolls, sel := d.compose(p, room, inner, styles)
 	out := make([]string, height)
 	for i := range out {
 		line := ""
@@ -830,6 +876,10 @@ func (d *Dialog) View(styles Styles, width, height int) (string, []Target) {
 	}
 	if scrolls {
 		kept = append(kept, Target{Rect: Rect{Width: width, Height: height}, Zone: ZoneDetail})
+	}
+	if t := OffsetTargets([]Target{sel}, 2, 0)[0]; t.Rect.Y < height {
+		t.Rect.Height = min(t.Rect.Height, height-t.Rect.Y)
+		kept = append(kept, t)
 	}
 	return strings.Join(out, "\n"), kept
 }

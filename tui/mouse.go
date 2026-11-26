@@ -83,6 +83,9 @@ func (m *MouseMap) at(x, y int, match func(Target) bool) (Target, bool) {
 	return Target{}, false
 }
 
+// top is the target drawn last that covers the cell.
+func (m *MouseMap) top(x, y int) (Target, bool) { return m.at(x, y, func(Target) bool { return true }) }
+
 // element reports whether a click on t does more than focus its zone.
 func (t Target) element() bool { return t.Action != "" || t.Area != "" || t.Tab != "" || t.Item != "" }
 

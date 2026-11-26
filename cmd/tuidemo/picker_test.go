@@ -124,7 +124,7 @@ func TestTemporaryFolderIsRemovedOnAnErrorPath(t *testing.T) {
 	for _, name := range []string{"TMPDIR", "TMP", "TEMP"} {
 		t.Setenv(name, tmp)
 	}
-	if err := run([]string{"-theme", "no-such-theme"}, os.Stdout, nil); err == nil {
+	if err := run([]string{"-theme", "no-such-theme"}, os.Stdout, nil, sampleToday); err == nil {
 		t.Fatal("an unknown theme did not end the program")
 	}
 	if entries, _ := os.ReadDir(tmp); len(entries) != 0 {
@@ -189,6 +189,19 @@ func TestPickerModelChoosesByEnterAndByTheButton(t *testing.T) {
 	}
 	if m.modal != nil || m.bed != "Pot 3" {
 		t.Fatalf("the button kept the picker open or lost the bed: %q", m.bed)
+	}
+}
+
+func TestPickerClosesOnAClickOutsideAsBackDoes(t *testing.T) {
+	m := testModel(t, uiprefs.IconsNone)
+	m.run(actArea, "8")
+	m.handle(tea.KeyPressMsg{Code: 'p', Text: "p"})
+	m.refresh()
+	if !clickWhere(m, func(r tui.MouseResult) bool { return r.Zone == tui.ZoneOutside }) {
+		t.Fatal("the picker has no target outside its frame")
+	}
+	if m.modal != nil || m.bed == "Pot 3" {
+		t.Fatalf("a click outside left the picker open or chose: modal %v bed %q", m.modal, m.bed)
 	}
 }
 

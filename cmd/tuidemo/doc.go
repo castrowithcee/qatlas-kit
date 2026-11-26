@@ -1,15 +1,15 @@
 // Command tuidemo shows the terminal building blocks of the kit at work, with invented sample data: a frame
 // with product name, tabs, sub-tabs, a header and a footer with key hints, a key table, mouse support,
-// dialogs and questions, help, explanations, a command line, and live switches for theme, language, icons and
-// mouse. It is a workbench to try and compare variants of the blocks, not a program to install; start it from
-// a checkout of the module:
+// dialogs and questions, help, explanations, a command line, and live switches for theme, language, icons,
+// mouse and the form of the navigation. It is a workbench to try and compare variants of the blocks, not a
+// program to install; start it from a checkout of the module:
 //
 //	go run ./cmd/tuidemo
 //
 // Optional flags set the start values of the switches: -theme, -language (english, deutsch or system), -icons
-// (unicode, nerdfont or none) and -mouse=false; the kit checks the values and an invalid one ends the program
-// with an error that names it. The switches keep their values in memory only; the program reads and writes no
-// configuration file.
+// (unicode, nerdfont or none), -navigation (tabs, pathline, header or choice) and -mouse=false; the kit checks the
+// values and an invalid one ends the program with an error that names it. The switches keep their values in
+// memory only; the program reads and writes no configuration file.
 //
 // Operation: the digit of a tab opens it, and q or ctrl+c quits. The focus stands on the tab line, the
 // sub-tab line or the work area of the open tab: its buttons, shown as "> label <", or its live block. Tab and
@@ -25,7 +25,7 @@
 // for the mouse; each also runs from the command line as theme, theme-back, language, icons and mouse.
 //
 // The Frame tab has a mouse probe whose button counts clicks (+). The Settings tab is a form of choice fields
-// for the four switches (Look: theme and icons, Input: language and mouse): left and right step through the
+// for five switches (Look: theme, icons and navigation, Input: language and mouse): left and right step through the
 // values, which take effect at once, and enter or a click opens the list of values. In the theme field, left
 // is the step back. The form shows the value a switch sets elsewhere; a switch of the language builds the form
 // again and keeps the field in focus. The Dialogs tab opens a question with a destroying answer (a), an input
@@ -33,9 +33,14 @@
 // line (:), which runs commands by name, such as the tabs and the switches. The command line stands over the
 // dimmed screen, at the top and centred, with a key line of its own; where the terminal is too small for that
 // it fills the workspace and its keys stand in the footer. Esc closes whatever stands over the screen, and
-// nothing behind it takes a key or a click meanwhile.
+// nothing behind it takes a key or a click meanwhile. The workbench turns on the CloseOutside option of the
+// kit, so a click beside the input and the notice of the Dialogs tab, the reveal question of the Views tab
+// (it answers no), the help, the list of beds, the sample paths and the path overlays closes them as Esc
+// does, without running what stands behind. The question with the destroying answer ignores it and stays
+// open; the explanation keeps its own way of closing.
 //
-// The Lists tab shows a list with a filter bar, a grouped list that folds and a list with tick boxes. The Forms
+// The Lists tab shows a list with a filter bar, a grouped list that folds and opens an entry at one click (the
+// others mark first and open on a click on the marked row) and a list with tick boxes. The Forms
 // tab shows a form that adds a bed (text, choice, tick boxes and a masked field) and one with date fields and
 // their calendar, opened by enter or a click on its symbol. F2 or the save button checks the values and reports
 // what is missing; the reset button starts the form again.
@@ -48,7 +53,31 @@
 // workbench uncovers only after a question (V, answered by y or n); a log of invented lines over time with
 // following, search, wrapping, a time column and a period dialog (P) with a calendar for a range; and a chat
 // whose field takes several lines (enter breaks the line, tab leads to the send button, where enter sends) and
-// whose quick replies answer the selected message.
+// whose quick replies answer the selected message. Dragging with the left button held marks characters in the text
+// and the log, in the lists and tables, in the values a form shows, in the dialogs, the help and the explanation;
+// on release the workbench hands the content alone, without frame, line numbers, column titles, tick boxes, labels
+// or hints, and with a masked section or field still masked, to the terminal for the clipboard and says so. In a
+// list the cells of a row are separated by a tab and the rows by a line break. A press on selectable text acts only
+// at the release: a click without motion marks, opens or answers as before, and a drag marks, opens and answers
+// nothing. The next click or any key ends the mark.
+//
+// The form of the navigation switches at run time: the key N, the command navigation and the field in the
+// Settings tab step through the tab lines, the path line (one line below the header, "Area ▾ › Tab ▾"), the path
+// in the header and the choice field in the header, and -navigation sets the start form. On both path forms the
+// path takes the place of the tab lines in the focus: left and right move the focus between its area and its tab
+// section, enter opens the overview of all areas for the area section and the choice among the tabs of the area
+// for the tab section, down and tab lead into the work area and up and esc lead back to the path as to the
+// sub-tab line, and m opens the overview from anywhere nothing is typed; on the tab lines m does nothing. A
+// click on a section opens the same, a click on a place of an overlay chooses it as a click on that tab would, a
+// click on an area with tabs folds it, and esc closes the overlay. Each area has a letter of its own in the
+// overlay (o, f, s, d, h, l, r, p, v), shown at its row, and the tabs of Settings have a and i: in the open
+// overlay the key does what enter does on that row, folding an area and choosing a tab. Nothing behind an
+// overlay takes a key or a click. The digits still open the tabs. The choice field shows only the current area
+// in the header, after the product name, with its icon, and keeps the sub-tab line below the header; it has the
+// focus zones of the tab lines: the field, the sub-tab line and the work area. Down and up walk them, left and
+// right step the areas on the field and the tabs on the sub-tab line, enter or a click on the field opens a list
+// of the areas (each with its letter, chosen at once, as in the overview), and m opens the overview and esc
+// closes either.
 //
 // Every function can be clicked while the mouse is on: tabs, the key hints of the header and the footer, the
 // fields of the Settings tab, the buttons of a dialog and of the tabs, the topics and the key list of the help,

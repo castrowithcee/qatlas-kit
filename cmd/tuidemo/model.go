@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"slices"
 	"strconv"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 
@@ -21,7 +22,9 @@ const (
 // model is the state of the workbench. Every change of state ends in refresh, which draws the frame once and
 // keeps its click targets, so a click always meets the screen the person sees.
 type model struct {
-	prefs   uiprefs.Prefs
+	prefs uiprefs.Prefs
+	// now is the clock of the date fields; the program gets the real one, tests a fixed one.
+	now     func() time.Time
 	groups  []group
 	themes  *tui.ThemeSet
 	keys    *tui.Keymap
@@ -68,11 +71,17 @@ type model struct {
 	// blocks hold the live blocks of the tabs that show one, see block.
 	blocks map[blockKey]block
 
+	// The overlays of the path and, on the path forms, whether the area section has the focus.
+	pathnav  *tui.PathNav
+	pathArea bool
+
 	mouse *tui.MouseMap
-	view  string
+	// The text the mouse selects in the text and log views.
+	sel  tui.TextSelection
+	view string
 }
 
-func newModel(prefs uiprefs.Prefs, profile tui.ColorProfile, charset tui.CharsetMode, root string) (*model, error) {
+func newModel(prefs uiprefs.Prefs, profile tui.ColorProfile, charset tui.CharsetMode, root string, now func() time.Time) (*model, error) {
 	gs := groups()
 	areas := make([]tui.Area, len(gs))
 	ids := make([]string, len(gs))
@@ -86,18 +95,19 @@ func newModel(prefs uiprefs.Prefs, profile tui.ColorProfile, charset tui.Charset
 	if err != nil {
 		return nil, err
 	}
-	if err := uiprefs.Validate(prefs, uiprefs.Schema{Themes: themes.Names(), Areas: ids, DefaultArea: ids[0]}); err != nil {
+	if err := uiprefs.Validate(prefs, withAreas(schema(), themes.Names(), ids)); err != nil {
 		return nil, usageError{err}
 	}
 	keys, err := tui.NewKeymap(keyTable(len(gs)), charset)
 	if err != nil {
 		return nil, err
 	}
-	m := &model{prefs: prefs, groups: gs, themes: themes, keys: keys, profile: profile, charset: charset, root: root,
-		area: gs[0].area.ID, tabs: map[tui.AreaID]tui.TabID{}, zone: tui.ZoneTabs}
+	m := &model{prefs: prefs, groups: gs, themes: themes, keys: keys, profile: profile, charset: charset, root: root, now: now,
+		area: gs[0].area.ID, tabs: map[tui.AreaID]tui.TabID{}}
 	if err := m.rebuildText(); err != nil {
 		return nil, err
 	}
+	m.zone = m.top()
 	m.restyle()
 	return m, nil
 }
@@ -126,7 +136,19 @@ func (m *model) rebuildText() error {
 	if err != nil {
 		return err
 	}
-	m.text, m.frame, m.cmdline = text, tui.NewFrame(m.keys, text), line
+	nav, err := tui.NewPathNav(tui.PathNavKeys{Up: actUp, Down: actDown, PageUp: actPageUp, PageDown: actPageDown,
+		First: actFirst, Last: actLast, Left: actLeft, Right: actRight, Enter: actEnter, Back: actBack, CloseOutside: true}, m.keys, text)
+	if err != nil {
+		return err
+	}
+	areas := make([]tui.Area, len(m.groups))
+	for i, g := range m.groups {
+		areas[i] = g.area
+	}
+	if err := nav.CheckAreas(areas); err != nil {
+		return err
+	}
+	m.text, m.frame, m.cmdline, m.pathnav = text, tui.NewFrame(m.keys, text), line, nav
 	return m.rebuildBlocks()
 }
 
@@ -183,11 +205,14 @@ func (m *model) handle(msg tea.Msg) tea.Cmd {
 			}
 		}
 	case tea.KeyPressMsg:
+		m.sel.Clear()
 		switch {
 		case m.cmdOpen:
 			return m.commandKey(msg)
 		case m.modal != nil:
 			return m.modalKey(msg)
+		case m.pathnav.Open():
+			return m.pathKey(msg)
 		}
 		if b := m.inBlock(m.zone); b != nil && b.key(m, msg) {
 			return nil
@@ -196,11 +221,25 @@ func (m *model) handle(msg tea.Msg) tea.Cmd {
 			return m.run(action, tui.KeyName(msg))
 		}
 	case tea.MouseMsg:
+		// The selection reads every mouse event first. A press on selectable text is held back, so a drag never
+		// acts as a click; the release without motion hands the click on, as the press would have.
+		if text, copied := m.sel.Mouse(m.mouse, msg); copied {
+			m.message = &tui.Message{Kind: tui.MessageStatus, Text: m.text.Lookup(tui.TextCopyHandedOver)}
+			return tea.SetClipboard(text)
+		}
+		if _, ok := msg.(tea.MouseClickMsg); ok && m.sel.Holds() {
+			return nil
+		}
+		if click, ok := m.sel.Replay(); ok {
+			msg = click
+		}
 		switch {
 		case m.cmdOpen:
 			return m.commandClick(msg)
 		case m.modal != nil:
 			return m.modalClick(msg)
+		case m.pathnav.Open():
+			return m.pathClick(msg)
 		}
 		return m.click(msg)
 	}
@@ -238,6 +277,12 @@ func (m *model) click(msg tea.MouseMsg) tea.Cmd {
 		b.click(m, res)
 	case res.Action != "":
 		return m.run(res.Action, "")
+	case m.pathForm() && res.Zone == tui.ZonePath && res.Area != "":
+		m.zone, m.pathArea = tui.ZonePath, res.Tab == ""
+		m.pathnav.OpenClick(m.frameSpec(), res)
+	case m.choiceForm() && res.Zone == tui.ZoneTabs && res.Area != "":
+		m.zone = tui.ZoneTabs
+		m.pathnav.OpenAreas(m.frameSpec())
 	case res.Area != "":
 		m.openArea(res.Area)
 		if res.Tab != "" {
@@ -285,6 +330,13 @@ func (m *model) run(action tui.ActionID, key string) tea.Cmd {
 		m.step(-1)
 	case actRight:
 		m.step(1)
+	case actNavigate:
+		forms := schema().Navigations
+		m.setNavigation(forms[(slices.Index(forms, m.prefs.Navigation)+1)%len(forms)])
+	case actMenu:
+		if m.pathForm() || m.choiceForm() {
+			m.pathnav.OpenOverview(m.frameSpec())
+		}
 	case actZoneNext:
 		m.zone = tui.CycleZone(m.zones(), m.zone, 1)
 	case actZonePrev:
@@ -307,7 +359,7 @@ func (m *model) run(action tui.ActionID, key string) tea.Cmd {
 	case actCount:
 		m.count++
 	case actBack:
-		// Back goes up from a block to the sub-tab line; a block that needs it took the key before.
+		// Back goes up from a block to the line above it; a block that needs it took the key before.
 		m.zone = tui.StepZoneLevel(m.zones(), m.zone, -1)
 	case actHelp:
 		m.openHelp()
@@ -355,6 +407,18 @@ func (m *model) setLanguage(language string) {
 func (m *model) setIcons(icons string) {
 	m.prefs.Icons = icons
 	m.changed(tui.TextSettingIcons, m.prefs.Icons)
+}
+
+// setNavigation switches the form; a focus on the navigation goes to the line of the new form, a focus in
+// the work area stays there.
+func (m *model) setNavigation(form string) {
+	onLine := m.onNavLine()
+	m.prefs.Navigation = form
+	m.pathArea = false
+	if onLine {
+		m.zone = m.top()
+	}
+	m.changed(textSettingNav, m.prefs.Navigation)
 }
 
 func (m *model) setMouse(on bool) {

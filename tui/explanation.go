@@ -65,6 +65,8 @@ type Explanation struct {
 	keys   *Keymap
 	text   Translator
 	scroll textScroll
+	// doc is the text shown, for the selection with the mouse.
+	doc selDoc
 }
 
 // NewExplanation checks spec and returns the explanation from its top. It rejects a missing key of Back,
@@ -262,6 +264,14 @@ func (e *Explanation) termText() string {
 func (e *Explanation) rows(width int, styles Styles, body TextStyle) []textRow {
 	item := e.spec.Item
 	var rows []textRow
+	e.doc.reset("")
+	// text adds a paragraph drawn as pieces, each styled by draw.
+	text := func(orig string, pieces []string, draw func(i int, piece string) string) {
+		sels := e.doc.para(orig, pieces, 0, false)
+		for i, piece := range pieces {
+			rows = append(rows, textRow{text: e.doc.mark(draw(i, piece), sels[i], styles), sel: &sels[i]})
+		}
+	}
 	gap := func() {
 		if len(rows) > 0 {
 			rows = append(rows, textRow{})
@@ -269,23 +279,26 @@ func (e *Explanation) rows(width int, styles Styles, body TextStyle) []textRow {
 	}
 	if b := strings.TrimSpace(item.Body); b != "" {
 		for _, line := range strings.Split(b, "\n") {
+			var pieces []string
 			for _, piece := range strings.Split(helptopics.Wrap(Escape(line), width), "\n") {
-				rows = append(rows, textRow{text: styles.Render(body, Clip(piece, width))})
+				pieces = append(pieces, Clip(piece, width))
 			}
+			text(Escape(line), pieces, func(_ int, piece string) string { return styles.Render(body, piece) })
 		}
 	}
 	if term := e.termText(); term != "" {
 		gap()
 		head := Escape(item.Term.Title) + ":"
-		for i, piece := range strings.Split(helptopics.Wrap(Escape(term), width), "\n") {
-			piece = Clip(piece, width)
-			if rest, ok := strings.CutPrefix(piece, head); ok && i == 0 {
-				piece = styles.Render(StyleTitle, head) + styles.Render(body, rest)
-			} else {
-				piece = styles.Render(body, piece)
-			}
-			rows = append(rows, textRow{text: piece})
+		var pieces []string
+		for _, piece := range strings.Split(helptopics.Wrap(Escape(term), width), "\n") {
+			pieces = append(pieces, Clip(piece, width))
 		}
+		text(Escape(term), pieces, func(i int, piece string) string {
+			if rest, ok := strings.CutPrefix(piece, head); ok && i == 0 {
+				return styles.Render(StyleTitle, head) + styles.Render(body, rest)
+			}
+			return styles.Render(body, piece)
+		})
 	}
 	if item.URL != "" {
 		gap()
@@ -297,18 +310,20 @@ func (e *Explanation) rows(width int, styles Styles, body TextStyle) []textRow {
 			rows = append(rows, textRow{text: styles.Render(StyleHint, Clip(piece, width))})
 		}
 		linked := styles.profile != ProfileNone && styles.profile <= ProfileTrueColor
-		for _, piece := range strings.Split(ansi.Hardwrap(item.URL, max(width, 1), true), "\n") {
-			text := piece
+		pieces := strings.Split(ansi.Hardwrap(item.URL, max(width, 1), true), "\n")
+		sels := e.doc.para(item.URL, pieces, 0, false)
+		for i, piece := range pieces {
+			shown := piece
 			if linked {
 				// Each piece links to the whole address; the address also stands as text for a terminal
 				// without hyperlinks.
-				text = ansi.SetHyperlink(item.URL) + piece + ansi.ResetHyperlink()
+				shown = ansi.SetHyperlink(item.URL) + piece + ansi.ResetHyperlink()
 			}
 			var targets []Target
 			if e.spec.Keys.Link != "" {
 				targets = []Target{{Rect: Rect{Width: len(piece), Height: 1}, Action: e.spec.Keys.Link}}
 			}
-			rows = append(rows, textRow{text: text, targets: targets})
+			rows = append(rows, textRow{text: e.doc.mark(shown, sels[i], styles), targets: targets, sel: &sels[i]})
 		}
 	}
 	return rows
@@ -335,7 +350,7 @@ func (e *Explanation) Overlay(styles Styles, screen string, width, height int, r
 	if inner < explanationMinInner || textRoom < explanationMinText {
 		return "", nil, false
 	}
-	lines, ts := place(nil, nil, e.window(e.rows(inner, styles, StyleText), textRoom, inner, styles), 0)
+	lines, ts := placeText(nil, nil, e.window(e.rows(inner, styles, StyleText), textRoom, inner, styles), &e.doc, inner)
 	keyLine, kt := styles.footer(e.keys.Hints(e.Hints(), InputNavigation, e.text), "", inner)
 	lines = append(lines, "")
 	ts = append(ts, OffsetTargets(kt, 0, len(lines))...)
@@ -358,7 +373,7 @@ func (e *Explanation) View(styles Styles, width, height int) (string, []Target) 
 	lines := []string{styles.TitleLine(e.title(), "", width), ""}
 	var targets []Target
 	if height > len(lines) {
-		lines, targets = place(lines, targets, e.window(e.rows(width, styles, StyleText), height-len(lines), width, styles), 0)
+		lines, targets = placeText(lines, targets, e.window(e.rows(width, styles, StyleText), height-len(lines), width, styles), &e.doc, width)
 	}
 	return finishPage(lines, targets, width, height)
 }
@@ -376,7 +391,7 @@ func (e *Explanation) Pane(styles Styles, width, height int) (string, []Target) 
 	var lines []string
 	var targets []Target
 	if inner > 0 && room > 0 {
-		lines, targets = place(nil, nil, e.window(e.rows(inner, styles, StyleHint), room, inner, styles), 0)
+		lines, targets = placeText(nil, nil, e.window(e.rows(inner, styles, StyleHint), room, inner, styles), &e.doc, inner)
 	}
 	all := []Target{{Rect: Rect{Width: width, Height: height}, Zone: ZoneDetail}}
 	for _, t := range OffsetTargets(targets, x0, y0) {

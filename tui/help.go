@@ -39,6 +39,9 @@ type HelpSpec struct {
 	// text of every topic, without scrolling. It stands only where at least helpMinText text rows remain below
 	// it; otherwise it is left out whole and never cut. Empty shows none.
 	Note TextID
+	// CloseOutside closes the help on a click outside its frame, as Back does. The default leaves such a
+	// click to do nothing.
+	CloseOutside bool
 }
 
 // helpMaxInner is the widest text of the help drawn over the screen.
@@ -61,6 +64,8 @@ type Help struct {
 	text   Translator
 	topic  int
 	scroll textScroll
+	// doc is the text of the topic, for the selection with the mouse.
+	doc selDoc
 }
 
 // NewHelp checks spec and returns the help on its first topic. It rejects a help without topics, a topic
@@ -224,6 +229,12 @@ func (h *Help) Click(r MouseResult) (act ActionID, handled bool) {
 	if !r.Handled {
 		return "", false
 	}
+	if r.Zone == ZoneOutside {
+		if !h.spec.CloseOutside {
+			return "", false
+		}
+		return h.spec.Keys.Back, true
+	}
 	if name, ok := strings.CutPrefix(r.Item, helpTopicRef); ok {
 		return "", h.SetTopic(name)
 	}
@@ -269,21 +280,28 @@ func (h *Help) Hints() []Hint {
 type textRow struct {
 	text    string
 	targets []Target
+	// sel is the selection row of a row of text, nil for what is no content: a blank line, a key, a position.
+	sel *selRow
 }
 
 // rows is the text of the topic shown in width cells: its lines wrapped as the command line wraps them, a
 // heading in bold, and after the first topic the key list with one target per key.
 func (h *Help) rows(width int, styles Styles) []textRow {
 	var rows []textRow
+	h.doc.reset("")
 	for _, line := range strings.Split(h.spec.Topics[h.topic].Text, "\n") {
 		line = Escape(line)
 		heading := strings.HasSuffix(line, ":") && !strings.HasPrefix(line, " ") && lipgloss.Width(line) <= helpHeadingWidth
+		var pieces []string
 		for _, piece := range strings.Split(helptopics.Wrap(line, width), "\n") {
-			piece = Clip(piece, width)
+			pieces = append(pieces, Clip(piece, width))
+		}
+		sels := h.doc.para(line, pieces, 0, false)
+		for i, piece := range pieces {
 			if heading {
 				piece = styles.Render(StyleTitle, piece)
 			}
-			rows = append(rows, textRow{text: piece})
+			rows = append(rows, textRow{text: h.doc.mark(piece, sels[i], styles), sel: &sels[i]})
 		}
 	}
 	if h.topic == 0 {
@@ -377,6 +395,23 @@ func place(lines []string, targets []Target, rows []textRow, x int) ([]string, [
 	return lines, targets
 }
 
+// placeText is place for the rows of a text, with the selection target over them, after their click targets.
+func placeText(lines []string, targets []Target, rows []textRow, doc *selDoc, width int) ([]string, []Target) {
+	top := len(lines)
+	lines, targets = place(lines, targets, rows, 0)
+	if len(rows) == 0 {
+		return lines, targets
+	}
+	sels := make([]selRow, len(rows))
+	for i, r := range rows {
+		sels[i] = selRow{line: holeLine}
+		if r.sel != nil {
+			sels[i] = *r.sel
+		}
+	}
+	return lines, append(targets, doc.target(sels, Rect{Y: top, Width: width, Height: len(rows)}, ""))
+}
+
 // Overlay draws the help with styles over screen, the drawn screen of width by height cells: the screen
 // dimmed and the help in its frame centred in room, the part of the screen it may cover, with the topic tabs,
 // the text of the topic shown, the position where it scrolls, and the key line. The targets are the help's
@@ -392,7 +427,7 @@ func (h *Help) Overlay(styles Styles, screen string, width, height int, room Rec
 	lines, ts := []string{strip, ""}, st
 	note := h.noteRows(styles, inner, textRoom)
 	lines, ts = place(lines, ts, note, 0)
-	lines, ts = place(lines, ts, h.window(h.rows(inner, styles), textRoom-len(note), inner, styles), 0)
+	lines, ts = placeText(lines, ts, h.window(h.rows(inner, styles), textRoom-len(note), inner, styles), &h.doc, inner)
 	keyLine, kt := styles.footer(h.keys.Hints(h.Hints(), InputNavigation, h.text), "", inner)
 	lines = append(lines, "")
 	ts = append(ts, OffsetTargets(kt, 0, len(lines))...)
@@ -400,7 +435,8 @@ func (h *Help) Overlay(styles Styles, screen string, width, height int, room Rec
 	box := styles.Panel(h.text.Lookup(TextHelpTitle), "", lines, inner+4, len(lines)+2, true)
 	top := room.Y + (room.Height-len(box))/2
 	left := room.X + (room.Width-inner-4)/2
-	return overlay(screen, box, width, height, top, left, styles), OffsetTargets(ts, left+2, top+1), true
+	targets = withOutside(h.spec.CloseOutside, OffsetTargets(ts, left+2, top+1), width, height, Rect{X: left, Y: top, Width: inner + 4, Height: len(box)})
+	return overlay(screen, box, width, height, top, left, styles), targets, true
 }
 
 // View draws the help with styles as the content of a workspace of width by height cells, for a terminal too
@@ -418,7 +454,7 @@ func (h *Help) View(styles Styles, width, height int) (string, []Target) {
 	if height > len(lines) {
 		note := h.noteRows(styles, width, height-len(lines))
 		lines, targets = place(lines, targets, note, 0)
-		lines, targets = place(lines, targets, h.window(h.rows(width, styles), height-len(lines), width, styles), 0)
+		lines, targets = placeText(lines, targets, h.window(h.rows(width, styles), height-len(lines), width, styles), &h.doc, width)
 	}
 	return finishPage(lines, targets, width, height)
 }

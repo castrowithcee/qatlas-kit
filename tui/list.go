@@ -119,6 +119,14 @@ type ListSpec struct {
 	// Buttons stand below the list in the modal, each an action of the key table and a label drawn behind
 	// the key in force. A click on one acts as its key does.
 	Buttons []FormButton
+	// CloseOutside makes a click outside the frame of Overlay act as the Back key does through Act: it clears
+	// a filter and otherwise comes back with handled false, which the application closes the modal on as it
+	// does on the key. The default leaves such a click to do nothing.
+	CloseOutside bool
+	// ClickOpens makes a click on an entry row open it at once, as enter does, while the rows have the focus.
+	// The default marks the row first and opens it on a click on the marked row. Either way a click on a
+	// list without the focus only takes the focus and marks, and never opens.
+	ClickOpens bool
 }
 
 // flexFloor is the narrowest a free text column is cut to before anything else of the row gives way.
@@ -139,8 +147,12 @@ const (
 	listButtonRef = "\x00B"
 )
 
-// groupIndent is the indent of the entries below their group row.
-const groupIndent = "  "
+// groupIndent is the indent of the entries below their group row. The row of all keeps the shallower
+// allIndent, in line with the boxes of the group rows.
+const (
+	groupIndent = "    "
+	allIndent   = "  "
+)
 
 // tickWidth is the room of a tick box and the space after it.
 const tickWidth = 4
@@ -199,6 +211,7 @@ type List struct {
 	searching bool
 	focused   bool
 	empty     string
+	drawn     listSel
 }
 
 // NewList checks spec and returns an empty list. It rejects a list without columns, a column without title,
@@ -659,16 +672,22 @@ func (l *List) Act(id ActionID) (open ItemID, handled bool) {
 }
 
 // Click handles a click on a target the list drew, as the MouseMap of its targets reports it. A click marks a
-// row; only a click on the marked row while the rows have the focus, as SetFocused said before the click,
-// opens it, as enter does, so a click meant to scroll or to take the focus opens nothing. A click on a group
-// row folds or unfolds it, and one on the search line starts the search. A filter being typed is kept and
-// stops. A click on a tick box ticks or unticks its entry, group or the row of all and opens and folds
-// nothing; a click on the title of a group only folds it. A click on a button acts as its key does through
-// Act, so an action that is no list key comes back with handled false, and the application runs the Action of
-// the MouseResult as it runs the key.
+// row; only a click on the marked row (on any entry row with ListSpec.ClickOpens) while the rows have the focus,
+// as SetFocused said before the click, opens it, as enter does, so a click meant to scroll or to take the focus
+// opens nothing. A click on a group row folds or unfolds it, and one on the search line starts the search. A
+// filter being typed is kept and stops. A click on a tick box ticks or unticks its entry, group or the row of
+// all and opens and folds nothing; a click on the title of a group only folds it. A click on a button acts as
+// its key does through Act, so an action that is no list key comes back with handled false, and the application
+// runs the Action of the MouseResult as it runs the key.
 func (l *List) Click(r MouseResult) (open ItemID, handled bool) {
 	if !r.Handled {
 		return "", false
+	}
+	if r.Zone == ZoneOutside {
+		if !l.spec.CloseOutside {
+			return "", false
+		}
+		return l.Act(l.spec.Keys.Back)
 	}
 	if j, ok := strings.CutPrefix(r.Item, listButtonRef); ok {
 		n, err := strconv.Atoi(j)
@@ -707,7 +726,7 @@ func (l *List) Click(r MouseResult) (open ItemID, handled bool) {
 		l.toggleRow()
 	case target.isGroup && l.folds():
 		l.setFolded(target.group, !l.folded[target.group])
-	case !target.isGroup && !target.all && l.focused && marked == target:
+	case !target.isGroup && !target.all && l.focused && (l.spec.ClickOpens || marked == target):
 		return target.id, true
 	}
 	return "", true
@@ -717,7 +736,7 @@ func (l *List) Click(r MouseResult) (open ItemID, handled bool) {
 func (l *List) Wheel(steps int) { l.cursor = WheelStep(l.cursor, len(l.rows), steps) }
 
 // View draws the list with styles in width by height cells: the search line where the list has one, the
-// dimmed column titles, and the rows that fit, the selection always among them; an empty list shows its
+// bold column titles over a rule, and the rows that fit, the selection always among them; an empty list shows its
 // sentence, a filter without match names the text and the key that clears it. The scroll position stays while
 // the selection is on the page. It returns a target for the free area of the rows, one per drawn row and one
 // for the search line, counted from the top left of the list.
@@ -740,9 +759,9 @@ func (l *List) view(styles Styles, width, height int, modal bool) (string, []Tar
 		}
 		lines = append(lines, l.searchField(width, styles))
 	}
-	indent := ""
+	indent, allAt := "", ""
 	if l.grouped {
-		indent = groupIndent
+		indent, allAt = groupIndent, allIndent
 	}
 	tick := 0
 	if l.spec.Ticks {
@@ -758,22 +777,29 @@ func (l *List) view(styles Styles, width, height int, modal bool) (string, []Tar
 		}
 		lines = append(lines, l.note(empty, width, styles)...)
 	default:
-		lines = append(lines, "  "+indent+strings.Repeat(" ", tick)+styles.Render(StyleHint, l.header(layout, styles)))
+		lead := "  " + indent + strings.Repeat(" ", tick)
+		lines = append(lines, lead+styles.Render(StyleTitle, l.header(layout, styles)),
+			lead+styles.Render(StyleHint, strings.Repeat(styles.Glyph(GlyphRule), min(tableWidth(layout.widths), room))))
 		if len(l.rows) == 0 {
 			lines = append(lines, l.note(l.text.Lookup(TextListNoMatch, l.query.String(), l.keys.Label(l.spec.Keys.Back)), width, styles)...)
 		}
 	}
 	start, end := l.window(height - len(lines))
 	l.page = max(end-start, 1)
+	first := len(lines)
+	l.drawn = listSel{start: start, sel: l.drawn.sel}
 	for i := start; i < end; i++ {
 		r := l.rows[i]
 		ref, text, boxAt := "", "", 0
+		var d listDrawn
 		switch {
 		case r.all:
 			box := l.box(tickScope{all: true}, styles)
-			ref, text, boxAt = allRef, indent+box+" "+l.allRow(styles), len(indent)
+			ref, text, boxAt = allRef, allAt+box+" "+l.allRow(styles), len(allAt)
+			d.x, d.chars = 2+len(allAt)+len(box)+1, valueChars(Escape(l.text.Lookup(TextListAll)), 0)
 		case r.item < 0:
 			ref, text, boxAt = groupRef+r.group, l.groupLine(r.group, layout, styles), lipgloss.Width(styles.Glyph(GlyphExpanded))+1
+			d.x, d.chars = l.groupChars(r.group, layout, styles)
 		default:
 			it := l.items[r.item]
 			ref, text, boxAt = string(it.ID), indent, len(indent)
@@ -781,7 +807,15 @@ func (l *List) view(styles Styles, width, height int, modal bool) (string, []Tar
 				text += styles.TickBox(l.ticked[it.ID]) + " "
 			}
 			text += l.line(it, layout, styles)
+			d.x, d.chars = 2+len(indent)+tick, l.rowChars(it.Cells, 0, 0, layout, styles)
 		}
+		if l.spec.Ticks {
+			d.boxX, d.boxW = 2+boxAt, 3
+		}
+		a, b := l.drawn.sel.cells(uint64(i), len(d.chars))
+		text = d.highlight(text, a, b, i == l.cursor && (modal || l.focused), styles)
+		l.drawn.rows = append(l.drawn.rows, d)
+		l.drawn.layout = append(l.drawn.layout, d.selRow(uint64(i)))
 		targets = append(targets, Target{Rect: Rect{Y: len(lines), Width: width, Height: 1}, Zone: ZoneRows,
 			Action: l.spec.Keys.Enter, Item: ref})
 		if l.spec.Ticks {
@@ -798,6 +832,9 @@ func (l *List) view(styles Styles, width, height int, modal bool) (string, []Tar
 		} else {
 			out[i] = strings.Repeat(" ", width)
 		}
+	}
+	if end > start {
+		targets = append(targets, Target{Rect: Rect{Y: first, Width: width, Height: end - start}, Zone: ZoneRows, selection: l})
 	}
 	kept := targets[:0]
 	for _, t := range targets {
@@ -825,10 +862,10 @@ func (l *List) searchField(width int, styles Styles) string {
 		if l.spec.Search == SearchByKey {
 			hint = l.text.Lookup(TextSearchKey, l.keys.Label(l.spec.Keys.Search))
 		}
-		return Pad(styles.Render(StyleHint, styles.Truncate(Escape(hint), width)), width)
+		return styles.Field(Pad(styles.Render(StyleHint, styles.Truncate(Escape(hint), width)), width))
 	}
 	room := max(width-lipgloss.Width(lead), 0)
-	return Pad(Clip(lead+l.query.view(room, styles, typing, ""), width), width)
+	return styles.Field(Pad(Clip(lead+l.query.view(room, styles, typing, ""), width), width))
 }
 
 // note is a dimmed sentence wrapped into width cells.
@@ -868,25 +905,32 @@ func (l *List) box(s tickScope, styles Styles) string {
 // groupRow is how a group row reads: the fold glyph, the tick box where the list has them, the category mark,
 // the title in the accent colour and, dimmed, the number of its entries.
 func (l *List) groupRow(group string, styles Styles) string {
+	prefix, title, suffix := l.groupParts(group, styles)
+	return prefix + title + suffix
+}
+
+// groupParts are the parts of a group row: what stands before the title, the title and what follows it.
+func (l *List) groupParts(group string, styles Styles) (prefix, title, suffix string) {
 	glyph := GlyphExpanded
 	count := l.count(group)
 	if l.folded[group] && len(l.query.runes) == 0 && count > 0 {
 		glyph = GlyphCollapsed
 	}
-	title := l.groupTitle(group)
+	name := l.groupTitle(group)
+	title = styles.Render(StyleActive, Escape(name))
 	if l.spec.Outline {
 		lead := " "
 		if count > 0 {
 			lead = styles.Glyph(glyph)
 		}
-		return styles.Render(StyleHint, lead) + " " + styles.Render(StyleActive, Escape(title))
+		return styles.Render(StyleHint, lead) + " ", title, ""
 	}
 	box := ""
 	if l.spec.Ticks {
 		box = l.box(tickScope{group: group}, styles) + " "
 	}
-	return styles.Render(StyleHint, styles.Glyph(glyph)) + " " + box + styles.CategoryMark(group) + " " +
-		styles.Render(StyleActive, Escape(title)) + styles.Render(StyleHint, fmt.Sprintf(" (%d)", count))
+	return styles.Render(StyleHint, styles.Glyph(glyph)) + " " + box + styles.CategoryMark(group) + " ", title,
+		styles.Render(StyleHint, fmt.Sprintf(" (%d)", count))
 }
 
 // groupTitle is what a group row shows as its title: the described title, else the key, and for the group
@@ -974,6 +1018,7 @@ func (l *List) firstEntry() int {
 // shows every group row and the entries of the open groups; with one, every entry that matches under its
 // group, folded or not, and the group rows of those entries. The fold state itself stays.
 func (l *List) rebuild(prev listMark) {
+	l.drawn.sel = textRange{}
 	query := l.queryKey()
 	matches := l.matcher()
 	l.rows = l.rows[:0]
@@ -1324,6 +1369,11 @@ func (l *List) groupLine(group string, lay tableLayout, styles Styles) string {
 	return strings.TrimRight(head+columnGap+strings.Join(rest, columnGap), " ")
 }
 
+// shown is what column i shows of a row's cells: the escaped value cut to the width of the column.
+func (l *List) shown(cells []string, i int, lay tableLayout, styles Styles) string {
+	return styles.Truncate(l.cell(cells, i, lay.short[i]), lay.widths[i])
+}
+
 // columns draws the cells of one row into the shown columns from column from on.
 func (l *List) columns(cells []string, from int, lay tableLayout, styles Styles) []string {
 	var parts []string
@@ -1333,7 +1383,7 @@ func (l *List) columns(cells []string, from int, lay tableLayout, styles Styles)
 		if w <= 0 {
 			continue
 		}
-		text := styles.Truncate(l.cell(cells, i, lay.short[i]), w)
+		text := l.shown(cells, i, lay, styles)
 		style := StyleText
 		switch {
 		case c.Tone != nil:
@@ -1413,7 +1463,7 @@ func (l *List) buttonRows(width int, styles Styles) ([]string, []Target) {
 	return flowButtons(cells, width)
 }
 
-// wanted is the height the list asks for in the modal: the search line, the titles and every row without a
+// wanted is the height the list asks for in the modal: the search line, the titles with their rule and every row without a
 // filter, so the frame keeps its size while a filter is typed.
 func (l *List) wanted() int {
 	rows := len(l.items)
@@ -1432,7 +1482,7 @@ func (l *List) wanted() int {
 	if l.spec.AllRow {
 		rows++
 	}
-	return 1 + 1 + max(rows, 2)
+	return 1 + 2 + max(rows, 2)
 }
 
 // Overlay draws the list with styles over screen, the drawn screen of width by height cells, in the way of
@@ -1459,7 +1509,7 @@ func (l *List) Overlay(styles Styles, screen string, width, height int, room Rec
 	}
 	avail := room.Height - 2 - fixed
 	listH := min(l.wanted(), avail)
-	if listH < 3 {
+	if listH < 4 {
 		return "", nil, false
 	}
 	body, ts := l.view(styles, inner, listH, true)
@@ -1487,5 +1537,6 @@ func (l *List) Overlay(styles Styles, screen string, width, height int, room Rec
 	box := styles.Panel(title, "", lines, inner+4, len(lines)+2, true)
 	top := room.Y + (room.Height-len(box))/2
 	left := room.X + (room.Width-inner-4)/2
-	return overlay(screen, box, width, height, top, left, styles), OffsetTargets(ts, left+2, top+1), true
+	ts = withOutside(l.spec.CloseOutside, OffsetTargets(ts, left+2, top+1), width, height, Rect{X: left, Y: top, Width: inner + 4, Height: len(box)})
+	return overlay(screen, box, width, height, top, left, styles), ts, true
 }

@@ -1,0 +1,18 @@
+Garden  ok                                                                                          
+  1 Plants  2 Beds                                                                                  
+  basil  resting                                                                                    
+  basil  resting                                                                                    
+  basil  resting                                                                                    
+  basil  resting  #= Delete plant ===============================================#                  
+  basil  resting  | ! Water every plant now?                                     |                  
+  basil  resting  |                                                              |                  
+  basil  resting  | The pump runs for a minute.                                  |                  
+  basil  resting  | 5 plants                                                     |                  
+  basil  resting  | 2 of them are resting                                        |                  
+  basil  resting  |                                                              |                  
+  basil  resting  | [ enter Water ]  [ Not now ]                                 |                  
+  basil  resting  | y/enter Water  n Not now                                     |                  
+  basil  resting  #==============================================================#                  
+  basil  resting                                                                                    
+  basil  resting                                                                                    
+  basil  resting                                                                                    

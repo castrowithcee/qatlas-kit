@@ -512,7 +512,7 @@ func TestTextViewButtonsWorkByClick(t *testing.T) {
 	out, targets := v.View(looks(t)["noneascii"], 120, 8)
 	row := strings.Split(out, "\n")[7]
 	byAction := map[ActionID]Target{}
-	for _, tg := range targets[1:] {
+	for _, tg := range targets[2:] {
 		byAction[tg.Action] = tg
 		if tg.Rect.Y != 7 || tg.Zone != ZoneRows {
 			t.Errorf("target %+v is not on the status row", tg)
@@ -526,7 +526,7 @@ func TestTextViewButtonsWorkByClick(t *testing.T) {
 	clickButton := func(id ActionID) bool {
 		t.Helper()
 		_, tg := v.View(looks(t)["noneascii"], 120, 8)
-		for _, c := range tg[1:] {
+		for _, c := range tg[2:] {
 			if c.Action == id {
 				res := NewMouseMap(tg, true).Handle(click(c.Rect.X, c.Rect.Y))
 				return v.Click(res)

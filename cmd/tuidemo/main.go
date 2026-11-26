@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 
@@ -14,7 +15,7 @@ import (
 )
 
 func main() {
-	if err := run(os.Args[1:], os.Stdout, os.Environ()); err != nil {
+	if err := run(os.Args[1:], os.Stdout, os.Environ(), time.Now); err != nil {
 		fmt.Fprintln(os.Stderr, "tuidemo:", err)
 		var usage usageError
 		if errors.As(err, &usage) {
@@ -24,14 +25,22 @@ func main() {
 	}
 }
 
+// schema is what the workbench offers the preferences check besides themes and areas, which newModel adds.
+func schema() uiprefs.Schema {
+	return uiprefs.Schema{DefaultArea: "overview", DefaultNavigation: uiprefs.NavigationTabs,
+		Navigations: []string{uiprefs.NavigationTabs, uiprefs.NavigationPathLine, uiprefs.NavigationPathHeader,
+			uiprefs.NavigationHeaderChoice}}
+}
+
 type usageError struct{ error }
 
-func run(args []string, out io.Writer, environ []string) error {
+func run(args []string, out io.Writer, environ []string, now func() time.Time) error {
 	flags := flag.NewFlagSet("tuidemo", flag.ContinueOnError)
-	prefs := uiprefs.Default(uiprefs.Schema{DefaultArea: "overview"})
+	prefs := uiprefs.Default(schema())
 	flags.StringVar(&prefs.Theme, "theme", prefs.Theme, "start theme")
 	flags.StringVar(&prefs.Language, "language", prefs.Language, "start language: english, deutsch or system")
 	flags.StringVar(&prefs.Icons, "icons", prefs.Icons, "start icons: unicode, nerdfont or none")
+	flags.StringVar(&prefs.Navigation, "navigation", prefs.Navigation, "start navigation: tabs, pathline, header or choice")
 	flags.BoolVar(&prefs.MouseEnabled, "mouse", prefs.MouseEnabled, "start with the mouse on")
 	if err := flags.Parse(args); err != nil {
 		return usageError{err}
@@ -44,7 +53,7 @@ func run(args []string, out io.Writer, environ []string) error {
 		return err
 	}
 	defer func() { _ = os.RemoveAll(root) }() // the folder is the program's own, removed on every way out
-	m, err := newModel(prefs, tui.DetectColorProfile(out, environ), tui.DetectCharsetMode(environ), root)
+	m, err := newModel(prefs, tui.DetectColorProfile(out, environ), tui.DetectCharsetMode(environ), root, now)
 	if err != nil {
 		return err
 	}
@@ -53,4 +62,10 @@ func run(args []string, out io.Writer, environ []string) error {
 	filter.Attach(program.Send)
 	_, err = program.Run()
 	return err
+}
+
+// withAreas adds the themes and areas of the running program to the schema.
+func withAreas(s uiprefs.Schema, themes, areas []string) uiprefs.Schema {
+	s.Themes, s.Areas = themes, areas
+	return s
 }
