@@ -195,7 +195,8 @@
 // below their title, for group rows as for entries; the first column and the group head are never cut, and the
 // widths come from every entry and described group, so they stay while a filter is typed. An empty list shows
 // the application's sentence with the next step, which SetEmpty sets for each state, and a filter without match
-// names the key that clears it.
+// names the key that clears it. Shown names the entries the filter lets through in the order they show, also
+// those of folded groups.
 //
 // The search field of a List, also the one in a filter bar, is a tinted field over its whole width that shows
 // its placeholder while empty; where there is no colour but attributes it is underlined, and without both it

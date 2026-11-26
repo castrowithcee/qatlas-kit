@@ -588,6 +588,30 @@ func (l *List) Ticked() []ItemID {
 	return ids
 }
 
+// Shown is the IDs of the entries the filter lets through, in the order they show and without group rows or
+// the row of all. Entries of a folded group count, at the place of their group. The slice is a copy.
+func (l *List) Shown() []ItemID {
+	matches := l.matcher()
+	ids := []ItemID{}
+	if !l.grouped {
+		for _, it := range l.items {
+			if matches(it) {
+				ids = append(ids, it.ID)
+			}
+		}
+		return ids
+	}
+	groups, members := l.groupOrder()
+	for _, g := range groups {
+		for _, i := range members[g] {
+			if matches(l.items[i]) {
+				ids = append(ids, l.items[i].ID)
+			}
+		}
+	}
+	return ids
+}
+
 // SetTicked replaces the ticks. It rejects an ID that names no entry and then changes nothing. A partial
 // selection a group remembers is forgotten.
 func (l *List) SetTicked(ids []ItemID) error {
@@ -1161,46 +1185,7 @@ func (l *List) rebuild(prev listMark) {
 			}
 		}
 	} else {
-		members := map[string][]int{}
-		var groups []string
-		for i, it := range l.items {
-			if _, ok := members[it.Group]; !ok {
-				groups = append(groups, it.Group)
-			}
-			members[it.Group] = append(members[it.Group], i)
-		}
-		for k, g := range l.groups {
-			if _, ok := members[k]; !ok && g.Keep {
-				groups = append(groups, k)
-			}
-		}
-		// Groups go in alphabetical order of their shown title, the group without key last; an outline keeps
-		// the order of SetGroups first, the groups it does not describe after them.
-		slices.SortFunc(groups, func(a, b string) int {
-			if l.spec.Outline {
-				ia, oka := l.order[a]
-				ib, okb := l.order[b]
-				switch {
-				case oka && okb && ia != ib:
-					return ia - ib
-				case oka != okb:
-					if oka {
-						return -1
-					}
-					return 1
-				}
-			}
-			if (a == "") != (b == "") {
-				if a == "" {
-					return 1
-				}
-				return -1
-			}
-			if c := strings.Compare(l.groupTitle(a), l.groupTitle(b)); c != 0 {
-				return c
-			}
-			return strings.Compare(a, b)
-		})
+		groups, members := l.groupOrder()
 		for _, g := range groups {
 			var hits []listRow
 			for _, i := range members[g] {
@@ -1217,6 +1202,52 @@ func (l *List) rebuild(prev listMark) {
 	if !l.reselect(prev) {
 		l.cursor = min(max(l.cursor, 0), max(len(l.rows)-1, 0))
 	}
+}
+
+// groupOrder is the groups of a grouped list in the order they show, with the indexes of their entries in the
+// order of SetItems.
+func (l *List) groupOrder() ([]string, map[string][]int) {
+	members := map[string][]int{}
+	var groups []string
+	for i, it := range l.items {
+		if _, ok := members[it.Group]; !ok {
+			groups = append(groups, it.Group)
+		}
+		members[it.Group] = append(members[it.Group], i)
+	}
+	for k, g := range l.groups {
+		if _, ok := members[k]; !ok && g.Keep {
+			groups = append(groups, k)
+		}
+	}
+	// Groups go in alphabetical order of their shown title, the group without key last; an outline keeps
+	// the order of SetGroups first, the groups it does not describe after them.
+	slices.SortFunc(groups, func(a, b string) int {
+		if l.spec.Outline {
+			ia, oka := l.order[a]
+			ib, okb := l.order[b]
+			switch {
+			case oka && okb && ia != ib:
+				return ia - ib
+			case oka != okb:
+				if oka {
+					return -1
+				}
+				return 1
+			}
+		}
+		if (a == "") != (b == "") {
+			if a == "" {
+				return 1
+			}
+			return -1
+		}
+		if c := strings.Compare(l.groupTitle(a), l.groupTitle(b)); c != 0 {
+			return c
+		}
+		return strings.Compare(a, b)
+	})
+	return groups, members
 }
 
 // queryKey is the filter as the entries are matched against it.
