@@ -1,0 +1,150 @@
+package web
+
+import (
+	"bytes"
+	"errors"
+	"html/template"
+	"net/http"
+	"strings"
+)
+
+var loginPage = template.Must(template.New("login").Parse(`<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Sign in</title>
+<style nonce="{{.Nonce}}">
+:root { --bg: #fff; --text: #1a1a1a; --muted: #4a4a4a; --border: #767676; --accent: #0b5cad; --on-accent: #fff; --error: #a4000f; }
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #121212; --text: #ececec; --muted: #b8b8b8; --border: #8a8a8a; --accent: #8ab4f8; --on-accent: #0b1220; --error: #ff9a9a; }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 1rem/1.5 system-ui, sans-serif; }
+main { max-width: 28rem; margin: 0 auto; padding: 1rem; }
+p { overflow-wrap: anywhere; }
+.hint { color: var(--muted); }
+label { display: block; margin: 1.5rem 0 .25rem; font-weight: 600; }
+input, button { font: inherit; min-height: 2.75rem; border-radius: .25rem; }
+input { width: 100%; padding: .5rem; border: 2px solid var(--border); background: var(--bg); color: var(--text); letter-spacing: .1em; }
+input[aria-invalid="true"] { border-color: var(--error); }
+button { min-width: 2.75rem; margin-top: 1rem; padding: .5rem 1.5rem; border: 2px solid var(--accent); background: var(--accent); color: var(--on-accent); font-weight: 600; cursor: pointer; }
+:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.error { margin: .5rem 0 0; color: var(--error); font-weight: 600; }
+</style>
+</head>
+<body>
+<main>
+<h1>Sign in</h1>
+<p class="hint" id="hint">Enter the one-time code shown in the terminal where the program runs.</p>
+<form method="post" action="{{.Action}}">
+<label for="code">One-time code</label>
+<input id="code" name="code" type="text" autocomplete="one-time-code" autocapitalize="characters" spellcheck="false" autofocus required aria-describedby="hint{{if .Failed}} error{{end}}"{{if .Failed}} aria-invalid="true"{{end}}>
+{{if .Failed}}<p class="error" id="error" role="alert">The code was not accepted. Check it, or ask for a new one in the terminal, and try again.</p>
+{{end}}<button type="submit">Sign in</button>
+</form>
+</main>
+</body>
+</html>
+`))
+
+// PagesOptions configure Pages.
+type PagesOptions struct {
+	// Auth checks the codes and ends the sessions. Required.
+	Auth *Authenticator
+	// Prefix is put before the paths of the pages, such as "/auth" for "/auth/login". It is empty or
+	// an absolute path without a trailing slash, query or wildcard.
+	Prefix string
+	// Home is where a browser goes after signing in; it is fixed, never taken from the request. Empty
+	// means "/". It must be an absolute path on this server.
+	Home string
+}
+
+// Pages serves the sign-in page and the sign-out of a Server, plain and accessible, with the CSP nonce of
+// the server. Its routes are public; mount Routes next to the routes of the application.
+type Pages struct {
+	auth   *Authenticator
+	prefix string
+	home   string
+}
+
+// NewPages checks opts. It also makes the sessions of opts.Auth send an unsigned-in GET or HEAD request
+// for a route that is not public to the sign-in page instead of answering 401, because a browser has
+// nothing else to do there. Other methods stay at 401. Call it before the server starts.
+func NewPages(opts PagesOptions) (*Pages, error) {
+	if opts.Auth == nil {
+		return nil, errors.New("web: Pages needs an Authenticator")
+	}
+	p := &Pages{auth: opts.Auth, prefix: opts.Prefix, home: opts.Home}
+	if p.home == "" {
+		p.home = "/"
+	}
+	if !localPath(p.home) {
+		return nil, errors.New("web: Home is not an absolute path on this server")
+	}
+	if p.prefix != "" && (!localPath(p.prefix) || strings.HasSuffix(p.prefix, "/") ||
+		strings.ContainsAny(p.prefix, "{}?#%")) {
+		return nil, errors.New("web: Prefix is not an absolute path without trailing slash or wildcard")
+	}
+	opts.Auth.sessions.loginPath = p.LoginPath()
+	return p, nil
+}
+
+// LoginPath is the path of the sign-in page.
+func (p *Pages) LoginPath() string { return p.prefix + "/login" }
+
+// LogoutPath is the path that ends the session. It takes POST only, so a tool offers a form
+// <form method="post" action="..."> with a button.
+func (p *Pages) LogoutPath() string { return p.prefix + "/logout" }
+
+// Routes returns the public routes of the pages: GET and POST on LoginPath and POST on LogoutPath.
+func (p *Pages) Routes() []Route {
+	return []Route{
+		{Pattern: "GET " + p.LoginPath(), Public: true, Handler: http.HandlerFunc(p.showLogin)},
+		{Pattern: "POST " + p.LoginPath(), Public: true, Handler: http.HandlerFunc(p.submitLogin)},
+		{Pattern: "POST " + p.LogoutPath(), Public: true, Handler: http.HandlerFunc(p.logout)},
+	}
+}
+
+func (p *Pages) showLogin(w http.ResponseWriter, r *http.Request) {
+	p.render(w, r, http.StatusOK, false)
+}
+
+func (p *Pages) submitLogin(w http.ResponseWriter, r *http.Request) {
+	switch err := p.auth.SignIn(w, r); {
+	case err == nil:
+		_ = Redirect(w, r, p.home, http.StatusSeeOther)
+	case errors.Is(err, ErrSignInRefused):
+		// Wrong and throttled attempts look the same.
+		p.render(w, r, http.StatusForbidden, true)
+	default:
+		Error(w, http.StatusInternalServerError)
+	}
+}
+
+func (p *Pages) logout(w http.ResponseWriter, r *http.Request) {
+	if err := p.auth.SignOut(w, r); err != nil {
+		Error(w, http.StatusInternalServerError)
+		return
+	}
+	_ = Redirect(w, r, p.LoginPath(), http.StatusSeeOther)
+}
+
+// render never puts the submitted code on the page.
+func (p *Pages) render(w http.ResponseWriter, r *http.Request, status int, failed bool) {
+	var buf bytes.Buffer
+	err := loginPage.Execute(&buf, struct {
+		Nonce, Action string
+		Failed        bool
+	}{Nonce(r), p.LoginPath(), failed})
+	if err != nil {
+		Error(w, http.StatusInternalServerError)
+		return
+	}
+	h := w.Header()
+	h.Set("Content-Type", "text/html; charset=utf-8")
+	h.Set("Cache-Control", "no-store")
+	w.WriteHeader(status)
+	_, _ = w.Write(buf.Bytes())
+}
