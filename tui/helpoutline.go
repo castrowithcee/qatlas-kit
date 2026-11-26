@@ -89,7 +89,7 @@ func (h *Help) openOutlined(id ItemID) bool {
 // placeOutline draws the overview in width by room cells below lines, as tall as its rows ask for.
 func (h *Help) placeOutline(lines []string, targets []Target, width, room int, styles Styles) ([]string, []Target) {
 	// wanted counts the search line, which an outline never has.
-	body, ts := h.outline.View(styles, width, min(h.outline.wanted()-1, room))
+	body, ts := h.outline.View(styles, width, min(h.outline.wanted(width, styles)-1, room))
 	targets = append(targets, OffsetTargets(ts, 0, len(lines))...)
 	return append(lines, strings.Split(body, "\n")...), targets
 }
