@@ -222,3 +222,14 @@ func TestFilesTakeNeverLeavesTheRoot(t *testing.T) {
 		t.Fatalf("a folder outside the root was taken: %q, %v", b.chosen, m.message)
 	}
 }
+
+func TestPickerShowsTheFixedNoteWhileFiltering(t *testing.T) {
+	term := startDemo(t, "-icons none")
+	act(t, term, "8", pickBody)
+	act(t, term, "p", "Choose a bed")
+	expect(t, term, "The watering plan stays tied to the bed you choose here.")
+	act(t, term, "po", "Pot 3")
+	expect(t, term, "The watering plan stays tied to the bed you choose here.")
+	act(t, term, "\r", "Bed: Pot 3")
+	gone(t, term, "The watering plan stays")
+}

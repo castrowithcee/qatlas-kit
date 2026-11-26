@@ -207,6 +207,7 @@ const (
 	textPickTitle tui.TextID = "demo.pick.title"
 	textPickBed   tui.TextID = "demo.pick.bed"
 	textPickDone  tui.TextID = "demo.pick.done"
+	textPickNote  tui.TextID = "demo.pick.note"
 
 	textFileRoot      tui.TextID = "demo.file.root"
 	textFileTake      tui.TextID = "demo.file.take"
@@ -462,6 +463,7 @@ func catalog() i18n.Catalogs[tui.TextID] {
 			textPickTitle: "Choose a bed",
 			textPickBed:   "Bed: %s",
 			textPickDone:  "Bed %s chosen",
+			textPickNote:  "The watering plan stays tied to the bed you choose here.",
 
 			textFileRoot:      "sample folder",
 			textFileTake:      "choose file",
@@ -718,6 +720,7 @@ func catalog() i18n.Catalogs[tui.TextID] {
 			textPickTitle: "Beet wählen",
 			textPickBed:   "Beet: %s",
 			textPickDone:  "Beet %s gewählt",
+			textPickNote:  "Der Gießplan bleibt an das Beet gebunden, das du hier wählst.",
 
 			textFileRoot:      "Beispielordner",
 			textFileTake:      "Datei wählen",
