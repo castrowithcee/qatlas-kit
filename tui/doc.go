@@ -133,6 +133,21 @@
 // outside its keys and address already and has no option; the View drawn in a terminal too small for an
 // overlay has no frame and no such targets.
 //
+// A TextSelection selects text with the mouse, one for the screen. The application hands it every mouse event
+// with the MouseMap of the frame on screen before it hands a click to Handle as before, and calls Clear on every
+// key. Dragging with the left button held from the text of a part that supports it selects characters of that
+// part, over several lines too, and the part highlights them in the selection fill, reverse video without one;
+// a terminal without colour shows no highlight. The release returns the text, which the application hands to the
+// clipboard and reports. A click without motion selects nothing and does what it did, and the next click or key
+// ends the selection. A press starts one only where that text is the topmost target, so a button, an overlay or
+// a part drawn later keeps its click; the selection stays within the rows shown and does not scroll. TextView
+// and LogView support it. The text holds content only: line numbers, the mark, time and source columns, the
+// mark of a cut line, the ellipsis and the fill right of a line never come with it. A line break ends each
+// line of the content, never a row where the view wraps, and a drag right of the end of a line or onto its
+// ellipsis takes the line to its end. It is the text as drawn: a control character as its escape, a tab of a
+// TextView as its spaces, a wide character whole, and a masked section, hidden or revealed, as the mask of fixed
+// length, so neither its content nor its length leaves the view.
+//
 // Mouse reports never become text. An InputFilter, installed with tea.WithFilter and attached to the program,
 // drops the pieces of a report that a terminal behind SSH or tmux delivered in more than one read, so a text
 // or passphrase field never receives them, and merges a wheel notch the terminal reports twice. Characters
