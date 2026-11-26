@@ -23,6 +23,7 @@ One line per package, in alphabetical order. The package documentation holds the
 - [`exteditor`](exteditor): hands a text to the user's editor on a private copy and returns the checked change, also as root for a target user.
 - [`filelock`](filelock): provides an exclusive whole-file lock across processes.
 - [`fileretry`](fileretry): repeats a file operation that fails only because another process holds the file.
+- [`helppages`](helppages): loads Markdown help pages from an `fs.FS`, checks them and splits their text into blocks a user interface can draw.
 - [`helptopics`](helptopics): shares plain-text help topics and terms between CLI, TUI and manpage.
 - [`highlight`](highlight): turns a text and its file name into the sections a text view draws in its syntax roles, for YAML, env files, JSON, INI, TOML, shell and Dockerfile.
 - [`httpx`](httpx): provides a client without redirects, bound cursors, status classes and bounded reading of answers.
