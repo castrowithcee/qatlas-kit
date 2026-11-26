@@ -24,7 +24,9 @@ const (
 type model struct {
 	prefs uiprefs.Prefs
 	// now is the clock of the date fields; the program gets the real one, tests a fixed one.
-	now     func() time.Time
+	now func() time.Time
+	// send delivers a message to the program from another goroutine; the answer of a search comes by it.
+	send    func(tea.Msg)
 	groups  []group
 	themes  *tui.ThemeSet
 	keys    *tui.Keymap
@@ -172,6 +174,7 @@ func (m *model) Init() tea.Cmd {
 func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	was := string(m.area) + "/" + string(m.tab())
 	cmd := m.handle(msg)
+	cmd = tea.Batch(cmd, m.pathsLoad())
 	m.settle(was)
 	m.refresh()
 	return m, cmd
@@ -185,8 +188,12 @@ func (m *model) handle(msg tea.Msg) tea.Cmd {
 			cmds = append(cmds, m.handle(one))
 		}
 		return tea.Batch(cmds...)
+	case searchDone:
+		msg.block.answer(msg)
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
+	case pathAnswer:
+		m.takePath(msg)
 	case tea.ForegroundColorMsg:
 		m.fg = tui.ColorOf(msg.Color)
 		m.takeTerminalColors()
@@ -361,7 +368,7 @@ func (m *model) run(action tui.ActionID, key string) tea.Cmd {
 	case actBack:
 		// Back goes up from a block to the line above it; a block that needs it took the key before.
 		m.zone = tui.StepZoneLevel(m.zones(), m.zone, -1)
-	case actHelp:
+	case actHelp, actHelpF1:
 		m.openHelp()
 	case actInfo:
 		m.openExplanation()

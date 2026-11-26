@@ -2,6 +2,7 @@ package main
 
 import (
 	"cmp"
+	"context"
 	"errors"
 	"io/fs"
 	"os"
@@ -22,6 +23,7 @@ type filesBlock struct {
 	root    string
 	chosen  string // the last file taken, as a "/" path below the root
 	note    tui.TextID
+	cancel  context.CancelFunc // the search that runs, nil for none
 }
 
 func pickBlocks(m *model) (map[tui.TabID]block, error) {
@@ -94,10 +96,17 @@ func btoi(v bool) int {
 	return 0
 }
 
-// run does what the browser asked: list a folder, take the marked file, or forget the chosen one.
+// run does what the browser asked: list a folder, search below it, take the marked file, or forget the chosen
+// one.
 func (b *filesBlock) run(m *model, res tui.FileResult) {
 	if res.Load != nil {
 		b.list(*res.Load)
+	}
+	if res.Search != nil {
+		b.search(m, *res.Search)
+	}
+	if !b.browser.Searching() {
+		b.stopSearch()
 	}
 	a := res.Action
 	if a != nil && a.Action == actClear {

@@ -50,9 +50,11 @@ type FileBrowserKeys struct {
 	Left, Right ActionID
 	// Enter opens the marked folder; on a file or a link it reports the action Enter.
 	Enter ActionID
-	// Search starts typing a filter.
+	// Search starts typing a filter. A filter that starts with "*" and goes on asks for matches below the
+	// shown folder instead, see FileSearch.
 	Search ActionID
-	// Back clears the filter, then goes up one folder; at the root it is left to the application.
+	// Back leaves the list of matches, then clears the filter, then goes up one folder; at the root it is left to
+	// the application.
 	Back ActionID
 	// Reload asks for the entries of the shown folder again; empty for none.
 	Reload ActionID
@@ -87,15 +89,62 @@ type FileAction struct {
 	HasEntry bool
 }
 
-// FileResult is what a key press or a click asks the application to do: Load, or the Action to run.
+// FileSearch asks the application for the entries below the folder Dir, at any depth, whose name holds Query.
+// Dir is the shown folder as in FileLoad, Query the text behind the "*" of the filter with the white space
+// around it cut off, never empty. Token identifies the request: the answer must carry the FileSearch it
+// answers. A new FileSearch or a FileLoad makes the application's running search superfluous; Searching says
+// when the browser no longer waits for one.
+type FileSearch struct {
+	Dir   []string
+	Query string
+	Token uint64
+}
+
+// FileMatch is one entry found by a search. Path is the entry as the names of its parts below the root, not
+// below the searched folder, so a match is a place in the same tree as a FileLoad. Like a FileEntry name, each
+// part must be a plain name, and the path must lead below the searched folder.
+type FileMatch struct {
+	Path []string
+	Kind FileKind
+}
+
+// FileSearchEnd says why a search ended.
+type FileSearchEnd uint8
+
+// The reasons a search ended; the zero value is a search that read everything below the folder. An unknown
+// value shows the generic text.
+const (
+	FileSearchComplete FileSearchEnd = iota
+	// FileSearchEntryLimit: the limit of entries to read was reached.
+	FileSearchEntryLimit
+	// FileSearchTimeLimit: the time limit ran out.
+	FileSearchTimeLimit
+	// FileSearchMatchLimit: the limit of matches was reached.
+	FileSearchMatchLimit
+	// FileSearchCanceled: the search was stopped before its end.
+	FileSearchCanceled
+)
+
+// FileFound is the answer to a FileSearch: the matches and, unless the search ran to its end, the reason it
+// stopped. Limit is the limit that was reached, in entries, seconds or matches by End, and shown in the text
+// for it; zero or less shows the text without a number.
+type FileFound struct {
+	Matches []FileMatch
+	End     FileSearchEnd
+	Limit   int
+}
+
+// FileResult is what a key press or a click asks the application to do: Load, Search, or the Action to run.
 type FileResult struct {
 	Load   *FileLoad
+	Search *FileSearch
 	Action *FileAction
 }
 
 // FileBrowser shows the folders and files below a root as a table with a clickable path line. The actions of
-// the application stand in the action bar of the frame, see BarActions. It reads no file system: the application answers a FileLoad with
-// SetEntries or SetError and runs the actions. The browser walks only within the root, as a list of name
+// the application stand in the action bar of the frame, see BarActions. It reads no file system: the
+// application answers a FileLoad with SetEntries or SetError, a FileSearch with SetMatches or SetSearchError,
+// and runs the actions. The browser walks only within the root, as a list of name
 // parts, never as a joined string. Update, Act and Click return the result.
 type FileBrowser struct {
 	spec FileBrowserSpec
@@ -108,6 +157,17 @@ type FileBrowser struct {
 	byID    map[ItemID]FileEntry
 	keep    ItemID
 	loading bool
+
+	items []ListItem // the entries of the shown folder, also while the matches are shown
+	empty string
+	// The search: hits is true from the request until the list of matches is left, waiting while the answer
+	// is due, and seen is the filter text the browser last decided on.
+	hits    bool
+	waiting bool
+	stoken  uint64
+	seen    string
+	matches map[ItemID]FileMatch
+	note    string
 }
 
 // The target items of a file browser.
@@ -177,6 +237,10 @@ func (b *FileBrowser) Dir() []string { return slices.Clone(b.dir) }
 // Loading reports whether the answer to the last FileLoad is still due.
 func (b *FileBrowser) Loading() bool { return b.loading }
 
+// Searching reports whether a search is asked and its list of matches not left, whether the answer is due or
+// shown. An application that runs the search stops it when this turns false or a new FileSearch comes.
+func (b *FileBrowser) Searching() bool { return b.hits }
+
 // Load asks for the entries of the folder dir, the names of its parts below the root, and empties the list
 // until the answer comes. It returns no request for a part that is not a plain name.
 func (b *FileBrowser) Load(dir []string) FileResult {
@@ -188,6 +252,7 @@ func (b *FileBrowser) Load(dir []string) FileResult {
 
 func (b *FileBrowser) request(dir []string, keep ItemID) FileResult {
 	b.dir, b.keep = dir, keep
+	b.hits, b.waiting, b.seen, b.matches, b.note = false, false, "", nil, ""
 	b.token++
 	b.loading = true
 	b.show(nil, b.text.Lookup(TextFileLoading))
@@ -195,13 +260,22 @@ func (b *FileBrowser) request(dir []string, keep ItemID) FileResult {
 }
 
 // show replaces the entries, and the sentence an empty list shows, keeping the selection where it can.
+// While the matches are shown it only keeps them for when the list is left.
 func (b *FileBrowser) show(items []ListItem, empty string) {
 	b.byID = map[ItemID]FileEntry{}
-	_ = b.list.SetItems(items) // the items are checked before
-	b.list.SetEmpty(empty)
+	b.items, b.empty = items, empty
+	if b.hits {
+		return
+	}
+	b.draw(items, empty)
 	if len(items) == 0 {
 		b.list.Reset()
 	}
+}
+
+func (b *FileBrowser) draw(items []ListItem, empty string) {
+	_ = b.list.SetItems(items) // the items are checked before
+	b.list.SetEmpty(empty)
 }
 
 // SetEntries shows the entries answering load. current is false, and nothing changes, when load is not the
@@ -235,7 +309,7 @@ func (b *FileBrowser) SetEntries(load FileLoad, entries []FileEntry) (current bo
 	}
 	b.show(items, b.text.Lookup(TextFileEmpty))
 	b.byID = byID
-	if b.keep != "" {
+	if b.keep != "" && !b.hits {
 		b.list.Select(b.keep)
 	}
 	return true, nil
@@ -322,6 +396,14 @@ func (b *FileBrowser) up() FileResult {
 
 // activate opens the entry id: a folder is loaded, anything else is reported as the action Enter.
 func (b *FileBrowser) activate(id ItemID) FileResult {
+	if b.hits {
+		m, ok := b.matches[id]
+		if !ok {
+			return FileResult{}
+		}
+		last := len(m.Path) - 1
+		return b.request(slices.Clone(m.Path[:last]), entryID(m.Path[last]))
+	}
 	e, ok := b.byID[id]
 	if !ok {
 		return FileResult{}
@@ -349,12 +431,19 @@ func (b *FileBrowser) Update(msg tea.KeyPressMsg) (FileResult, bool) {
 			}
 		}
 	}
+	for _, id := range []ActionID{b.spec.Keys.Back, b.spec.Keys.Enter} {
+		if b.keys.Is(msg, id, focus) {
+			if res, ok := b.hitKey(id); ok {
+				return res, true
+			}
+		}
+	}
 	open, handled := b.list.Update(msg)
 	switch {
 	case open != "":
 		return b.activate(open), true
 	case handled:
-		return FileResult{}, true
+		return b.syncSearch(), true
 	case b.keys.Is(msg, b.spec.Keys.Back, focus) && len(b.dir) > 0:
 		return b.up(), true
 	}
@@ -385,12 +474,15 @@ func (b *FileBrowser) Act(id ActionID) (FileResult, bool) {
 	case slices.ContainsFunc(b.spec.Actions, func(a FormButton) bool { return a.Action == id }):
 		return b.report(id), true
 	}
+	if res, ok := b.hitKey(id); ok {
+		return res, true
+	}
 	open, handled := b.list.Act(id)
 	switch {
 	case open != "":
 		return b.activate(open), true
 	case handled:
-		return FileResult{}, true
+		return b.syncSearch(), true
 	case id == k.Back && len(b.dir) > 0:
 		return b.up(), true
 	}
@@ -418,7 +510,10 @@ func (b *FileBrowser) Click(r MouseResult) (FileResult, bool) {
 	if open != "" {
 		return b.activate(open), true
 	}
-	return FileResult{}, handled
+	if handled {
+		return b.syncSearch(), true
+	}
+	return FileResult{}, false
 }
 
 // BarActions are the actions of the application for the action bar of the frame, in the order of
@@ -517,8 +612,13 @@ func (b *FileBrowser) View(styles Styles, width, height int) (string, []Target) 
 		return finishPage(nil, nil, width, height)
 	}
 	path, targets := b.pathLine(styles, width)
-	body, ts := b.list.View(styles, width, height-1)
+	var note []string
+	if b.hits && b.note != "" {
+		note = []string{"  " + styles.Render(StyleHint, styles.Truncate(Escape(b.note), max(width-2, 0)))}
+	}
+	body, ts := b.list.View(styles, width, max(height-1-len(note), 1))
 	lines := append([]string{path}, strings.Split(body, "\n")...)
+	lines = append(lines, note...)
 	targets = append(targets, OffsetTargets(ts, 0, 1)...)
 	return finishPage(lines, targets, width, height)
 }

@@ -275,18 +275,18 @@ func TestNoticeClosesByKey(t *testing.T) {
 
 func TestHelpOpensAndClosesByKeyAndByClick(t *testing.T) {
 	term := startDemo(t, "-icons none")
-	act(t, term, "?", "About the workbench:")
-	act(t, term, "\x1b[C", "The key table has one place for every key")
-	clickOn(t, term, "Mouse", "A click does what its key does")
-	send(t, term, "?") // the help key closes it
-	gone(t, term, "A click does what")
+	act(t, term, "?", "About the workbench")
+	act(t, term, "\x1b[C", "An area groups related tabs")
+	send(t, term, "\x1bOP") // f1 closes it as the help key does
+	gone(t, term, "An area groups related tabs")
+	act(t, term, "\x1bOP", "About the workbench") // and opens it
 }
 
 func TestHelpClosesByClickOnItsKeyLine(t *testing.T) {
 	term := startDemo(t, "-icons none")
-	clickOn(t, term, "[?] help", "About the workbench:")
+	clickOn(t, term, "[?] help", "About the workbench")
 	clickOnly(t, term, "close")
-	gone(t, term, "About the workbench:")
+	gone(t, term, "About the workbench")
 }
 
 func TestExplanationOpensCopiesAndCloses(t *testing.T) {

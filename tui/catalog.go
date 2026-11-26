@@ -112,6 +112,11 @@ const (
 	TextFormBlockTooLongNext TextID = "tui.form.blocktoolongnext"
 	TextKeyNewLine           TextID = "tui.key.newline"
 
+	TextFormPathEndTime    TextID = "tui.form.pathendtime"
+	TextFormPathEndEntries TextID = "tui.form.pathendentries"
+	TextFormPathEndMatches TextID = "tui.form.pathendmatches"
+	TextFormPathEndCancel  TextID = "tui.form.pathendcancel"
+
 	TextFormSectionClosed TextID = "tui.form.sectionclosed"
 	TextFormDateFormat    TextID = "tui.form.dateformat"
 	TextFormDateNoSuch    TextID = "tui.form.datenosuch"
@@ -133,6 +138,7 @@ const (
 	TextHelpScroll     TextID = "tui.help.scroll"
 	TextHelpPage       TextID = "tui.help.page"
 	TextHelpClose      TextID = "tui.help.close"
+	TextHelpMore       TextID = "tui.help.more"
 	TextInfoLink       TextID = "tui.info.link"
 	TextInfoOpenLink   TextID = "tui.info.openlink"
 
@@ -208,6 +214,16 @@ const (
 	TextFileBadName     TextID = "tui.file.badname"
 	TextFileRoot        TextID = "tui.file.root"
 	TextFileUnreadable  TextID = "tui.file.unreadable"
+
+	TextFileSearching     TextID = "tui.file.search.running"
+	TextFileSearchNone    TextID = "tui.file.search.none"
+	TextFileSearchFailed  TextID = "tui.file.search.failed"
+	TextFileSearchEntries TextID = "tui.file.search.entries"
+	TextFileSearchTime    TextID = "tui.file.search.time"
+	TextFileSearchMatches TextID = "tui.file.search.matches"
+	TextFileSearchStopped TextID = "tui.file.search.stopped"
+	// TextFileSearchCanceled has no number: the search stopped by itself, not at a limit.
+	TextFileSearchCanceled TextID = "tui.file.search.canceled"
 
 	TextSettingsTitle             TextID = "tui.settings.title"
 	TextSettingsGeneral           TextID = "tui.settings.general"
@@ -318,6 +334,10 @@ func ModuleCatalog() i18n.Catalogs[TextID] {
 			TextFormBlockTooLong:     "The value would be longer than %d KiB.",
 			TextFormBlockTooLongNext: "Nothing was changed; use a shorter value.",
 			TextKeyNewLine:           "new line",
+			TextFormPathEndTime:      "Search ended after %d s, give the start path more precisely",
+			TextFormPathEndEntries:   "Search ended after %d entries, give the start path more precisely",
+			TextFormPathEndMatches:   "Only the first %d matches shown, give more of the name",
+			TextFormPathEndCancel:    "Search canceled",
 			TextFormKeyPress:         "press the new key",
 			TextFormSectionClosed:    "(closed)",
 			TextFormDateFormat:       "not a date",
@@ -340,6 +360,7 @@ func ModuleCatalog() i18n.Catalogs[TextID] {
 			TextHelpScroll:     "scroll",
 			TextHelpPage:       "page",
 			TextHelpClose:      "close",
+			TextHelpMore:       "More",
 			TextInfoLink:       "Documentation:",
 			TextInfoOpenLink:   "open link",
 
@@ -441,6 +462,15 @@ func ModuleCatalog() i18n.Catalogs[TextID] {
 			TextFileBadName:     "This folder lists an entry with an invalid name: %s",
 			TextFileRoot:        "root",
 			TextFileUnreadable:  "unreadable",
+
+			TextFileSearching:      "Searching…",
+			TextFileSearchNone:     "No match below this folder.",
+			TextFileSearchFailed:   "The search failed: %s",
+			TextFileSearchEntries:  "Search stopped after %d entries; more may exist.",
+			TextFileSearchTime:     "Search stopped after %d seconds; more may exist.",
+			TextFileSearchMatches:  "Only the first %d matches are shown.",
+			TextFileSearchStopped:  "The search stopped early; more may exist.",
+			TextFileSearchCanceled: "The search was canceled; more may exist.",
 
 			TextSettingsTitle:             "Settings",
 			TextSettingsGeneral:           "General",
@@ -546,6 +576,10 @@ func ModuleCatalog() i18n.Catalogs[TextID] {
 			TextFormBlockTooLong:     "Der Wert wäre länger als %d KiB.",
 			TextFormBlockTooLongNext: "Nichts wurde geändert; verwenden Sie einen kürzeren Wert.",
 			TextKeyNewLine:           "Neue Zeile",
+			TextFormPathEndTime:      "Suche nach %d s beendet, Startpfad genauer angeben",
+			TextFormPathEndEntries:   "Suche nach %d Einträgen beendet, Startpfad genauer angeben",
+			TextFormPathEndMatches:   "Nur die ersten %d Treffer gezeigt, mehr vom Namen angeben",
+			TextFormPathEndCancel:    "Suche abgebrochen",
 			TextFormKeyPress:         "neue Taste drücken",
 			TextFormSectionClosed:    "(zu)",
 			TextFormDateFormat:       "kein Datum",
@@ -568,6 +602,7 @@ func ModuleCatalog() i18n.Catalogs[TextID] {
 			TextHelpScroll:     "Scrollen",
 			TextHelpPage:       "Seite",
 			TextHelpClose:      "Schließen",
+			TextHelpMore:       "Mehr dazu",
 			TextInfoLink:       "Dokumentation:",
 			TextInfoOpenLink:   "Link öffnen",
 
@@ -669,6 +704,15 @@ func ModuleCatalog() i18n.Catalogs[TextID] {
 			TextFileBadName:     "Der Ordner enthält einen Eintrag mit ungültigem Namen: %s",
 			TextFileRoot:        "Wurzel",
 			TextFileUnreadable:  "nicht lesbar",
+
+			TextFileSearching:      "Sucht…",
+			TextFileSearchNone:     "Kein Treffer unter diesem Ordner.",
+			TextFileSearchFailed:   "Die Suche ist fehlgeschlagen: %s",
+			TextFileSearchEntries:  "Suche nach %d Einträgen beendet, es kann mehr geben.",
+			TextFileSearchTime:     "Suche nach %d Sekunden beendet, es kann mehr geben.",
+			TextFileSearchMatches:  "Nur die ersten %d Treffer werden gezeigt.",
+			TextFileSearchStopped:  "Die Suche endete früh, es kann mehr geben.",
+			TextFileSearchCanceled: "Die Suche wurde abgebrochen, es kann mehr geben.",
 
 			TextSettingsTitle:             "Einstellungen",
 			TextSettingsGeneral:           "Allgemein",

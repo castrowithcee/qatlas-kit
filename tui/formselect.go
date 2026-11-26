@@ -35,8 +35,8 @@ func (f *Form) shownValue(i int, rows []string) (text string, masked, ok bool) {
 	focused := f.showsFocus(i)
 	value := field.line.String()
 	switch field.Kind {
-	case FieldText, FieldList, FieldReadOnly:
-		return Escape(value), false, value != "" && !(focused && field.Kind == FieldText)
+	case FieldText, FieldPath, FieldList, FieldReadOnly:
+		return Escape(value), false, value != "" && !(focused && (field.Kind == FieldText || field.Kind == FieldPath))
 	case FieldKey:
 		return Escape(value), false, value != "" && !(focused && f.capture)
 	case FieldDate:

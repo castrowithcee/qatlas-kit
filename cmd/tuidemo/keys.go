@@ -33,6 +33,7 @@ const (
 	actFirst    tui.ActionID = "first"
 	actLast     tui.ActionID = "last"
 	actHelp     tui.ActionID = "help"
+	actHelpF1   tui.ActionID = tui.ActionHelpF1
 	actInfo     tui.ActionID = "info"
 	actCommands tui.ActionID = tui.ActionCommand
 	actAsk      tui.ActionID = "ask"
@@ -83,6 +84,7 @@ func keyTable(areas int) []tui.Action {
 		act(actMenu, tui.LevelLetter, tui.TextKeyMenu, "m"),
 		act(actBack, tui.LevelGlobal, tui.TextKeyBack, "esc"),
 		act(actHelp, tui.LevelGlobal, tui.TextKeyHelp, "?"),
+		{ID: actHelpF1, Level: tui.LevelGlobal, DefaultKeys: []string{"f1"}, Help: tui.TextKeyHelp, SecondWayOf: actHelp},
 		act(actCommands, tui.LevelGlobal, tui.TextKeyCommands, ":"),
 		act(actEnter, tui.LevelMove, tui.TextKeyEnter, "enter"),
 		act(actUp, tui.LevelMove, tui.TextKeyUp, "up"),

@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 	"unicode"
+	"unicode/utf8"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
@@ -54,6 +55,18 @@ type ListGroup struct {
 	Title string
 	Cells []string
 	Keep  bool
+}
+
+// ListTickRow is a row above the groups that ticks, across all groups, every shown entry Match accepts, except
+// those Exempt names: an exempt entry is never ticked by the row, only by its own toggle, and unticking the
+// row clears it too. Key is stable and names the row for its mark, its memory and its click target. Title is
+// the finished text of the application, as ListGroup.Title is. Match and Exempt are called when the entries
+// or the rows are set, never while drawing; a nil Exempt exempts nothing.
+type ListTickRow struct {
+	Key    string
+	Title  string
+	Match  func(ListItem) bool
+	Exempt func(ListItem) bool
 }
 
 // ListKeys are the actions of the key table a list reads.
@@ -143,6 +156,8 @@ const groupRef = "\x00g"
 const (
 	allRef  = "\x00a"
 	tickRef = "\x00t"
+	// tickRowRef starts the target item of a tick row, followed by its key.
+	tickRowRef = "\x00r"
 	// listButtonRef starts the target item of a button, followed by its index.
 	listButtonRef = "\x00B"
 )
@@ -159,15 +174,34 @@ const tickWidth = 4
 
 // listRow is one shown row: an entry by its index, the row of group with item -1, or the row of all.
 type listRow struct {
-	item  int
-	group string
-	all   bool
+	item   int
+	group  string
+	all    bool
+	tick   string
+	isTick bool
 }
 
-// tickScope names what a tick toggle acts on: every shown entry or those of one group.
+// tickScope names what a tick toggle acts on: every shown entry, those of one group or those a tick row
+// matches.
 type tickScope struct {
 	all   bool
 	group string
+	row   string
+	isRow bool
+}
+
+// tickInfo is a tick row with what its Match and Exempt said of each entry, so neither runs while drawing.
+type tickInfo struct {
+	row    ListTickRow
+	match  []bool
+	exempt []bool
+	total  int
+}
+
+// tickCount is the state of the box of a scope: how many of its entries show and how many of those are
+// ticked, and the same for the shown entries the scope may tick, which a tick row's exempt ones are not.
+type tickCount struct {
+	shown, on, free, freeOn int
 }
 
 // tickMemory is the partial selection of a scope from before it was first toggled, for the shown entries
@@ -183,6 +217,8 @@ type listMark struct {
 	group   string
 	isGroup bool
 	all     bool
+	tick    string
+	isTick  bool
 	ok      bool
 }
 
@@ -195,15 +231,26 @@ type List struct {
 	text   Translator
 	titles []string
 
-	items   []ListItem
-	grouped bool
-	groups  map[string]ListGroup
-	order   map[string]int
-	folded  map[string]bool
-	ticked  map[ItemID]bool
-	memory  map[tickScope]tickMemory
+	items []ListItem
+	// search, widths and byGroup are prepared in SetItems, so drawing and filtering never run over every
+	// entry's cells: the lower-case text the filter reads, the natural width of each column with long and
+	// short labels, and the entries of each group.
+	search   []string
+	widths   [][2]int
+	byGroup  map[string][]int
+	grouped  bool
+	groups   map[string]ListGroup
+	order    map[string]int
+	folded   map[string]bool
+	ticked   map[ItemID]bool
+	memory   map[tickScope]tickMemory
+	tickRows []tickInfo
+	tickBy   map[string]int
 
-	rows      []listRow
+	rows []listRow
+	// hit says per entry whether it passes the filter, and boxes counts per scope, as rebuild found them.
+	hit       []bool
+	boxes     map[tickScope]tickCount
 	cursor    int
 	offset    int
 	page      int
@@ -211,6 +258,8 @@ type List struct {
 	searching bool
 	focused   bool
 	empty     string
+	notice    string
+	noteWarn  bool
 	drawn     listSel
 }
 
@@ -299,7 +348,8 @@ func NewList(spec ListSpec, keys *Keymap, text Translator) (*List, error) {
 	spec.Columns = slices.Clone(spec.Columns)
 	spec.Buttons = slices.Clone(spec.Buttons)
 	l := &List{spec: spec, keys: keys, text: text, folded: map[string]bool{},
-		ticked: map[ItemID]bool{}, memory: map[tickScope]tickMemory{}, page: 1, focused: true}
+		ticked: map[ItemID]bool{}, memory: map[tickScope]tickMemory{}, boxes: map[tickScope]tickCount{}, page: 1, focused: true}
+	l.index()
 	for _, c := range spec.Columns {
 		l.titles = append(l.titles, strings.ToUpper(Escape(text.Lookup(c.Title))))
 	}
@@ -311,7 +361,7 @@ func NewList(spec ListSpec, keys *Keymap, text Translator) (*List, error) {
 // whose cells do not match the columns, and then changes nothing.
 func (l *List) SetItems(items []ListItem) error {
 	var errs []error
-	seen := map[ItemID]bool{}
+	seen := make(map[ItemID]bool, len(items))
 	for i, it := range items {
 		switch {
 		case it.ID == "":
@@ -335,12 +385,14 @@ func (l *List) SetItems(items []ListItem) error {
 		it.Cells = slices.Clone(it.Cells)
 		l.items[i] = it
 	}
+	l.index()
 	for id := range l.ticked {
 		if !seen[id] {
 			delete(l.ticked, id)
 		}
 	}
 	clear(l.memory)
+	l.classify()
 	l.rebuild(prev)
 	if !prev.ok {
 		l.cursor = l.firstEntry()
@@ -386,6 +438,67 @@ func (l *List) SetGroups(groups []ListGroup) error {
 	return nil
 }
 
+// SetTickRows replaces the tick rows, which show in this order under the row of all and above the groups. The
+// mark and the partial selection of a row follow its key. It rejects a list without Ticks, an empty key, a key
+// with a control character, a key listed twice, an empty title and a nil Match, and then changes nothing.
+func (l *List) SetTickRows(rows []ListTickRow) error {
+	if !l.spec.Ticks {
+		return errors.New("tick rows need a list with tick boxes")
+	}
+	var errs []error
+	seen := map[string]bool{}
+	for i, r := range rows {
+		switch {
+		case r.Key == "":
+			errs = append(errs, fmt.Errorf("tick row %d has no key", i+1))
+		case strings.IndexFunc(r.Key, unicode.IsControl) >= 0:
+			errs = append(errs, fmt.Errorf("tick row %q holds a control character in its key", Escape(r.Key)))
+		case seen[r.Key]:
+			errs = append(errs, fmt.Errorf("tick row %q is listed twice", r.Key))
+		}
+		seen[r.Key] = true
+		if r.Title == "" {
+			errs = append(errs, fmt.Errorf("tick row %d has no title", i+1))
+		}
+		if r.Match == nil {
+			errs = append(errs, fmt.Errorf("tick row %d has no Match", i+1))
+		}
+	}
+	if err := errors.Join(errs...); err != nil {
+		return err
+	}
+	prev := l.mark()
+	l.tickRows = make([]tickInfo, len(rows))
+	l.tickBy = make(map[string]int, len(rows))
+	for i, r := range rows {
+		l.tickRows[i].row = r
+		l.tickBy[r.Key] = i
+	}
+	for k := range l.memory {
+		if _, ok := l.tickBy[k.row]; k.isRow && !ok {
+			delete(l.memory, k)
+		}
+	}
+	l.classify()
+	l.rebuild(prev)
+	return nil
+}
+
+// classify asks Match and Exempt once for every entry and tick row.
+func (l *List) classify() {
+	for i := range l.tickRows {
+		t := &l.tickRows[i]
+		t.match, t.exempt, t.total = make([]bool, len(l.items)), make([]bool, len(l.items)), 0
+		for j, it := range l.items {
+			if t.row.Match(it) {
+				t.match[j] = true
+				t.total++
+				t.exempt[j] = t.row.Exempt != nil && t.row.Exempt(it)
+			}
+		}
+	}
+}
+
 // Reset forgets the filter, the selection and the scroll position and marks the first entry; the fold state
 // and the ticks stay.
 func (l *List) Reset() {
@@ -406,6 +519,12 @@ func (l *List) SetFocused(on bool) { l.focused = on }
 // arguments and key placeholders included. The list escapes, dims and wraps it as it does ListSpec.Empty; an
 // empty text restores ListSpec.Empty. The sentence of a filter without match stays the list's own.
 func (l *List) SetEmpty(text string) { l.empty = text }
+
+// SetNote sets a note that stays above the column titles, under the search line, in View and Overlay
+// while it is set, whatever the list shows below it. text is the finished sentence of the application, as
+// with SetEmpty; control characters are escaped and it wraps to the width. With warn the note reads as a
+// warning, in the warning style behind the warning sign; otherwise it is dimmed. Empty text removes it.
+func (l *List) SetNote(text string, warn bool) { l.notice, l.noteWarn = text, warn }
 
 // SetGrouped shows the entries under their groups or as one flat list.
 func (l *List) SetGrouped(on bool) {
@@ -446,10 +565,16 @@ func (l *List) Input() InputFocus {
 	return InputNavigation
 }
 
-// Selected is the marked entry; a group row or an empty list mark none.
+// Selected is the marked entry; a group row, a tick row or an empty list mark none.
 func (l *List) Selected() (ItemID, bool) {
 	m := l.mark()
-	return m.id, m.ok && !m.isGroup && !m.all
+	return m.id, m.ok && !m.isGroup && !m.all && !m.isTick
+}
+
+// SelectedTickRow is the key of the marked tick row; ok is false on any other row and in an empty list.
+func (l *List) SelectedTickRow() (key string, ok bool) {
+	m := l.mark()
+	return m.tick, m.ok && m.isTick
 }
 
 // SelectedGroup is the key of the marked group row, empty for the group without key; ok is false on an entry,
@@ -489,6 +614,28 @@ func (l *List) Ticked() []ItemID {
 	return ids
 }
 
+// Shown is the IDs of the entries the filter lets through, in the order they show and without group rows or
+// the row of all. Entries of a folded group count, at the place of their group. The slice is a copy.
+func (l *List) Shown() []ItemID {
+	ids := []ItemID{}
+	if !l.grouped {
+		for i, it := range l.items {
+			if l.hit[i] {
+				ids = append(ids, it.ID)
+			}
+		}
+		return ids
+	}
+	for _, g := range l.groupOrder() {
+		for _, i := range l.byGroup[g] {
+			if l.hit[i] {
+				ids = append(ids, l.items[i].ID)
+			}
+		}
+	}
+	return ids
+}
+
 // SetTicked replaces the ticks. It rejects an ID that names no entry and then changes nothing. A partial
 // selection a group remembers is forgotten.
 func (l *List) SetTicked(ids []ItemID) error {
@@ -510,6 +657,7 @@ func (l *List) SetTicked(ids []ItemID) error {
 		l.ticked[id] = true
 	}
 	clear(l.memory)
+	l.recount()
 	return nil
 }
 
@@ -605,7 +753,7 @@ func (l *List) Act(id ActionID) (open ItemID, handled bool) {
 		if r.item >= 0 {
 			return l.items[r.item].ID, true
 		}
-		if l.folds() && !r.all {
+		if l.folds() && !r.all && !r.isTick {
 			l.setFolded(r.group, !l.folded[r.group])
 		}
 	case k.Search:
@@ -647,7 +795,7 @@ func (l *List) Act(id ActionID) (open ItemID, handled bool) {
 			return "", true
 		}
 		r := l.rows[l.cursor]
-		if r.all {
+		if r.all || r.isTick {
 			return "", true
 		}
 		group := r.group
@@ -711,6 +859,8 @@ func (l *List) Click(r MouseResult) (open ItemID, handled bool) {
 		target = listMark{group: group, isGroup: true, ok: true}
 	} else if item == allRef {
 		target = listMark{all: true, ok: true}
+	} else if key, ok := strings.CutPrefix(item, tickRowRef); ok {
+		target = listMark{tick: key, isTick: true, ok: true}
 	}
 	marked := l.mark()
 	if !l.reselect(target) {
@@ -726,7 +876,7 @@ func (l *List) Click(r MouseResult) (open ItemID, handled bool) {
 		l.toggleRow()
 	case target.isGroup && l.folds():
 		l.setFolded(target.group, !l.folded[target.group])
-	case !target.isGroup && !target.all && l.focused && (l.spec.ClickOpens || marked == target):
+	case !target.isGroup && !target.all && !target.isTick && l.focused && (l.spec.ClickOpens || marked == target):
 		return target.id, true
 	}
 	return "", true
@@ -759,6 +909,7 @@ func (l *List) view(styles Styles, width, height int, modal bool) (string, []Tar
 		}
 		lines = append(lines, l.searchField(width, styles))
 	}
+	lines = append(lines, l.fixedNote(width, styles)...)
 	indent, allAt := "", ""
 	if l.grouped {
 		indent, allAt = groupIndent, allIndent
@@ -797,9 +948,13 @@ func (l *List) view(styles Styles, width, height int, modal bool) (string, []Tar
 			box := l.box(tickScope{all: true}, styles)
 			ref, text, boxAt = allRef, allAt+box+" "+l.allRow(styles), len(allAt)
 			d.x, d.chars = 2+len(allAt)+len(box)+1, valueChars(Escape(l.text.Lookup(TextListAll)), 0)
-		case r.item < 0:
+		case r.item < 0 && !r.isTick:
 			ref, text, boxAt = groupRef+r.group, l.groupLine(r.group, layout, styles), lipgloss.Width(styles.Glyph(GlyphExpanded))+1
 			d.x, d.chars = l.groupChars(r.group, layout, styles)
+		case r.isTick:
+			box := l.box(tickScope{row: r.tick, isRow: true}, styles)
+			ref, text, boxAt = tickRowRef+r.tick, allAt+box+" "+l.tickRow(r.tick, styles), len(allAt)
+			d.x, d.chars = 2+len(allAt)+lipgloss.Width(box)+1, valueChars(Escape(l.tickRows[l.tickBy[r.tick]].row.Title), 0)
 		default:
 			it := l.items[r.item]
 			ref, text, boxAt = string(it.ID), indent, len(indent)
@@ -877,26 +1032,54 @@ func (l *List) note(text string, width int, styles Styles) []string {
 	return lines
 }
 
+// fixedNote draws the note of SetNote in width cells; the lines after the first of a warning stand under
+// its text, not under the sign, like the question of a dialog.
+func (l *List) fixedNote(width int, styles Styles) []string {
+	if l.notice == "" {
+		return nil
+	}
+	if !l.noteWarn {
+		return l.note(l.notice, width, styles)
+	}
+	lead := styles.Render(StyleWarn, styles.Glyph(GlyphWarning)) + " "
+	lw := 2 + lipgloss.Width(lead)
+	lines := Wrap(Escape(l.notice), max(width-lw, 1))
+	for i, line := range lines {
+		prefix := strings.Repeat(" ", lw)
+		if i == 0 {
+			prefix = "  " + lead
+		}
+		lines[i] = prefix + styles.Render(StyleWarn, line)
+	}
+	return lines
+}
+
 // allRow is how the row of all reads: the title in the accent colour and, dimmed, the number of shown entries.
 func (l *List) allRow(styles Styles) string {
-	n := len(l.members(tickScope{all: true}))
+	n := l.boxes[tickScope{all: true}].shown
 	return styles.Render(StyleActive, Escape(l.text.Lookup(TextListAll))) + styles.Render(StyleHint, fmt.Sprintf(" (%d)", n))
+}
+
+// tickRow is how a tick row reads: the title in the accent colour and, dimmed, the number of entries Match
+// accepts, whatever the filter.
+func (l *List) tickRow(key string, styles Styles) string {
+	t := l.tickRows[l.tickBy[key]]
+	return styles.Render(StyleActive, Escape(t.row.Title)) + styles.Render(StyleHint, fmt.Sprintf(" (%d)", t.total))
+}
+
+// exempt reports whether the scope s never ticks the entry i.
+func (l *List) exempt(s tickScope, i int) bool {
+	return s.isRow && l.tickRows[l.tickBy[s.row]].exempt[i]
 }
 
 // box is the box of a scope: all shown entries ticked, some, or none. The characters alone tell the three
 // apart.
 func (l *List) box(s tickScope, styles Styles) string {
-	idx := l.members(s)
-	on := 0
-	for _, i := range idx {
-		if l.ticked[l.items[i].ID] {
-			on++
-		}
-	}
+	c := l.boxes[s]
 	switch {
-	case on == 0:
+	case c.on == 0:
 		return "[ ]"
-	case on == len(idx):
+	case c.freeOn == c.free:
 		return styles.TickBox(true)
 	}
 	return styles.Render(StyleActive, "[-]")
@@ -950,15 +1133,7 @@ func (l *List) groupTitle(group string) string {
 }
 
 // count is the number of entries of a group, whatever the filter.
-func (l *List) count(group string) int {
-	n := 0
-	for _, it := range l.items {
-		if it.Group == group {
-			n++
-		}
-	}
-	return n
-}
+func (l *List) count(group string) int { return len(l.byGroup[group]) }
 
 func (l *List) folds() bool { return l.grouped && len(l.query.runes) == 0 }
 
@@ -984,6 +1159,8 @@ func (l *List) mark() listMark {
 	switch {
 	case r.all:
 		return listMark{all: true, ok: true}
+	case r.isTick:
+		return listMark{tick: r.tick, isTick: true, ok: true}
 	case r.item < 0:
 		return listMark{group: r.group, isGroup: true, ok: true}
 	}
@@ -996,7 +1173,8 @@ func (l *List) reselect(m listMark) bool {
 		return false
 	}
 	for i, r := range l.rows {
-		if (m.all && r.all) || (m.isGroup && r.item < 0 && !r.all && r.group == m.group) ||
+		if (m.all && r.all) || (m.isTick && r.isTick && r.tick == m.tick) ||
+			(m.isGroup && r.item < 0 && !r.all && !r.isTick && r.group == m.group) ||
 			(!m.isGroup && !m.all && r.item >= 0 && l.items[r.item].ID == m.id) {
 			l.cursor = i
 			return true
@@ -1020,68 +1198,39 @@ func (l *List) firstEntry() int {
 func (l *List) rebuild(prev listMark) {
 	l.drawn.sel = textRange{}
 	query := l.queryKey()
-	matches := l.matcher()
+	l.hit = slices.Grow(l.hit[:0], len(l.items))[:len(l.items)]
+	for i := range l.items {
+		l.hit[i] = query == "" || strings.Contains(l.search[i], query)
+	}
+	l.recount()
 	l.rows = l.rows[:0]
-	if l.spec.Ticks && l.spec.AllRow && len(l.members(tickScope{all: true})) > 0 {
+	if l.spec.Ticks && l.spec.AllRow && l.boxes[tickScope{all: true}].shown > 0 {
 		l.rows = append(l.rows, listRow{item: -1, all: true})
 	}
+	if l.spec.Ticks {
+		for _, t := range l.tickRows {
+			if l.boxes[tickScope{row: t.row.Key, isRow: true}].shown > 0 {
+				l.rows = append(l.rows, listRow{item: -1, tick: t.row.Key, isTick: true})
+			}
+		}
+	}
 	if !l.grouped {
-		for i, it := range l.items {
-			if matches(it) {
+		for i := range l.items {
+			if l.hit[i] {
 				l.rows = append(l.rows, listRow{item: i})
 			}
 		}
 	} else {
-		members := map[string][]int{}
-		var groups []string
-		for i, it := range l.items {
-			if _, ok := members[it.Group]; !ok {
-				groups = append(groups, it.Group)
-			}
-			members[it.Group] = append(members[it.Group], i)
-		}
-		for k, g := range l.groups {
-			if _, ok := members[k]; !ok && g.Keep {
-				groups = append(groups, k)
-			}
-		}
-		// Groups go in alphabetical order of their shown title, the group without key last; an outline keeps
-		// the order of SetGroups first, the groups it does not describe after them.
-		slices.SortFunc(groups, func(a, b string) int {
-			if l.spec.Outline {
-				ia, oka := l.order[a]
-				ib, okb := l.order[b]
-				switch {
-				case oka && okb && ia != ib:
-					return ia - ib
-				case oka != okb:
-					if oka {
-						return -1
-					}
-					return 1
+		for _, g := range l.groupOrder() {
+			at := len(l.rows)
+			l.rows = append(l.rows, listRow{item: -1, group: g})
+			for _, i := range l.byGroup[g] {
+				if l.hit[i] && (query != "" || !l.folded[g]) {
+					l.rows = append(l.rows, listRow{item: i})
 				}
 			}
-			if (a == "") != (b == "") {
-				if a == "" {
-					return 1
-				}
-				return -1
-			}
-			if c := strings.Compare(l.groupTitle(a), l.groupTitle(b)); c != 0 {
-				return c
-			}
-			return strings.Compare(a, b)
-		})
-		for _, g := range groups {
-			var hits []listRow
-			for _, i := range members[g] {
-				if (query == "" && !l.folded[g]) || (query != "" && matches(l.items[i])) {
-					hits = append(hits, listRow{item: i})
-				}
-			}
-			if query == "" || len(hits) > 0 {
-				l.rows = append(l.rows, listRow{item: -1, group: g})
-				l.rows = append(l.rows, hits...)
+			if query != "" && len(l.rows) == at+1 {
+				l.rows = l.rows[:at]
 			}
 		}
 	}
@@ -1090,28 +1239,207 @@ func (l *List) rebuild(prev listMark) {
 	}
 }
 
+// groupOrder is the groups of a grouped list in the order they show.
+func (l *List) groupOrder() []string {
+	groups := make([]string, 0, len(l.byGroup))
+	for g := range l.byGroup {
+		groups = append(groups, g)
+	}
+	for k, g := range l.groups {
+		if _, ok := l.byGroup[k]; !ok && g.Keep {
+			groups = append(groups, k)
+		}
+	}
+	// Groups go in alphabetical order of their shown title, the group without key last; an outline keeps
+	// the order of SetGroups first, the groups it does not describe after them.
+	slices.SortFunc(groups, func(a, b string) int {
+		if l.spec.Outline {
+			ia, oka := l.order[a]
+			ib, okb := l.order[b]
+			switch {
+			case oka && okb && ia != ib:
+				return ia - ib
+			case oka != okb:
+				if oka {
+					return -1
+				}
+				return 1
+			}
+		}
+		if (a == "") != (b == "") {
+			if a == "" {
+				return 1
+			}
+			return -1
+		}
+		if c := strings.Compare(l.groupTitle(a), l.groupTitle(b)); c != 0 {
+			return c
+		}
+		return strings.Compare(a, b)
+	})
+	return groups
+}
+
 // queryKey is the filter as the entries are matched against it.
 func (l *List) queryKey() string { return strings.ToLower(strings.TrimSpace(l.query.String())) }
 
-// matcher reports whether an entry passes the filter.
-func (l *List) matcher() func(ListItem) bool {
-	query := l.queryKey()
-	return func(it ListItem) bool {
-		if query == "" {
-			return true
+// index prepares search, widths and byGroup from the entries.
+func (l *List) index() {
+	cols := l.spec.Columns
+	l.widths = make([][2]int, len(cols))
+	l.byGroup = map[string][]int{}
+	// One buffer holds the search text of every entry, which saves an allocation per entry.
+	var b strings.Builder
+	size := 0
+	for _, it := range l.items {
+		for _, v := range it.Cells {
+			size += len(v) + 1
 		}
-		text := strings.ToLower(strings.Join(it.Cells, " ") + " " + it.SearchText)
-		return strings.Contains(text, query)
+		size += len(it.SearchText)
+	}
+	b.Grow(size)
+	ends := make([]int, len(l.items))
+	for i, it := range l.items {
+		for _, v := range it.Cells {
+			writeLower(&b, v)
+			b.WriteByte(' ')
+		}
+		writeLower(&b, it.SearchText)
+		ends[i] = b.Len()
+		l.byGroup[it.Group] = append(l.byGroup[it.Group], i)
+		for c, v := range it.Cells {
+			long, short := cellWidth(v), 0
+			if s, ok := cols[c].Short[v]; ok {
+				short = cellWidth(s)
+			} else {
+				short = long
+			}
+			l.widths[c] = [2]int{max(l.widths[c][0], long), max(l.widths[c][1], short)}
+		}
+	}
+	all := b.String()
+	l.search = make([]string, len(l.items))
+	for i, end := range ends {
+		start := 0
+		if i > 0 {
+			start = ends[i-1]
+		}
+		l.search[i] = all[start:end]
+	}
+}
+
+// writeLower writes strings.ToLower(v) to b, without an allocation for ASCII.
+func writeLower(b *strings.Builder, v string) {
+	upper := false
+	for i := 0; i < len(v); i++ {
+		if v[i] >= utf8.RuneSelf {
+			b.WriteString(strings.ToLower(v))
+			return
+		}
+		upper = upper || 'A' <= v[i] && v[i] <= 'Z'
+	}
+	if !upper {
+		b.WriteString(v)
+		return
+	}
+	for i := 0; i < len(v); i++ {
+		c := v[i]
+		if 'A' <= c && c <= 'Z' {
+			c += 'a' - 'A'
+		}
+		b.WriteByte(c)
+	}
+}
+
+// cellWidth is the width of v as cell shows it; printable ASCII, the common case, needs no escaping.
+func cellWidth(v string) int {
+	for i := 0; i < len(v); i++ {
+		if v[i] < 0x20 || v[i] > 0x7e {
+			return lipgloss.Width(Escape(v))
+		}
+	}
+	return len(v)
+}
+
+// in reports whether entry i belongs to scope s, shown or not.
+func (l *List) in(s tickScope, i int) bool {
+	switch {
+	case s.all:
+		return true
+	case s.isRow:
+		return l.tickRows[l.tickBy[s.row]].match[i]
+	}
+	return l.items[i].Group == s.group
+}
+
+// recount sets boxes from hit and the ticks, for every scope in names. It goes group by group, which saves a
+// lookup per entry.
+func (l *List) recount() {
+	clear(l.boxes)
+	var all tickCount
+	for g, idx := range l.byGroup {
+		var c tickCount
+		for _, i := range idx {
+			if l.hit[i] {
+				c.shown++
+				if l.ticked[l.items[i].ID] {
+					c.on++
+				}
+			}
+		}
+		c.free, c.freeOn = c.shown, c.on
+		l.boxes[tickScope{group: g}] = c
+		all.shown, all.on = all.shown+c.shown, all.on+c.on
+	}
+	all.free, all.freeOn = all.shown, all.on
+	l.boxes[tickScope{all: true}] = all
+	for _, t := range l.tickRows {
+		var c tickCount
+		for i, m := range t.match {
+			if !m || !l.hit[i] {
+				continue
+			}
+			on := l.ticked[l.items[i].ID]
+			c.shown++
+			if on {
+				c.on++
+			}
+			if !t.exempt[i] {
+				c.free++
+				if on {
+					c.freeOn++
+				}
+			}
+		}
+		l.boxes[tickScope{row: t.row.Key, isRow: true}] = c
+	}
+}
+
+// tally adds on to the ticked entries of every scope that holds the shown entry i.
+func (l *List) tally(i, on int) {
+	add := func(s tickScope, free bool) {
+		c := l.boxes[s]
+		c.on += on
+		if free {
+			c.freeOn += on
+		}
+		l.boxes[s] = c
+	}
+	add(tickScope{all: true}, true)
+	add(tickScope{group: l.items[i].Group}, true)
+	for _, t := range l.tickRows {
+		if t.match[i] {
+			add(tickScope{row: t.row.Key, isRow: true}, !t.exempt[i])
+		}
 	}
 }
 
 // members are the indexes of the entries a scope covers: those that pass the filter, whether their group is
 // folded or not, so ticking acts on what the filter shows and never on what it hides.
 func (l *List) members(s tickScope) []int {
-	matches := l.matcher()
 	var idx []int
-	for i, it := range l.items {
-		if (s.all || it.Group == s.group) && matches(it) {
+	for i := range l.items {
+		if l.hit[i] && l.in(s, i) {
 			idx = append(idx, i)
 		}
 	}
@@ -1126,69 +1454,88 @@ func (l *List) toggleRow() {
 	switch r := l.rows[l.cursor]; {
 	case r.all:
 		l.toggleScope(tickScope{all: true})
+	case r.isTick:
+		l.toggleScope(tickScope{row: r.tick, isRow: true})
 	case r.item < 0:
 		l.toggleScope(tickScope{group: r.group})
 	default:
 		it := l.items[r.item]
 		l.ticked[it.ID] = !l.ticked[it.ID]
-		if !l.ticked[it.ID] {
+		if l.ticked[it.ID] {
+			l.tally(r.item, 1)
+		} else {
 			delete(l.ticked, it.ID)
+			l.tally(r.item, -1)
 		}
-		// A single toggle makes the remembered partial selections of its group and of all stale.
-		delete(l.memory, tickScope{group: it.Group})
-		delete(l.memory, tickScope{all: true})
+		// A single toggle makes the remembered partial selections of every scope that holds the entry stale.
+		for k := range l.memory {
+			if k.all || !k.isRow && k.group == it.Group || k.isRow && l.tickRows[l.tickBy[k.row]].match[r.item] {
+				delete(l.memory, k)
+			}
+		}
 	}
 }
 
 // toggleScope steps the shown entries of s through partial selection, all, none and back to the partial
 // selection, which it remembers at the first step. Without a partial selection it alternates between all and
-// none. The memory belongs to the filter it was made under.
+// none. The memory belongs to the filter it was made under. A tick row ticks only the entries it does not
+// exempt, but unticking clears them all; the partial selection it restores never holds an exempt entry.
 func (l *List) toggleScope(s tickScope) {
 	idx := l.members(s)
 	if len(idx) == 0 {
 		return
 	}
-	var on []ItemID
+	var on, free []ItemID
+	off := 0
 	for _, i := range idx {
-		if l.ticked[l.items[i].ID] {
-			on = append(on, l.items[i].ID)
+		id := l.items[i].ID
+		if l.ticked[id] {
+			on = append(on, id)
+		} else if !l.exempt(s, i) {
+			off++
+		}
+		if !l.exempt(s, i) {
+			free = append(free, id)
 		}
 	}
-	set := func(ids ...ItemID) {
-		for _, i := range idx {
-			delete(l.ticked, l.items[i].ID)
-		}
+	tick := func(ids ...ItemID) {
 		for _, id := range ids {
 			l.ticked[id] = true
 		}
 	}
+	clearAll := func() {
+		for _, i := range idx {
+			delete(l.ticked, l.items[i].ID)
+		}
+	}
 	mem, remembered := l.memory[s]
 	remembered = remembered && mem.query == l.queryKey()
-	all := make([]ItemID, len(idx))
-	for j, i := range idx {
-		all[j] = l.items[i].ID
-	}
-	switch {
-	case len(on) > 0 && len(on) < len(idx):
-		l.memory[s] = tickMemory{ids: on, query: l.queryKey()}
-		set(all...)
-	case len(on) == len(idx):
-		set()
-	case remembered:
-		set(mem.ids...)
-	default:
-		set(all...)
-	}
-	// Scopes overlap only between all and a group: the memory of the other side is stale now.
-	if s.all {
-		for k := range l.memory {
-			if k != s {
-				delete(l.memory, k)
+	var restore []ItemID
+	if remembered {
+		for _, id := range mem.ids {
+			if slices.Contains(free, id) {
+				restore = append(restore, id)
 			}
 		}
-	} else {
-		delete(l.memory, tickScope{all: true})
 	}
+	switch {
+	case len(on) > 0 && off > 0:
+		l.memory[s] = tickMemory{ids: on, query: l.queryKey()}
+		tick(free...)
+	case len(on) > 0:
+		clearAll()
+	case len(restore) > 0:
+		tick(restore...)
+	default:
+		tick(free...)
+	}
+	// A group overlaps no other group; every other pair of scopes may share entries, so their memory is stale.
+	for k := range l.memory {
+		if k != s && (s.all || k.all || s.isRow || k.isRow) {
+			delete(l.memory, k)
+		}
+	}
+	l.recount()
 }
 
 // window is the range of rows that fits into room rows. The scroll position stays while it shows the
@@ -1243,8 +1590,10 @@ func (l *List) layout(width int, styles Styles) tableLayout {
 	described := l.describedGroups()
 	natural := func(i int) int {
 		w := title(i)
-		for _, it := range l.items {
-			w = max(w, lipgloss.Width(l.cell(it.Cells, i, lay.short[i])))
+		if lay.short[i] {
+			w = max(w, l.widths[i][1])
+		} else {
+			w = max(w, l.widths[i][0])
 		}
 		for _, g := range described {
 			if i == 0 {
@@ -1335,13 +1684,9 @@ func (l *List) describedGroups() []ListGroup {
 	if !l.grouped || len(l.groups) == 0 {
 		return nil
 	}
-	has := map[string]bool{}
-	for _, it := range l.items {
-		has[it.Group] = true
-	}
 	var out []ListGroup
 	for k, g := range l.groups {
-		if has[k] || g.Keep {
+		if _, has := l.byGroup[k]; has || g.Keep {
 			out = append(out, g)
 		}
 	}
@@ -1463,26 +1808,27 @@ func (l *List) buttonRows(width int, styles Styles) ([]string, []Target) {
 	return flowButtons(cells, width)
 }
 
-// wanted is the height the list asks for in the modal: the search line, the titles with their rule and every row without a
-// filter, so the frame keeps its size while a filter is typed.
-func (l *List) wanted() int {
+// wanted is the height the list asks for in the modal: the search line, the note, the titles with their rule
+// and every row without a filter, so the frame keeps its size while a filter is typed.
+func (l *List) wanted(inner int, styles Styles) int {
 	rows := len(l.items)
 	if l.grouped {
-		groups := map[string]bool{}
-		for _, it := range l.items {
-			groups[it.Group] = true
-		}
+		rows += len(l.byGroup)
 		for k, g := range l.groups {
-			if g.Keep {
-				groups[k] = true
+			if _, has := l.byGroup[k]; !has && g.Keep {
+				rows++
 			}
 		}
-		rows += len(groups)
 	}
 	if l.spec.AllRow {
 		rows++
 	}
-	return 1 + 2 + max(rows, 2)
+	for _, t := range l.tickRows {
+		if t.total > 0 {
+			rows++
+		}
+	}
+	return 1 + len(l.fixedNote(inner, styles)) + 2 + max(rows, 2)
 }
 
 // Overlay draws the list with styles over screen, the drawn screen of width by height cells, in the way of
@@ -1490,8 +1836,8 @@ func (l *List) wanted() int {
 // line, the list, the buttons and the key line of Hints that no button stands for, centred in room, the part
 // of the screen it may cover. The list scrolls in the height that is left and keeps the marked row in view.
 // The targets are the modal's alone, so the screen behind it takes no click. ok is false where room is too
-// small for the search line, the titles, one row, the buttons and the key line; the application then draws
-// View in the workspace and Hints in the footer.
+// small for the search line, the note, the titles, one row, the buttons and the key line; the application
+// then draws View in the workspace and Hints in the footer.
 func (l *List) Overlay(styles Styles, screen string, width, height int, room Rect) (view string, targets []Target, ok bool) {
 	inner := min(dialogMaxInner, room.Width-8)
 	if inner < dialogMinInner {
@@ -1508,8 +1854,9 @@ func (l *List) Overlay(styles Styles, screen string, width, height int, room Rec
 		fixed += len(rows) + 1
 	}
 	avail := room.Height - 2 - fixed
-	listH := min(l.wanted(), avail)
-	if listH < 4 {
+	noteH := len(l.fixedNote(inner, styles))
+	listH := min(l.wanted(inner, styles), avail)
+	if listH < 4+noteH {
 		return "", nil, false
 	}
 	body, ts := l.view(styles, inner, listH, true)

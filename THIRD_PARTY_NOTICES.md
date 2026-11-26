@@ -271,3 +271,12 @@ The `web` package links a WebSocket library. It keeps its own license; the licen
 | Component | Copyright | License | Role |
 | --- | --- | --- | --- |
 | [`github.com/coder/websocket`](https://pkg.go.dev/github.com/coder/websocket) | Copyright (c) 2025 Coder | ISC | WebSocket handshake and framing (RFC 6455) |
+
+## Directory walk
+
+The `projectpath` package links a parallel directory walker. It keeps its own license; the license text ships
+with the module.
+
+| Component | Copyright | License | Role |
+| --- | --- | --- | --- |
+| [`github.com/charlievieth/fastwalk`](https://pkg.go.dev/github.com/charlievieth/fastwalk) | Copyright (c) 2022 Charlie Vieth | MIT | Parallel directory walk of a search |

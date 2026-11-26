@@ -7,6 +7,7 @@ import (
 
 	"github.com/castrowithcee/qatlas-kit/helptopics"
 	"github.com/castrowithcee/qatlas-kit/tui"
+	"github.com/castrowithcee/qatlas-kit/uiprefs"
 )
 
 // modalKind says which part is open; the zero value is none.
@@ -111,18 +112,16 @@ func (m *model) openNotice() {
 }
 
 func (m *model) openHelp() {
-	topics := []helptopics.Topic{
-		{Name: m.text.Lookup(textHelpNameStart), Short: m.text.Lookup(textHelpNameStart), Text: m.text.Lookup(textHelpStart)},
-		{Name: m.text.Lookup(textHelpNameKeys), Short: m.text.Lookup(textHelpNameKeys), Text: m.text.Lookup(textHelpKeys)},
-		{Name: m.text.Lookup(textHelpNameMouse), Short: m.text.Lookup(textHelpNameMouse), Text: m.text.Lookup(textHelpMouse)},
-	}
 	h, err := tui.NewHelp(tui.HelpSpec{
-		Topics: topics, Screen: m.footerHints(), Global: []tui.ActionID{actQuit, actHelp, actCommands, actInfo},
+		Pages: helpPages(), Lang: uiprefs.Language(m.prefs.Language),
+		Screen: m.footerHints(), Global: []tui.ActionID{actQuit, actHelp, actCommands, actInfo},
 		Keys: tui.HelpKeys{Left: actLeft, Right: actRight, Next: actZoneNext, Prev: actZonePrev, Up: actUp, Down: actDown,
 			PageUp: actPageUp, PageDown: actPageDown, First: actFirst, Last: actLast, Back: actBack, Help: actHelp},
 		Note: textHelpNote, CloseOutside: true,
 	}, m.keys, m.text)
 	if err == nil {
+		// The tab is the most specific screen, then its area.
+		h.OpenScreen(string(m.area)+"/"+string(m.tab()), string(m.area))
 		m.show(h, nil, kindHelp, tui.InputNavigation)
 		return
 	}
