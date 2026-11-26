@@ -211,6 +211,7 @@ type List struct {
 	searching bool
 	focused   bool
 	empty     string
+	drawn     listSel
 }
 
 // NewList checks spec and returns an empty list. It rejects a list without columns, a column without title,
@@ -785,15 +786,20 @@ func (l *List) view(styles Styles, width, height int, modal bool) (string, []Tar
 	}
 	start, end := l.window(height - len(lines))
 	l.page = max(end-start, 1)
+	first := len(lines)
+	l.drawn = listSel{start: start, sel: l.drawn.sel}
 	for i := start; i < end; i++ {
 		r := l.rows[i]
 		ref, text, boxAt := "", "", 0
+		var d listDrawn
 		switch {
 		case r.all:
 			box := l.box(tickScope{all: true}, styles)
 			ref, text, boxAt = allRef, allAt+box+" "+l.allRow(styles), len(allAt)
+			d.x, d.chars = 2+len(allAt)+len(box)+1, valueChars(Escape(l.text.Lookup(TextListAll)), 0)
 		case r.item < 0:
 			ref, text, boxAt = groupRef+r.group, l.groupLine(r.group, layout, styles), lipgloss.Width(styles.Glyph(GlyphExpanded))+1
+			d.x, d.chars = l.groupChars(r.group, layout, styles)
 		default:
 			it := l.items[r.item]
 			ref, text, boxAt = string(it.ID), indent, len(indent)
@@ -801,7 +807,15 @@ func (l *List) view(styles Styles, width, height int, modal bool) (string, []Tar
 				text += styles.TickBox(l.ticked[it.ID]) + " "
 			}
 			text += l.line(it, layout, styles)
+			d.x, d.chars = 2+len(indent)+tick, l.rowChars(it.Cells, 0, 0, layout, styles)
 		}
+		if l.spec.Ticks {
+			d.boxX, d.boxW = 2+boxAt, 3
+		}
+		a, b := l.drawn.sel.cells(uint64(i), len(d.chars))
+		text = d.highlight(text, a, b, i == l.cursor && (modal || l.focused), styles)
+		l.drawn.rows = append(l.drawn.rows, d)
+		l.drawn.layout = append(l.drawn.layout, d.selRow(uint64(i)))
 		targets = append(targets, Target{Rect: Rect{Y: len(lines), Width: width, Height: 1}, Zone: ZoneRows,
 			Action: l.spec.Keys.Enter, Item: ref})
 		if l.spec.Ticks {
@@ -818,6 +832,9 @@ func (l *List) view(styles Styles, width, height int, modal bool) (string, []Tar
 		} else {
 			out[i] = strings.Repeat(" ", width)
 		}
+	}
+	if end > start {
+		targets = append(targets, Target{Rect: Rect{Y: first, Width: width, Height: end - start}, Zone: ZoneRows, selection: l})
 	}
 	kept := targets[:0]
 	for _, t := range targets {
@@ -888,25 +905,32 @@ func (l *List) box(s tickScope, styles Styles) string {
 // groupRow is how a group row reads: the fold glyph, the tick box where the list has them, the category mark,
 // the title in the accent colour and, dimmed, the number of its entries.
 func (l *List) groupRow(group string, styles Styles) string {
+	prefix, title, suffix := l.groupParts(group, styles)
+	return prefix + title + suffix
+}
+
+// groupParts are the parts of a group row: what stands before the title, the title and what follows it.
+func (l *List) groupParts(group string, styles Styles) (prefix, title, suffix string) {
 	glyph := GlyphExpanded
 	count := l.count(group)
 	if l.folded[group] && len(l.query.runes) == 0 && count > 0 {
 		glyph = GlyphCollapsed
 	}
-	title := l.groupTitle(group)
+	name := l.groupTitle(group)
+	title = styles.Render(StyleActive, Escape(name))
 	if l.spec.Outline {
 		lead := " "
 		if count > 0 {
 			lead = styles.Glyph(glyph)
 		}
-		return styles.Render(StyleHint, lead) + " " + styles.Render(StyleActive, Escape(title))
+		return styles.Render(StyleHint, lead) + " ", title, ""
 	}
 	box := ""
 	if l.spec.Ticks {
 		box = l.box(tickScope{group: group}, styles) + " "
 	}
-	return styles.Render(StyleHint, styles.Glyph(glyph)) + " " + box + styles.CategoryMark(group) + " " +
-		styles.Render(StyleActive, Escape(title)) + styles.Render(StyleHint, fmt.Sprintf(" (%d)", count))
+	return styles.Render(StyleHint, styles.Glyph(glyph)) + " " + box + styles.CategoryMark(group) + " ", title,
+		styles.Render(StyleHint, fmt.Sprintf(" (%d)", count))
 }
 
 // groupTitle is what a group row shows as its title: the described title, else the key, and for the group
@@ -994,6 +1018,7 @@ func (l *List) firstEntry() int {
 // shows every group row and the entries of the open groups; with one, every entry that matches under its
 // group, folded or not, and the group rows of those entries. The fold state itself stays.
 func (l *List) rebuild(prev listMark) {
+	l.drawn.sel = textRange{}
 	query := l.queryKey()
 	matches := l.matcher()
 	l.rows = l.rows[:0]
@@ -1344,6 +1369,11 @@ func (l *List) groupLine(group string, lay tableLayout, styles Styles) string {
 	return strings.TrimRight(head+columnGap+strings.Join(rest, columnGap), " ")
 }
 
+// shown is what column i shows of a row's cells: the escaped value cut to the width of the column.
+func (l *List) shown(cells []string, i int, lay tableLayout, styles Styles) string {
+	return styles.Truncate(l.cell(cells, i, lay.short[i]), lay.widths[i])
+}
+
 // columns draws the cells of one row into the shown columns from column from on.
 func (l *List) columns(cells []string, from int, lay tableLayout, styles Styles) []string {
 	var parts []string
@@ -1353,7 +1383,7 @@ func (l *List) columns(cells []string, from int, lay tableLayout, styles Styles)
 		if w <= 0 {
 			continue
 		}
-		text := styles.Truncate(l.cell(cells, i, lay.short[i]), w)
+		text := l.shown(cells, i, lay, styles)
 		style := StyleText
 		switch {
 		case c.Tone != nil:

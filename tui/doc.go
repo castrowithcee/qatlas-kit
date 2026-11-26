@@ -149,7 +149,11 @@
 // clipboard and reports. A click without motion selects nothing and does what it did, and the next click or key
 // ends the selection. A press starts one only where that text is the topmost target, so a button, an overlay or
 // a part drawn later keeps its click; the selection stays within the rows shown and does not scroll. TextView
-// and LogView support it. The text holds content only: line numbers, the mark, time and source columns, the
+// and LogView support it, and so does List, with the file browser and the path overlays that draw one: a press on a
+// row, not on its tick box, starts a selection only when the pointer then moves, and a click on a row marks it as
+// before. In a list the text is the cell values as drawn, escaped and cut as shown, with a tab between cells and a
+// line break between rows; the header, the rule, tick boxes, fold glyphs, the indent and the counts never come
+// with it, and a group row gives its title and its cells. The text holds content only: line numbers, the mark, time and source columns, the
 // mark of a cut line, the ellipsis and the fill right of a line never come with it. A line break ends each
 // line of the content, never a row where the view wraps, and a drag right of the end of a line or onto its
 // ellipsis takes the line to its end. It is the text as drawn: a control character as its escape, a tab of a

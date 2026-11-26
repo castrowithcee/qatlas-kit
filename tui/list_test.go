@@ -801,6 +801,9 @@ func TestEveryControlHasATarget(t *testing.T) {
 	}
 	m := NewMouseMap(targets, true)
 	for _, tg := range targets[1:] {
+		if tg.selection != nil {
+			continue
+		}
 		if got := m.Handle(click(tg.Rect.X, tg.Rect.Y)); got.Action != tg.Action || got.Item != tg.Item {
 			t.Errorf("a click at %d,%d reports %+v, want %+v", tg.Rect.X, tg.Rect.Y, got, tg)
 		}
