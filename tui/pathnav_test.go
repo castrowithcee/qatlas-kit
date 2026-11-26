@@ -237,3 +237,128 @@ func TestPathNavMasksNames(t *testing.T) {
 		p.Close()
 	}
 }
+
+func keyedAreas() []Area {
+	a := sampleAreas()
+	a[0].Key = "o"
+	for i := range a {
+		if a[i].ID == "settings" {
+			a[i].Key = "s"
+			a[i].Tabs[0].Key = "d" // a standard letter is fine
+			a[i].Tabs[1].Key = "7"
+		}
+	}
+	return a
+}
+
+func TestPathNavEntryKeysChoose(t *testing.T) {
+	spec := pathSpec(80)
+	spec.Areas = keyedAreas()
+	p := samplePathNav(t, i18n.English)
+	if err := p.CheckAreas(spec.Areas); err != nil {
+		t.Fatal(err)
+	}
+	// A tab, in the overview and in the choice, and an area without tabs.
+	p.OpenOverview(spec)
+	if c, h := p.Update(press("7")); c != (PathChoice{"settings", "advanced"}) || !h || p.Open() {
+		t.Errorf("tab key chose %+v %v open %v", c, h, p.Open())
+	}
+	p.OpenChoice(spec)
+	if c, _ := p.Update(press("d")); c != (PathChoice{"settings", "general"}) || p.Open() {
+		t.Errorf("choice key chose %+v", c)
+	}
+	p.OpenOverview(spec)
+	if c, _ := p.Update(press("o")); c != (PathChoice{Area: "overview"}) || p.Open() {
+		t.Errorf("area key chose %+v", c)
+	}
+	// An area with tabs folds, and the keys of its tabs then do nothing; a second press unfolds.
+	p.OpenOverview(spec)
+	if c, h := p.Update(press("s")); c != (PathChoice{}) || !h || !p.Open() {
+		t.Fatalf("area key chose %+v %v", c, h)
+	}
+	if c, _ := p.Update(press("7")); c != (PathChoice{}) || !p.Open() {
+		t.Errorf("a key of a folded tab chose %+v", c)
+	}
+	p.Update(press("s"))
+	if c, _ := p.Update(press("7")); c != (PathChoice{"settings", "advanced"}) {
+		t.Errorf("after unfolding chose %+v", c)
+	}
+	// The key shows at the entry; modified keys and keys of nothing do nothing.
+	p.OpenOverview(spec)
+	if v, _ := p.View(looks(t)["noneascii"], 40, 12); !strings.Contains(v, " 7") || !strings.Contains(v, " d") {
+		t.Errorf("keys do not show:\n%s", v)
+	}
+	if c, _ := p.Update(press("ctrl+d")); c != (PathChoice{}) || !p.Open() {
+		t.Errorf("ctrl+d chose %+v", c)
+	}
+	if c, _ := p.Update(press("x")); c != (PathChoice{}) || !p.Open() {
+		t.Errorf("x chose %+v", c)
+	}
+	// Closed, a key is no one's.
+	p.Close()
+	if c, h := p.Update(press("o")); c != (PathChoice{}) || h {
+		t.Errorf("closed: %+v %v", c, h)
+	}
+}
+
+// Without keys nothing changes: no column, and a letter does nothing.
+func TestPathNavWithoutEntryKeys(t *testing.T) {
+	spec := pathSpec(80)
+	p := samplePathNav(t, i18n.English)
+	p.OpenOverview(spec)
+	if c, _ := p.Update(press("o")); c != (PathChoice{}) || !p.Open() {
+		t.Errorf("o chose %+v", c)
+	}
+	if len(p.list.spec.Columns) != 1 {
+		t.Errorf("%d columns", len(p.list.spec.Columns))
+	}
+}
+
+func TestPathNavRefusesEntryKeys(t *testing.T) {
+	// The sample "info" action stands for a letter key of the overview, here "w".
+	km, err := NewKeymap(append(sampleActions(), Action{ID: ActionMenu, Level: LevelLetter, DefaultKeys: []string{"m"},
+		Help: TextKeyMenu}, Action{ID: "pn.down", Level: LevelLetter, DefaultKeys: []string{"w"}, Help: TextKeyMenu}),
+		CharsetUnicode)
+	if err != nil {
+		t.Fatal(err)
+	}
+	keys := samplePathNavKeys()
+	keys.Down = "pn.down"
+	p, err := NewPathNav(keys, km, newTranslator(t, i18n.English, frameCatalogs(), km))
+	if err != nil {
+		t.Fatal(err)
+	}
+	set := func(mod func(a []Area)) []Area {
+		a := keyedAreas()
+		mod(a)
+		return a
+	}
+	for name, areas := range map[string][]Area{
+		"overview key":  set(func(a []Area) { a[0].Key = "w" }),
+		"menu key":      set(func(a []Area) { a[0].Key = "m" }),
+		"duplicate":     set(func(a []Area) { a[0].Key = "d" }),
+		"not a letter":  set(func(a []Area) { a[0].Key = "+" }),
+		"two letters":   set(func(a []Area) { a[0].Key = "ab" }),
+		"non ASCII":     set(func(a []Area) { a[0].Key = "ä" }),
+		"duplicate tab": set(func(a []Area) { a[2].Tabs[1].Key = "d" }),
+	} {
+		err := p.CheckAreas(areas)
+		if err == nil {
+			t.Errorf("%s: accepted", name)
+		}
+		// CheckAreas alone cannot know the keys of the overview and the menu.
+		if plain := CheckAreas(areas); (plain == nil) != (name == "overview key" || name == "menu key") {
+			t.Errorf("%s: CheckAreas says %v", name, plain)
+		}
+		// The overlay shows none of the keys then, and the package check agrees on all but the reserved ones.
+		spec := pathSpec(80)
+		spec.Areas = areas
+		if p.OpenOverview(spec); len(p.list.spec.Columns) != 1 {
+			t.Errorf("%s: the overlay shows keys", name)
+		}
+		if c, _ := p.Update(press("7")); c != (PathChoice{}) {
+			t.Errorf("%s: a key acted", name)
+		}
+		p.Close()
+	}
+}

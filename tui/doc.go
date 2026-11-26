@@ -197,6 +197,13 @@
 // click on that tab; a PathChoice that is the zero value is no choice. PathNav answers with a PathChoice, so
 // it has the shape of Modal without satisfying the interface.
 //
+// Area.Key and Tab.Key give an entry of the overview and of the choice a key of its own: one ASCII letter or
+// digit, shown dimmed in a column of its own at the entry and chosen at once as enter on the entry does, so it
+// folds an area with tabs and chooses a tab or an area without tabs. The key acts only while the overview or
+// the choice is open and never on a tab of a folded area, whose key is not shown. Any letter or digit is
+// allowed, also one that is a standard action elsewhere, since no action runs while an overlay is open.
+// Applications run PathNav.CheckAreas with CheckAreas, in their tests or at start.
+//
 // The marked row is drawn as selected only while the rows have the focus, as SetFocused says (a new list has it;
 // the modal always draws the mark), so no second mark shows while the focus lies elsewhere. A click on a row
 // marks it, and only a click on the marked row while the rows have the focus opens it, as enter does; with
@@ -442,21 +449,24 @@
 //
 // Specs. Every NewX checks its XSpec against the Keymap and the Translator and refuses what cannot work: a
 // missing key or one that names no action of the key table, two keys that name one action, a missing text or
-// label, and the further rules the doc comment of the constructor lists. Among them a Dialog needs a
-// question, answers and, unless it is a Notice, a consequence; a Notice needs a detail line and has no input
-// or danger; red detail lines belong to a Notice only; the destroying answer is never the default, so enter
-// never destroys; an answer or scroll key of a dialog with an input needs a key that acts while text is
-// typed; a masked input starts empty and has no suggestions. A List has a first column that is never free
-// text or optional, at most one free text column, a text for its empty state, AllRow only with Ticks and
+// label, and the further rules the doc comment of the constructor lists. Among them a Dialog needs a question,
+// answers and, unless it is a Notice, a consequence; a Notice needs a detail line and has no input or danger;
+// red detail lines belong to a Notice only; the destroying answer is never the default, so enter never
+// destroys; an answer or scroll key of a dialog with an input needs a key that acts while text is typed; a
+// masked input starts empty and has no suggestions. A List has a first column that is never free text or
+// optional, at most one free text column, a text for its empty state, AllRow only with Ticks and
 // TickWhileTyping only with Ticks and SearchAsTyped. A Form refuses an unknown field kind, a missing or
 // repeated ID and an ID with a control character. A CommandLine refuses names that are not lower-case words,
-// two commands that do the same and an icon that fails CheckIcon. An Explanation accepts only an absolute
-// http or https address of printable ASCII, so the address cannot end the link sequence. CheckAreas holds
-// areas to what the tab line can draw, CheckFrame refuses an unknown navigation form and an icon that fails
-// CheckIcon, and the frame draws no icon that fails it. CheckIcon holds an icon to one code point of a width
-// every terminal agrees on. Setters such as List.SetItems and FileBrowser.SetEntries refuse data that breaks
-// the contract of the part and change nothing then; an entry of a FileBrowser whose name is empty, ".", "..",
-// or holds "/", "\" or NUL refuses the whole folder, so no step leaves the root.
+// two commands that do the same and an icon that fails CheckIcon. An Explanation accepts only an absolute http
+// or https address of printable ASCII, so the address cannot end the link sequence. CheckAreas holds areas to
+// what the tab line can draw and refuses an entry key (Area.Key, Tab.Key) used twice in the overview, which
+// lists every area and tab, or one that is no ASCII letter or digit; PathNav.CheckAreas also refuses a key of
+// PathNavKeys and the key of ActionMenu, and an overlay opened with areas that fail it shows and acts on no
+// entry key. CheckFrame refuses an unknown navigation form and an icon that fails CheckIcon, and the frame
+// draws no icon that fails it. CheckIcon holds an icon to one code point of a width every terminal agrees on.
+// Setters such as List.SetItems and FileBrowser.SetEntries refuse data that breaks the contract of the part and
+// change nothing then; an entry of a FileBrowser whose name is empty, ".", "..", or holds "/", "\" or NUL
+// refuses the whole folder, so no step leaves the root.
 //
 // Escaping and secrets. Control characters and escape sequences never reach the terminal as such: Escape
 // writes every control or otherwise unprintable character as its Go escape, and widgets and parts escape
@@ -570,6 +580,8 @@
 //   - ListSpec.ClickOpens: a click on any entry row opens it at once while the rows have the focus. Default:
 //     false, a click marks the row and only a click on the marked row opens it.
 //   - ListGroup.Keep: shows a described group without entries. Default: false, the row is not drawn.
+//   - Area.Key, Tab.Key: a key of its own for an entry of the path overview and the choice. Default: none, no
+//     key column shows.
 //   - FilterBarKeys.PageUp, PageDown and FilterBarSpec.List: page keys of the value list and the list the bar
 //     stands above. Default: empty, nil.
 //

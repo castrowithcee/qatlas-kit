@@ -22,6 +22,9 @@ type Area struct {
 	Title TextID
 	// Icon is one glyph that passes CheckIcon and stands before the title on the tab line; empty shows none.
 	Icon string
+	// Key is one ASCII letter or digit that chooses the area in the open overview of PathNav as Enter on it
+	// does; empty gives none. See CheckAreas and PathNav.CheckAreas for what is refused.
+	Key  string
 	Tabs []Tab
 }
 
@@ -32,6 +35,9 @@ type Tab struct {
 	// GroupStart sets a group separator before this sub-tab. The separator is no tab and no click target;
 	// it has no effect on the first sub-tab and goes where only the active sub-tab fits.
 	GroupStart bool
+	// Key is one ASCII letter or digit that chooses the tab in the open overview or tab choice of PathNav as
+	// Enter on it does; empty gives none. It follows the rules of Area.Key.
+	Key string
 }
 
 // Rect is a rectangle of terminal cells, the origin at the top left.

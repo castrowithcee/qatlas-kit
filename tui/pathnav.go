@@ -42,21 +42,27 @@ type PathNav struct {
 	// group row is the choice itself.
 	places map[ItemID]PathChoice
 	bare   map[string]PathChoice
+	// keyed maps the typed key of an entry of the open overlay to the entry.
+	keyed map[string]entryKey
 }
 
 // NewPathNav checks keys against the key table and returns a closed PathNav.
 func NewPathNav(keys PathNavKeys, km *Keymap, text Translator) (*PathNav, error) {
 	p := &PathNav{keys: keys, km: km, text: text}
-	if _, err := p.newList(TextPathNavOverview); err != nil {
+	if _, err := p.newList(TextPathNavOverview, false); err != nil {
 		return nil, errors.New("path navigation: " + err.Error())
 	}
 	return p, nil
 }
 
-func (p *PathNav) newList(title TextID) (*List, error) {
+func (p *PathNav) newList(title TextID, keyed bool) (*List, error) {
 	k := p.keys
+	cols := []Column{{Title: TextPathNavColumn}}
+	if keyed {
+		cols = append(cols, Column{Title: TextPathNavKey, Dimmed: true, Right: true})
+	}
 	return NewList(ListSpec{
-		Columns: []Column{{Title: TextPathNavColumn}},
+		Columns: cols,
 		Keys: ListKeys{Up: k.Up, Down: k.Down, PageUp: k.PageUp, PageDown: k.PageDown, First: k.First,
 			Last: k.Last, Left: k.Left, Right: k.Right, Enter: k.Enter, Back: k.Back},
 		Search: SearchNone, Wrap: true, Outline: true, Empty: TextPathNavEmpty, Title: title, CloseOutside: k.CloseOutside,
@@ -67,7 +73,7 @@ func (p *PathNav) newList(title TextID) (*List, error) {
 func (p *PathNav) Open() bool { return p.list != nil }
 
 // Close closes the overlay without a choice.
-func (p *PathNav) Close() { p.list, p.places, p.bare = nil, nil, nil }
+func (p *PathNav) Close() { p.list, p.places, p.bare, p.keyed = nil, nil, nil, nil }
 
 // OpenOverview opens the overview of every area of spec with its tabs and marks the current place. It reports
 // false, and opens nothing, where spec has no area or shows the mode text, which has no place.
@@ -75,17 +81,24 @@ func (p *PathNav) OpenOverview(spec FrameSpec) bool {
 	if len(spec.Areas) == 0 || spec.ModeTab != "" {
 		return false
 	}
-	l, err := p.newList(TextPathNavOverview)
+	keys := p.entryKeys(spec.Areas)
+	l, err := p.newList(TextPathNavOverview, len(keys) > 0)
 	if err != nil {
 		return false
 	}
 	places, bare := map[ItemID]PathChoice{}, map[string]PathChoice{}
+	keyed := map[string]entryKey{}
 	var items []ListItem
 	var groups []ListGroup
 	var current listMark
 	for i, a := range spec.Areas {
 		key := string(a.ID)
-		groups = append(groups, ListGroup{Key: key, Title: lookup(p.text, a.Title), Keep: len(a.Tabs) == 0})
+		g := ListGroup{Key: key, Title: lookup(p.text, a.Title), Keep: len(a.Tabs) == 0}
+		if keys != nil && a.Key != "" {
+			g.Cells = []string{"", a.Key}
+			keyed[a.Key] = entryKey{group: key}
+		}
+		groups = append(groups, g)
 		if len(a.Tabs) == 0 {
 			bare[key] = PathChoice{Area: a.ID}
 			if a.ID == spec.ActiveArea {
@@ -95,7 +108,14 @@ func (p *PathNav) OpenOverview(spec FrameSpec) bool {
 		for j, t := range a.Tabs {
 			id := ItemID("t" + strconv.Itoa(i) + "." + strconv.Itoa(j))
 			places[id] = PathChoice{Area: a.ID, Tab: t.ID}
-			items = append(items, ListItem{ID: id, Cells: []string{lookup(p.text, t.Title)}, Group: key})
+			cells := []string{lookup(p.text, t.Title)}
+			if keys != nil {
+				cells = append(cells, t.Key)
+				if t.Key != "" {
+					keyed[t.Key] = entryKey{item: id, group: key}
+				}
+			}
+			items = append(items, ListItem{ID: id, Cells: cells, Group: key})
 			if a.ID == spec.ActiveArea && t.ID == spec.ActiveTab {
 				current = listMark{id: id, ok: true}
 			}
@@ -110,7 +130,7 @@ func (p *PathNav) OpenOverview(spec FrameSpec) bool {
 	} else if current.ok {
 		l.Select(current.id)
 	}
-	p.list, p.places, p.bare = l, places, bare
+	p.list, p.places, p.bare, p.keyed = l, places, bare, keyed
 	return true
 }
 
@@ -124,17 +144,26 @@ func (p *PathNav) OpenChoice(spec FrameSpec) bool {
 		if a.ID != spec.ActiveArea || len(a.Tabs) < 2 {
 			continue
 		}
-		l, err := p.newList(a.Title)
+		keys := p.entryKeys(spec.Areas)
+		l, err := p.newList(a.Title, len(keys) > 0)
 		if err != nil {
 			return false
 		}
 		places := map[ItemID]PathChoice{}
+		keyed := map[string]entryKey{}
 		var items []ListItem
 		var current ItemID
 		for j, t := range a.Tabs {
 			id := ItemID("t" + strconv.Itoa(j))
 			places[id] = PathChoice{Area: a.ID, Tab: t.ID}
-			items = append(items, ListItem{ID: id, Cells: []string{lookup(p.text, t.Title)}})
+			cells := []string{lookup(p.text, t.Title)}
+			if keys != nil {
+				cells = append(cells, t.Key)
+				if t.Key != "" {
+					keyed[t.Key] = entryKey{item: id}
+				}
+			}
+			items = append(items, ListItem{ID: id, Cells: cells})
 			if t.ID == spec.ActiveTab {
 				current = id
 			}
@@ -143,7 +172,7 @@ func (p *PathNav) OpenChoice(spec FrameSpec) bool {
 			return false
 		}
 		l.Select(current)
-		p.list, p.places, p.bare = l, places, map[string]PathChoice{}
+		p.list, p.places, p.bare, p.keyed = l, places, map[string]PathChoice{}, keyed
 		return true
 	}
 	return false
@@ -185,6 +214,9 @@ func (p *PathNav) Update(msg tea.KeyPressMsg) (choice PathChoice, handled bool) 
 		if p.km.Is(msg, id, InputNavigation) {
 			return p.act(id)
 		}
+	}
+	if k, ok := p.keyed[msg.Text]; ok && msg.Mod&(tea.ModCtrl|tea.ModAlt) == 0 {
+		return p.byKey(k)
 	}
 	open, handled := p.list.Update(msg)
 	if open != "" {
