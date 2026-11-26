@@ -21,7 +21,7 @@ func TestSettingsFormSwitchesThemeByKeyAndByClick(t *testing.T) {
 	act(t, term, "I", "icons: unicode")
 	act(t, term, "\t", "> icons")
 	act(t, term, "\x1b[C", "icons: nerdfont")
-	clickOn(t, term, "theme │", "demo-dark") // a click on the field opens its values
+	clickOn(t, term, "│ demo-light", "demo-dark") // a click on the field opens its values
 	clickOn(t, term, "demo-dark", "theme: demo-dark")
 }
 

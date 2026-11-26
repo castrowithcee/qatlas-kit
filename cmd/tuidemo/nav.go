@@ -25,11 +25,11 @@ func (m *model) focused(i int) bool {
 	return m.onButtons() && m.item == i
 }
 
-// workZone is the zone of the work area that down and enter lead to from a tab line, empty for a tab
-// without one.
+// workZone is the zone of the work area that down leads to from the navigation, empty for a tab without
+// one.
 func (m *model) workZone() tui.FocusZone {
-	z := tui.StepZoneLevel(m.zones(), tui.ZoneTabs, 2)
-	if z == tui.ZoneTabs || z == tui.ZoneSubtabs {
+	z := tui.StepZoneLevel(m.zones(), m.top(), 2)
+	if z == tui.ZoneTabs || z == tui.ZoneSubtabs || z == tui.ZonePath {
 		return ""
 	}
 	return z
@@ -55,14 +55,17 @@ func (m *model) up() {
 	m.zone = tui.StepZoneLevel(m.zones(), m.zone, -1)
 }
 
-// enter leads from a tab line into the work area, and triggers the focused button there.
+// enter leads from a tab line into the work area, opens the overlay of the focused section of the path, and
+// triggers the focused button.
 func (m *model) enter() {
 	switch {
 	case m.onButtons():
 		if m.item < len(m.actions()) {
 			m.run(m.actions()[m.item], "")
 		}
-	case m.zone == tui.ZoneTabs || m.zone == tui.ZoneSubtabs:
+	case m.zone == tui.ZonePath:
+		m.pathnav.OpenFocused(m.frameSpec())
+	case m.onNavLine():
 		if z := m.workZone(); z != "" {
 			m.zone = z
 		}
@@ -75,7 +78,7 @@ func (m *model) settle(was string) {
 		m.item = 0
 	}
 	if !slices.Contains(m.zones(), m.zone) {
-		m.zone = tui.ZoneTabs
+		m.zone = m.top()
 	}
 }
 
@@ -93,10 +96,12 @@ func (m *model) navHints() []tui.Hint {
 	if canDown {
 		hints = append(hints, tui.Hint{Action: actDown, Label: tui.TextKeyDown, Kind: tui.HintNavigation})
 	}
-	if m.zone != tui.ZoneTabs {
+	if m.zone != m.top() {
 		hints = append(hints, tui.Hint{Action: actUp, Label: tui.TextKeyUp, Kind: tui.HintNavigation})
 	}
-	if m.onButtons() || m.workZone() != "" {
+	if m.zone == tui.ZonePath {
+		hints = append(hints, tui.Hint{Action: actEnter, Label: textHintOpen, Kind: tui.HintNavigation})
+	} else if m.onButtons() || m.workZone() != "" {
 		hints = append(hints, tui.Hint{Action: actEnter, Label: tui.TextKeyEnter, Kind: tui.HintNavigation})
 	}
 	return hints

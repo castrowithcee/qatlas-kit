@@ -6,6 +6,9 @@
 // Events serves a text/event-stream from a Source of the application and resumes it after the
 // Last-Event-ID the browser sends back.
 //
+// WebSocket serves a WebSocket endpoint of the application on a GET route; without it the server speaks no
+// WebSocket.
+//
 // Static serves the files of an fs.FS such as an embed.FS for GET and HEAD, mounted as a route like
 // "GET /". It reads the files once and answers only for a path that names one of them.
 //
@@ -41,6 +44,12 @@
 // per handler; it ends when the server shuts down. An event ID or type with a line break or NUL ends the
 // stream.
 //
+// A WebSocket handshake must carry exactly one Origin that is the allowed origin; Origin: null, a missing
+// Origin and a Sec-Fetch-Site other than same-origin or none never pass, and the Origin check of the
+// WebSocket library stays on besides. The route decides about the session as for any route. A received
+// message is bounded in size and the wait for the next one in time, a write has a fixed deadline, the
+// connection ends when the server shuts down, and messages are not compressed.
+//
 // Static answers no directory listing, no redirect, no path outside the file system and no file or
 // directory whose name starts with a dot. The Content-Type is fixed by extension, application/octet-stream
 // for an unknown one, next to the fixed nosniff header. Each file has an ETag of its content with
@@ -68,6 +77,10 @@
 //   - Options.Login: LoginOff serves every route without a session and excludes Sessions. Default:
 //     LoginRequired, so routes that are not Public need a session.
 //   - Route.Public: serves the route without a session. Default: the route needs a session.
+//   - WebSocketOptions.MaxMessageBytes: the largest received message; a larger one closes the connection.
+//     Default: 64 KiB.
+//   - WebSocketOptions.IdleTimeout: the wait for the next message before the connection closes. Default: 60
+//     seconds.
 //   - Options.Log: receives refusals and the errors of the HTTP server. Default: they are discarded.
 //   - Options.Redactor: removes known secrets from every log line. Default: the text is logged as it is.
 package web

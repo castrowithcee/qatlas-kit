@@ -1,15 +1,15 @@
 // Command tuidemo shows the terminal building blocks of the kit at work, with invented sample data: a frame
 // with product name, tabs, sub-tabs, a header and a footer with key hints, a key table, mouse support,
-// dialogs and questions, help, explanations, a command line, and live switches for theme, language, icons and
-// mouse. It is a workbench to try and compare variants of the blocks, not a program to install; start it from
-// a checkout of the module:
+// dialogs and questions, help, explanations, a command line, and live switches for theme, language, icons,
+// mouse and the form of the navigation. It is a workbench to try and compare variants of the blocks, not a
+// program to install; start it from a checkout of the module:
 //
 //	go run ./cmd/tuidemo
 //
 // Optional flags set the start values of the switches: -theme, -language (english, deutsch or system), -icons
-// (unicode, nerdfont or none) and -mouse=false; the kit checks the values and an invalid one ends the program
-// with an error that names it. The switches keep their values in memory only; the program reads and writes no
-// configuration file.
+// (unicode, nerdfont or none), -navigation (tabs, pathline or header) and -mouse=false; the kit checks the
+// values and an invalid one ends the program with an error that names it. The switches keep their values in
+// memory only; the program reads and writes no configuration file.
 //
 // Operation: the digit of a tab opens it, and q or ctrl+c quits. The focus stands on the tab line, the
 // sub-tab line or the work area of the open tab: its buttons, shown as "> label <", or its live block. Tab and
@@ -25,7 +25,7 @@
 // for the mouse; each also runs from the command line as theme, theme-back, language, icons and mouse.
 //
 // The Frame tab has a mouse probe whose button counts clicks (+). The Settings tab is a form of choice fields
-// for the four switches (Look: theme and icons, Input: language and mouse): left and right step through the
+// for five switches (Look: theme, icons and navigation, Input: language and mouse): left and right step through the
 // values, which take effect at once, and enter or a click opens the list of values. In the theme field, left
 // is the step back. The form shows the value a switch sets elsewhere; a switch of the language builds the form
 // again and keeps the field in focus. The Dialogs tab opens a question with a destroying answer (a), an input
@@ -49,6 +49,17 @@
 // following, search, wrapping, a time column and a period dialog (P) with a calendar for a range; and a chat
 // whose field takes several lines (enter breaks the line, tab leads to the send button, where enter sends) and
 // whose quick replies answer the selected message.
+//
+// The form of the navigation switches at run time: the key N, the command navigation and the field in the
+// Settings tab step through the tab lines, the path line (one line below the header, "Area ▾ › Tab ▾") and
+// the path in the header, and -navigation sets the start form. On both path forms the path takes the place
+// of the tab lines in the focus: left and right move the focus between its area and its tab section, enter
+// opens the overview of all areas for the area section and the choice among the tabs of the area for the tab
+// section, down and tab lead into the work area and up and esc lead back to the path as to the sub-tab line,
+// and m opens the overview from anywhere nothing is typed; on the tab lines m does nothing. A click on a
+// section opens the same, a click on a place of an overlay chooses it as a click on that tab would, a click
+// on an area with tabs folds it, and esc closes the overlay. Nothing behind an overlay takes a key or a
+// click. The digits still open the tabs.
 //
 // Every function can be clicked while the mouse is on: tabs, the key hints of the header and the footer, the
 // fields of the Settings tab, the buttons of a dialog and of the tabs, the topics and the key list of the help,
