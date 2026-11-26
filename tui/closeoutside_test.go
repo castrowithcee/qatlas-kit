@@ -39,13 +39,17 @@ func checkOutside(t *testing.T, width, height int, draw func(on bool) (string, [
 		t.Error("the option changed the drawing")
 	}
 	frame := overlayFrame(t, onView)
-	var rest []Target
+	// The parts of the two drawings are two values, so only their presence is compared.
+	var rest, off2 []Target
 	for _, tg := range onTargets {
 		if tg.Zone != ZoneOutside {
-			rest = append(rest, tg)
+			rest = append(rest, withoutPart(tg))
 		}
 	}
-	if !reflect.DeepEqual(rest, offTargets) {
+	for _, tg := range offTargets {
+		off2 = append(off2, withoutPart(tg))
+	}
+	if !reflect.DeepEqual(rest, off2) {
 		t.Error("the option changed the targets of the frame")
 	}
 	off, on := NewMouseMap(offTargets, true), NewMouseMap(onTargets, true)
@@ -61,6 +65,13 @@ func checkOutside(t *testing.T, width, height int, draw func(on bool) (string, [
 		}
 	}
 	return frame, on
+}
+
+func withoutPart(t Target) Target {
+	if t.selection != nil {
+		t.selection = selectable(&List{})
+	}
+	return t
 }
 
 // outsideAt is the click on a cell beyond the frame, blankAt one on its padding, where no target lies.

@@ -91,12 +91,17 @@ func (l selLayout) pos(x, y int) (textPos, bool) {
 // TextSelection is the selection of text with the mouse, one for the screen, the zero value empty. Dragging
 // with the left button held selects characters of one part, also over several lines, and the part highlights
 // them; a click without motion selects nothing and stays a click. The selection holds until the next click or
-// until the application calls Clear, which it does on every key.
+// until the application calls Clear, which it does on every key. A press on selectable text is held back, so a
+// drag never acts as a click: Holds says so after Mouse read the press, and Replay hands the press back at the
+// release without motion, for the application to treat as the click it was.
 type TextSelection struct {
 	part           selectable
 	origin         Rect
 	anchor, head   textPos
 	pressed, moved bool
+	// click is the press held back, and replay says the release came without motion, so it is due.
+	click  tea.MouseClickMsg
+	replay bool
 }
 
 // Mouse reads one mouse event with the map of the frame on screen, before the application hands a click to
@@ -106,7 +111,7 @@ type TextSelection struct {
 // sections and control characters as the part shows them; handing it to the clipboard is the application's.
 func (s *TextSelection) Mouse(m *MouseMap, msg tea.MouseMsg) (text string, copied bool) {
 	event := msg.Mouse()
-	switch msg.(type) {
+	switch click := msg.(type) {
 	case tea.MouseClickMsg:
 		s.Clear()
 		if m == nil || !m.enabled || event.Button != tea.MouseLeft {
@@ -120,7 +125,7 @@ func (s *TextSelection) Mouse(m *MouseMap, msg tea.MouseMsg) (text string, copie
 		if !ok {
 			return "", false
 		}
-		s.part, s.origin, s.anchor, s.head, s.pressed = t.selection, t.Rect, p, p, true
+		s.part, s.origin, s.anchor, s.head, s.pressed, s.click = t.selection, t.Rect, p, p, true, click
 	case tea.MouseMotionMsg:
 		if s.pressed {
 			s.drag(event.X, event.Y)
@@ -134,9 +139,23 @@ func (s *TextSelection) Mouse(m *MouseMap, msg tea.MouseMsg) (text string, copie
 		if s.moved {
 			return s.part.selectionText(s.selected()), true
 		}
-		s.part = nil
+		s.part, s.replay = nil, true
 	}
 	return "", false
+}
+
+// Holds reports whether the press Mouse just read is held back: it started a selection, so the application does
+// not hand it to Handle yet. The application asks right after Mouse read a click.
+func (s *TextSelection) Holds() bool { return s.pressed }
+
+// Replay returns the held press once the release came without motion, which the application then handles as
+// the click it was; a drag never returns it.
+func (s *TextSelection) Replay() (tea.MouseClickMsg, bool) {
+	if !s.replay {
+		return tea.MouseClickMsg{}, false
+	}
+	s.replay = false
+	return s.click, true
 }
 
 // drag moves the selected end to the screen cell x, y; a cell outside the part counts as its nearest edge,

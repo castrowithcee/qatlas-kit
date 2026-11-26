@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -1225,7 +1226,7 @@ func TestDialogWithoutExtraHintsIsUnchanged(t *testing.T) {
 	st := looks(t)["noneascii"]
 	a, ta, _ := plain.Overlay(st, sampleScreen(90, 30), 90, 30, Rect{Y: 2, Width: 90, Height: 27})
 	b, tb, _ := other.Overlay(st, sampleScreen(90, 30), 90, 30, Rect{Y: 2, Width: 90, Height: 27})
-	if a != b || !slices.Equal(ta, tb) {
+	if a != b || !slices.EqualFunc(ta, tb, func(x, y Target) bool { return reflect.DeepEqual(withoutPart(x), withoutPart(y)) }) {
 		t.Error("an empty Extra changes the drawing")
 	}
 }
@@ -1463,7 +1464,7 @@ func TestDialogWithoutSuggestionsKeepsItsKeys(t *testing.T) {
 	plain := newSuggestDialog(t, plainSpec)
 	a, ta, _ := d.Overlay(st, sampleScreen(100, 30), 100, 30, Rect{Y: 2, Width: 100, Height: 16})
 	b, tb, _ := plain.Overlay(st, sampleScreen(100, 30), 100, 30, Rect{Y: 2, Width: 100, Height: 16})
-	if a != b || !slices.Equal(ta, tb) || !slices.Equal(d.Hints(), plain.Hints()) {
+	if a != b || !slices.EqualFunc(ta, tb, func(x, y Target) bool { return reflect.DeepEqual(withoutPart(x), withoutPart(y)) }) || !slices.Equal(d.Hints(), plain.Hints()) {
 		t.Error("an empty list of suggestions changes the drawing")
 	}
 	pressKeys(d, "down", "down")
