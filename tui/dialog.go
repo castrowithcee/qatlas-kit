@@ -725,8 +725,9 @@ func flowButtons(cells []buttonCell, width int) ([]string, []Target) {
 	return rows, targets
 }
 
-// buttons draws one button per answer label in rows of width cells, the default focused and the danger in the fail
-// colour, and returns a target per button, counted from the top left of the rows.
+// buttons draws one button per answer label in rows of width cells, the default behind the enter key and the
+// danger in the fail colour, none focused since a dialog has no focus to move, and returns a target per button,
+// counted from the top left of the rows.
 func (d *Dialog) buttons(width int, styles Styles) ([]string, []Target) {
 	var cells []buttonCell
 	seen := map[string]bool{}
@@ -743,8 +744,12 @@ func (d *Dialog) buttons(width int, styles Styles) ([]string, []Target) {
 			kind = ButtonDanger
 		case d.spec.Default:
 			kind = ButtonPrimary
+			// The key stands in the text so the default reads without colour and apart from a focus.
+			if key := d.keys.Label(d.spec.Keys.Enter); key != "" {
+				label = key + " " + label
+			}
 		}
-		cells = append(cells, buttonCell{styles.Button(kind, label, a.Action == d.spec.Default), Target{Action: a.Action}})
+		cells = append(cells, buttonCell{styles.Button(kind, label, false), Target{Action: a.Action}})
 	}
 	return flowButtons(cells, width)
 }

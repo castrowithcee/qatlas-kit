@@ -268,11 +268,12 @@
 // follows, the details, one button per answer and the key line of the same answers, so no dialog names one
 // twice. A detail is a DialogLine of plain text, optionally behind a prefix such as a prompt sign; the dialog
 // wraps it before it styles, and Irreversible draws the sentence on what follows in the warn colour. A Notice
-// is a calm message headed by its Question, without the warning glyph. Enter gives the default, which shows
-// focused; the destroying answer is drawn in the fail colour. A dialog with an input is a text field, shows
-// what runs and the last error inside itself and drops the error when the text changes. Overlay dims the
-// screen behind it and returns the targets of the dialog alone; where it does not fit, View fills the
-// workspace and Hints go into the footer, whose targets answer it.
+// is a calm message headed by its Question, without the warning glyph. Enter gives the default, whose button
+// carries the enter key, "[ enter OK ]"; "> label <" marks a focus only, which a dialog has none of. The
+// destroying answer is drawn in the fail colour. A dialog with an input is a text field, shows what runs and
+// the last error inside itself and drops the error when the text changes. Overlay dims the screen behind it
+// and returns the targets of the dialog alone; where it does not fit, View fills the workspace and Hints go
+// into the footer, whose targets answer it.
 //
 // Details that do not fit never push out the question: everything else stays, and the details scroll in the
 // rest with their position under them; Overlay gives way to View only where not even three detail lines fit.
@@ -463,15 +464,15 @@
 //
 // Drawing. A profile without colour, set by NO_COLOR with any non-empty value or by a missing terminal, wins
 // over every theme; ProfileNone also drops bold, faint and reverse. Meaning never depends on colour alone:
-// status marks keep their word, the selected row its mark, the active tab its brackets and a focused frame
-// its double line without colour, a message status names its state by a glyph and a word, and every glyph has
-// an ASCII form for a terminal without UTF-8. NewThemeSet rejects an invalid or repeated theme name, a theme
-// with both or neither of Profiles and Scheme, a colour that is not of its profile's form, a hand-picked
-// palette whose text does not reach 4.5:1 on its ground and fills or whose dimmed text does not reach 3:1,
-// and a scheme that cannot be derived. A filled syntax role of a Palette must read 4.5:1 on the base and the
-// panel, a comment 3:1. The mouse acts on a press of the left button and on the wheel only, and a MouseMap
-// holds the targets of one drawn frame, so a target no longer on screen cannot act; a click is never stronger
-// than the key it stands for.
+// status marks keep their word, the selected row its mark, the default of a dialog its key, the active tab its
+// brackets and a focused frame its double line without colour, a message status names its state by a glyph and
+// a word, and every glyph has an ASCII form for a terminal without UTF-8. NewThemeSet rejects an invalid or
+// repeated theme name, a theme with both or neither of Profiles and Scheme, a colour that is not of its
+// profile's form, a hand-picked palette whose text does not reach 4.5:1 on its ground and fills or whose dimmed
+// text does not reach 3:1, and a scheme that cannot be derived. A filled syntax role of a Palette must read
+// 4.5:1 on the base and the panel, a comment 3:1. The mouse acts on a press of the left button and on the wheel
+// only, and a MouseMap holds the targets of one drawn frame, so a target no longer on screen cannot act; a
+// click is never stronger than the key it stands for.
 //
 // Boundary. The package holds neither application content nor package state and reads no file system. It
 // protects against foreign text driving the terminal, against secrets showing on screen and against a key
