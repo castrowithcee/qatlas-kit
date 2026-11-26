@@ -129,6 +129,68 @@ func TestSignInAndOut(t *testing.T) {
 	}
 }
 
+func TestUnlockDemoVault(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	stdin, feed := io.Pipe()
+	out := &syncBuffer{}
+	done := make(chan error, 1)
+	go func() { done <- run(ctx, []string{"-vault-idle", "1s"}, stdin, out) }()
+	t.Cleanup(func() {
+		cancel()
+		feed.Close()
+		if err := <-done; err != nil {
+			t.Errorf("run: %v", err)
+		}
+	})
+	base := waitFor(t, out, regexp.MustCompile(`Open (http://localhost:\d+)`))[1]
+	code := waitFor(t, out, regexp.MustCompile(`One-time code: ([0-9A-Z]{4}-[0-9A-Z]{4})`))[1]
+	pass := waitFor(t, out, regexp.MustCompile(`Demo vault passphrase: ([a-z2-7]+)`))[1]
+
+	jar, _ := cookiejar.New(nil)
+	client := &http.Client{Jar: jar}
+	read := func(resp *http.Response, err error) string {
+		t.Helper()
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		b, _ := io.ReadAll(resp.Body)
+		return string(b)
+	}
+	tokenRe := regexp.MustCompile(`name="csrf_token" value="([^"]+)"`)
+	token := func(body string) string {
+		t.Helper()
+		m := tokenRe.FindStringSubmatch(body)
+		if m == nil {
+			t.Fatalf("no token in %q", body)
+		}
+		return m[1]
+	}
+	page := read(client.Get(base + "/login"))
+	read(client.PostForm(base+"/login", url.Values{"code": {code}, "csrf_token": {token(page)}}))
+
+	form := read(client.Get(base + "/unlock"))
+	if !strings.Contains(form, `type="password"`) || !strings.Contains(form, `autocomplete="new-password"`) {
+		t.Fatalf("no passphrase field: %q", form)
+	}
+	body := read(client.PostForm(base+"/unlock", url.Values{"csrf_token": {token(form)}, "passphrase": {"not-the-one"}}))
+	if !strings.Contains(body, `role="alert"`) || strings.Contains(body, "not-the-one") {
+		t.Errorf("wrong passphrase: %q", body)
+	}
+	body = read(client.PostForm(base+"/unlock", url.Values{"csrf_token": {token(form)}, "passphrase": {pass}}))
+	if !strings.Contains(body, "The vault is unlocked") || strings.Contains(body, pass) {
+		t.Errorf("unlock: %q", body)
+	}
+	waitFor(t, out, regexp.MustCompile(`demo vault: (unlocked)`))
+	waitFor(t, out, regexp.MustCompile(`demo vault: (locked)`))
+	for _, w := range []string{"vault-unlock-failed", "vault-unlock", "vault-lock"} {
+		waitFor(t, out, regexp.MustCompile(`protocol: (`+w+`) from`))
+	}
+	if strings.Count(out.String(), pass) != 1 {
+		t.Errorf("the passphrase is printed other than once: %q", out.String())
+	}
+}
+
 func TestRejectsArguments(t *testing.T) {
 	err := run(context.Background(), []string{"extra"}, strings.NewReader(""), io.Discard)
 	if _, ok := err.(usageError); !ok {

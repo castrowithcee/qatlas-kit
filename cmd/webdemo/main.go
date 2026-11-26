@@ -3,6 +3,9 @@ package main
 import (
 	"bufio"
 	"context"
+	"crypto/rand"
+	"crypto/subtle"
+	"encoding/base32"
 	"errors"
 	"flag"
 	"fmt"
@@ -51,6 +54,7 @@ button { font: inherit; min-height: 2.75rem; padding: .5rem 1.5rem; }
 <h1>Signed in</h1>
 <p>This private page needs a session. The session began at {{.Since}}.</p>
 <p><a href="/sensitive">Sensitive step</a>, which asks for the code again when the sign-in is older than five minutes.</p>
+<p><a href="{{.Unlock}}">Unlock the demo vault</a>, which asks for the code again when the sign-in is older than two minutes.</p>
 <form method="post" action="{{.Logout}}"><input type="hidden" name="{{.Field}}" value="{{.Token}}"><button type="submit">Sign out</button></form>
 </main>
 </body>
@@ -98,6 +102,7 @@ func (p *printer) Record(e web.LoginEvent) {
 func run(ctx context.Context, args []string, in io.Reader, stdout io.Writer) error {
 	flags := flag.NewFlagSet("webdemo", flag.ContinueOnError)
 	port := flags.Int("port", 0, "loopback port; 0 picks a free one")
+	idle := flags.Duration("vault-idle", 0, "idle time after which the demo vault locks; 0 means 5 minutes")
 	if err := flags.Parse(args); err != nil {
 		return usageError{err}
 	}
@@ -117,12 +122,34 @@ func run(ctx context.Context, args []string, in io.Reader, stdout io.Writer) err
 	if err != nil {
 		return err
 	}
+	// The demo vault is only a flag. Its passphrase is made up for this run and printed below.
+	var raw [10]byte
+	_, _ = rand.Read(raw[:])
+	passphrase := strings.ToLower(base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(raw[:]))
+	red.Add(passphrase)
+	unlocker, err := web.NewUnlocker(pages, web.UnlockOptions{
+		Idle:  *idle,
+		Audit: out,
+		Unlock: func(p string) error {
+			if subtle.ConstantTimeCompare([]byte(p), []byte(passphrase)) != 1 {
+				return errors.New("wrong passphrase")
+			}
+			fmt.Fprintln(out, "demo vault: unlocked")
+			return nil
+		},
+		Lock: func() error { fmt.Fprintln(out, "demo vault: locked"); return nil },
+	})
+	if err != nil {
+		return err
+	}
+	defer unlocker.Close()
+	unlockPath := unlocker.UnlockPath()
 	home := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		sess, _ := web.SessionFrom(r)
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.Header().Set("Cache-Control", "no-store")
-		_ = homePage.Execute(w, struct{ Nonce, Since, Logout, Field, Token string }{
-			web.Nonce(r), sess.Created.Format(time.TimeOnly), pages.LogoutPath(), web.CSRFField, web.CSRFToken(r)})
+		_ = homePage.Execute(w, struct{ Nonce, Since, Logout, Field, Token, Unlock string }{
+			web.Nonce(r), sess.Created.Format(time.TimeOnly), pages.LogoutPath(), web.CSRFField, web.CSRFToken(r), unlockPath})
 	})
 	sensitive := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		sess, _ := web.SessionFrom(r)
@@ -131,7 +158,7 @@ func run(ctx context.Context, args []string, in io.Reader, stdout io.Writer) err
 		_ = sensitivePage.Execute(w, struct{ Nonce, Since string }{web.Nonce(r), sess.SignedIn.Format(time.TimeOnly)})
 	})
 	srv, err := web.Listen(web.Options{Port: *port, Sessions: sessions, Redactor: &red, Log: out,
-		Routes: append(pages.Routes(), web.Route{Pattern: "GET /{$}", Handler: home},
+		Routes: append(append(pages.Routes(), unlocker.Routes()...), web.Route{Pattern: "GET /{$}", Handler: home},
 			web.Route{Pattern: "GET /sensitive", Handler: pages.RequireRecent(sensitive)})})
 	if err != nil {
 		return err
@@ -139,6 +166,7 @@ func run(ctx context.Context, args []string, in io.Reader, stdout io.Writer) err
 
 	// localhost is the name a person types; the server answers it as well as 127.0.0.1.
 	fmt.Fprintf(out, "Open %s\nOne-time code: %s\n", strings.Replace(srv.URL(), "127.0.0.1", "localhost", 1), code.Generate())
+	fmt.Fprintf(out, "Demo vault passphrase: %s\n", passphrase)
 	fmt.Fprintln(out, "Press Enter for a new code, Ctrl+C to quit.")
 	go func() {
 		sc := bufio.NewScanner(in)

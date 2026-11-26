@@ -79,6 +79,24 @@
 // and renews only the time. LoginAudit receives reauth and reauth-failed. Without a session a marked route
 // is refused.
 //
+// Unlocker offers the unlocking of a vault in the browser and exists only if the application makes one with
+// NewUnlocker; without it there is no route and no way to unlock. The application passes the function that
+// takes the passphrase and unlocks, for example through vault.Unlock or vaultproc, and the function that
+// locks; the package imports neither. Its page and its POST run only with a sign-in at most two minutes old
+// (or ReauthWithin if that is shorter), a limit that cannot be switched off. The field is type=password with
+// autocomplete=new-password, so a browser has no saved passphrase to fill, and carries no value; the form
+// carries the CSRF token of the session. The passphrase is read from the form body only, handed to the
+// function once and never logged, echoed in a response, put in a URL or in an entry of LoginAudit, which
+// receives vault-unlock, vault-unlock-failed, vault-unlock-throttled and vault-lock. Any error of the
+// function counts as a refusal. Failed attempts are throttled by their own counter using ratelimit, five per
+// ten minutes for all addresses together, apart from the sign-in throttle; a throttled attempt looks like a
+// wrong one and does not call the function. Pages are served with Cache-Control: no-store. The vault locks
+// after five minutes without use unless UnlockOptions say less or more: use is a call of Touch by the
+// application, nothing else, so a tool that forgets it fails closed, and a request to the page of the
+// Unlocker is no use. Lock and Close lock at once; call Close after Serve returns so the vault does not
+// outlive the server. The browser cannot be forced not to offer to save a field, and an extension can read
+// what is typed, which is why the option is off by default.
+//
 // Static serves the files of an fs.FS such as an embed.FS for GET and HEAD, mounted as a route like
 // "GET /". It reads the files once and answers only for a path that names one of them: no directory
 // listing, no redirect, no path outside the file system and no file or directory whose name starts with a
