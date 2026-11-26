@@ -69,6 +69,16 @@
 // or the Authenticator (for the sign-in page) has one. A public route other than those of Pages carries no
 // token check of its own.
 //
+// RequireRecent marks a route that is not public as one for sensitive steps: it runs only if the session was
+// signed in or confirmed within PagesOptions.ReauthWithin, five minutes by default, and the session store
+// keeps that time as SignedIn. An older sign-in sends a GET or HEAD request to the confirmation page at
+// ReauthPath, which asks for the same code as the sign-in with the same throttle and the CSRF token of the
+// session, and returns afterwards to the path the request came from; other methods get 403 and the
+// handler does not run. The return target is a local path that starts with exactly one slash, without
+// scheme, host, backslash or control character, else the fixed home. Confirming keeps the session ID
+// and renews only the time. LoginAudit receives reauth and reauth-failed. Without a session a marked route
+// is refused.
+//
 // Static serves the files of an fs.FS such as an embed.FS for GET and HEAD, mounted as a route like
 // "GET /". It reads the files once and answers only for a path that names one of them: no directory
 // listing, no redirect, no path outside the file system and no file or directory whose name starts with a

@@ -6,6 +6,7 @@ import (
 	"html/template"
 	"net/http"
 	"strings"
+	"time"
 )
 
 var loginPage = template.Must(template.New("login").Parse(`<!doctype html>
@@ -14,7 +15,7 @@ var loginPage = template.Must(template.New("login").Parse(`<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light dark">
-<title>Sign in</title>
+<title>{{.Title}}</title>
 <style nonce="{{.Nonce}}">
 :root { --bg: #fff; --text: #1a1a1a; --muted: #4a4a4a; --border: #767676; --accent: #0b5cad; --on-accent: #fff; --error: #a4000f; }
 @media (prefers-color-scheme: dark) {
@@ -36,15 +37,16 @@ button { min-width: 2.75rem; margin-top: 1rem; padding: .5rem 1.5rem; border: 2p
 </head>
 <body>
 <main>
-<h1>Sign in</h1>
-<p class="hint" id="hint">Enter the one-time code shown in the terminal where the program runs.</p>
+<h1>{{.Title}}</h1>
+<p class="hint" id="hint">{{.Hint}}</p>
 <form method="post" action="{{.Action}}">
 <input type="hidden" name="{{.Field}}" value="{{.Token}}">
-<label for="code">One-time code</label>
+{{if .Next}}<input type="hidden" name="next" value="{{.Next}}">
+{{end}}<label for="code">One-time code</label>
 <input id="code" name="code" type="text" autocomplete="one-time-code" autocapitalize="characters" spellcheck="false" autofocus required aria-describedby="hint{{if .Failed}} error{{end}}"{{if .Failed}} aria-invalid="true"{{end}}>
 {{if .Failed}}<p class="error" id="error" role="alert">The code was not accepted. Check it, or ask for a new one in the terminal, and try again.</p>
 {{end}}{{if .Expired}}<p class="error" id="expired" role="alert">This page was out of date. Enter the code again.</p>
-{{end}}<button type="submit">Sign in</button>
+{{end}}<button type="submit">{{.Button}}</button>
 </form>
 </main>
 </body>
@@ -58,6 +60,9 @@ type PagesOptions struct {
 	// Prefix is put before the paths of the pages, such as "/auth" for "/auth/login". It is empty or
 	// an absolute path without a trailing slash, query or wildcard.
 	Prefix string
+	// ReauthWithin is how recent the sign-in of a session must be for a route marked with RequireRecent;
+	// 0 means 5 minutes.
+	ReauthWithin time.Duration
 	// Home is where a browser goes after signing in; it is fixed, never taken from the request. Empty
 	// means "/". It must be an absolute path on this server.
 	Home string
@@ -69,6 +74,7 @@ type Pages struct {
 	auth   *Authenticator
 	prefix string
 	home   string
+	within time.Duration
 }
 
 // NewPages checks opts. It also makes the sessions of opts.Auth send an unsigned-in GET or HEAD request
@@ -78,7 +84,10 @@ func NewPages(opts PagesOptions) (*Pages, error) {
 	if opts.Auth == nil {
 		return nil, errors.New("web: Pages needs an Authenticator")
 	}
-	p := &Pages{auth: opts.Auth, prefix: opts.Prefix, home: opts.Home}
+	p := &Pages{auth: opts.Auth, prefix: opts.Prefix, home: opts.Home, within: opts.ReauthWithin}
+	if p.within <= 0 {
+		p.within = 5 * time.Minute
+	}
 	if p.home == "" {
 		p.home = "/"
 	}
@@ -100,12 +109,15 @@ func (p *Pages) LoginPath() string { return p.prefix + "/login" }
 // <form method="post" action="..."> with a button.
 func (p *Pages) LogoutPath() string { return p.prefix + "/logout" }
 
-// Routes returns the public routes of the pages: GET and POST on LoginPath and POST on LogoutPath.
+// Routes returns the routes of the pages. GET and POST on LoginPath and POST on LogoutPath are public; GET
+// and POST on ReauthPath need a session.
 func (p *Pages) Routes() []Route {
 	return []Route{
 		{Pattern: "GET " + p.LoginPath(), Public: true, Handler: http.HandlerFunc(p.showLogin)},
 		{Pattern: "POST " + p.LoginPath(), Public: true, Handler: http.HandlerFunc(p.submitLogin)},
 		{Pattern: "POST " + p.LogoutPath(), Public: true, Handler: http.HandlerFunc(p.logout)},
+		{Pattern: "GET " + p.ReauthPath(), Handler: http.HandlerFunc(p.showReauth)},
+		{Pattern: "POST " + p.ReauthPath(), Handler: http.HandlerFunc(p.submitReauth)},
 	}
 }
 
@@ -159,11 +171,23 @@ func (p *Pages) render(w http.ResponseWriter, r *http.Request, status int, faile
 		sec = newLoginSecret()
 		http.SetCookie(w, namedCookie(loginCookieName(strict), sec, strict))
 	}
+	p.execute(w, r, status, loginView{Title: "Sign in", Button: "Sign in", Action: p.LoginPath(),
+		Hint:  "Enter the one-time code shown in the terminal where the program runs.",
+		Token: csrfOf("login", sec), Failed: failed, Expired: expired})
+}
+
+// loginView is what the sign-in and the confirmation page show; both are the same form.
+type loginView struct {
+	Title, Hint, Button, Action, Token, Next string
+	Failed, Expired                          bool
+}
+
+func (p *Pages) execute(w http.ResponseWriter, r *http.Request, status int, v loginView) {
 	var buf bytes.Buffer
 	err := loginPage.Execute(&buf, struct {
-		Nonce, Action, Field, Token string
-		Failed, Expired             bool
-	}{Nonce(r), p.LoginPath(), CSRFField, csrfOf("login", sec), failed, expired})
+		loginView
+		Nonce, Field string
+	}{v, Nonce(r), CSRFField})
 	if err != nil {
 		Error(w, http.StatusInternalServerError)
 		return

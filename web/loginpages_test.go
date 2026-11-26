@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 )
 
 type pagesFixture struct {
@@ -15,12 +16,15 @@ type pagesFixture struct {
 	code   *OnceCode
 	audit  *recordingAudit
 	auth   *Authenticator
+	clock  *testClock
 }
 
 func newPagesFixture(t *testing.T, opts PagesOptions) *pagesFixture {
 	t.Helper()
 	f := &pagesFixture{code: NewOnceCode(OnceCodeOptions{}), audit: &recordingAudit{}}
 	cs := NewCookieSessions(SessionOptions{Audit: f.audit})
+	f.clock = &testClock{t: time.Date(2030, 1, 2, 3, 4, 5, 0, time.UTC)}
+	cs.now = f.clock.now
 	var err error
 	f.auth, err = NewAuthenticator(AuthOptions{Sessions: cs, Method: f.code, Audit: f.audit})
 	if err != nil {
@@ -33,6 +37,8 @@ func newPagesFixture(t *testing.T, opts PagesOptions) *pagesFixture {
 	private := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusNoContent) })
 	routes := append(f.pages.Routes(),
 		Route{Pattern: "GET /private", Handler: private}, Route{Pattern: "POST /private", Handler: private},
+		Route{Pattern: "GET /sensitive", Handler: f.pages.RequireRecent(private)},
+		Route{Pattern: "POST /sensitive", Handler: f.pages.RequireRecent(private)},
 		Route{Pattern: "GET /token", Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			_, _ = w.Write([]byte(CSRFToken(r)))
 		})})

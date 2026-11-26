@@ -50,7 +50,29 @@ button { font: inherit; min-height: 2.75rem; padding: .5rem 1.5rem; }
 <main>
 <h1>Signed in</h1>
 <p>This private page needs a session. The session began at {{.Since}}.</p>
+<p><a href="/sensitive">Sensitive step</a>, which asks for the code again when the sign-in is older than five minutes.</p>
 <form method="post" action="{{.Logout}}"><input type="hidden" name="{{.Field}}" value="{{.Token}}"><button type="submit">Sign out</button></form>
+</main>
+</body>
+</html>
+`))
+
+var sensitivePage = template.Must(template.New("sensitive").Parse(`<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Sensitive step</title>
+<style nonce="{{.Nonce}}">
+body { font: 1rem/1.5 system-ui, sans-serif; margin: 0 auto; max-width: 28rem; padding: 1rem; }
+</style>
+</head>
+<body>
+<main>
+<h1>Sensitive step</h1>
+<p>You confirmed your sign-in at {{.Since}}.</p>
+<p><a href="/">Back</a></p>
 </main>
 </body>
 </html>
@@ -102,8 +124,15 @@ func run(ctx context.Context, args []string, in io.Reader, stdout io.Writer) err
 		_ = homePage.Execute(w, struct{ Nonce, Since, Logout, Field, Token string }{
 			web.Nonce(r), sess.Created.Format(time.TimeOnly), pages.LogoutPath(), web.CSRFField, web.CSRFToken(r)})
 	})
+	sensitive := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		sess, _ := web.SessionFrom(r)
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Header().Set("Cache-Control", "no-store")
+		_ = sensitivePage.Execute(w, struct{ Nonce, Since string }{web.Nonce(r), sess.SignedIn.Format(time.TimeOnly)})
+	})
 	srv, err := web.Listen(web.Options{Port: *port, Sessions: sessions, Redactor: &red, Log: out,
-		Routes: append(pages.Routes(), web.Route{Pattern: "GET /{$}", Handler: home})})
+		Routes: append(pages.Routes(), web.Route{Pattern: "GET /{$}", Handler: home},
+			web.Route{Pattern: "GET /sensitive", Handler: pages.RequireRecent(sensitive)})})
 	if err != nil {
 		return err
 	}

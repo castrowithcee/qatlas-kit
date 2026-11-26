@@ -24,6 +24,9 @@ const (
 	LogoutDone     LoginEventKind = "logout"
 	// CSRFRefused is a request refused for a missing or wrong CSRF token, on the sign-in page or in a session.
 	CSRFRefused LoginEventKind = "csrf-refused"
+	// ReauthSucceeded and ReauthFailed report the confirmation of a sign-in for a sensitive route.
+	ReauthSucceeded LoginEventKind = "reauth"
+	ReauthFailed    LoginEventKind = "reauth-failed"
 )
 
 // LoginEvent is one entry for the protocol. It holds no credential and no session ID.
@@ -103,11 +106,26 @@ func NewAuthenticator(opts AuthOptions) (*Authenticator, error) {
 // method or the store. Every failed attempt, including wrong ones, uses up budget until the window passes,
 // a successful one costs nothing.
 func (a *Authenticator) SignIn(w http.ResponseWriter, r *http.Request) error {
+	return a.attempt(r, LoginSucceeded, LoginFailed, func() error { return a.sessions.Issue(w, r) })
+}
+
+// Reauth checks the credentials in r like SignIn, with the same throttle, and on success records the
+// sign-in time of the session of r, which must carry one. The session ID stays. It returns ErrSignInRefused
+// for wrong and for throttled attempts alike.
+func (a *Authenticator) Reauth(r *http.Request) error {
+	s, ok := SessionFrom(r)
+	if !ok {
+		return errors.New("web: Reauth needs a session")
+	}
+	return a.attempt(r, ReauthSucceeded, ReauthFailed, func() error { return a.sessions.markSignIn(s) })
+}
+
+func (a *Authenticator) attempt(r *http.Request, done, failed LoginEventKind, grant func() error) error {
 	remote := remoteHost(r)
 	// The global counter goes first, so addresses past its limit never get a counter of their own.
 	if byAll, err := a.global.Reserve(1); err == nil {
 		if byAddr, err := a.perAddr.For(remote).Reserve(1); err == nil {
-			return a.check(w, r, remote, byAddr, byAll)
+			return a.check(r, remote, done, failed, grant, byAddr, byAll)
 		}
 		byAll.Release()
 	}
@@ -115,7 +133,7 @@ func (a *Authenticator) SignIn(w http.ResponseWriter, r *http.Request) error {
 	return ErrSignInRefused
 }
 
-func (a *Authenticator) check(w http.ResponseWriter, r *http.Request, remote string, rs ...*ratelimit.Reservation) error {
+func (a *Authenticator) check(r *http.Request, remote string, done, failed LoginEventKind, grant func() error, rs ...*ratelimit.Reservation) error {
 	refund := func() {
 		for _, x := range rs {
 			x.Release()
@@ -127,14 +145,14 @@ func (a *Authenticator) check(w http.ResponseWriter, r *http.Request, remote str
 		return err
 	}
 	if !valid {
-		a.record(LoginFailed, remote)
+		a.record(failed, remote)
 		return ErrSignInRefused
 	}
 	refund()
-	if err := a.sessions.Issue(w, r); err != nil {
+	if err := grant(); err != nil {
 		return err
 	}
-	a.record(LoginSucceeded, remote)
+	a.record(done, remote)
 	return nil
 }
 

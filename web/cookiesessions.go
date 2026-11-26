@@ -67,8 +67,10 @@ func NewCookieSessions(opts SessionOptions) *CookieSessions {
 type Session struct {
 	// Created is when the session was issued.
 	Created time.Time
-	key     string
-	csrf    string
+	// SignedIn is when the person last signed in or confirmed the sign-in again.
+	SignedIn time.Time
+	key      string
+	csrf     string
 }
 
 type sessionCtxKey struct{}
@@ -116,7 +118,7 @@ func (c *CookieSessions) Session(w http.ResponseWriter, r *http.Request) (*http.
 		c.refuseCSRF(w, r)
 		return nil, false
 	}
-	ctx := context.WithValue(r.Context(), sessionCtxKey{}, Session{Created: rec.Created, key: key, csrf: csrf})
+	ctx := context.WithValue(r.Context(), sessionCtxKey{}, Session{Created: rec.Created, SignedIn: rec.SignedIn, key: key, csrf: csrf})
 	return r.WithContext(ctx), true
 }
 
@@ -142,11 +144,21 @@ func (c *CookieSessions) Issue(w http.ResponseWriter, r *http.Request) error {
 	_, _ = rand.Read(b[:]) // never fails since Go 1.24; it crashes the program instead
 	id := base64.RawURLEncoding.EncodeToString(b[:])
 	now := c.now()
-	if err := c.store.Put(keyOf(id), SessionRecord{Created: now, Expires: c.deadline(now, now)}); err != nil {
+	if err := c.store.Put(keyOf(id), SessionRecord{Created: now, SignedIn: now, Expires: c.deadline(now, now)}); err != nil {
 		return err
 	}
 	http.SetCookie(w, cookie(id, strict))
 	return nil
+}
+
+// markSignIn records that the person proved themselves again now. A session that ended meanwhile stays
+// ended.
+func (c *CookieSessions) markSignIn(s Session) error {
+	ok, err := c.store.MarkSignIn(s.key, c.now())
+	if err == nil && !ok {
+		return ErrSignInRefused
+	}
+	return err
 }
 
 // End ends the session of the request on the server and deletes its cookie. It is safe without a session.

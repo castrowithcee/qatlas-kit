@@ -102,6 +102,9 @@ func TestSignInAndOut(t *testing.T) {
 		t.Fatalf("sign-in: status %d, body %q", got, body)
 	}
 	home := token(body)
+	if _, body := status(client.Get(base + "/sensitive")); !strings.Contains(body, "Sensitive step") {
+		t.Errorf("a fresh sign-in does not reach the sensitive step: %q", body)
+	}
 	if got, _ := signIn(code); got != http.StatusForbidden {
 		t.Errorf("a used code: status %d", got)
 	}
