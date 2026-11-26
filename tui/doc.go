@@ -24,7 +24,10 @@
 //
 // StandardActions returns the actions every tool shares, each with a level, one default key and a help text
 // in the catalog; an application adds them to its table with one append. The overlay levels may repeat their
-// keys, and ctrl+s stays free as the second way of the save action.
+// keys, and ctrl+s stays free as the second way of the save action. ActionHelpF1 is the second way of the
+// help action on f1, which reaches the help from a text field where "?" types a character; the Help closes
+// on it as on the help key, and Keymap.SecondWays finds such actions. A table without the help action leaves
+// it out as well. A Form or Dialog does not handle f1.
 //
 // A one-line text field, the input of a Dialog, the text, masked and date fields of a Form, the search of a
 // LogView, the filter of a List and the input of a CommandLine edit with a fixed set of keys. A screen asks

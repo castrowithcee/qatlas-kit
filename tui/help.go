@@ -24,7 +24,7 @@ type HelpKeys struct {
 	// Up, Down, PageUp and PageDown scroll the text and stop at its ends; First and Last, where the table has
 	// them, jump there.
 	Up, Down, PageUp, PageDown, First, Last ActionID
-	// Back and Help close the help.
+	// Back and Help close the help, and so does a second way of either (Action.SecondWayOf), such as f1.
 	Back, Help ActionID
 }
 
@@ -284,6 +284,14 @@ func (h *Help) Update(msg tea.KeyPressMsg) (act ActionID, handled bool) {
 	for _, id := range h.navKeys() {
 		if h.keys.Is(msg, id, InputNavigation) {
 			return h.Act(id)
+		}
+	}
+	// The second way of the help or back key, such as f1, closes the help as the first way does.
+	for _, id := range []ActionID{h.spec.Keys.Help, h.spec.Keys.Back} {
+		for _, second := range h.keys.SecondWays(id) {
+			if h.keys.Is(msg, second, InputNavigation) {
+				return id, true
+			}
 		}
 	}
 	return "", false
