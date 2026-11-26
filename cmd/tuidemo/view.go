@@ -29,14 +29,16 @@ func (m *model) tab() tui.TabID {
 	return g.area.Tabs[0].ID
 }
 
-// zones are the focus zones the open tab has: the sub-tab line only where it shows, the work area (reported
-// as rows) only where the tab has buttons.
+// zones are the focus zones the open tab has: the sub-tab line only where it shows, then the work area: the
+// zones of its block, or rows where the tab has buttons.
 func (m *model) zones() []tui.FocusZone {
 	zones := []tui.FocusZone{tui.ZoneTabs}
 	if len(m.group().area.Tabs) > 1 {
 		zones = append(zones, tui.ZoneSubtabs)
 	}
-	if len(m.actions()) > 0 {
+	if b := m.live(); b != nil {
+		zones = append(zones, b.zones()...)
+	} else if len(m.actions()) > 0 {
 		zones = append(zones, tui.ZoneRows)
 	}
 	return zones
@@ -51,6 +53,9 @@ func (m *model) openArea(id tui.AreaID) {
 
 // step moves the open tab of the focused line by one, with wrap-around.
 func (m *model) step(by int) {
+	if m.zone != tui.ZoneTabs && m.zone != tui.ZoneSubtabs {
+		return
+	}
 	if m.zone == tui.ZoneSubtabs {
 		m.tabs[m.area] = tui.StepTab(m.group().area, m.tab(), by)
 		return
@@ -96,6 +101,9 @@ func (m *model) footerHints() []tui.Hint {
 	}
 	hints = append(hints, m.navHints()...)
 	hints = append(hints, m.group().hints[m.tab()]...)
+	if b := m.inBlock(m.zone); b != nil {
+		hints = append(hints, b.hints(m.zone)...)
+	}
 	return append(hints, tui.Hint{Action: actQuit, Label: tui.TextKeyQuit, Kind: tui.HintAlways})
 }
 
@@ -115,7 +123,7 @@ func (m *model) frameSpec() tui.FrameSpec {
 		HeaderKeys: []tui.Hint{{Action: actHelp, Label: tui.TextKeyHelp}, {Action: actCommands, Label: tui.TextKeyCommands},
 			{Action: actInfo, Label: tui.TextKeyInfo}, {Action: actQuit, Label: tui.TextKeyQuit}},
 		Areas: m.areas(), ActiveArea: m.area, ActiveTab: m.tab(),
-		Focus: m.zone, Input: tui.InputNavigation,
+		Focus: m.zone, Input: m.input(),
 		Message: m.message, Footer: m.footerHints(),
 	}
 }
@@ -136,6 +144,12 @@ func (m *model) refresh() {
 		m.view = m.text.Lookup(textTooSmall)
 		m.mouse = tui.NewMouseMap(nil, false)
 		return
+	}
+	if !slices.Contains(m.zones(), m.zone) {
+		m.zone = tui.ZoneTabs
+	}
+	if b := m.live(); b != nil {
+		b.focus(m.zone)
 	}
 	spec := m.frameSpec()
 	var view string
