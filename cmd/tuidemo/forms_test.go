@@ -1,7 +1,9 @@
 package main
 
 import (
+	"strings"
 	"testing"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 
@@ -87,5 +89,45 @@ func TestFormTakesTheFocusByTabAndTypesLettersNotSwitches(t *testing.T) {
 	}
 	if _, cmd := m.Update(tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl}); cmd == nil {
 		t.Fatal("ctrl+c did not quit")
+	}
+}
+
+func TestDateFieldsOpenOnTheClockAndBoundHarvest(t *testing.T) {
+	m := testModel(t, uiprefs.IconsNone)
+	clock := time.Date(2040, 3, 15, 12, 0, 0, 0, time.Local)
+	m.now = func() time.Time { return clock }
+	blocks, err := formBlocks(m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	form := blocks["dates"].(*formBlock).form
+	at := func(y, mo, d int) tui.FormValue {
+		return tui.FormValue{Time: time.Date(y, time.Month(mo), d, 12, 0, 0, 0, time.Local)}
+	}
+	for _, c := range []struct {
+		id   tui.FieldID
+		v    tui.FormValue
+		fail bool
+	}{
+		{fieldPlanted, at(2031, 1, 1), false}, {fieldPlanted, at(2060, 1, 1), false},
+		{fieldHarvest, at(2039, 3, 15), false}, {fieldHarvest, at(2041, 3, 15), false},
+		{fieldHarvest, at(2039, 3, 14), true}, {fieldHarvest, at(2041, 3, 16), true},
+	} {
+		if err := form.SetValue(c.id, c.v); (err != nil) != c.fail {
+			t.Errorf("%s %v: err %v, want failure %v", c.id, c.v.Time, err, c.fail)
+		}
+	}
+	for _, id := range []tui.FieldID{fieldPlanted, fieldHarvest} {
+		form, err = blocks["dates"].(*formBlock).build() // empty again
+		if err != nil {
+			t.Fatal(err)
+		}
+		form.Focus(id)
+		form.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+		form.SetFocused(true)
+		view, _ := form.View(m.styles, 100, 40)
+		if !strings.Contains(view, "March 2040") {
+			t.Fatalf("the calendar of %s did not open on the clock month:\n%s", id, view)
+		}
 	}
 }

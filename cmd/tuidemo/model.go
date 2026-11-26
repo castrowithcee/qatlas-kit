@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"slices"
 	"strconv"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 
@@ -21,7 +22,9 @@ const (
 // model is the state of the workbench. Every change of state ends in refresh, which draws the frame once and
 // keeps its click targets, so a click always meets the screen the person sees.
 type model struct {
-	prefs   uiprefs.Prefs
+	prefs uiprefs.Prefs
+	// now is the clock of the date fields; the program gets the real one, tests a fixed one.
+	now     func() time.Time
 	groups  []group
 	themes  *tui.ThemeSet
 	keys    *tui.Keymap
@@ -76,7 +79,7 @@ type model struct {
 	view  string
 }
 
-func newModel(prefs uiprefs.Prefs, profile tui.ColorProfile, charset tui.CharsetMode, root string) (*model, error) {
+func newModel(prefs uiprefs.Prefs, profile tui.ColorProfile, charset tui.CharsetMode, root string, now func() time.Time) (*model, error) {
 	gs := groups()
 	areas := make([]tui.Area, len(gs))
 	ids := make([]string, len(gs))
@@ -97,7 +100,7 @@ func newModel(prefs uiprefs.Prefs, profile tui.ColorProfile, charset tui.Charset
 	if err != nil {
 		return nil, err
 	}
-	m := &model{prefs: prefs, groups: gs, themes: themes, keys: keys, profile: profile, charset: charset, root: root,
+	m := &model{prefs: prefs, groups: gs, themes: themes, keys: keys, profile: profile, charset: charset, root: root, now: now,
 		area: gs[0].area.ID, tabs: map[tui.AreaID]tui.TabID{}}
 	if err := m.rebuildText(); err != nil {
 		return nil, err

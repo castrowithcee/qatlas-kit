@@ -19,7 +19,7 @@ func TestHelperProcess(t *testing.T) {
 	if os.Getenv(helperEnv) == "" {
 		return
 	}
-	if err := run(strings.Fields(os.Getenv(helperEnv+"_ARGS")), os.Stdout, os.Environ()); err != nil {
+	if err := run(strings.Fields(os.Getenv(helperEnv+"_ARGS")), os.Stdout, os.Environ(), sampleToday); err != nil {
 		os.Exit(1)
 	}
 	os.Exit(0)

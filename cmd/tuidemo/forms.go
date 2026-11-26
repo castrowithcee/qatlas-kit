@@ -32,7 +32,7 @@ type formBlock struct {
 	before, after func(m *model, b *formBlock)
 }
 
-// sampleToday is the clock of the date fields, so the calendar opens on an invented day.
+// sampleToday is the invented day of the sample data of the log and the chat.
 func sampleToday() time.Time { return time.Date(2031, 5, 6, 12, 0, 0, 0, time.Local) }
 
 func formKeys() tui.FormKeys {
@@ -58,12 +58,13 @@ func formBlocks(m *model) (map[tui.TabID]block, error) {
 		}}, m.keys, m.text)
 	}}
 	dates := &formBlock{note: textNoteFormDates, check: checkDates, build: func() (*tui.Form, error) {
-		min, max := time.Date(2031, 1, 1, 0, 0, 0, 0, time.Local), time.Date(2031, 12, 31, 0, 0, 0, 0, time.Local)
+		today := m.now()
+		min, max := today.AddDate(-1, 0, 0), today.AddDate(1, 0, 0)
 		return tui.NewForm(tui.FormSpec{Title: textFormDatesTitle, Keys: formKeys(), Buttons: formButtons(), Fields: []tui.FormField{
 			{ID: fieldPlanted, Kind: tui.FieldDate, Label: textFormPlanted, Hint: textFormPlantedHint,
-				Date: tui.DateField{Min: min, Max: max, Now: sampleToday}},
+				Date: tui.DateField{Now: m.now}}, // no bounds, so the calendar pages across years
 			{ID: fieldHarvest, Kind: tui.FieldDate, Label: textFormHarvest, Hint: textFormHarvestHint,
-				Date: tui.DateField{Time: true, Min: min, Max: max, Now: sampleToday}},
+				Date: tui.DateField{Time: true, Min: min, Max: max, Now: m.now}}, // bounded to a year either side of today
 		}}, m.keys, m.text)
 	}}
 	for _, b := range []*formBlock{fields, dates} {
