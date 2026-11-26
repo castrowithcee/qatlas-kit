@@ -263,3 +263,11 @@ license; the license texts ship with the respective module.
 | [`github.com/dustin/go-humanize`](https://pkg.go.dev/github.com/dustin/go-humanize) | Copyright (c) 2005-2008 Dustin Sallings | MIT | Size formatting |
 | [`github.com/mattn/go-isatty`](https://pkg.go.dev/github.com/mattn/go-isatty) | Copyright (c) Yasuhiro MATSUMOTO | MIT | Terminal detection (macOS and Windows builds) |
 | [`github.com/ncruces/go-strftime`](https://pkg.go.dev/github.com/ncruces/go-strftime) | Copyright (c) 2022 Nuno Cruces | MIT | Time formatting (macOS and Windows builds) |
+
+## WebSocket
+
+The `web` package links a WebSocket library. It keeps its own license; the license text ships with the module.
+
+| Component | Copyright | License | Role |
+| --- | --- | --- | --- |
+| [`github.com/coder/websocket`](https://pkg.go.dev/github.com/coder/websocket) | Copyright (c) 2025 Coder | ISC | WebSocket handshake and framing (RFC 6455) |

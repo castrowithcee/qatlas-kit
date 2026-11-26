@@ -3,100 +3,78 @@
 //
 // Every text of a TUI lives in a catalog of stable, untranslated TextID keys per language, built on the
 // i18n package. ModuleCatalog holds the general texts of this package under the reserved "tui." prefix;
-// an application adds its own catalog under other IDs. NewTranslator merges both for one language and
-// rejects a catalog that would draw wrong text: a reserved or empty ID, a text in a language other than
-// English without an English text, format verbs that differ from the English text, or a key placeholder
-// that names no known action. A missing translation falls back to English at run time; CheckCatalogs is the
-// stricter test-time contract that every text exists in English and German and none is empty.
+// an application adds its own catalog under other IDs. NewTranslator merges both for one language. A
+// missing translation falls back to English at run time.
 //
-// A text names the key of an action by the placeholder "{action}", where the action ID starts with a
-// lowercase ASCII letter followed by lowercase ASCII letters, digits, '.', '_' or '-'. Lookup replaces each
+// A text names the key of an action by the placeholder "{action}". Lookup replaces each
 // placeholder with the keys currently bound before it formats the arguments, so a rebinding shows in every
 // text at once and an argument that holds braces stays as it is. A text that must show such a brace
 // sequence literally passes it as an argument. Find returns the raw text and whether the language or English
 // holds it. To change the language, build a new Translator.
 //
 // Keys come from one key table per TUI. NewKeymap takes the application's actions, each with a level,
-// default keys, a help text and whether a user may replace its key or add an extra one, and rejects a table
-// that would give one key two meanings: within the main levels, a key belongs to one action everywhere,
-// except that an action tied to a page (Action.Page) may share it with an action of another page, never
-// with one of its own page or one without a page; only the overlay levels of a question's answers and of
-// the help may repeat one. Keymap.Page returns the view of one page, which Match, Is, Label, Hints and
-// every part that takes a Keymap read, so a footer and the help show the actions of the active page and
-// those without a page; the application decides which page is active. NewKeymap also rejects a key that
-// terminals, multiplexers or text lines take for themselves, unless the action is the second way of
-// another. Screens ask the Keymap for an action, never for a key name; Match lets the overlay
-// levels a screen names win over the main levels. The input focus decides what reaches the table: where
-// text is typed, every key that types a character is text, and that is the zero value; while a key is
-// captured as a new binding only ctrl+c and esc act; in an embedded terminal no key does. Bind applies the
-// user's keys as a whole or not at all, and CheckBinding and Resolve apply the same rules of a binding and
-// name the reason of every refusal. A Keymap satisfies KeyLabels, so labels and the key placeholders of
-// every text follow a binding at once; Keys and KeyNameLabel give a tool the keys in force and their labels.
+// default keys, a help text and whether a user may replace its key or add an extra one. Keymap.Page returns
+// the view of one page, which Match, Is, Label, Hints and every part that takes a Keymap read, so a footer
+// and the help show the actions of the active page and those without a page; the application decides which
+// page is active. Screens ask the Keymap for an action, never for a key name; Match lets the overlay
+// levels a screen names win over the main levels. The input focus decides what reaches the table. Bind
+// applies the user's keys, and CheckBinding and Resolve name the reason of every refusal. A Keymap satisfies
+// KeyLabels, so labels and the key placeholders of every text follow a binding at once; Keys and
+// KeyNameLabel give a tool the keys in force and their labels.
 //
 // StandardActions returns the actions every tool shares, each with a level, one default key and a help text
-// in the catalog; an application adds them to its table with one append. Their keys are reserved: NewKeymap
-// rejects any other action of the main levels that holds one, whether or not the standard action is in the
-// table, and Resolve and CheckBinding refuse a user's key that belongs to another standard action. The
-// overlay levels may repeat them, and ctrl+s stays free as the second way of the save action.
+// in the catalog; an application adds them to its table with one append. The overlay levels may repeat their
+// keys, and ctrl+s stays free as the second way of the save action.
 //
 // A one-line text field, the input of a Dialog, the text, masked and date fields of a Form, the search of a
-// LogView, the filter of a List and the input of a CommandLine edits with fixed keys that no action may hold:
-// the arrows, home, end, ctrl+a, ctrl+e, ctrl+b and ctrl+f move by a character and to the ends; ctrl or alt
-// with an arrow, alt+b and alt+f by a word; backspace, delete, ctrl+h, ctrl+d, ctrl+w, alt+d, alt+backspace
-// and alt+delete delete a character or a word; ctrl+u and ctrl+k delete to the start or end. A word ends at
-// white space; in a masked field a word jump goes to an end and a word deletion takes everything on that
-// side, so no boundary shows. A screen asks its own actions first, so a Form, a LogView and a List keep
-// theirs for left, right, home and end, and a second way of an action wins over an edit. The Paste of each
-// of these parts and a suggestion a Dialog takes insert whole at the cursor, never as keys: line breaks at the
-// end go, those and tabs inside become one space, and other control characters, invalid UTF-8 and direction
-// marks such as U+202E are dropped, in a masked field too.
+// LogView, the filter of a List and the input of a CommandLine edit with a fixed set of keys. A screen asks
+// its own actions first, so a Form, a LogView and a List keep theirs for left, right, home and end, and a
+// second way of an action wins over an edit. The Paste of each of these parts and a suggestion a Dialog
+// takes insert whole at the cursor, never as keys.
 //
-// The parts with state share one shape, and Dialog, Help, Explanation and Form, which answer with an
-// ActionID, satisfy the interface Modal. NewX checks an XSpec, which holds the content and, in Keys, the
-// actions of the key table the part reads, against the Keymap and the Translator and refuses what cannot
-// work. Update reads a key press and Click the MouseResult of a target the part drew; both return what the
-// application runs. View draws with the Styles of that drawing in width by height cells and returns the lines
-// and their targets; a part that also stands over the screen draws there with Overlay, which reports false
-// where the room is too small. The styles come with every drawing, so a change of the theme keeps the state.
+// The parts with state share one shape, and Dialog, Help, Explanation and Form, which answer with an ActionID,
+// satisfy the interface Modal. NewX takes an XSpec, which holds the content and, in Keys, the actions of the
+// key table the part reads, with the Keymap and the Translator. Update reads a key press and Click the
+// MouseResult of a target the part drew; both return what the application runs. View draws with the Styles of
+// that drawing in width by height cells and returns the lines and their targets; a part that also stands over
+// the screen draws there with Overlay, which reports false where the room is too small. The styles come with
+// every drawing, so a change of the theme keeps the state.
 //
-// A Frame draws the frame every screen stands in from the FrameSpec the application fills for each
-// render: the header with the product name, status marks, back button and header keys; the tab line with
-// one tab per Area as its digit and title; the sub-tabs of the active area where it has more than one; a
-// rule; the workspace, cut or padded to its rows, with the message under it; and the footer in the last
-// row, or the last two. Workspace gives the room the content has, less the rows the footer takes, and
-// Render returns the click targets of the drawn keys and tabs for that frame only. The header stays one
-// line within the width: each status mark gives way in the order of its MarkRank, and the header keys go
-// before the back button. A tab line that runs short closes its gaps and then shrinks the inactive tabs to
-// their digit; the active tab stays whole. A Tab with GroupStart has a separator before it on the sub-tab
-// line, which is no tab and no target and goes where only the active sub-tab fits. FrameSpec.ModeTab shows
-// the application outside every area, such as a guided setup: no area is active, the text stands after the
-// areas as the active tab, whole at every level and no target, and the sub-tab line stays empty so the
-// workspace keeps its height. CheckAreas holds areas to what the tab line can draw. FrameSpec.Icon
-// stands before the product name and Area.Icon before the title of its tab, each as "icon name"; CheckFrame
-// and CheckAreas reject an icon that fails CheckIcon, and the frame draws no icon that fails it. The tab line
+// A Frame draws the frame every screen stands in from the FrameSpec the application fills for each render: the
+// header with the product name, status marks, back button and header keys; the tab line with one tab per Area
+// as its digit and title; the sub-tabs of the active area where it has more than one; a rule; the workspace,
+// cut or padded to its rows, with the message under it; and the footer in the last row, or the last two.
+// Workspace gives the room the content has, less the rows the footer takes, and Render returns the click
+// targets of the drawn keys and tabs for that frame only. The header stays one line within the width: each
+// status mark gives way in the order of its MarkRank, and the header keys go before the back button. A tab
+// line that runs short closes its gaps and then shrinks the inactive tabs to their digit; the active tab stays
+// whole. A Tab with GroupStart has a separator before it on the sub-tab line, which is no tab and no target
+// and goes where only the active sub-tab fits. FrameSpec.ModeTab shows the application outside every area,
+// such as a guided setup: no area is active, the text stands after the areas as the active tab, whole at every
+// level and no target, and the sub-tab line stays empty so the workspace keeps its height. FrameSpec.Icon
+// stands before the product name and Area.Icon before the title of its tab, each as "icon name". The tab line
 // gives up its icons before it closes any gap, and the digit-only level holds none; no icon is drawn in an
-// ASCII terminal. The application chooses the icon set; the kit knows none. Nerd Font glyphs measure one
-// cell, but a font that draws them wider is the application's risk. FrameSpec.Nav chooses the form of the
+// ASCII terminal. The application chooses the icon set; the kit knows none. Nerd Font glyphs measure one cell,
+// but a font that draws them wider is the application's risk. FrameSpec.Nav chooses the form of the
 // navigation: NavTabs, the zero value, is the tab line with sub-tabs; NavPathLine replaces both by one line
 // that names the current place as "Area ▾ › Tab ▾", the tab only where the area has more than one, and gives
 // the freed row to the workspace. Each section is a click target of ZonePath that carries the area, and the
 // tab for the last, so the application handles it like a tab click; the focus mark stands at the line and the
-// section named by FrameSpec.PathFocusArea, else the last, is drawn as the focused tab. A line that runs
-// short takes the mark from all sections but the last, then keeps the last section alone and cuts its name;
-// ModeTab stands as the only section, without mark and target. NavPathHeader draws the same path in the
-// header, after the product name and before the status marks, and no navigation line at all: the workspace
-// takes the rows of the tab line, the sub-tab line and the path line. Its targets, focus and mode tab are
-// those of the path line, the focus drawn as the focused tab without the focus mark. The header fills its
-// room in this order: the name and the marks that always stand, the marks before keys, the widest block at
-// the right, and the normal marks, as before, with the path as the current section alone standing at every
-// width. The rest of the room widens the path to the widest form of the path line that fits with the normal
-// marks in their shortest forms, and the marks take the longest forms that fit beside it. Where the product
-// name and the current section do not fit, the product name gives way down to nothing and the section is cut,
-// keeping its mark. CheckFrame refuses an unknown form and holds the areas of both path forms to CheckAreas.
-// A screen reports ZonePath instead of ZoneTabs and ZoneSubtabs. The focus zones have a fixed order that
+// section named by FrameSpec.PathFocusArea, else the last, is drawn as the focused tab. A line that runs short
+// takes the mark from all sections but the last, then keeps the last section alone and cuts its name; ModeTab
+// stands as the only section, without mark and target. NavPathHeader draws the same path in the header, after
+// the product name and before the status marks, and no navigation line at all: the workspace takes the rows of
+// the tab line, the sub-tab line and the path line. Its targets, focus and mode tab are those of the path
+// line, the focus drawn as the focused tab without the focus mark. The header fills its room in this order:
+// the name and the marks that always stand, the marks before keys, the widest block at the right, and the
+// normal marks, as before, with the path as the current section alone standing at every width. The rest of the
+// room widens the path to the widest form of the path line that fits with the normal marks in their shortest
+// forms, and the marks take the longest forms that fit beside it. Where the product name and the current
+// section do not fit, the product name gives way down to nothing and the section is cut, keeping its mark. A
+// screen reports ZonePath instead of ZoneTabs and ZoneSubtabs. The focus zones have a fixed order that
 // CycleZone walks with wrap-around, as StepArea and StepTab do for the tabs. StepZoneLevel steps vertically
-// between the tab line, the sub-tab line or the path line and the work area, skips a missing line and does
-// not wrap.
+// between the tab line, the sub-tab line or the path line and the work area, skips a missing line and does not
+// wrap.
 //
 // Header and footer show hints. Keymap.Hints resolves each hint to the keys of its action that act in the
 // input focus of the screen, so a line never names a key that does nothing, and folds hints whose labels
@@ -107,8 +85,7 @@
 // always stays, such as help, is never dropped, and the answers of an open question are shortened instead.
 //
 // The mouse is a second way to the same actions and never stronger than a key. Render and the other drawing
-// parts return the targets they drew; a MouseMap holds the targets of one drawn frame, so a target no longer
-// on screen cannot act. Handle acts on a press of the left button and on the wheel only. A click reports the
+// parts return the targets they drew; a MouseMap holds the targets of one drawn frame. A click reports the
 // action, area, tab or item of the target it hit, which the application runs exactly as it runs the key or the
 // tab click, with every question and check of that way; the free area of a zone reports the zone to focus, and an
 // element inside a zone wins over it. A wheel notch reports the zone under the pointer, so a side pane scrolls
@@ -126,45 +103,43 @@
 // arrive later as one InputBatch.
 //
 // A CommandLine runs commands by name: lower-case words without arguments, with aliases that keep older names
-// valid. Typing filters, an exact name first, then names that begin with the text, then a word that does,
-// then the text inside a word; the empty line lists the commands that are not hidden. A command names an
-// action the application already has, which a key, a tab click or a row of its screen triggers, and where it
-// opens one, the area and tab, so Update and Click yield what the dispatcher of the application runs for that
-// trigger: the line is a register of existing actions, never a second way to operate, and a key is optional.
-// It acts only where Available says its trigger acts, in the Context the application sets when it opens the
-// line; anywhere else the line stays open with the typed text and the reason. The line reads keys where text
-// is typed, so a letter is always text; it edits its text as a text line does and moves the choice with the
-// actions of CommandLineKeys. View draws a panel with an optional icon before each name, in a Unicode
-// terminal only, and the key in force beside it, at most twelve rows that scroll with the choice and one
-// target per row. Overlay draws it at the top of the room it may cover, centred across it, over the dimmed
-// screen, with a key line of its own from Hints whose keys a click answers like the keys do; where the room
-// is too small it returns ok false, and the application draws View in the workspace and Hints in the footer.
+// valid. Typing filters, an exact name first, then names that begin with the text, then a word that does, then
+// the text inside a word; the empty line lists the commands that are not hidden. A command names an action the
+// application already has, which a key, a tab click or a row of its screen triggers, and where it opens one,
+// the area and tab, so Update and Click yield what the dispatcher of the application runs for that trigger:
+// the line is a register of existing actions, never a second way to operate, and a key is optional. It acts
+// only where Available says its trigger acts, in the Context the application sets when it opens the line;
+// anywhere else the line stays open with the typed text and the reason. The line reads keys where text is
+// typed, so a letter is always text; it edits its text as a text line does and moves the choice with the
+// actions of CommandLineKeys. View draws a panel with an optional icon before each name, in a Unicode terminal
+// only, and the key in force beside it, rows that scroll with the choice and one target per row. Overlay draws
+// it at the top of the room it may cover, centred across it, over the dimmed screen, with a key line of its
+// own from Hints whose keys a click answers like the keys do; where the room is too small it returns ok false,
+// and the application draws View in the workspace and Hints in the footer.
 //
-// A List shows the entries an application hands it, each with a stable ItemID, its cells and a group key, as
-// a table under dimmed upper-case column titles. The selection follows the ID, never the position, when the
+// A List shows the entries an application hands it, each with a stable ItemID, its cells and a group key, as a
+// table under dimmed upper-case column titles. The selection follows the ID, never the position, when the
 // entries, the filter or the grouping change; it is always on screen, and the scroll position stays while the
-// selection is on the page. The filter reads the cells and the search text of an entry, ignores case, and
-// only decides what shows: it removes nothing and keeps the order. A list whose letters are actions starts
-// the filter with its search key; a pure choice list filters with every typed character. The filter is a text
+// selection is on the page. The filter reads the cells and the search text of an entry, ignores case, and only
+// decides what shows: it removes nothing and keeps the order. A list whose letters are actions starts the
+// filter with its search key; a pure choice list filters with every typed character. The filter is a text
 // line: the actions of the list move the rows, and left and right its cursor where no group is left to fold.
 // Enter keeps a typed filter, the first back clears it, and the next one is left to the application. Groups
-// are presentation
-// only: they stand in alphabetical order of their shown title with the group without key last (an outline
-// keeps the order of SetGroups), left, right
-// and enter fold them, a filter opens the groups with hits without changing their fold state, and the
-// position counts entries only, "pos/total" or, with a filter, "pos/shown (N total)". SetGroups gives a group,
-// by the key in ListItem.Group, a title and cells; the row then shows the fold glyph, the box, the category
-// mark, the title and the count as the group head in the first column, and the cells from the second column on
-// by the rules of their column; the first cell is not shown. The fold state, the partial selection and the
-// marked row follow the key, so new titles or cells lose none of them, and the filter never reads them.
-// A described group with Keep shows also without entries, as a row that marks but neither folds nor ticks.
-// SelectedGroup names the marked group row; Selected and Current stay empty there. When a row does not fit,
-// the free text column gives way first, then the short labels of a column, then the optional columns from the
-// right, and then the widest values, never below their title, for group rows as for entries; the first column
-// and the group head are never cut, and the widths come from every entry and described group, so they stay
-// while a filter is typed. An empty list shows the application's sentence with the next step, which SetEmpty
-// sets for each state, and a filter without match names the key that clears it. Cells, group keys, titles,
-// the empty sentence and the typed filter are escaped.
+// are presentation only: they stand in alphabetical order of their shown title with the group without key last
+// (an outline keeps the order of SetGroups), left, right and enter fold them, a filter opens the groups with
+// hits without changing their fold state, and the position counts entries only, "pos/total" or, with a filter,
+// "pos/shown (N total)". SetGroups gives a group, by the key in ListItem.Group, a title and cells; the row
+// then shows the fold glyph, the box, the category mark, the title and the count as the group head in the
+// first column, and the cells from the second column on by the rules of their column; the first cell is not
+// shown. The fold state, the partial selection and the marked row follow the key, so new titles or cells lose
+// none of them, and the filter never reads them. A described group with Keep shows also without entries, as a
+// row that marks but neither folds nor ticks. SelectedGroup names the marked group row; Selected and Current
+// stay empty there. When a row does not fit, the free text column gives way first, then the short labels of a
+// column, then the optional columns from the right, and then the widest values, never below their title, for
+// group rows as for entries; the first column and the group head are never cut, and the widths come from every
+// entry and described group, so they stay while a filter is typed. An empty list shows the application's
+// sentence with the next step, which SetEmpty sets for each state, and a filter without match names the key
+// that clears it.
 //
 // A List with Ticks picks any number of entries: a tick box before the first column, "[ ]", "[x]" and for a
 // group with some of its entries ticked "[-]", so the three states differ without colour, and Ticked and
@@ -193,7 +168,7 @@
 // SetGroups and a group row shows its fold glyph and title only.
 //
 // A PathNav holds the two overlays the path line opens, both a List in a modal with SearchNone and Outline,
-// centred over the screen like any Overlay, the current place marked, names escaped. The overview lists every
+// centred over the screen like any Overlay, the current place marked. The overview lists every
 // area of FrameSpec.Areas in order, each with its tabs below it, as a tree: enter or a click on an area with
 // tabs folds it, and on an area without tabs chooses it. The choice lists the tabs of the active area. The
 // application opens one from the state it already holds: OpenClick for the MouseResult of a ZonePath target
@@ -240,36 +215,33 @@
 // key in force. Tab and shift+tab cycle through the fields and then the buttons, from the last button to the
 // first field and back; the focused button reads "> label <" without colour. Enter on a button, its click and
 // its key give its action and nothing more, as Update and Click report it; back is reported as the back key
-// with handled false, so the application still asks before it leaves a changed form. While a button has the focus,
-// typing, paste, left, right, up, down and the wheel change nothing; a click on a field takes the focus.
-// A button with the focus is always in view: the fields get the height that is left, or none, and only where
-// not even the buttons fit does the form ask for a larger terminal. With a field focused, the form is drawn
-// without the buttons where they do not fit beside it. While the focus of the screen lies elsewhere,
+// with handled false, so the application still asks before it leaves a changed form. While a button has the
+// focus, typing, paste, left, right, up, down and the wheel change nothing; a click on a field takes the
+// focus. A button with the focus is always in view: the fields get the height that is left, or none, and only
+// where not even the buttons fit does the form ask for a larger terminal. With a field focused, the form is
+// drawn without the buttons where they do not fit beside it. While the focus of the screen lies elsewhere,
 // SetFocused(false) draws the form without any sign of its focus: no marker, accent, frame, cursor or hint at
-// the focused field, no mark at its section and no focused button, so only one focus shows. It only draws:
-// the focused field or button, open lists and what is typed stay, and keys, clicks and paste act as before,
-// as the application hands them on. A new form has the focus, and Overlay always draws it. Overlay draws the
-// form as a modal in the way of Dialog.Overlay, under FormSpec.Title in its frame, with its buttons and the
-// keys of Hints, and ok is false where room does not hold it, also with a list of values or the calendar
-// open; the application then draws View in the workspace and Hints in the footer.
-// FormSpec.Lead is one or two dimmed sentences under the title, wrapped and never cut. It stays in view at
-// every focus, in View as in the modal, counts for ok, and SetLead changes it and keeps values, focus and
-// open list. A masked field never shows what is typed, not in its row, a target or a problem, and is never
-// handed a stored secret: Stored says one exists, which an empty field keeps. FieldMaskedBlock is the same
-// for a secret of several lines, such as a private key: its value is text with "\n" line breaks of at most 64
-// KiB, and it shows a placeholder with the number of lines, never the content or its length. Paste replaces
-// the whole value, typed characters are appended, enter adds a line break instead of going on, and backspace
-// or delete clears the field; tab, the save key and a click work as in any field. A paste or key with a
-// character other than line break and tab, or that would pass the limit, is refused whole with a message
-// under the field. Each problem stands under its field until that field changes, a problem without a field
-// above the form, and a section with a problem carries a mark and opens. An advanced section stays closed and
-// dimmed while it holds nothing. On a wide terminal the sections stand as a numbered list beside the fields
-// of the focused one. The fields lose their frames only where the width does not hold them, and then only the
-// focused field stands on a surface. Where the height is short, the form scrolls with the focus, which is
-// always in view: whole fields stand around it, with "…" above and below where fields are left out. Each
-// section has its own label column, in which a longer label wraps. Only where even the focused field does not
-// fit does the form ask for a larger terminal. A click on a field focuses it and types nothing; on a choice
-// or list field it is enter, on a tick box the toggle key, on a section a jump to its first field.
+// the focused field, no mark at its section and no focused button, so only one focus shows. It only draws: the
+// focused field or button, open lists and what is typed stay, and keys, clicks and paste act as before, as the
+// application hands them on. A new form has the focus, and Overlay always draws it. Overlay draws the form as
+// a modal in the way of Dialog.Overlay, under FormSpec.Title in its frame, with its buttons and the keys of
+// Hints, and ok is false where room does not hold it, also with a list of values or the calendar open; the
+// application then draws View in the workspace and Hints in the footer. FormSpec.Lead is one or two dimmed
+// sentences under the title, wrapped and never cut. It stays in view at every focus, in View as in the modal,
+// counts for ok, and SetLead changes it and keeps values, focus and open list. Stored says that a masked field
+// has a secret, which an empty field keeps. FieldMaskedBlock is the same for a secret of several lines, such
+// as a private key: its value is text with "\n" line breaks and it shows a placeholder with the number of
+// lines. Paste replaces the whole value, typed characters are appended, enter adds a line break instead of
+// going on, and backspace or delete clears the field; tab, the save key and a click work as in any field. Each
+// problem stands under its field until that field changes, a problem without a field above the form, and a
+// section with a problem carries a mark and opens. An advanced section stays closed and dimmed while it holds
+// nothing. On a wide terminal the sections stand as a numbered list beside the fields of the focused one. The
+// fields lose their frames only where the width does not hold them, and then only the focused field stands on
+// a surface. Where the height is short, the form scrolls with the focus, which is always in view: whole fields
+// stand around it, with "…" above and below where fields are left out. Each section has its own label column,
+// in which a longer label wraps. Only where even the focused field does not fit does the form ask for a larger
+// terminal. A click on a field focuses it and types nothing; on a choice or list field it is enter, on a tick
+// box the toggle key, on a section a jump to its first field.
 //
 // A date field (FieldDate) is typed as YYYY-MM-DD, or as YYYY-MM-DD HH:MM where DateField.Time is set, and
 // its value is a time.Time in the local time zone of the process (time.Local), cut to the day or the minute;
@@ -295,17 +267,13 @@
 // A Dialog asks a question over the screen: the warning glyph and the question in bold, one sentence on what
 // follows, the details, one button per answer and the key line of the same answers, so no dialog names one
 // twice. A detail is a DialogLine of plain text, optionally behind a prefix such as a prompt sign; the dialog
-// escapes and wraps it before it styles, and red is for a Notice only, since a question keeps it for the
-// button of a destructive answer. Irreversible draws the sentence on what follows in the warn colour. A
-// Notice is a calm message headed by its Question, without the warning glyph, that needs at least one detail:
-// a plain success belongs in the message line. Only the answers, the scroll and the suggestion keys act;
-// every other key goes back to the application, so a stray key neither saves nor destroys. Enter gives the
-// default, whose button carries the enter key, "[ Enter OK ]", so it reads without colour; "> label <" marks a
-// focus only, which a dialog has none of. The destroying answer is drawn in the fail colour and is never the
-// default. A dialog with an input is a text field, shows what runs and the last error inside itself, drops the
-// error when the text changes and never shows a masked input. Overlay dims the screen behind it and returns the
-// targets of the dialog alone; where it does not fit, View fills the workspace and Hints go into the footer, whose
-// targets answer it.
+// wraps it before it styles, and Irreversible draws the sentence on what follows in the warn colour. A Notice
+// is a calm message headed by its Question, without the warning glyph. Enter gives the default, whose button
+// carries the enter key, "[ enter OK ]"; "> label <" marks a focus only, which a dialog has none of. The
+// destroying answer is drawn in the fail colour. A dialog with an input is a text field, shows what runs and
+// the last error inside itself and drops the error when the text changes. Overlay dims the screen behind it
+// and returns the targets of the dialog alone; where it does not fit, View fills the workspace and Hints go
+// into the footer, whose targets answer it.
 //
 // Details that do not fit never push out the question: everything else stays, and the details scroll in the
 // rest with their position under them; Overlay gives way to View only where not even three detail lines fit.
@@ -314,7 +282,7 @@
 // give way before the answers and that Update and Click leave to the application.
 //
 // DialogInput.Suggest hands an input suggestions, such as from a projectpath.Suggester; tui reads no file
-// system. At most five stand under the input, escaped, one row and one click target each. The complete action
+// system. One row and one click target stand under the input for each. The complete action
 // and up and down mark and take them, and enter takes the typed text unless one was marked; whether a taken
 // one keeps the dialog open is Continues, never a path separator. Without suggestions nothing changes.
 //
@@ -326,31 +294,26 @@
 // with the keys of the screen the help was opened from and the keys that act everywhere, in the binding in
 // force. Left and right, and the topic keys of the help level, change the topic with wrap-around; the scroll
 // keys and the wheel stop at the ends; back and the help key close it. A click on a line of the key list
-// yields its action, and the application closes the help and then runs it. An Explanation shows a title, the long
-// text, a helptopics.Term and the address of the documentation, which is shown in full and, where the terminal
-// takes escapes, also linked; it accepts only an absolute http or https address of printable ASCII, so the
-// address cannot end the link sequence.
-// Back and the info key close it, its scroll keys may page and jump to the ends, and the copy key hands Text
-// to the application, which holds nothing that is not shown and no control character. Both stand over the
-// screen like a dialog, or fill the workspace with View where room is too small; an explanation also stands
-// in a Pane beside a form or a list. Every topic tab, key, line of the key list and address is a target that
-// does what its key does, and a click anywhere else on an explanation over the screen closes it. Only their
-// own keys act; every other key goes back to the application.
+// yields its action, and the application closes the help and then runs it. An Explanation shows a title, the
+// long text, a helptopics.Term and the address of the documentation, which is shown in full and, where the
+// terminal takes escapes, also linked; Back and the info key close it, its scroll keys may page and jump to
+// the ends, and the copy key hands Text to the application. Both stand over the screen like a dialog, or fill
+// the workspace with View where room is too small; an explanation also stands in a Pane beside a form or a
+// list. Every topic tab, key, line of the key list and address is a target that does what its key does, and a
+// click anywhere else on an explanation over the screen closes it. Only their own keys act; every other key
+// goes back to the application.
 //
-// A LogView shows lines that arrive over time. The application supplies them with Append, one text or
-// several, each with an optional time and source; where they come from, saving them and any structure in them
-// stay with the application. The lines live in a ring buffer of LogViewSpec.Lines, LogViewDefaultLines when
-// zero and at most LogViewMaxLines; when it is full the oldest lines go, and the position and the matches
-// follow what remains. Every line, source and search text is escaped before it is stored, so no control
-// sequence reaches the terminal, and a line longer than LogViewMaxLineRunes is cut and carries a visible
-// mark; neither can be switched off. A line break in a text starts a new line. The view follows the newest
-// line until a key or the wheel scrolls up; the follow key and the end key resume, and the status line names
-// the state with the number of lines that arrived meanwhile. The search key starts a case-insensitive search
-// of the escaped text, enter keeps it and back cancels or clears it; every match is highlighted and the lines
-// that hold one carry a mark, so nothing depends on colour, and the next and previous match key jump with
-// wrap-around and stop the following. Wrapping and the time column are switches; without wrapping a long line
-// is shortened with the ellipsis glyph. LogViewActions gives the actions only this part needs; scrolling,
-// search, enter and back are the actions the table already holds.
+// A LogView shows lines that arrive over time. The application supplies them with Append, one text or several,
+// each with an optional time and source; where they come from, saving them and any structure in them stay with
+// the application. The lines live in a ring buffer of LogViewSpec.Lines; when it is full the oldest lines go,
+// and the position and the matches follow what remains. A line break in a text starts a new line. The view
+// follows the newest line until a key or the wheel scrolls up; the follow key and the end key resume, and the
+// status line names the state with the number of lines that arrived meanwhile. The search key starts a
+// case-insensitive search of the escaped text, enter keeps it and back cancels or clears it; every match is
+// highlighted and the lines that hold one carry a mark, so nothing depends on colour, and the next and
+// previous match key jump with wrap-around and stop the following. Wrapping and the time column are switches;
+// without wrapping a long line is shortened with the ellipsis glyph. LogViewActions gives the actions only
+// this part needs; scrolling, search, enter and back are the actions the table already holds.
 //
 // A LogFilter is the period a LogView shows: all, the last count of minutes, hours, days or months, or a range
 // from one minute to another; LogViewSpec.Filter starts it, LogViewSpec.Units limits the units on offer and
@@ -370,72 +333,265 @@
 // kind returns with it. While it is open the view takes every key, click and notch of the wheel, and
 // ModalOverlay draws it over the screen, whose targets then take no click; ModalView, with the buttons of the
 // form where they fit, and Hints serve a terminal too small for that, as for a Dialog. Back discards; the save
-// key and enter apply, enter from every field but a date, where it opens the calendar as in every form. A choice
-// steps with left and right, and its list opens by a click on the field; a list or the calendar takes every
-// key, enter chooses, and back closes only that. The form's buttons apply and discard show the save and back keys
-// in force and act as they do, enter on one of them included.
-// A period that is not valid, no count or one below 1, an empty date or an end before the start, stays open
-// with its problem under the field. An applied period that differs from the current one is reported once.
+// key and enter apply, enter from every field but a date, where it opens the calendar as in every form. A
+// choice steps with left and right, and its list opens by a click on the field; a list or the calendar takes
+// every key, enter chooses, and back closes only that. The form's buttons apply and discard show the save and
+// back keys in force and act as they do, enter on one of them included. A period that is not valid, no count
+// or one below 1, an empty date or an end before the start, stays open with its problem under the field. An
+// applied period that differs from the current one is reported once.
 //
 // The status line holds a button for following, search, the period, wrap and the time column, and for the
 // previous and next match while a search has matches, with the position at its right. The period button, which
-// LogViewKeys.Filter enables, names the period in short form. Each button names the key in force
-// and a switch says on or off in words; a click does what its key does and no more. Where the width runs
-// short the labels go first, one by one by rank, and the keys stay; then buttons go by rank, following and
-// search last and the period before them; the position gives way last, to a shorter form. While the search text is typed the row holds that field and
-// the position only.
+// LogViewKeys.Filter enables, names the period in short form. Each button names the key in force and a switch
+// says on or off in words; a click does what its key does and no more. Where the width runs short the labels
+// go first, one by one by rank, and the keys stay; then buttons go by rank, following and search last and the
+// period before them; the position gives way last, to a shorter form. While the search text is typed the row
+// holds that field and the position only.
 //
 // A TextView shows a text read-only: line numbers, scrolling, wrapping, search and a status row with the
-// position, from the text and optional TextSpan sections the application gives SetText. It is made for
-// foreign content: every character is escaped and the view cannot be told otherwise, and MaxLines and
-// MaxLineRunes bound what it keeps, the status row naming a cut. A masked section stays hidden in every
-// drawing and out of every match until the application calls SetRevealed; the reveal key only asks, through
-// TakeRevealRequest, and hiding again needs no permission. The roles of the sections are neutral and drawn in
-// the syntax roles of the Palette; a package that tells them apart builds the spans, TextView knows no language.
+// position, from the text and optional TextSpan sections the application gives SetText. It is made for foreign
+// content, and the status row names a cut. A masked section is uncovered by the application with SetRevealed;
+// the reveal key only asks, through TakeRevealRequest. The roles of the sections are neutral and drawn in the
+// syntax roles of the Palette; a package that tells them apart builds the spans, TextView knows no language.
 //
 // A Chat shows the messages an application hands it, oldest first, each with a stable ID, sender, time, status
 // and details, above a field to write the next one. The selection follows the ID, and the newest message while
-// it is selected; a status names its state by a glyph and a word, never by colour alone, and every text of a
-// message is escaped. Enter unfolds the details of the selected message, and the quick replies of
-// ChatSpec.Actions stand as buttons under it and answer it by their key or a click. In the field every key that
-// types a character is text, enter adds a line break and back leaves it; ctrl+enter sends where the terminal
-// tells it from enter, and no action of a key table may hold it. The send button, the stop after the field for
-// the next key, sends with enter in every terminal. Update and Click return the sent text or the quick reply;
+// it is selected; a status names its state by a glyph and a word. Enter unfolds the details of the selected
+// message, and the quick replies of ChatSpec.Actions stand as buttons under it and answer it by their key or a
+// click. In the field every key that types a character is text, enter adds a line break and back leaves it;
+// ctrl+enter sends where the terminal tells it from enter. The send button, the stop after the field for the
+// next key, sends with enter in every terminal. Update and Click return the sent text or the quick reply;
 // delivering, storing and the state of a message stay with the application.
 //
 // A FileBrowser shows the folders and files below a root from entries the application hands it; it reads no
-// file system. A folder is a list of name parts below the root, never a joined string, and a name that is
-// empty, ".", "..", or holds a separator or NUL refuses the whole folder, so no step leaves the root. It asks
+// file system. A folder is a list of name parts below the root, never a joined string. It asks
 // for a folder with a FileLoad and shows only the answer to the last one; actions come back as a FileAction.
 // The application still joins the parts below its own root and checks the result, and runs every action.
 //
 // Colours come from themes. Screen code names roles, never colour values: a Palette assigns one colour per
-// role, Styles build text styles and widgets on it. A ThemeSet holds the terminal theme, the application's
-// own themes and the built-in schemes; each theme is data, either hand-picked palettes per colour profile
-// (DarkTheme and LightTheme are such palettes under a name the application chooses) or a scheme of
-// foreground, background and 16 ANSI colours. The terminal theme is the default: it paints no ground,
-// names the ANSI slots for its accents and derives its surfaces from the foreground and background the
-// terminal reports, plain until it has; AsksTerminalColors says when to ask. Step names the theme a number
-// of places before or after another in the order of Names, wrapping at both ends. NewThemeSet rejects a
-// theme whose text reads below 4.5:1 or whose dimmed text reads below 3:1 on its ground and fills; a
-// derived palette that would fall below falls back to the plain palette, which has no ground and no fills
-// and shows the selection in reverse video. The syntax roles of a Palette may stay empty and then take the
-// text colour; a filled one must read 4.5:1 on the base and the panel, a comment 3:1. Any other theme with a
-// ground colour paints every cell through Paint. An unknown theme name resolves to the terminal theme and is
-// reported, so the application can show TextThemeUnknown.
+// role, Styles build text styles and widgets on it. A ThemeSet holds the terminal theme, the application's own
+// themes and the built-in schemes; each theme is data, either hand-picked palettes per colour profile
+// (DarkTheme and LightTheme are such palettes under a name the application chooses) or a scheme of foreground,
+// background and 16 ANSI colours. The terminal theme is the default: it paints no ground, names the ANSI slots
+// for its accents and derives its surfaces from the foreground and background the terminal reports, plain
+// until it has; AsksTerminalColors says when to ask. Step names the theme a number of places before or after
+// another in the order of Names, wrapping at both ends. A derived palette that would fall below the contrast
+// of a theme falls back to the plain palette, which has no ground and no fills and shows the selection in
+// reverse video. The syntax roles of a Palette may stay empty and then take the text colour. Any other theme
+// with a ground colour paints every cell through Paint. An unknown theme name resolves to the terminal theme
+// and is reported, so the application can show TextThemeUnknown.
 //
-// DetectColorProfile and DetectCharsetMode read the terminal once at start. A profile without colour, set by
-// NO_COLOR with any non-empty value or by a missing terminal, wins over every theme; ProfileNone also drops
-// bold, faint and reverse. Meaning never depends on colour alone: status marks keep their word, the selected
-// row its mark, the active tab its brackets and a focused frame its double line without colour, and every
-// glyph has an ASCII form for a terminal without UTF-8. Widgets return lines of exactly the requested width;
-// messages are wrapped and never cut, table cells are shortened with the ellipsis glyph, and a cut never
-// splits an escape sequence and closes any style it leaves open. Widgets escape every control character in
-// the plain text they take, and Escape does the same for data an application puts into styled content.
-// CheckIcon holds an application's icons to one code point of a width every terminal agrees on; Escape stays
-// as it is, so only an icon that passed CheckIcon appears unmasked and any other private-use character
-// is still written as its escape.
+// DetectColorProfile and DetectCharsetMode read the terminal once at start. Widgets return lines of exactly the
+// requested width; messages are wrapped and never cut, table cells are shortened with the ellipsis glyph, and
+// a cut never splits an escape sequence and closes any style it leaves open. Escape is for data an
+// application puts into styled content.
 //
 // The built-in schemes come from the iTerm2-Color-Schemes collection at a fixed commit, generated by
 // scripts/gen_tui_themes.go; their licences are in themes_builtin_licenses.txt.
+//
+// # Always enforced
+//
+// Catalogs. NewTranslator rejects a catalog that would draw wrong text: an empty ID, an ID under the reserved
+// prefix "tui.", a text in a language other than English without an English text, format verbs that differ
+// from the English text, and a key placeholder that names no known action. CheckCatalogs is the stricter
+// test-time contract that every text exists in English and German, none is empty and the verbs agree. An
+// action ID starts with a lowercase ASCII letter followed by lowercase ASCII letters, digits, '.', '_' or '-'.
+//
+// Key table. NewKeymap rejects an empty table, an action without a valid placeholder ID, level, key or help
+// text, an ID or a key listed twice, and a key that two actions of the main levels or of one overlay level
+// share. Within the main levels a key belongs to one action everywhere, except that an action tied to a page
+// (Action.Page) may share it with an action of another page, never with one of its own page or one without a
+// page; only the overlay levels LevelConfirm and LevelHelp may repeat a key of the main levels. It also
+// rejects a key that terminals, multiplexers or text lines take for themselves unless the action is the
+// second way of another (Action.SecondWayOf), the key of a standard action held by any other action of the
+// main levels whether or not the standard action is in the table, and a rebindable action whose default key
+// breaks the rules of a binding. Bind applies the user's keys as a whole or not at all, and CheckBinding and
+// Resolve apply the same rules to a binding, refuse a key that belongs to another standard action and name
+// the reason of every refusal. The input focus decides what reaches the table: where text is typed, every key
+// that types a character is text, and that is the zero value, InputText; while a key is captured as a new
+// binding only ctrl+c and esc act; in an embedded terminal no key does. No action of a key table may hold
+// ctrl+enter, which the chat uses to send.
+//
+// Text editing. A one-line text field, the input of a Dialog, the text, masked and date fields of a Form, the
+// search of a LogView, the filter of a List and the input of a CommandLine edit with keys that no action may
+// hold: the arrows, home, end, ctrl+a, ctrl+e, ctrl+b and ctrl+f move by a character and to the ends; ctrl or
+// alt with an arrow, alt+b and alt+f by a word; backspace, delete, ctrl+h, ctrl+d, ctrl+w, alt+d,
+// alt+backspace and alt+delete delete a character or a word; ctrl+u and ctrl+k delete to the start or end. A
+// word ends at white space; in a masked field a word jump goes to an end and a word deletion takes everything
+// on that side, so no boundary shows. The Paste of each of these parts and a suggestion a Dialog takes insert
+// whole at the cursor, never as keys: line breaks at the end go, those and tabs inside become one space, and
+// other control characters, invalid UTF-8 and direction marks such as U+202E are dropped, in a masked field
+// too.
+//
+// Specs. Every NewX checks its XSpec against the Keymap and the Translator and refuses what cannot work: a
+// missing key or one that names no action of the key table, two keys that name one action, a missing text or
+// label, and the further rules the doc comment of the constructor lists. Among them a Dialog needs a
+// question, answers and, unless it is a Notice, a consequence; a Notice needs a detail line and has no input
+// or danger; red detail lines belong to a Notice only; the destroying answer is never the default, so enter
+// never destroys; an answer or scroll key of a dialog with an input needs a key that acts while text is
+// typed; a masked input starts empty and has no suggestions. A List has a first column that is never free
+// text or optional, at most one free text column, a text for its empty state, AllRow only with Ticks and
+// TickWhileTyping only with Ticks and SearchAsTyped. A Form refuses an unknown field kind, a missing or
+// repeated ID and an ID with a control character. A CommandLine refuses names that are not lower-case words,
+// two commands that do the same and an icon that fails CheckIcon. An Explanation accepts only an absolute
+// http or https address of printable ASCII, so the address cannot end the link sequence. CheckAreas holds
+// areas to what the tab line can draw, CheckFrame refuses an unknown navigation form and an icon that fails
+// CheckIcon, and the frame draws no icon that fails it. CheckIcon holds an icon to one code point of a width
+// every terminal agrees on. Setters such as List.SetItems and FileBrowser.SetEntries refuse data that breaks
+// the contract of the part and change nothing then; an entry of a FileBrowser whose name is empty, ".", "..",
+// or holds "/", "\" or NUL refuses the whole folder, so no step leaves the root.
+//
+// Escaping and secrets. Control characters and escape sequences never reach the terminal as such: Escape
+// writes every control or otherwise unprintable character as its Go escape, and widgets and parts escape
+// every plain text they take, among them cells, group keys and titles of a List, the empty sentence, the typed
+// filter, the lines, sources and search text of a LogView, every character of a TextView, every text of a
+// Chat message, a FileBrowser entry, the suggestions and details of a Dialog and the names of a PathNav. A
+// part that takes styled content leaves the escaping of its data to the application. Only an icon that
+// passed CheckIcon appears unmasked. A masked field or dialog input never shows what is typed, not in its
+// row, a target or a problem, and is never handed a stored secret. FieldMaskedBlock shows a placeholder with
+// the number of lines, never the content or its length, and refuses whole a paste or key with a character
+// other than line break and tab. A masked section of a TextView stays hidden in every drawing and out of
+// every match until the application calls SetRevealed, and hiding again needs no permission. A Dialog acts
+// only on its answers, the scroll keys and the suggestion keys; every other key goes back to the
+// application, so a stray key neither saves nor destroys.
+//
+// Limits. A FieldMaskedBlock holds at most 64 KiB, counted after line breaks are normalized. The TextView
+// keeps at most TextViewMaxLines lines of at most TextViewMaxLineRunes characters, a longer line is cut with
+// a visible mark and a negative limit is refused. A LogView buffer holds at most LogViewMaxLines lines, each
+// at most LogViewMaxLineRunes characters, and a longer line is cut with a visible mark. A LogFilter count
+// goes from 1 to LogFilterMaxCount. A Chat draft holds at most ChatMaxDraftBytes. A Dialog shows at most five
+// suggestions, a CommandLine at most twelve rows at once.
+//
+// Drawing. A profile without colour, set by NO_COLOR with any non-empty value or by a missing terminal, wins
+// over every theme; ProfileNone also drops bold, faint and reverse. Meaning never depends on colour alone:
+// status marks keep their word, the selected row its mark, the default of a dialog its key, the active tab its
+// brackets and a focused frame its double line without colour, a message status names its state by a glyph and
+// a word, and every glyph has an ASCII form for a terminal without UTF-8. NewThemeSet rejects an invalid or
+// repeated theme name, a theme with both or neither of Profiles and Scheme, a colour that is not of its
+// profile's form, a hand-picked palette whose text does not reach 4.5:1 on its ground and fills or whose dimmed
+// text does not reach 3:1, and a scheme that cannot be derived. A filled syntax role of a Palette must read
+// 4.5:1 on the base and the panel, a comment 3:1. The mouse acts on a press of the left button and on the wheel
+// only, and a MouseMap holds the targets of one drawn frame, so a target no longer on screen cannot act; a
+// click is never stronger than the key it stands for.
+//
+// Boundary. The package holds neither application content nor package state and reads no file system. It
+// protects against foreign text driving the terminal, against secrets showing on screen and against a key
+// or click doing more than the action the application named. It does not check the application's data: what
+// a name, a value or a path means, whether a revealed secret may be shown and what an action does stay with
+// the application.
+//
+// # Options
+//
+// Key table:
+//
+//   - Action.Rebind: lets a user replace the single default key (RebindReplace) or add one key that also works
+//     where text is typed (RebindExtra). Default: RebindNone, the keys stay fixed.
+//   - Action.SecondWayOf: names the action this one repeats with keys no terminal takes, which may then hold a
+//     key terminals take for themselves. Default: empty, such a key is refused.
+//   - Action.Page: ties the action to one page, so it may share a key with an action of another page.
+//     Default: empty, no page; the action is visible on every page and shares a key with none.
+//   - Keymap.Page: the view of one page. Default: the table from NewKeymap sees the actions without a page
+//     only.
+//   - NewKeymap charset: how Label spells the arrow keys. Default: the zero value CharsetASCII.
+//   - Keymap.Match overlays: the overlay levels LevelConfirm and LevelHelp a screen names so that they win
+//     over the main levels. Default: none, only the main levels match.
+//   - StandardActions: the actions every tool shares. Default: not in the table until the application
+//     appends them.
+//   - NewTranslator keys: resolves the key placeholders of the texts. Default: nil, a text with a placeholder
+//     is rejected as naming an unknown action.
+//
+// Frame and hints:
+//
+//   - FrameSpec.ProductShort, Icon, ModeTab, Back and Message: the short product name, the logo glyph, the
+//     text of the mode tab, the back button and the message line. Default: empty or nil, each is left out.
+//   - FrameSpec.Nav: the form of the navigation, NavTabs, NavPathLine or NavPathHeader. Default: NavTabs, the
+//     tab line with sub-tabs.
+//   - FrameSpec.PathFocusArea: puts the focus of ZonePath on the area section. Default: false, the section of
+//     the current place.
+//   - FrameSpec.Input: the input focus of the screen, which decides what the hints show. Default: InputText.
+//   - FrameSpec.HeaderKeys, Footer and Position: the header keys, the footer hints and the position text.
+//     Default: none.
+//   - Area.Icon, Tab.GroupStart: an icon before the tab title and a separator before a sub-tab. Default: none.
+//   - StatusMark.Short, Rank and NoGlyph: shorter forms of the text, the place in the order the header fills
+//     its room, and the text without glyph. Default: no shorter form, MarkNormal, with the glyph.
+//   - Hint.Priority, Kind and WhileTyping: the order in which a short line drops hints, the kind of the hint
+//     and whether it names keys that type a character as well. Default: 0, HintNormal, false.
+//
+// Dialog:
+//
+//   - DialogSpec.Irreversible, Notice: draws the consequence in the warn colour, makes the dialog a calm
+//     message. Default: false, false.
+//   - DialogSpec.Default, Danger: the answer enter gives and the answer that destroys. Default: empty, enter
+//     answers nothing and no answer is drawn as destroying; Default needs DialogKeys.Enter.
+//   - DialogSpec.Input and DialogInput.Masked, Value, Suggest: an input line, whether it is masked, its start
+//     value and its suggestions. Default: nil, no input; not masked, empty, no suggestions.
+//   - DialogSpec.Extra, DialogLine.Prefix and Style: hints of the application behind the answers, a prefix
+//     before a detail and its style. Default: none, none, StyleText.
+//   - DialogKeys.Up, Down, PageUp, PageDown, First, Last: scroll keys for details that do not fit. Default:
+//     empty, only the wheel scrolls.
+//   - DialogKeys.Complete, SuggestUp, SuggestDown, Suggestion.Continues: take and move through suggestions,
+//     and keep the dialog open when a suggestion is taken. Default: empty, false; an input with suggestions
+//     needs Complete, Up and Down.
+//
+// List, filter bar and path navigation:
+//
+//   - ListSpec.Search: how the list takes its filter, SearchByKey, SearchAsTyped or SearchNone. Default:
+//     SearchByKey, which needs ListKeys.Search.
+//   - ListSpec.Wrap, SearchInBar, Outline: wrap at the ends, draw the search field in the FilterBar, draw
+//     groups as an outline. Default: false each.
+//   - ListSpec.Ticks, AllRow, TickWhileTyping and ListKeys.Toggle: tick boxes, the row of all and ticking in
+//     the text focus; Toggle is needed with Ticks. Default: false each, no tick boxes.
+//   - ListSpec.Title, NoGroup, Buttons: the title of the modal, the title of the group without key and the
+//     buttons of the modal. Default: no title, TextListNoGroup, no buttons.
+//   - Column.Optional, Flex, Right, Dimmed, Short, Tone: leave out the column on a narrow terminal, mark the
+//     free text column, align right, dim, shorter labels, style of a cell by value. Default: false, false,
+//     false, false, nil, nil.
+//   - ListGroup.Keep: shows a described group without entries. Default: false, the row is not drawn.
+//   - FilterBarKeys.PageUp, PageDown and FilterBarSpec.List: page keys of the value list and the list the bar
+//     stands above. Default: empty, nil.
+//
+// Form, calendar, command line, help:
+//
+//   - FormSpec.Title, Lead, Sections, Buttons: the title of the modal, the lead sentences, the sections and
+//     the buttons below the fields. Default: none each; FormButton.Primary and FormSection.Advanced default
+//     to false.
+//   - DateField.Time, Min, Max, Now: adds the time of day, bounds the value and sets the clock. Default:
+//     false, no bound, time.Now; FormField.Date applies to a FieldDate only.
+//   - Form.SetFocused, List.SetFocused, FileBrowser.SetFocused: draw without any sign of focus while the focus
+//     lies elsewhere. Default: focused.
+//   - Command.Aliases, Icon, DescriptionArgs, Key, Hidden: further names, a glyph, arguments of the
+//     description, the position of the one key to show and whether the empty line hides the command. Default:
+//     none, none, none, 0 (all keys of the action), false.
+//   - HelpSpec.Screen, Global, Note and HelpKeys.Next, Prev, First, Last: the key lists, the fixed note and
+//     further keys. Default: no key list, no note, no further key.
+//   - ExplanationItem.Term, URL, LinkText and ExplanationKeys.PageUp, PageDown, First, Last, Link: the term,
+//     the documentation address, the text above it and further keys. Default: none, none, TextInfoLink, no
+//     key.
+//
+// Log, text and chat views:
+//
+//   - LogViewSpec.Lines: the size of the ring buffer. Default: LogViewDefaultLines.
+//   - LogViewSpec.Wrap, Timestamps: the start state of the two switches. Default: false each.
+//   - LogViewSpec.Filter, Units, Now: the start period, the units on offer and the clock. Default: every line,
+//     all four units, time.Now.
+//   - LogViewKeys.First and Filter: the jump to the oldest line and the choice of the period. Default: empty,
+//     no key and no filter button; Filter needs every key of FilterForm.
+//   - TextViewSpec.MaxLines, MaxLineRunes: the lines kept and the characters of a line. Default:
+//     TextViewDefaultLines and TextViewDefaultLineRunes.
+//   - TextViewSpec.Wrap, Numbers: the start state of the two switches. Default: false each.
+//   - TextViewKeys.First, Last, Reveal: jump to the ends and ask to uncover masked sections. Default: empty,
+//     no key; the application calls SetRevealed.
+//   - ChatSpec.Actions, Now: quick replies and the clock. Default: none, time.Now.
+//   - FileBrowserSpec.Actions, RootLabel, FileBrowserKeys.Reload: the buttons on the marked entry, the label of
+//     the root and the reload key. Default: none, TextFileRoot, none.
+//
+// Input and colour:
+//
+//   - InputFilter: drops split mouse reports from text input once installed with tea.WithFilter. Default: not
+//     installed, the pieces of a report can reach a text field. NewInputFilter takes a clock, nil is the system
+//     clock, and SetAfterFunc replaces the timer, both for tests.
+//   - NewThemeSet extra: the application's own themes. Default: none, the terminal theme and the built-in
+//     schemes.
+//   - Theme.Profiles or Scheme: a hand-picked palette per colour profile or a scheme the palette is derived
+//     from. Default: the terminal theme, which paints no ground.
 package tui
