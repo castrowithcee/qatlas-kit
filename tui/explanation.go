@@ -47,6 +47,9 @@ type ExplanationKeys struct {
 type ExplanationSpec struct {
 	Item ExplanationItem
 	Keys ExplanationKeys
+	// CloseOutside closes the explanation drawn by Overlay on a click outside its frame, as Keys.Back does.
+	// The default leaves such a click without effect.
+	CloseOutside bool
 }
 
 // The smallest text of an explanation drawn over the screen, and the fewest rows of its text.
@@ -202,6 +205,11 @@ func (e *Explanation) Click(r MouseResult) (act ActionID, handled bool) {
 	switch {
 	case !r.Handled:
 		return "", false
+	case r.Zone == ZoneOutside:
+		if !e.spec.CloseOutside {
+			return "", false
+		}
+		return e.spec.Keys.Back, true
 	case r.Item == explanationRef:
 		return e.spec.Keys.Back, true
 	}
@@ -358,8 +366,9 @@ func (e *Explanation) Overlay(styles Styles, screen string, width, height int, r
 	box := styles.Panel(e.title(), "", lines, inner+4, len(lines)+2, true)
 	top := room.Y + (room.Height-len(box))/2
 	left := room.X + (room.Width-inner-4)/2
-	all := append([]Target{{Rect: Rect{X: left, Y: top, Width: inner + 4, Height: len(box)}, Item: explanationRef}},
-		OffsetTargets(ts, left+2, top+1)...)
+	frame := Rect{X: left, Y: top, Width: inner + 4, Height: len(box)}
+	all := withOutside(e.spec.CloseOutside, append([]Target{{Rect: frame, Item: explanationRef}},
+		OffsetTargets(ts, left+2, top+1)...), width, height, frame)
 	return overlay(screen, box, width, height, top, left, styles), all, true
 }
 

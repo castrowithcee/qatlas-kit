@@ -111,8 +111,9 @@
 // discards a changed form, and an open list of values or calendar closes first. A list acts as Back does
 // through Act: it clears a filter and otherwise comes back unhandled, which the application closes the modal on
 // as on the key. A click on the footer or the header behind the modal is outside as well and runs nothing.
-// Explanation closes on a click outside its keys and address already and has no option; the View drawn in a
-// terminal too small for an overlay has no frame and no such targets.
+// A command line closes as Keys.Back does, and an explanation reports Keys.Back. An explanation is the one
+// exception to the rule on the frame: a click inside its frame beside its keys and address closes it with or
+// without the option. The View drawn in a terminal too small for an overlay has no frame and no such targets.
 //
 // A TextSelection selects text with the mouse, one for the screen. The application hands it every mouse event with
 // the MouseMap of the frame on screen and calls Clear on every key. Dragging with the left button held from the
@@ -599,9 +600,10 @@
 //     value and its suggestions. Default: nil, no input; not masked, empty, no suggestions.
 //   - DialogSpec.Extra, DialogLine.Prefix and Style: hints of the application behind the answers, a prefix
 //     before a detail and its style. Default: none, none, StyleText.
-//   - DialogSpec.CloseOutside, and the same option of HelpSpec, FormSpec, ListSpec and PathNavKeys: a click
-//     outside the frame of the open modal gives the named answer of a dialog, one of its answers, and acts as
-//     the back key of the others. Default: empty or false, such a click does nothing.
+//   - DialogSpec.CloseOutside, and the same option of HelpSpec, FormSpec, ListSpec, CommandLineSpec,
+//     ExplanationSpec and PathNavKeys: a click outside the frame of the open modal gives the named answer of
+//     a dialog, one of its answers, and acts as the back key of the others. Default: empty or false, such a
+//     click does nothing.
 //   - DialogKeys.Up, Down, PageUp, PageDown, First, Last: scroll keys for details that do not fit. Default:
 //     empty, only the wheel scrolls.
 //   - DialogKeys.Complete, SuggestUp, SuggestDown, Suggestion.Continues: take and move through suggestions,

@@ -132,7 +132,7 @@ func (m *model) rebuildText() error {
 		return err
 	}
 	line, err := tui.NewCommandLine(tui.CommandLineSpec{Keys: tui.CommandLineKeys{Up: actUp, Down: actDown, Next: actZoneNext,
-		Prev: actZonePrev, Enter: actEnter, Back: actBack}, Commands: commands(m.groups, text)}, m.keys, text)
+		Prev: actZonePrev, Enter: actEnter, Back: actBack}, Commands: commands(m.groups, text), CloseOutside: true}, m.keys, text)
 	if err != nil {
 		return err
 	}
