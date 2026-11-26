@@ -1,9 +1,9 @@
 Garden  ok                                                                                          
   1 Plants  2 Beds                                                                                  
-  basil  resting                                                                                    
   basil  resting  #= Pick plants ================================================#                  
   basil  resting  | Type to search                                               |                  
   basil  resting  |       NAME     STATE     SIZE  NOTE                          |                  
+  basil  resting  |       ------------------------------------------------------ |                  
   basil  resting  |   [ ] basil    blooming    12  on the sill by the kitchen w~ |                  
   basil  resting  |   [x] mint     resting     30  spreads fast                  |                  
   basil  resting  |   [ ] oak      resting   1200  planted long ago              |                  

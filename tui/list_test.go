@@ -457,7 +457,7 @@ func TestWindowKeepsTheSelectionInView(t *testing.T) {
 	if err := l.SetItems(items); err != nil {
 		t.Fatal(err)
 	}
-	const height = 8 // the header and seven rows
+	const height = 9 // the header, its rule and seven rows
 	check := func(want string) {
 		t.Helper()
 		view, _ := l.View(Styles{}, 50, height)
@@ -497,12 +497,12 @@ func TestWindowKeepsTheSelectionInView(t *testing.T) {
 func TestColumnsGiveWayInTheirOrder(t *testing.T) {
 	l := filledList(t, nil)
 	header := func(width int) string {
-		view, _ := l.View(Styles{}, width, 3)
+		view, _ := l.View(Styles{}, width, 4)
 		return strings.TrimRight(strings.Split(view, "\n")[0], " ")
 	}
 	row := func(width int) string {
-		view, _ := l.View(Styles{}, width, 3)
-		return strings.TrimRight(strings.Split(view, "\n")[1], " ")
+		view, _ := l.View(Styles{}, width, 4)
+		return strings.TrimRight(strings.Split(view, "\n")[2], " ")
 	}
 	if got := header(80); got != "  NAME   STATE     SIZE  NOTE" {
 		t.Errorf("titles are upper case: %q", got)
@@ -790,17 +790,20 @@ func TestEveryControlHasATarget(t *testing.T) {
 	if tg, ok := byRow[0]; !ok || tg.Action != "search" || !strings.HasPrefix(rows[0], "/ e") {
 		t.Errorf("the search line has no search target: %+v, %q", tg, rows[0])
 	}
-	for y, line := range rows[2:] {
+	for y, line := range rows[3:] {
 		if strings.TrimSpace(line) == "" {
 			continue
 		}
-		tg, ok := byRow[y+2]
+		tg, ok := byRow[y+3]
 		if !ok || tg.Action != "enter" || tg.Item == "" {
 			t.Errorf("row %q has no target", line)
 		}
 	}
 	m := NewMouseMap(targets, true)
 	for _, tg := range targets[1:] {
+		if tg.selection != nil {
+			continue
+		}
 		if got := m.Handle(click(tg.Rect.X, tg.Rect.Y)); got.Action != tg.Action || got.Item != tg.Item {
 			t.Errorf("a click at %d,%d reports %+v, want %+v", tg.Rect.X, tg.Rect.Y, got, tg)
 		}
@@ -1004,7 +1007,7 @@ func TestTickBoxesShowThreeStatesWithoutColour(t *testing.T) {
 		l := tickList(t, nil)
 		row := func() string {
 			view, _ := l.View(st, 60, 12)
-			return strings.Split(ansi.Strip(view), "\n")[1]
+			return strings.Split(ansi.Strip(view), "\n")[2]
 		}
 		if got := row(); !strings.Contains(got, "[ ] ") {
 			t.Errorf("%s: none: %q", name, got)
@@ -1025,39 +1028,42 @@ func TestTickBoxesShowThreeStatesWithoutColour(t *testing.T) {
 }
 
 func TestClickOnTitleFoldsAndClickOnBoxTicks(t *testing.T) {
-	l := tickList(t, nil)
-	l.SetTicked([]ItemID{"basil"})
-	at := func(item string) (Target, *MouseMap) {
-		_, targets := l.View(Styles{}, 60, 12)
-		for i := len(targets) - 1; i >= 0; i-- {
-			if targets[i].Item == item {
-				return targets[i], NewMouseMap(targets, true)
+	// ClickOpens changes neither the fold of a group nor the toggle of a tick box.
+	for _, opens := range []bool{false, true} {
+		l := tickList(t, func(s *ListSpec) { s.ClickOpens = opens })
+		l.SetTicked([]ItemID{"basil"})
+		at := func(item string) (Target, *MouseMap) {
+			_, targets := l.View(Styles{}, 60, 12)
+			for i := len(targets) - 1; i >= 0; i-- {
+				if targets[i].Item == item {
+					return targets[i], NewMouseMap(targets, true)
+				}
 			}
+			t.Fatalf("no target for %q", item)
+			return Target{}, nil
 		}
-		t.Fatalf("no target for %q", item)
-		return Target{}, nil
-	}
-	tg, m := at(groupRef + "herbs")
-	if _, handled := l.Click(m.Handle(click(tg.Rect.X+30, tg.Rect.Y))); !handled || shownRows(l) != "[herbs],[trees],oak,[],fern" || ticks(l) != "basil" {
-		t.Fatalf("a click on the title: rows %s, ticks %q", shownRows(l), ticks(l))
-	}
-	tg, m = at(tickRef + groupRef + "herbs")
-	if _, handled := l.Click(m.Handle(click(tg.Rect.X+1, tg.Rect.Y))); !handled {
-		t.Fatal("the click on the group box was not handled")
-	}
-	if ticks(l) != "basil,mint,thyme" || shownRows(l) != "[herbs],[trees],oak,[],fern" {
-		t.Errorf("a click on the group box: ticks %q, rows %s (it ticks the folded entries too and folds nothing)", ticks(l), shownRows(l))
-	}
-	if _, handled := l.Click(m.Handle(click(tg.Rect.X+2, tg.Rect.Y))); !handled || ticks(l) != "" {
-		t.Errorf("the second click on the box: ticks %q", ticks(l))
-	}
-	l.SetFocused(true)
-	tg, m = at(tickRef + "oak")
-	if open, _ := l.Click(m.Handle(click(tg.Rect.X, tg.Rect.Y))); open != "" || ticks(l) != "oak" {
-		t.Errorf("a click on the box of an entry: open %q, ticks %q", open, ticks(l))
-	}
-	if open, _ := l.Click(m.Handle(click(tg.Rect.X+2, tg.Rect.Y))); open != "" || ticks(l) != "" {
-		t.Errorf("a click on the box of the marked entry opened it or did not toggle: open %q, ticks %q", open, ticks(l))
+		tg, m := at(groupRef + "herbs")
+		if _, handled := l.Click(m.Handle(click(tg.Rect.X+30, tg.Rect.Y))); !handled || shownRows(l) != "[herbs],[trees],oak,[],fern" || ticks(l) != "basil" {
+			t.Fatalf("a click on the title: rows %s, ticks %q", shownRows(l), ticks(l))
+		}
+		tg, m = at(tickRef + groupRef + "herbs")
+		if _, handled := l.Click(m.Handle(click(tg.Rect.X+1, tg.Rect.Y))); !handled {
+			t.Fatal("the click on the group box was not handled")
+		}
+		if ticks(l) != "basil,mint,thyme" || shownRows(l) != "[herbs],[trees],oak,[],fern" {
+			t.Errorf("a click on the group box: ticks %q, rows %s (it ticks the folded entries too and folds nothing)", ticks(l), shownRows(l))
+		}
+		if _, handled := l.Click(m.Handle(click(tg.Rect.X+2, tg.Rect.Y))); !handled || ticks(l) != "" {
+			t.Errorf("the second click on the box: ticks %q", ticks(l))
+		}
+		l.SetFocused(true)
+		tg, m = at(tickRef + "oak")
+		if open, _ := l.Click(m.Handle(click(tg.Rect.X, tg.Rect.Y))); open != "" || ticks(l) != "oak" {
+			t.Errorf("a click on the box of an entry: open %q, ticks %q", open, ticks(l))
+		}
+		if open, _ := l.Click(m.Handle(click(tg.Rect.X+2, tg.Rect.Y))); open != "" || ticks(l) != "" {
+			t.Errorf("a click on the box of the marked entry opened it or did not toggle: open %q, ticks %q", open, ticks(l))
+		}
 	}
 }
 
@@ -1114,8 +1120,8 @@ func TestNarrowTerminalKeepsOnlyTheID(t *testing.T) {
 	}
 	l.SetItems([]ListItem{{ID: "installation-checker", Cells: []string{"installation-checker", "checks the installation"}}})
 	row := func(width int) string {
-		view, _ := l.View(Styles{}, width, 3)
-		return strings.TrimRight(strings.Split(view, "\n")[1], " ")
+		view, _ := l.View(Styles{}, width, 4)
+		return strings.TrimRight(strings.Split(view, "\n")[2], " ")
 	}
 	if got := row(60); got != "> [ ] installation-checker  checks the installation" {
 		t.Errorf("wide: %q", got)
@@ -1675,12 +1681,12 @@ func TestListModalNeedsRoomOrFallsBack(t *testing.T) {
 	st := looks(t)["dark"]
 	l := newModalList(t, st, 5, nil)
 	screen := sampleScreen(100, 30)
-	// Search, titles, one row, a gap, the button row, a gap, the key line and the frame: 9 rows.
-	if _, _, ok := l.Overlay(st, screen, 100, 30, Rect{Width: 100, Height: 8}); ok {
-		t.Error("8 rows are enough")
+	// Search, titles, their rule, one row, a gap, the button row, a gap, the key line and the frame: 10 rows.
+	if _, _, ok := l.Overlay(st, screen, 100, 30, Rect{Width: 100, Height: 9}); ok {
+		t.Error("9 rows are enough")
 	}
-	if _, _, ok := l.Overlay(st, screen, 100, 30, Rect{Width: 100, Height: 9}); !ok {
-		t.Error("9 rows are not enough")
+	if _, _, ok := l.Overlay(st, screen, 100, 30, Rect{Width: 100, Height: 10}); !ok {
+		t.Error("10 rows are not enough")
 	}
 	if _, _, ok := l.Overlay(st, screen, 100, 30, Rect{Width: 43, Height: 30}); ok {
 		t.Error("a room 43 wide is enough")
@@ -2212,5 +2218,89 @@ func TestListSearchNoneAndOutline(t *testing.T) {
 	view, _ := l.View(looks(t)["noneascii"], 40, 8)
 	if strings.Contains(view, "(") || strings.Contains(strings.ToLower(view), "search") {
 		t.Errorf("count or search line drawn:\n%s", view)
+	}
+}
+
+// searchedGroupList is the grouped sample table under its always-present search field.
+func searchedGroupList(t *testing.T, st Styles) *List {
+	t.Helper()
+	l, _ := newSampleList(t, st, i18n.English, func(s *ListSpec) { s.Search, s.Keys.Search = SearchAsTyped, "" })
+	if err := l.SetItems(samplePlants()); err != nil {
+		t.Fatal(err)
+	}
+	if err := l.SetGroups(sampleGroups()); err != nil {
+		t.Fatal(err)
+	}
+	l.SetGrouped(true)
+	return l
+}
+
+func TestGoldenListSearchField(t *testing.T) {
+	for _, tt := range []struct{ name, look string }{
+		{"listsearch.wide.golden", "noneascii"},
+		{"listsearch.wide.mono.golden", "mono"},
+		{"listsearch.wide.dark.golden", "dark"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			st := looks(t)[tt.look]
+			out, _ := searchedGroupList(t, st).View(st, 100, 12)
+			checkGolden(t, tt.name, out+"\n")
+		})
+	}
+}
+
+// The rule under the titles and the deeper indent move no click: every drawn row, a group row or an entry,
+// answers with its own reference, and the search line and the two lines above the rows hold no row.
+func TestListClicksHitTheirRowBelowTheRule(t *testing.T) {
+	st := looks(t)["noneascii"]
+	l := searchedGroupList(t, st)
+	view, targets := l.View(st, 100, 12)
+	lines := strings.Split(ansi.Strip(view), "\n")
+	if !strings.HasPrefix(lines[0], "Type") || !strings.Contains(lines[1], "NAME") || strings.Trim(lines[2], "- ") != "" {
+		t.Fatalf("unexpected head of the list:\n%s", view)
+	}
+	for _, tc := range []struct{ word, item string }{
+		{"Kitchen herbs", groupRef + "herbs"}, {"basil", "basil"}, {"mint", "mint"}, {"thyme", "thyme"},
+		{"Big trees", groupRef + "trees"}, {"oak", "oak"},
+	} {
+		y := slices.IndexFunc(lines, func(s string) bool { return strings.Contains(s, tc.word) })
+		if y < 3 {
+			t.Fatalf("%q is not drawn below the rule:\n%s", tc.word, view)
+		}
+		if res := NewMouseMap(targets, true).Handle(click(40, y)); res.Item != tc.item {
+			t.Errorf("click on the row of %q = %q, want %q", tc.word, res.Item, tc.item)
+		}
+	}
+	for y := 1; y <= 2; y++ {
+		if res := NewMouseMap(targets, true).Handle(click(40, y)); res.Item != "" {
+			t.Errorf("click on line %d hit %q", y, res.Item)
+		}
+	}
+	// A page is the rows that fit below the three lines.
+	l.View(st, 100, 8)
+	if l.page != 5 {
+		t.Errorf("page = %d, want 5", l.page)
+	}
+}
+
+// ClickOpens opens a focused entry row at the first click; the default needs the marked row; without the
+// focus neither form opens.
+func TestRowClickOpensAtOnceWithOption(t *testing.T) {
+	for _, opens := range []bool{false, true} {
+		for _, focused := range []bool{false, true} {
+			l := filledList(t, func(s *ListSpec) { s.ClickOpens = opens })
+			l.SetFocused(focused)
+			_, targets := l.View(Styles{}, 60, 10)
+			m := NewMouseMap(targets, true)
+			for _, tg := range targets {
+				if tg.Item != "mint" {
+					continue
+				}
+				open, handled := l.Click(m.Handle(click(tg.Rect.X+1, tg.Rect.Y)))
+				if want := opens && focused; (open == "mint") != want || !handled || selected(t, l) != "mint" {
+					t.Errorf("ClickOpens %v focused %v: open %q handled %v marked %q", opens, focused, open, handled, selected(t, l))
+				}
+			}
+		}
 	}
 }

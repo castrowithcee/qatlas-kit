@@ -85,7 +85,7 @@ func newListBlock(m *model, note tui.TextID, bar, ticks, grouped bool) (*listBlo
 	}
 	keys := tui.ListKeys{Up: actUp, Down: actDown, PageUp: actPageUp, PageDown: actPageDown, First: actFirst, Last: actLast,
 		Left: actLeft, Right: actRight, Enter: actEnter, Back: actBack, Search: actSearch}
-	spec := tui.ListSpec{Columns: cols, Keys: keys, Empty: textListEmpty, SearchInBar: bar}
+	spec := tui.ListSpec{Columns: cols, Keys: keys, Empty: textListEmpty, SearchInBar: bar, ClickOpens: grouped && !ticks}
 	if ticks {
 		spec.Keys.Search, spec.Keys.Toggle = "", actToggle
 		spec.Search, spec.Ticks, spec.AllRow, spec.TickWhileTyping = tui.SearchAsTyped, true, true, true

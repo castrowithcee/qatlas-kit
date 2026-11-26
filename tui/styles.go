@@ -156,6 +156,7 @@ const (
 	GlyphMask                       // one typed character of a masked field
 	GlyphCalendar                   // the symbol of a date field that opens its calendar
 	GlyphPathSeparator              // between the sections of the path line
+	GlyphRule                       // the horizontal line under column titles
 	glyphCount
 )
 
@@ -175,6 +176,7 @@ var glyphs = [glyphCount][2]string{
 	GlyphMask:          {"•", "*"},
 	GlyphCalendar:      {"▦", "[#]"},
 	GlyphPathSeparator: {"›", ">"},
+	GlyphRule:          {"─", "-"},
 }
 
 // Glyph is the form of g in the character set of the styles.
@@ -186,6 +188,26 @@ func (s Styles) Glyph(g Glyph) string {
 		return glyphs[g][0]
 	}
 	return glyphs[g][1]
+}
+
+// Field draws text, already padded to the width of a text field, as a field: on a tinted fill where there
+// is colour, underlined where there are attributes only, and as it is where there are neither. The fill
+// stays behind styled text inside it.
+func (s Styles) Field(text string) string {
+	if s.profile == ProfileNone || s.profile > ProfileTrueColor {
+		return text
+	}
+	bg := s.palette.Panel
+	if bg == "" {
+		bg = s.palette.Surface
+	}
+	if s.profile.Colorless() || bg == "" {
+		// Written by hand: Lip Gloss underlines cell by cell and cuts into the sequences of styled text.
+		const underline = "\x1b[4m"
+		return underline + keepOpen(text, underline) + "\x1b[m"
+	}
+	fill := lipgloss.NewStyle().Foreground(lipgloss.Color(string(s.palette.Text))).Background(lipgloss.Color(string(bg)))
+	return fill.Render(keepOpen(text, openingOf(fill)))
 }
 
 // SelectionMark leads the selected row: a narrow bar where colour shows it on a selection fill, and ">"

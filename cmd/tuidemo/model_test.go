@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cmp"
 	"errors"
 	"io"
 	"os"
@@ -17,14 +18,14 @@ import (
 
 func testModel(t *testing.T, icons string) *model {
 	t.Helper()
-	prefs := uiprefs.Default(uiprefs.Schema{DefaultArea: "overview"})
+	prefs := uiprefs.Default(schema())
 	prefs.Icons = icons
 	root, err := newSampleRoot()
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = os.RemoveAll(root) })
-	m, err := newModel(prefs, tui.ProfileNone, tui.CharsetUnicode, root)
+	m, err := newModel(prefs, tui.ProfileNone, tui.CharsetUnicode, root, sampleToday)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -178,8 +179,8 @@ func TestEveryGroupDrawsInEveryTabAtEverySize(t *testing.T) {
 }
 
 func TestArgumentsAreChecked(t *testing.T) {
-	for _, args := range [][]string{{"extra"}, {"-icons", "emoji"}, {"-language", "fr"}, {"-theme", "nope"}, {"-bogus"}} {
-		err := run(args, io.Discard, nil)
+	for _, args := range [][]string{{"extra"}, {"-icons", "emoji"}, {"-language", "fr"}, {"-theme", "nope"}, {"-navigation", "nope"}, {"-bogus"}} {
+		err := run(args, io.Discard, nil, sampleToday)
 		var usage usageError
 		if !errors.As(err, &usage) {
 			t.Errorf("%v: error %v, want a usage error", args, err)
@@ -188,15 +189,15 @@ func TestArgumentsAreChecked(t *testing.T) {
 }
 
 func TestFlagValuesAreChecked(t *testing.T) {
-	for _, args := range [][]string{{"-theme", "nope"}, {"-language", "fr"}, {"-icons", "emoji"}} {
-		err := run(args, io.Discard, nil)
+	for _, args := range [][]string{{"-theme", "nope"}, {"-language", "fr"}, {"-icons", "emoji"}, {"-navigation", "nope"}} {
+		err := run(args, io.Discard, nil, sampleToday)
 		var usage usageError
 		if !errors.As(err, &usage) || !strings.Contains(err.Error(), args[1]) {
 			t.Errorf("%v: error %v, want a usage error naming the value", args, err)
 		}
 	}
 	for _, args := range []string{"-theme demo-light", "-language system", "-language deutsch", "-icons none"} {
-		prefs := uiprefs.Default(uiprefs.Schema{DefaultArea: "overview"})
+		prefs := uiprefs.Default(schema())
 		f := strings.Fields(args)
 		switch f[0] {
 		case "-theme":
@@ -206,7 +207,7 @@ func TestFlagValuesAreChecked(t *testing.T) {
 		case "-icons":
 			prefs.Icons = f[1]
 		}
-		if _, err := newModel(prefs, tui.ProfileNone, tui.CharsetUnicode, ""); err != nil {
+		if _, err := newModel(prefs, tui.ProfileNone, tui.CharsetUnicode, "", sampleToday); err != nil {
 			t.Errorf("%s: %v", args, err)
 		}
 	}
@@ -617,5 +618,99 @@ func TestAFooterHintOfABlockMovesTheBlock(t *testing.T) {
 	}
 	if after, _ := b.list.Current(); after.ID == before.ID || m.zone != tui.ZoneRows {
 		t.Errorf("a click on the down hint left the list on %s, focus at %s", after.ID, m.zone)
+	}
+}
+
+func TestPathFormLeadsDownIntoEveryWorkAreaAndOutByEsc(t *testing.T) {
+	m := testModel(t, uiprefs.IconsNone)
+	m.setNavigation(uiprefs.NavigationPathLine)
+	for _, g := range m.groups {
+		for _, tab := range g.area.Tabs {
+			m.openArea(g.area.ID)
+			m.tabs[g.area.ID], m.zone = tab.ID, tui.ZonePath
+			m.refresh()
+			name := string(g.area.ID) + "/" + string(tab.ID)
+			work := m.workZone()
+			press(m, tea.KeyDown)
+			if want := cmp.Or(work, tui.ZonePath); m.zone != want {
+				t.Errorf("%s: down from the path leads to %s, want %s", name, m.zone, want)
+			}
+			press(m, tea.KeyEscape)
+			if m.zone != tui.ZonePath || m.pathnav.Open() {
+				t.Errorf("%s: esc leads to %s, overlay open %v", name, m.zone, m.pathnav.Open())
+			}
+		}
+	}
+}
+
+func TestPathFormFooterNamesTheKeysWhereTheyAct(t *testing.T) {
+	m := testModel(t, uiprefs.IconsNone)
+	has := func(a tui.ActionID) bool {
+		return slices.ContainsFunc(m.footerHints(), func(h tui.Hint) bool { return h.Action == a })
+	}
+	if has(actMenu) {
+		t.Error("the tab form names the menu key")
+	}
+	m.setNavigation(uiprefs.NavigationPathHeader)
+	if !has(actMenu) || !has(actEnter) || !has(actLeft) || has(actDown) || has(actUp) || has(actZoneNext) {
+		t.Error("path of a tab without a work area: want menu, enter and the side keys only")
+	}
+	m.openArea("help")
+	press(m, tea.KeyDown)
+	if m.zone != tui.ZoneRows || has(actLeft) || !has(actUp) || !has(actZoneNext) {
+		t.Errorf("buttons at %s: want up and tab, no side keys", m.zone)
+	}
+	press(m, tea.KeyUp)
+	m.openArea("views")
+	m.tabs["views"] = "text"
+	if !has(actDown) || !has(actLeft) || has(actUp) {
+		t.Error("path of a tab with a block: want down and the side keys, no up")
+	}
+}
+
+func TestChoiceFormFocusZonesAndKeys(t *testing.T) {
+	m := testModel(t, uiprefs.IconsNone)
+	m.setNavigation(uiprefs.NavigationHeaderChoice)
+	m.openArea("settings")
+	m.refresh()
+	if got := m.zones(); got[0] != tui.ZoneTabs || got[1] != tui.ZoneSubtabs || m.zone != tui.ZoneTabs {
+		t.Fatalf("zones %v, focus %s", got, m.zone)
+	}
+	press(m, tea.KeyDown)
+	if m.zone != tui.ZoneSubtabs {
+		t.Errorf("down leads to %s", m.zone)
+	}
+	press(m, tea.KeyRight)
+	if m.tab() != "input" || m.area != "settings" {
+		t.Errorf("right on the sub-tabs: %s/%s", m.area, m.tab())
+	}
+	press(m, tea.KeyUp)
+	press(m, tea.KeyRight)
+	if m.area != "dialogs" || m.zone != tui.ZoneTabs {
+		t.Errorf("right on the field: area %s, zone %s", m.area, m.zone)
+	}
+	press(m, tea.KeyEnter)
+	if !m.pathnav.Open() {
+		t.Fatal("enter on the field opens no list")
+	}
+	press(m, tea.KeyDown)
+	press(m, tea.KeyEnter)
+	if m.pathnav.Open() || m.area != "help" || m.zone != tui.ZoneTabs {
+		t.Errorf("a choice leaves area %s, zone %s, open %v", m.area, m.zone, m.pathnav.Open())
+	}
+	// A click on the field opens the list, not the area; the digits still open an area.
+	m.refresh()
+	if !clickWhere(m, func(r tui.MouseResult) bool { return r.Zone == tui.ZoneTabs && r.Area == "help" }) || !m.pathnav.Open() {
+		t.Error("a click on the field opens no list")
+	}
+	m.pathnav.Close()
+	press(m, '2')
+	if m.area != "frame" {
+		t.Errorf("digit 2 opens %s", m.area)
+	}
+	// m opens the overview as on the path forms.
+	press(m, 'm')
+	if !m.pathnav.Open() {
+		t.Error("m opens no overview")
 	}
 }

@@ -29,12 +29,40 @@ func (m *model) tab() tui.TabID {
 	return g.area.Tabs[0].ID
 }
 
-// zones are the focus zones the open tab has: the sub-tab line only where it shows, then the work area: the
-// zones of its block, or rows where the tab has buttons.
+// pathForm reports whether the navigation is a path, in the line or in the header.
+func (m *model) pathForm() bool {
+	return m.prefs.Navigation == uiprefs.NavigationPathLine || m.prefs.Navigation == uiprefs.NavigationPathHeader
+}
+
+// choiceForm reports whether the areas are a choice field in the header, above the sub-tab line.
+func (m *model) choiceForm() bool { return m.prefs.Navigation == uiprefs.NavigationHeaderChoice }
+
+// onChoice reports whether the focus lies on the choice field of the header.
+func (m *model) onChoice() bool { return m.choiceForm() && m.zone == tui.ZoneTabs }
+
+// navForm is the frame's form of the navigation in force.
+func (m *model) navForm() tui.NavForm {
+	switch m.prefs.Navigation {
+	case uiprefs.NavigationPathLine:
+		return tui.NavPathLine
+	case uiprefs.NavigationPathHeader:
+		return tui.NavPathHeader
+	case uiprefs.NavigationHeaderChoice:
+		return tui.NavHeaderChoice
+	}
+	return tui.NavTabs
+}
+
+// zones are the focus zones the open tab has: the path where the navigation is one, else the tab line and
+// the sub-tab line only where it shows, then the work area: the zones of its block, or rows where the tab
+// has buttons.
 func (m *model) zones() []tui.FocusZone {
-	zones := []tui.FocusZone{tui.ZoneTabs}
-	if len(m.group().area.Tabs) > 1 {
-		zones = append(zones, tui.ZoneSubtabs)
+	zones := []tui.FocusZone{tui.ZonePath}
+	if !m.pathForm() {
+		zones[0] = tui.ZoneTabs
+		if len(m.group().area.Tabs) > 1 {
+			zones = append(zones, tui.ZoneSubtabs)
+		}
 	}
 	if b := m.live(); b != nil {
 		zones = append(zones, b.zones()...)
@@ -44,16 +72,29 @@ func (m *model) zones() []tui.FocusZone {
 	return zones
 }
 
+// top is the zone of the topmost line, the tab line or the path.
+func (m *model) top() tui.FocusZone { return m.zones()[0] }
+
+// onNavLine reports whether the focus lies on a line of the navigation, not in the work area.
+func (m *model) onNavLine() bool {
+	return m.zone == tui.ZoneTabs || m.zone == tui.ZoneSubtabs || m.zone == tui.ZonePath
+}
+
 func (m *model) openArea(id tui.AreaID) {
 	m.area = id
 	if !slices.Contains(m.zones(), m.zone) {
-		m.zone = tui.ZoneTabs
+		m.zone = m.top()
 	}
 }
 
-// step moves the open tab of the focused line by one, with wrap-around.
+// step moves the open tab of the focused line by one, with wrap-around; on the path it moves the focus
+// between the area and the tab section.
 func (m *model) step(by int) {
-	if m.zone != tui.ZoneTabs && m.zone != tui.ZoneSubtabs {
+	if m.zone == tui.ZonePath {
+		m.pathArea = by < 0
+		return
+	}
+	if !m.onNavLine() {
 		return
 	}
 	if m.zone == tui.ZoneSubtabs {
@@ -87,17 +128,27 @@ func (m *model) areas() []tui.Area {
 	return areas
 }
 
-// footerHints are the key hints of the screen: the open tab's own behind the common ones, quit always.
+// footerHints are the key hints of the screen: the open tab's own behind the common ones, quit always. On
+// a path form left and right act only on a path of two sections and tab only where there is a work area.
 func (m *model) footerHints() []tui.Hint {
-	hints := []tui.Hint{
-		{Action: actLeft, Label: textHintStep, Kind: tui.HintNavigation},
-		{Action: actRight, Label: textHintStep, Kind: tui.HintNavigation},
-		{Action: actZoneNext, Label: textHintZone, Kind: tui.HintNavigation},
-		{Action: actTheme, Label: textKeyTheme, Priority: 2},
-		{Action: actThemeBack, Label: textKeyThemeBack, Priority: 3},
-		{Action: actLanguage, Label: textKeyLanguage, Priority: 3},
-		{Action: actIcons, Label: textKeyIcons, Priority: 4},
-		{Action: actMouse, Label: textKeyMouse, Priority: 5},
+	var hints []tui.Hint
+	if !m.pathForm() || m.zone == tui.ZonePath && len(m.group().area.Tabs) > 1 {
+		hints = append(hints, tui.Hint{Action: actLeft, Label: textHintStep, Kind: tui.HintNavigation},
+			tui.Hint{Action: actRight, Label: textHintStep, Kind: tui.HintNavigation})
+	}
+	if !m.pathForm() || len(m.zones()) > 1 {
+		hints = append(hints, tui.Hint{Action: actZoneNext, Label: textHintZone, Kind: tui.HintNavigation})
+	}
+	hints = append(hints,
+		tui.Hint{Action: actTheme, Label: textKeyTheme, Priority: 2},
+		tui.Hint{Action: actThemeBack, Label: textKeyThemeBack, Priority: 3},
+		tui.Hint{Action: actLanguage, Label: textKeyLanguage, Priority: 3},
+		tui.Hint{Action: actIcons, Label: textKeyIcons, Priority: 4},
+		tui.Hint{Action: actMouse, Label: textKeyMouse, Priority: 5},
+		tui.Hint{Action: actNavigate, Label: textKeyNavigation, Priority: 5},
+	)
+	if m.pathForm() || m.choiceForm() {
+		hints = append(hints, tui.Hint{Action: actMenu, Label: tui.TextKeyMenu, Priority: 1})
 	}
 	hints = append(hints, m.navHints()...)
 	hints = append(hints, m.group().hints[m.tab()]...)
@@ -123,6 +174,7 @@ func (m *model) frameSpec() tui.FrameSpec {
 		HeaderKeys: []tui.Hint{{Action: actHelp, Label: tui.TextKeyHelp}, {Action: actCommands, Label: tui.TextKeyCommands},
 			{Action: actInfo, Label: tui.TextKeyInfo}, {Action: actQuit, Label: tui.TextKeyQuit}},
 		Areas: m.areas(), ActiveArea: m.area, ActiveTab: m.tab(),
+		Nav: m.navForm(), PathFocusArea: m.pathArea,
 		Focus: m.zone, Input: m.input(),
 		Message: m.message, Footer: m.footerHints(),
 	}
@@ -146,7 +198,7 @@ func (m *model) refresh() {
 		return
 	}
 	if !slices.Contains(m.zones(), m.zone) {
-		m.zone = tui.ZoneTabs
+		m.zone = m.top()
 	}
 	if b := m.live(); b != nil {
 		b.focus(m.zone)
@@ -159,6 +211,8 @@ func (m *model) refresh() {
 		view, targets = m.drawCommandLine(spec)
 	case m.modal != nil:
 		view, targets = m.drawModal(spec)
+	case m.pathnav.Open():
+		view, targets = m.drawOver(spec, m.pathnav, tui.InputNavigation)
 	default:
 		_, body := m.workspace(&spec)
 		view, targets = m.frame.Render(m.styles, spec)

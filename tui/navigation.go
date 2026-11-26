@@ -11,6 +11,7 @@ type FocusZone string
 // The focus zones in their fixed order: tab and shift+tab walk through the zones a screen has in this
 // order, with wrap-around.
 const (
+	// ZoneTabs is the tab line, or the choice field of NavHeaderChoice in the header.
 	ZoneTabs    FocusZone = "tabs"
 	ZoneSubtabs FocusZone = "subtabs"
 	// ZonePath is the path line, which a screen reports instead of ZoneTabs and ZoneSubtabs.
@@ -20,6 +21,10 @@ const (
 	ZoneDetail  FocusZone = "detail"
 	ZoneFilters FocusZone = "filters"
 )
+
+// ZoneOutside is what a click outside the frame of an open modal reports, for a modal whose spec turns on
+// CloseOutside. It is no focus zone: it stands in no screen and not in the zone order.
+const ZoneOutside FocusZone = "outside"
 
 var zoneOrder = [...]FocusZone{ZoneTabs, ZoneSubtabs, ZonePath, ZoneRows, ZoneForm, ZoneDetail, ZoneFilters}
 
@@ -168,6 +173,7 @@ func CheckAreas(areas []Area) error {
 		errs = append(errs, fmt.Errorf("%d areas; a digit names at most %d", len(areas), maxAreas))
 	}
 	errs = append(errs, checkAreaIcons(areas)...)
+	errs = append(errs, checkAreaKeys(areas, nil)...)
 	seen := map[AreaID]bool{}
 	for i, a := range areas {
 		switch {

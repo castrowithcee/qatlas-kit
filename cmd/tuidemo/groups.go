@@ -27,13 +27,13 @@ type group struct {
 func groups() []group {
 	return []group{
 		{
-			area: tui.Area{ID: "overview", Title: textAreaOverview,
+			area: tui.Area{ID: "overview", Key: "o", Title: textAreaOverview,
 				Tabs: []tui.Tab{{ID: "about", Title: textTabAbout}, {ID: "sample", Title: textTabSample}}},
 			icons: [2]string{"⌂", "\uf015"},
 			draw:  drawOverview,
 		},
 		{
-			area: tui.Area{ID: "frame", Title: textAreaFrame,
+			area: tui.Area{ID: "frame", Key: "f", Title: textAreaFrame,
 				Tabs: []tui.Tab{{ID: "tabs", Title: textTabTabs}, {ID: "mouse", Title: textTabMouse}}},
 			icons: [2]string{"▣", "\uf2d0"},
 			draw:  drawFrame,
@@ -46,14 +46,14 @@ func groups() []group {
 			hints: map[tui.TabID][]tui.Hint{"mouse": {{Action: actCount, Label: textKeyCount, Priority: 1}}},
 		},
 		{
-			area: tui.Area{ID: "settings", Title: textAreaSettings,
-				Tabs: []tui.Tab{{ID: "look", Title: textTabLook}, {ID: "input", Title: textTabInput}}},
+			area: tui.Area{ID: "settings", Key: "s", Title: textAreaSettings,
+				Tabs: []tui.Tab{{ID: "look", Title: textTabLook, Key: "a"}, {ID: "input", Title: textTabInput, Key: "i"}}},
 			icons:  [2]string{"✱", "\uf013"},
 			draw:   drawLive,
 			blocks: settingsBlocks,
 		},
 		{
-			area: tui.Area{ID: "dialogs", Title: textAreaDialogs,
+			area: tui.Area{ID: "dialogs", Key: "d", Title: textAreaDialogs,
 				Tabs: []tui.Tab{{ID: "question", Title: textTabQuestion}, {ID: "input", Title: textTabInput}, {ID: "notice", Title: textTabNotice}}},
 			icons:   [2]string{"▤", "\uf27a"},
 			draw:    drawDialogs,
@@ -65,28 +65,28 @@ func groups() []group {
 			},
 		},
 		{
-			area: tui.Area{ID: "help", Title: textAreaHelp,
+			area: tui.Area{ID: "help", Key: "h", Title: textAreaHelp,
 				Tabs: []tui.Tab{{ID: "help", Title: textTabHelp}, {ID: "explain", Title: textTabExplain}, {ID: "commands", Title: textTabCommands}}},
 			icons:   [2]string{"◈", "\uf059"},
 			draw:    drawHelp,
 			actions: openerAction,
 		},
 		{
-			area: tui.Area{ID: "lists", Title: textAreaLists,
+			area: tui.Area{ID: "lists", Key: "l", Title: textAreaLists,
 				Tabs: []tui.Tab{{ID: "filter", Title: textTabListFilter}, {ID: "groups", Title: textTabListGroups}, {ID: "ticks", Title: textTabListTicks}}},
 			icons:  [2]string{"☰", "\uf0ca"},
 			draw:   drawLive,
 			blocks: listBlocks,
 		},
 		{
-			area: tui.Area{ID: "forms", Title: textAreaForms,
+			area: tui.Area{ID: "forms", Key: "r", Title: textAreaForms,
 				Tabs: []tui.Tab{{ID: "fields", Title: textTabFormFields}, {ID: "dates", Title: textTabFormDates}}},
 			icons:  [2]string{"✎", "\uf044"},
 			draw:   drawLive,
 			blocks: formBlocks,
 		},
 		{
-			area: tui.Area{ID: "pickers", Title: textAreaPickers,
+			area: tui.Area{ID: "pickers", Key: "p", Title: textAreaPickers,
 				Tabs: []tui.Tab{{ID: "choose", Title: textTabPickChoose}, {ID: "files", Title: textTabPickFiles}, {ID: "suggest", Title: textTabPickSuggest}}},
 			icons:   [2]string{"◉", "\uf07b"},
 			draw:    drawPicker,
@@ -98,7 +98,7 @@ func groups() []group {
 			blocks: pickBlocks,
 		},
 		{
-			area: tui.Area{ID: "views", Title: textAreaViews,
+			area: tui.Area{ID: "views", Key: "v", Title: textAreaViews,
 				Tabs: []tui.Tab{{ID: "text", Title: textTabViewText}, {ID: "log", Title: textTabViewLog}, {ID: "chat", Title: textTabViewChat}}},
 			icons:  [2]string{"≣", "\uf0e5"},
 			draw:   drawLive,

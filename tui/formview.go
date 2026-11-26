@@ -666,9 +666,9 @@ func (f *Form) block(i, width, labelCol int, boxed bool, styles Styles) formBloc
 	return b
 }
 
-// valueLines draws the value of field i in width cells and returns the targets of its tick boxes, counted
+// valueRows draws the value of field i in width cells and returns the targets of its tick boxes, counted
 // from the top left of the value.
-func (f *Form) valueLines(i, width int, styles Styles) ([]string, []Target) {
+func (f *Form) valueRows(i, width int, styles Styles) ([]string, []Target) {
 	field := &f.fields[i]
 	focused := f.showsFocus(i)
 	hint := func(id TextID) []string {
@@ -875,5 +875,6 @@ func (f *Form) drawModal(styles Styles, title string, hints []Hint, keys *Keymap
 	box := styles.Panel(title, "", lines, inner+4, len(lines)+2, true)
 	top := room.Y + (room.Height-len(box))/2
 	left := room.X + (room.Width-inner-4)/2
-	return overlay(screen, box, width, height, top, left, styles), OffsetTargets(ts, left+2, top+1), true
+	ts = withOutside(f.outside, OffsetTargets(ts, left+2, top+1), width, height, Rect{X: left, Y: top, Width: inner + 4, Height: len(box)})
+	return overlay(screen, box, width, height, top, left, styles), ts, true
 }
