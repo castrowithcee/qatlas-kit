@@ -361,7 +361,14 @@
 // line that ends in a colon as a heading. An optional dimmed Note stands fixed between the tabs and the text
 // of every topic where three text rows remain below it, and is otherwise left out whole. The first topic ends
 // with the keys of the screen the help was opened from and the keys that act everywhere, in the binding in
-// force. Left and right, and the topic keys of the help level, change the topic with wrap-around; the scroll
+// force. In place of topics the Help can show the application's Markdown pages from an fs.FS, as package
+// helppages loads and splits them, in HelpSpec.Lang and in English where a page has no translation. A page
+// shows its title and its text escaped, with every key placeholder spelt in the binding in force when it is
+// drawn, the address of a link after its text and linked where the terminal takes escapes, and the link of
+// the page under TextHelpMore. Pages have no tabs: the topic keys turn the pages topic by topic, the page of
+// each topic first, with wrap-around. OpenScreen shows the page of the first screen ID that a page carries,
+// else the first page, and that page instead of the first one ends with the key lists. Left and right, and
+// the topic keys of the help level, change the topic with wrap-around; the scroll
 // keys and the wheel stop at the ends; back and the help key close it. A click on a line of the key list
 // yields its action, and the application closes the help and then runs it. An Explanation shows a title, the
 // long text, a helptopics.Term and the address of the documentation, which is shown in full and, where the
@@ -644,6 +651,8 @@
 //   - Command.Aliases, Icon, DescriptionArgs, Key, Hidden: further names, a glyph, arguments of the
 //     description, the position of the one key to show and whether the empty line hides the command. Default:
 //     none, none, none, 0 (all keys of the action), false.
+//   - HelpSpec.Pages, Lang: Markdown pages in place of Topics, exactly one of the two, and the language of
+//     the pages. Default: no pages, English.
 //   - HelpSpec.Screen, Global, Note and HelpKeys.Next, Prev, First, Last: the key lists, the fixed note and
 //     further keys. Default: no key list, no note, no further key.
 //   - ExplanationItem.Term, URL, LinkText and ExplanationKeys.PageUp, PageDown, First, Last, Link: the term,
