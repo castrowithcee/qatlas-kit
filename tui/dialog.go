@@ -32,8 +32,11 @@ type DialogInput struct {
 type Suggestion struct {
 	Text string
 	// Continues keeps the dialog open when enter takes the suggestion and shows the suggestions of the new
-	// text, such as a directory in a dialog that asks for a file.
+	// text, such as a directory in a dialog that asks for a file. In a path field of a form it says that the
+	// entry is a folder, which ends with a separator when taken.
 	Continues bool
+	// priority marks an entry the application always offers first in a path field; the field sets it.
+	priority bool
 }
 
 // DialogKeys are the actions of the key table a dialog reads beside its answers. Enter is the action of the
@@ -388,9 +391,9 @@ func (d *Dialog) suggestBy(id ActionID) {
 		d.input.complete()
 		d.clearError()
 	case k.Up, k.SuggestUp:
-		d.input.move(-1)
+		d.input.step(-1)
 	case k.Down, k.SuggestDown:
-		d.input.move(1)
+		d.input.step(1)
 	}
 }
 
