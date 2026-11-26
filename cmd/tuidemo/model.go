@@ -136,6 +136,13 @@ func (m *model) rebuildText() error {
 	if err != nil {
 		return err
 	}
+	areas := make([]tui.Area, len(m.groups))
+	for i, g := range m.groups {
+		areas[i] = g.area
+	}
+	if err := nav.CheckAreas(areas); err != nil {
+		return err
+	}
 	m.text, m.frame, m.cmdline, m.pathnav = text, tui.NewFrame(m.keys, text), line, nav
 	return m.rebuildBlocks()
 }

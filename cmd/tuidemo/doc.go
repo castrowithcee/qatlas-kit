@@ -63,8 +63,10 @@
 // section, down and tab lead into the work area and up and esc lead back to the path as to the sub-tab line,
 // and m opens the overview from anywhere nothing is typed; on the tab lines m does nothing. A click on a
 // section opens the same, a click on a place of an overlay chooses it as a click on that tab would, a click
-// on an area with tabs folds it, and esc closes the overlay. Nothing behind an overlay takes a key or a
-// click. The digits still open the tabs.
+// on an area with tabs folds it, and esc closes the overlay. Each area has a letter of its own in the overlay
+// (o, f, s, d, h, l, r, p, v), shown at its row, and the tabs of Settings have a and i: in the open overlay the
+// key does what enter does on that row, folding an area and choosing a tab. Nothing behind an overlay takes a
+// key or a click. The digits still open the tabs.
 //
 // Every function can be clicked while the mouse is on: tabs, the key hints of the header and the footer, the
 // fields of the Settings tab, the buttons of a dialog and of the tabs, the topics and the key list of the help,

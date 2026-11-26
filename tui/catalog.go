@@ -42,6 +42,7 @@ const (
 	TextKeyLock     TextID = "tui.key.lock"
 
 	TextPathNavColumn   TextID = "tui.pathnav.column"
+	TextPathNavKey      TextID = "tui.pathnav.key"
 	TextPathNavOverview TextID = "tui.pathnav.overview"
 	TextPathNavEmpty    TextID = "tui.pathnav.empty"
 
@@ -281,6 +282,7 @@ func ModuleCatalog() i18n.Catalogs[TextID] {
 			TextListNoGroup:    "no group",
 
 			TextPathNavColumn:   "Place",
+			TextPathNavKey:      "Key",
 			TextPathNavOverview: "All areas",
 			TextPathNavEmpty:    "Nothing to choose here.",
 			TextListAll:         "all",
@@ -500,6 +502,7 @@ func ModuleCatalog() i18n.Catalogs[TextID] {
 			TextListNoGroup:    "ohne Gruppe",
 
 			TextPathNavColumn:   "Ziel",
+			TextPathNavKey:      "Taste",
 			TextPathNavOverview: "Alle Bereiche",
 			TextPathNavEmpty:    "Hier gibt es nichts zu wählen.",
 			TextListAll:         "alle",

@@ -223,6 +223,16 @@
 // click on that tab; a PathChoice that is the zero value is no choice. PathNav answers with a PathChoice, so
 // it has the shape of Modal without satisfying the interface.
 //
+// Area.Key and Tab.Key give an entry of the overview and of the choice a key of its own: one ASCII letter or
+// digit, shown dimmed in a column of its own at the entry and chosen at once as enter on the entry does, so it
+// folds an area with tabs and chooses a tab or an area without tabs. The key acts only while the overview or the
+// choice is open and never on a tab of a folded area, whose key is not shown. Any letter or digit is allowed,
+// also one that is a standard action elsewhere, since no action runs while an overlay is open; PathNav.CheckAreas
+// refuses a key of PathNavKeys, the key of ActionMenu, a key used twice in the overview, which lists every area
+// and tab, and a key that is no ASCII letter or digit. The package-level CheckAreas refuses the last two.
+// Applications run PathNav.CheckAreas with CheckAreas, in their tests or at start; an overlay opened with
+// areas that fail it shows and acts on no key. Without a key everything stays as it was and no column shows.
+//
 // The marked row is drawn as selected only while the rows have the focus, as SetFocused says (a new list has it;
 // the modal always draws the mark), so no second mark shows while the focus lies elsewhere. A click on a row
 // marks it, and only a click on the marked row while the rows have the focus opens it, as enter does; with

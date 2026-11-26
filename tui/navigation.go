@@ -172,6 +172,7 @@ func CheckAreas(areas []Area) error {
 		errs = append(errs, fmt.Errorf("%d areas; a digit names at most %d", len(areas), maxAreas))
 	}
 	errs = append(errs, checkAreaIcons(areas)...)
+	errs = append(errs, checkAreaKeys(areas, nil)...)
 	seen := map[AreaID]bool{}
 	for i, a := range areas {
 		switch {

@@ -484,6 +484,26 @@ func TestPathOverlaysOpenChooseAndCloseByKey(t *testing.T) {
 	}
 }
 
+func TestOverviewKeysChooseAndFold(t *testing.T) {
+	for _, form := range pathForms {
+		t.Run(form, func(t *testing.T) {
+			term := startDemo(t, "-icons none -navigation "+form)
+			act(t, term, "m", "All areas")
+			expect(t, term, "Settings") // the key of an area stands at its row
+			act(t, term, "i", "Language and mouse change at once")
+			gone(t, term, "All areas")
+			act(t, term, "m", "All areas")
+			act(t, term, "a", lookBody) // a tab key chooses at once
+			gone(t, term, "All areas")
+			act(t, term, "m", "All areas")
+			act(t, term, "s", "All areas") // an area with tabs folds, as enter does
+			act(t, term, "i", "All areas") // the key of a tab of a folded area does nothing
+			act(t, term, "x", "All areas") // a letter without a key does nothing
+			act(t, term, "\x1b", lookBody)
+		})
+	}
+}
+
 func TestPathOverlaysOpenAndChooseByClick(t *testing.T) {
 	for _, form := range pathForms {
 		t.Run(form, func(t *testing.T) {
