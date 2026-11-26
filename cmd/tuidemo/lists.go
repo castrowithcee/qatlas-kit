@@ -60,6 +60,17 @@ func plantGroups(withBed bool) []tui.ListGroup {
 	return groups
 }
 
+// plantTickRows tick the plants by a trait across the groups; the pot row leaves Thyme to its own box.
+func plantTickRows(m *model) []tui.ListTickRow {
+	return []tui.ListTickRow{
+		{Key: "recent", Title: m.text.Lookup(textListTickRecent),
+			Match: func(it tui.ListItem) bool { return it.Cells[len(it.Cells)-1] >= recentFrom }},
+		{Key: "pot", Title: m.text.Lookup(textListTickPot),
+			Match:  func(it tui.ListItem) bool { return it.Group == "Pot" },
+			Exempt: func(it tui.ListItem) bool { return it.ID == "thyme" }},
+	}
+}
+
 func listBlocks(m *model) (map[tui.TabID]block, error) {
 	filter, err := newListBlock(m, textNoteListFilter, true, false, false)
 	if err != nil {
@@ -102,6 +113,11 @@ func newListBlock(m *model, note tui.TextID, bar, ticks, grouped bool) (*listBlo
 		return nil, err
 	}
 	list.SetGrouped(grouped)
+	if ticks {
+		if err := list.SetTickRows(plantTickRows(m)); err != nil {
+			return nil, err
+		}
+	}
 	if bar {
 		b.bar, err = tui.NewFilterBar(tui.FilterBarSpec{List: list, Keys: tui.FilterBarKeys{Left: actLeft, Right: actRight,
 			Next: actZoneNext, Prev: actZonePrev, Up: actUp, Down: actDown, Enter: actEnter, Back: actBack,

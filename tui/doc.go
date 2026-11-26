@@ -214,6 +214,20 @@
 // then names it in the text focus too through Hint.WhileTyping. Current gives the marked entry
 // with its cells for a panel beside the list.
 //
+// SetTickRows adds tick rows, each a ListTickRow, under the row of all and above the groups, flat or grouped,
+// in the order it was given and drawn like the row of all: tick box, title in the accent colour and, dimmed,
+// the number of entries its Match accepts whatever the filter. A tick row ticks the shown entries that Match
+// accepts across all groups, except those Exempt names, and stands only while one shown entry matches. Its box
+// is "[ ]" while no target is ticked, "[x]" when some are and every tickable one is, otherwise "[-]". The
+// toggle key and a click on the box step it as a group is stepped, partial selection, all tickable, none, but
+// none clears every target, exempt ones too, and the partial selection comes back without any exempt entry:
+// a tick row ticks an exempt entry by no key, click, Act or restore, only the box of the entry itself does.
+// The partial selection of tick rows, groups and the row of all, which overlap, is forgotten when another of
+// them is toggled, and by a single toggle of an entry they hold. Match and Exempt run when the entries or the
+// rows are set, never while drawing. The row of all and the groups still tick their exempt entries. A tick
+// row marks no entry, so Selected, Current and SelectedGroup are empty there, SelectedTickRow names it,
+// Position does not count it, and enter, left and right fold nothing.
+//
 // Overlay draws a list as a modal in the way of Dialog.Overlay: under ListSpec.Title the search line, which a
 // list that filters as typed always has, the table, one button per ListSpec.Buttons entry behind the key in
 // force, and the key line. The frame keeps its height while a filter is typed, the table scrolls with the
@@ -619,6 +633,7 @@
 //     groups as an outline. Default: false each.
 //   - ListSpec.Ticks, AllRow, TickWhileTyping and ListKeys.Toggle: tick boxes, the row of all and ticking in
 //     the text focus; Toggle is needed with Ticks. Default: false each, no tick boxes.
+//   - List.SetTickRows: tick rows by a trait with exempt entries; needs Ticks. Default: none, no row shows.
 //   - ListSpec.Title, NoGroup, Buttons: the title of the modal, the title of the group without key and the
 //     buttons of the modal. Default: no title, TextListNoGroup, no buttons.
 //   - Column.Optional, Flex, Right, Dimmed, Short, Tone: leave out the column on a narrow terminal, mark the
