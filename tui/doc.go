@@ -490,6 +490,12 @@
 // file system. A folder is a list of name parts below the root, never a joined string. It asks
 // for a folder with a FileLoad and shows only the answer to the last one; actions come back as a FileAction.
 // The application still joins the parts below its own root and checks the result, and runs every action.
+// A filter that starts with "*" and goes on is no filter but a search below the shown folder at any depth:
+// the browser asks with a FileSearch and shows the FileFound it gets in place of the entries, as paths below
+// the shown folder with a line under the list that names why a search stopped early; the application runs the
+// search, stops the one the browser no longer waits for (Searching) and names the limit it hit as values.
+// Enter jumps to the folder of the marked match with the match marked; back leaves the matches, then clears the
+// filter, then goes up a folder.
 //
 // Colours come from themes. Screen code names roles, never colour values: a Palette assigns one colour per
 // role, Styles build text styles and widgets on it. A ThemeSet holds the terminal theme, the application's own
@@ -566,7 +572,8 @@
 // draws no icon that fails it. CheckIcon holds an icon to one code point of a width every terminal agrees on.
 // Setters such as List.SetItems and FileBrowser.SetEntries refuse data that breaks the contract of the part and
 // change nothing then; an entry of a FileBrowser whose name is empty, ".", "..", or holds "/", "\" or NUL
-// refuses the whole folder, so no step leaves the root.
+// refuses the whole folder, so no step leaves the root. SetMatches drops a match that is not below the
+// searched folder, or has a part that is empty, ".", "..", or holds "/", "\" or NUL, and reports how many.
 //
 // Escaping and secrets. Control characters and escape sequences never reach the terminal as such: Escape writes
 // every control or otherwise unprintable character as its Go escape, and widgets and parts escape every plain
@@ -728,6 +735,8 @@
 //   - ChatSpec.Actions, Now: quick replies and the clock. Default: none, time.Now.
 //   - FileBrowserSpec.Actions, RootLabel, FileBrowserKeys.Reload: the buttons on the marked entry, the label of
 //     the root and the reload key. Default: none, TextFileRoot, none.
+//   - FileFound.End, Limit: why a search stopped and the limit it hit, for the line under the matches. Default:
+//     FileSearchComplete, no line; a limit of zero or less shows the text without a number.
 //
 // Input and colour:
 //

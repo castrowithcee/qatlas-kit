@@ -216,6 +216,16 @@ const (
 	TextFileUp          TextID = "tui.file.up"
 	TextFileUnreadable  TextID = "tui.file.unreadable"
 
+	TextFileSearching     TextID = "tui.file.search.running"
+	TextFileSearchNone    TextID = "tui.file.search.none"
+	TextFileSearchFailed  TextID = "tui.file.search.failed"
+	TextFileSearchEntries TextID = "tui.file.search.entries"
+	TextFileSearchTime    TextID = "tui.file.search.time"
+	TextFileSearchMatches TextID = "tui.file.search.matches"
+	TextFileSearchStopped TextID = "tui.file.search.stopped"
+	// TextFileSearchCanceled has no number: the search stopped by itself, not at a limit.
+	TextFileSearchCanceled TextID = "tui.file.search.canceled"
+
 	TextSettingsTitle             TextID = "tui.settings.title"
 	TextSettingsGeneral           TextID = "tui.settings.general"
 	TextSettingTheme              TextID = "tui.setting.theme"
@@ -455,6 +465,15 @@ func ModuleCatalog() i18n.Catalogs[TextID] {
 			TextFileUp:          "up",
 			TextFileUnreadable:  "unreadable",
 
+			TextFileSearching:      "Searching…",
+			TextFileSearchNone:     "No match below this folder.",
+			TextFileSearchFailed:   "The search failed: %s",
+			TextFileSearchEntries:  "Search stopped after %d entries; more may exist.",
+			TextFileSearchTime:     "Search stopped after %d seconds; more may exist.",
+			TextFileSearchMatches:  "Only the first %d matches are shown.",
+			TextFileSearchStopped:  "The search stopped early; more may exist.",
+			TextFileSearchCanceled: "The search was canceled; more may exist.",
+
 			TextSettingsTitle:             "Settings",
 			TextSettingsGeneral:           "General",
 			TextSettingTheme:              "theme",
@@ -688,6 +707,15 @@ func ModuleCatalog() i18n.Catalogs[TextID] {
 			TextFileRoot:        "Wurzel",
 			TextFileUp:          "Hoch",
 			TextFileUnreadable:  "nicht lesbar",
+
+			TextFileSearching:      "Sucht…",
+			TextFileSearchNone:     "Kein Treffer unter diesem Ordner.",
+			TextFileSearchFailed:   "Die Suche ist fehlgeschlagen: %s",
+			TextFileSearchEntries:  "Suche nach %d Einträgen beendet, es kann mehr geben.",
+			TextFileSearchTime:     "Suche nach %d Sekunden beendet, es kann mehr geben.",
+			TextFileSearchMatches:  "Nur die ersten %d Treffer werden gezeigt.",
+			TextFileSearchStopped:  "Die Suche endete früh, es kann mehr geben.",
+			TextFileSearchCanceled: "Die Suche wurde abgebrochen, es kann mehr geben.",
 
 			TextSettingsTitle:             "Einstellungen",
 			TextSettingsGeneral:           "Allgemein",
