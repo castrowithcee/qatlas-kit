@@ -80,7 +80,7 @@ func groups() []group {
 		},
 		{
 			area: tui.Area{ID: "forms", Key: "r", Title: textAreaForms,
-				Tabs: []tui.Tab{{ID: "fields", Title: textTabFormFields}, {ID: "dates", Title: textTabFormDates}}},
+				Tabs: []tui.Tab{{ID: "fields", Title: textTabFormFields}, {ID: "dates", Title: textTabFormDates}, {ID: "paths", Title: textTabFormPaths}}},
 			icons:  [2]string{"✎", "\uf044"},
 			draw:   drawLive,
 			blocks: formBlocks,
