@@ -60,6 +60,7 @@ func run(args []string, out io.Writer, environ []string, now func() time.Time) e
 	filter := tui.NewInputFilter(nil)
 	program := tea.NewProgram(m, tea.WithFilter(filter.Filter), tea.WithOutput(out), tea.WithEnvironment(environ))
 	filter.Attach(program.Send)
+	m.send = program.Send
 	_, err = program.Run()
 	return err
 }
