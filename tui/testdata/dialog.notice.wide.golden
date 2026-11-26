@@ -10,7 +10,7 @@ Garden  ok
   basil  resting  | $ example-tool reset demo --config                           |                  
   basil  resting  |   /srv/example/demo/very-long-directory-name/settings.toml   |                  
   basil  resting  |                                                              |                  
-  basil  resting  | > Close <                                                    |                  
+  basil  resting  | [ enter Close ]                                              |                  
   basil  resting  | n/enter Close                                                |                  
   basil  resting  #==============================================================#                  
   basil  resting                                                                                    

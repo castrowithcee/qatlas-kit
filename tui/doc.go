@@ -300,11 +300,12 @@
 // Notice is a calm message headed by its Question, without the warning glyph, that needs at least one detail:
 // a plain success belongs in the message line. Only the answers, the scroll and the suggestion keys act;
 // every other key goes back to the application, so a stray key neither saves nor destroys. Enter gives the
-// default, which shows focused; the destroying answer is drawn in the fail colour and is never the default. A
-// dialog with an input is a text field, shows what runs and the last error inside itself, drops the error
-// when the text changes and never shows a masked input. Overlay dims the screen behind it and returns the
-// targets of the dialog alone; where it does not fit, View fills the workspace and Hints go into the footer,
-// whose targets answer it.
+// default, whose button carries the enter key, "[ Enter OK ]", so it reads without colour; "> label <" marks a
+// focus only, which a dialog has none of. The destroying answer is drawn in the fail colour and is never the
+// default. A dialog with an input is a text field, shows what runs and the last error inside itself, drops the
+// error when the text changes and never shows a masked input. Overlay dims the screen behind it and returns the
+// targets of the dialog alone; where it does not fit, View fills the workspace and Hints go into the footer, whose
+// targets answer it.
 //
 // Details that do not fit never push out the question: everything else stays, and the details scroll in the
 // rest with their position under them; Overlay gives way to View only where not even three detail lines fit.
