@@ -18,7 +18,7 @@ type ColorProfile uint8
 const (
 	// ProfileNone shows plain text only: no terminal, or TERM=dumb.
 	ProfileNone ColorProfile = iota
-	// ProfileMono shows no colour but keeps bold, faint and reverse: a terminal with NO_COLOR set.
+	// ProfileMono shows no colour but keeps bold, faint, underline and reverse: a terminal with NO_COLOR set.
 	ProfileMono
 	// ProfileANSI16 shows the 16 colours of the terminal's own scheme.
 	ProfileANSI16

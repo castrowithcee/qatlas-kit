@@ -3,6 +3,7 @@ Garden  ok
   #= Pick plants ================================#  
   | Type to search                               |  
   |       NAME     STATE     SIZE  NOTE          |  
+  |       -------------------------------------- |  
   |   [ ] basil    blooming    12  on the sill ~ |  
   |   [x] mint     resting     30  spreads fast  |  
   |   [ ] oak      resting   1200  planted long~ |  
@@ -13,7 +14,6 @@ Garden  ok
   |   [ ] plant07  resting      1  extra         |  
   |   [ ] plant08  resting      1  extra         |  
   |   [ ] plant09  resting      1  extra         |  
-  |   [ ] plant10  resting      1  extra         |  
   |                                              |  
   | [ enter take ]  [ ctrl+r reload ]            |  
   | [ esc drop ]                                 |  

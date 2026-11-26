@@ -1,6 +1,8 @@
 package main
 
 import (
+	"encoding/base64"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -144,5 +146,68 @@ func TestViewsLettersTypeIntoChatAndSearchNotIntoSwitches(t *testing.T) {
 	}
 	if _, cmd := m.Update(tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl}); cmd == nil {
 		t.Fatal("ctrl+c did not quit")
+	}
+}
+
+// drag is the press at the 1-based cell from, motion with the button held and the release at to.
+func drag(fromX, fromY, toX, toY int) string {
+	return fmt.Sprintf("\x1b[<0;%d;%dM\x1b[<32;%d;%dM\x1b[<0;%d;%dm", fromX, fromY, toX, toY, toX, toY)
+}
+
+// clipboard returns the texts handed to the terminal by OSC 52 sequences in the output.
+func clipboard(t *testing.T, output string) []string {
+	t.Helper()
+	var got []string
+	for _, part := range strings.Split(output, "\x1b]52;")[1:] {
+		payload, _, _ := strings.Cut(part, "\x07")
+		payload, _, _ = strings.Cut(payload, "\x1b\\")
+		_, data, _ := strings.Cut(payload, ";")
+		text, err := base64.StdEncoding.DecodeString(data)
+		if err != nil {
+			t.Fatalf("clipboard payload %q: %v", data, err)
+		}
+		got = append(got, string(text))
+	}
+	return got
+}
+
+func TestViewsTextDragCopiesContentOnly(t *testing.T) {
+	term := startDemo(t, "-icons none")
+	act(t, term, "9", "Sample configuration")
+	act(t, term, "\t\t", "line numbers off")
+	act(t, term, "#", "line numbers on")
+	x, y := find(t, term, "notify:")
+	endX, endY := find(t, term, "retries: 3")
+	// A click without motion copies nothing.
+	clickOnly(t, term, "retries: 3")
+	if got := clipboard(t, term.Output()); len(got) != 0 {
+		t.Fatalf("a click handed %q to the clipboard", got)
+	}
+	send(t, term, drag(x, y, endX+len("retries: 3")-1, endY))
+	expect(t, term, "Handed to the terminal for the clipboard")
+	got := clipboard(t, term.Output())
+	if len(got) != 1 {
+		t.Fatalf("clipboard texts = %q, want one", got)
+	}
+	if !strings.HasPrefix(got[0], "notify:\n  token: ") || !strings.HasSuffix(got[0], "\n  retries: 3") || strings.Count(got[0], "\n") != 2 {
+		t.Errorf("copied %q, want the three lines of content", got[0])
+	}
+	if strings.Contains(got[0], sampleSecret) {
+		t.Errorf("copied %q holds the masked secret", got[0])
+	}
+	if strings.Contains(term.Output(), base64.StdEncoding.EncodeToString([]byte(sampleSecret))) {
+		t.Error("the output holds the secret in base64")
+	}
+}
+
+func TestViewsLogDragCopiesContentOnly(t *testing.T) {
+	term := startDemo(t, "-icons none")
+	act(t, term, "9", "Text")
+	clickOn(t, term, "Log", "period: all")
+	x, y := find(t, term, "pump started")
+	send(t, term, drag(x, y, x+len("pump started")-1, y))
+	expect(t, term, "Handed to the terminal for the clipboard")
+	if got := clipboard(t, term.Output()); len(got) != 1 || got[0] != "pump started" {
+		t.Errorf("clipboard texts = %q, want the dragged part of the line only", got)
 	}
 }

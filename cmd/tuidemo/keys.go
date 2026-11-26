@@ -21,6 +21,8 @@ const (
 	actIcons     tui.ActionID = "set.icons"
 	actMouse     tui.ActionID = "set.mouse"
 	actCount     tui.ActionID = "count"
+	actNavigate  tui.ActionID = "set.navigation"
+	actMenu      tui.ActionID = tui.ActionMenu
 
 	actBack     tui.ActionID = "back"
 	actEnter    tui.ActionID = "enter"
@@ -76,6 +78,8 @@ func keyTable(areas int) []tui.Action {
 		act(actIcons, tui.LevelLetter, textKeyIcons, "I"),
 		act(actMouse, tui.LevelLetter, textKeyMouse, "M"),
 		act(actCount, tui.LevelLetter, textKeyCount, "+"),
+		act(actNavigate, tui.LevelLetter, textKeyNavigation, "N"),
+		act(actMenu, tui.LevelLetter, tui.TextKeyMenu, "m"),
 		act(actBack, tui.LevelGlobal, tui.TextKeyBack, "esc"),
 		act(actHelp, tui.LevelGlobal, tui.TextKeyHelp, "?"),
 		act(actCommands, tui.LevelGlobal, tui.TextKeyCommands, ":"),

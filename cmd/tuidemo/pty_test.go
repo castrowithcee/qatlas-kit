@@ -19,7 +19,7 @@ func TestHelperProcess(t *testing.T) {
 	if os.Getenv(helperEnv) == "" {
 		return
 	}
-	if err := run(strings.Fields(os.Getenv(helperEnv+"_ARGS")), os.Stdout, os.Environ()); err != nil {
+	if err := run(strings.Fields(os.Getenv(helperEnv+"_ARGS")), os.Stdout, os.Environ(), sampleToday); err != nil {
 		os.Exit(1)
 	}
 	os.Exit(0)
@@ -134,7 +134,7 @@ func clickOn(t *testing.T, term *ptytest.Terminal, text, want string) {
 const (
 	tabsBody  = "Tabs and sub-tabs"
 	probeBody = "Mouse probe"
-	lookBody  = "Theme and icons change at once"
+	lookBody  = "Theme, icons and navigation change at once"
 	aboutBody = "Terminal building blocks at work"
 )
 
@@ -241,6 +241,29 @@ func TestInputDialogKeepsAnEmptyNameAndTakesANewOne(t *testing.T) {
 	clickOn(t, term, "Sample data", "Rose bed")
 	act(t, term, "r", "Name of the garden journal:")
 	act(t, term, "\x1b", "Cancelled")
+}
+
+// A click beside a popup closes it as esc does, unless its answer destroys; the screen behind takes none.
+func TestClickBesideAPopupClosesItAsEscDoes(t *testing.T) {
+	term := startDemo(t, "-icons none")
+	act(t, term, "r", "Name of the garden journal:")
+	column, row := find(t, term, "3 Settings")
+	send(t, term, click(column+1, row)) // beside the dialog: back, and the tab behind stays unread
+	expect(t, term, "Cancelled")
+	gone(t, term, "Name of the garden journal:")
+	expect(t, term, "[1 Overview]")
+
+	act(t, term, "a", "Reset the counter?")
+	send(t, term, click(column+1, row)) // a destroying question ignores it
+	send(t, term, "t")                  // a key that would reach the screen behind goes nowhere
+	expect(t, term, "Reset the counter?")
+	act(t, term, "n", "Cancelled")
+	gone(t, term, "Reset the counter?")
+
+	act(t, term, "o", "This is a calm message without a question.")
+	send(t, term, click(column+1, row))
+	gone(t, term, "This is a calm message")
+	expect(t, term, "[1 Overview]")
 }
 
 func TestNoticeClosesByKey(t *testing.T) {
@@ -390,4 +413,180 @@ func TestBlocksAndOpenersByKeyboardOnly(t *testing.T) {
 	act(t, term, "\x1b[C", pickBody)
 	act(t, term, "\x1b[B\x1b[B", "> choose bed <") // the opener of the tab shows the focus
 	act(t, term, "\r", "Choose a bed")             // enter opens it as a click would
+}
+
+// pathForms are the navigation forms that name the place as a path.
+var pathForms = []string{"pathline", "header"}
+
+func TestNavigationSwitchesByCommandAndKey(t *testing.T) {
+	term := startDemo(t, "-icons none")
+	command(t, term, "navigation", "navigation: pathline")
+	expect(t, term, "Overview ▾")
+	gone(t, term, "1 Overview")
+	command(t, term, "navigation", "navigation: header")
+	command(t, term, "navigation", "navigation: choice")
+	expect(t, term, "Overview ▾")
+	command(t, term, "navigation", "navigation: tabs")
+	expect(t, term, "1 Overview")
+	act(t, term, "N", "navigation: pathline")
+	gone(t, term, "1 Overview")
+	act(t, term, "N", "navigation: header")
+	act(t, term, "N", "navigation: choice")
+	gone(t, term, "1 Overview")
+	act(t, term, "N", "navigation: tabs")
+	expect(t, term, "1 Overview")
+}
+
+// The choice field names the area in the header and opens the list of the areas by enter and by click; a choice
+// in it opens that area, and the sub-tab line stays below the header.
+func TestChoiceFieldOpensTheListOfAreas(t *testing.T) {
+	term := startDemo(t, "-icons none -navigation choice")
+	expect(t, term, "Overview ▾")
+	expect(t, term, "About")
+	gone(t, term, "1 Overview")
+	hintsOf(t, term, "m menu")
+	act(t, term, "\r", "All areas") // enter on the field
+	act(t, term, "s", lookBody)     // the key of an area chooses it at once
+	gone(t, term, "All areas")
+	expect(t, term, "Settings ▾")
+	expect(t, term, "Look")
+	clickOn(t, term, "Settings ▾", "All areas") // a click on the field
+	clickOn(t, term, "Frame", tabsBody)
+	gone(t, term, "All areas")
+	act(t, term, "\x1b[B\x1b[C", probeBody) // down to the sub-tab line, right steps the tab
+	act(t, term, "\x1b[A\x1b[C", lookBody)  // up to the field, right opens the next area
+	act(t, term, "m", "All areas")
+	act(t, term, "\x1b", lookBody)
+	gone(t, term, "All areas")
+}
+
+func TestNavigationSwitchesInTheSettingsForm(t *testing.T) {
+	term := startDemo(t, "-icons none")
+	act(t, term, "3", lookBody)
+	act(t, term, "\x1b[B\x1b[B", "> theme") // down to the sub-tab line, then into the form
+	act(t, term, "\x1b[B\x1b[B", "> navigation")
+	act(t, term, "\x1b[C", "navigation: pathline")
+	expect(t, term, "Settings ▾")
+	expect(t, term, "> navigation ║ path line") // the form keeps the focus and shows the value
+	act(t, term, "N", "║ path in header")
+	act(t, term, "\x1b[D", "navigation: pathline")
+	act(t, term, "\x1b[D", "navigation: tabs")
+	expect(t, term, "[3 Settings]")
+}
+
+func TestTabFormIgnoresThePathKeys(t *testing.T) {
+	term := startDemo(t, "-icons none")
+	send(t, term, "m")
+	send(t, term, "\r")
+	act(t, term, "2", tabsBody)
+	gone(t, term, "All areas")
+	if footerHint(term, "m menu") {
+		t.Error("the footer names the menu key on the tab form")
+	}
+}
+
+func TestPathOverlaysOpenChooseAndCloseByKey(t *testing.T) {
+	for _, form := range pathForms {
+		t.Run(form, func(t *testing.T) {
+			term := startDemo(t, "-icons none -navigation "+form)
+			hintsOf(t, term, "m menu")
+			act(t, term, "\r", "PLACE") // enter opens the choice among the tabs of the area
+			gone(t, term, "All areas")
+			act(t, term, "\x1b[B\r", "Garden journal")
+			gone(t, term, "PLACE")
+			if form == "pathline" {
+				// Only the line names both sections; the header keeps the current one at this width.
+				act(t, term, "\x1b[D", "[Overview ▾]") // the focus moves to the area section
+				act(t, term, "\r", "All areas")
+				act(t, term, "\x1b", "Garden journal")
+				gone(t, term, "All areas")
+			}
+			act(t, term, "m", "All areas") // m opens the overview from anywhere
+			act(t, term, "\x1b[B\x1b[B\x1b[B\r", probeBody)
+			gone(t, term, "PLACE")
+			act(t, term, "m", "All areas")
+			act(t, term, "\x1b", probeBody)
+			gone(t, term, "PLACE")
+		})
+	}
+}
+
+func TestOverviewKeysChooseAndFold(t *testing.T) {
+	for _, form := range pathForms {
+		t.Run(form, func(t *testing.T) {
+			term := startDemo(t, "-icons none -navigation "+form)
+			act(t, term, "m", "All areas")
+			expect(t, term, "Settings") // the key of an area stands at its row
+			act(t, term, "i", "Language and mouse change at once")
+			gone(t, term, "All areas")
+			act(t, term, "m", "All areas")
+			act(t, term, "a", lookBody) // a tab key chooses at once
+			gone(t, term, "All areas")
+			act(t, term, "m", "All areas")
+			act(t, term, "s", "All areas") // an area with tabs folds, as enter does
+			act(t, term, "i", "All areas") // the key of a tab of a folded area does nothing
+			act(t, term, "x", "All areas") // a letter without a key does nothing
+			act(t, term, "\x1b", lookBody)
+		})
+	}
+}
+
+func TestPathOverlaysOpenAndChooseByClick(t *testing.T) {
+	for _, form := range pathForms {
+		t.Run(form, func(t *testing.T) {
+			term := startDemo(t, "-icons none -navigation "+form)
+			open, section := "Overview ▾", "Settings ▾"
+			if form == "header" {
+				open, section = "About ▾", "Look ▾"
+			}
+			clickOn(t, term, open, "PLACE")
+			if form == "pathline" {
+				clickOn(t, term, "Look", lookBody) // the area section opened the overview
+			} else {
+				clickOn(t, term, "Sample data", "Garden journal") // the only section opened the choice
+				clickOn(t, term, "Sample data ▾", "PLACE")
+				clickOn(t, term, "About", aboutBody)
+				act(t, term, "m", "All areas")
+				clickOn(t, term, "Look", lookBody)
+			}
+			gone(t, term, "PLACE")
+			expect(t, term, section)
+			// A click on the overlay's key line closes it, and so does one beside it, without running what stands
+			// behind: the info key of the footer would open the explanation.
+			act(t, term, "m", "All areas")
+			clickOn(t, term, "esc back", lookBody)
+			gone(t, term, "PLACE")
+			act(t, term, "m", "All areas")
+			clickOnly(t, term, "[i] info")
+			gone(t, term, "PLACE")
+			gone(t, term, "Raised bed:")
+		})
+	}
+}
+
+func TestPathLeadsDownIntoTheWorkAreaAndBackByKeyboardOnly(t *testing.T) {
+	for _, form := range pathForms {
+		t.Run(form, func(t *testing.T) {
+			term := startDemo(t, "-icons none -navigation "+form)
+			send(t, term, "\x1b[B") // the overview has no work area: down stays on the path
+			act(t, term, "2", tabsBody)
+			act(t, term, "\r", "PLACE")
+			act(t, term, "\x1b[B\r", probeBody)
+			act(t, term, "\x1b[B", "> Count <") // down: into the buttons
+			act(t, term, "\r", "Count: 1")
+			send(t, term, "\x1b[A") // up: back on the path
+			gone(t, term, "> Count <")
+			act(t, term, "\r", "PLACE") // enter on the path opens the choice again
+			act(t, term, "\x1b", probeBody)
+			gone(t, term, "PLACE")
+			act(t, term, "6", "types a filter")
+			act(t, term, "\x1b[B", "> Basil") // down: into the list block
+			send(t, term, "\x1b[A")           // up from its first row: back on the path
+			gone(t, term, "> Basil")
+			act(t, term, "\t", "> Basil") // tab leads in as well
+			send(t, term, "\x1b")         // esc leads out
+			gone(t, term, "> Basil")
+			act(t, term, "m", "All areas")
+		})
+	}
 }

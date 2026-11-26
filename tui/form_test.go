@@ -931,6 +931,9 @@ func TestEveryFormControlHasATargetAndClicksAsItsKey(t *testing.T) {
 				checkFormTargetsCover(t, name, f, view, targets)
 				m := NewMouseMap(targets, true)
 				for _, tg := range targets[1:] {
+					if tg.selection != nil {
+						continue
+					}
 					clicked, byKey := setup(), setup()
 					got := m.Handle(click(tg.Rect.X, tg.Rect.Y))
 					if got.Item != tg.Item && tg.Rect.Width > 0 {

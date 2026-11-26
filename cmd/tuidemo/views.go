@@ -41,12 +41,13 @@ func underNote(lines []string, view string, ts []tui.Target) ([]string, []tui.Ta
 // ask, since what is uncovered stays on the screen and in what a bystander sees, and hiding needs no question.
 func (m *model) openReveal() {
 	d, err := tui.NewDialog(tui.DialogSpec{
-		Title:       textRevealTitle,
-		Question:    m.text.Lookup(textRevealQuestion),
-		Consequence: m.text.Lookup(textRevealConsequence),
-		Answers:     []tui.Answer{{Action: actYes, Label: tui.TextKeyYes}, {Action: actNo, Label: tui.TextKeyNo}},
-		Default:     actNo,
-		Keys:        dialogKeys(false),
+		Title:        textRevealTitle,
+		Question:     m.text.Lookup(textRevealQuestion),
+		Consequence:  m.text.Lookup(textRevealConsequence),
+		Answers:      []tui.Answer{{Action: actYes, Label: tui.TextKeyYes}, {Action: actNo, Label: tui.TextKeyNo}},
+		Default:      actNo,
+		Keys:         dialogKeys(false),
+		CloseOutside: actNo,
 	}, m.keys, m.text)
 	if err == nil {
 		m.show(d, nil, kindReveal, d.Input())

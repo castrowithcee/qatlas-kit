@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -237,8 +238,15 @@ func TestDialogStandsOverTheDimmedScreen(t *testing.T) {
 	{
 		c := newSampleDialog(t, confirmSpec(), i18n.English)
 		view, _, _ := c.Overlay(st, sampleScreen(100, 30), 100, 30, room)
-		if strings.Contains(view, st.Button(ButtonDanger, "Water", false)) || !strings.Contains(ansi.Strip(view), "> Water <") {
-			t.Errorf("a question without danger draws one, or its default is not focused:\n%s", ansi.Strip(view))
+		plain := ansi.Strip(view)
+		if strings.Contains(view, st.Button(ButtonDanger, "Water", false)) || !strings.Contains(plain, "[ enter Water ]") {
+			t.Errorf("a question without danger draws one, or its default does not show the enter key:\n%s", plain)
+		}
+		if !strings.Contains(view, st.Button(ButtonPrimary, "enter Water", false)) {
+			t.Error("the default is not the primary button")
+		}
+		if strings.Contains(plain, "> ") && strings.Contains(plain, " <") {
+			t.Errorf("a dialog has no focus, so no button reads \"> label <\":\n%s", plain)
 		}
 		if !strings.Contains(ansi.Strip(view), "y/enter Water") {
 			t.Errorf("the key line does not name enter beside the default:\n%s", ansi.Strip(view))
@@ -486,6 +494,8 @@ func TestGoldenDialogDetails(t *testing.T) {
 		{"dialog.preview.wide.dark.golden", "dark", previewSpec, 100},
 		{"dialog.notice.narrow.golden", "noneascii", noticeSpec, 46},
 		{"dialog.notice.wide.golden", "noneascii", noticeSpec, 100},
+		{"dialog.default.wide.golden", "noneascii", confirmSpec, 100},
+		{"dialog.default.wide.dark.golden", "dark", confirmSpec, 100},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			d := newSampleDialog(t, tt.spec(), i18n.English)
@@ -724,7 +734,7 @@ func TestDialogScrollsLongDetails(t *testing.T) {
 		if !ok {
 			t.Fatal("the dialog gives up although its details can scroll")
 		}
-		for _, part := range []string{"Water every plant now?", "The pump runs for a minute.", "> Water <", "[ Not now ]", "y/enter Water", "n Not now"} {
+		for _, part := range []string{"Water every plant now?", "The pump runs for a minute.", "[ enter Water ]", "[ Not now ]", "y/enter Water", "n Not now"} {
 			if !strings.Contains(text, part) {
 				t.Fatalf("step %d: %q is missing:\n%s", step, part, text)
 			}
@@ -1216,7 +1226,7 @@ func TestDialogWithoutExtraHintsIsUnchanged(t *testing.T) {
 	st := looks(t)["noneascii"]
 	a, ta, _ := plain.Overlay(st, sampleScreen(90, 30), 90, 30, Rect{Y: 2, Width: 90, Height: 27})
 	b, tb, _ := other.Overlay(st, sampleScreen(90, 30), 90, 30, Rect{Y: 2, Width: 90, Height: 27})
-	if a != b || !slices.Equal(ta, tb) {
+	if a != b || !slices.EqualFunc(ta, tb, func(x, y Target) bool { return reflect.DeepEqual(withoutPart(x), withoutPart(y)) }) {
 		t.Error("an empty Extra changes the drawing")
 	}
 }
@@ -1454,7 +1464,7 @@ func TestDialogWithoutSuggestionsKeepsItsKeys(t *testing.T) {
 	plain := newSuggestDialog(t, plainSpec)
 	a, ta, _ := d.Overlay(st, sampleScreen(100, 30), 100, 30, Rect{Y: 2, Width: 100, Height: 16})
 	b, tb, _ := plain.Overlay(st, sampleScreen(100, 30), 100, 30, Rect{Y: 2, Width: 100, Height: 16})
-	if a != b || !slices.Equal(ta, tb) || !slices.Equal(d.Hints(), plain.Hints()) {
+	if a != b || !slices.EqualFunc(ta, tb, func(x, y Target) bool { return reflect.DeepEqual(withoutPart(x), withoutPart(y)) }) || !slices.Equal(d.Hints(), plain.Hints()) {
 		t.Error("an empty list of suggestions changes the drawing")
 	}
 	pressKeys(d, "down", "down")

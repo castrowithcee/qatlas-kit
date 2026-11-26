@@ -79,6 +79,8 @@ func (m *model) openInput() {
 		Answers:  []tui.Answer{{Action: actEnter, Label: textOK}, {Action: actBack, Label: tui.TextKeyBack}},
 		Default:  actEnter,
 		Keys:     dialogKeys(false),
+		// A click beside the input answers back, as esc does.
+		CloseOutside: actBack,
 	}, m.keys, m.text)
 	if err == nil {
 		m.dialog = d
@@ -97,6 +99,8 @@ func (m *model) openNotice() {
 		Answers:  []tui.Answer{{Action: actEnter, Label: textOK}},
 		Default:  actEnter,
 		Keys:     dialogKeys(true),
+		// A click beside the notice closes it. The question of the Dialogs tab sets none: its answer destroys.
+		CloseOutside: actEnter,
 	}, m.keys, m.text)
 	if err == nil {
 		m.dialog = d
@@ -116,7 +120,7 @@ func (m *model) openHelp() {
 		Topics: topics, Screen: m.footerHints(), Global: []tui.ActionID{actQuit, actHelp, actCommands, actInfo},
 		Keys: tui.HelpKeys{Left: actLeft, Right: actRight, Next: actZoneNext, Prev: actZonePrev, Up: actUp, Down: actDown,
 			PageUp: actPageUp, PageDown: actPageDown, First: actFirst, Last: actLast, Back: actBack, Help: actHelp},
-		Note: textHelpNote,
+		Note: textHelpNote, CloseOutside: true,
 	}, m.keys, m.text)
 	if err == nil {
 		m.show(h, nil, kindHelp, tui.InputNavigation)
@@ -250,7 +254,7 @@ func commands(groups []group, text tui.Translator) []tui.Command {
 		text   tui.TextID
 	}{
 		{"theme", actTheme, textKeyTheme}, {"theme-back", actThemeBack, textKeyThemeBack}, {"language", actLanguage, textKeyLanguage}, {"icons", actIcons, textKeyIcons},
-		{"mouse", actMouse, textKeyMouse}, {"ask", actAsk, textKeyAsk}, {"rename", actRename, tui.TextKeyRename},
+		{"mouse", actMouse, textKeyMouse}, {"navigation", actNavigate, textKeyNavigation}, {"ask", actAsk, textKeyAsk}, {"rename", actRename, tui.TextKeyRename},
 		{"notice", actNotice, textKeyNotice}, {"pick", actPick, textKeyPick}, {"suggest", actSuggest, textKeySuggest}, {"help", actHelp, tui.TextKeyHelp}, {"explain", actInfo, tui.TextKeyInfo},
 		{"quit", actQuit, tui.TextKeyQuit},
 	} {
@@ -299,4 +303,44 @@ func (m *model) commandDone(cmd tui.Command, done bool) tea.Cmd {
 		return m.run(cmd.Action, "")
 	}
 	return nil
+}
+
+// pathKey gives a key to the open overlay of the path; keys it does not handle never reach the screen behind.
+func (m *model) pathKey(msg tea.KeyPressMsg) tea.Cmd {
+	if msg.String() == "ctrl+c" {
+		return tea.Quit
+	}
+	choice, _ := m.pathnav.Update(msg)
+	m.choose(choice)
+	return nil
+}
+
+// pathClick gives a click or a notch of the wheel to the open overlay, which holds the only targets.
+func (m *model) pathClick(msg tea.MouseMsg) tea.Cmd {
+	res := m.mouse.Handle(msg)
+	if _, ok := msg.(tea.MouseWheelMsg); ok {
+		m.pathnav.Wheel(res.WheelSteps)
+		return nil
+	}
+	choice, _ := m.pathnav.Click(res)
+	m.choose(choice)
+	return nil
+}
+
+// choose runs a choice of the overlay as the click on that tab; the zero value is no choice.
+func (m *model) choose(c tui.PathChoice) {
+	if c.Area == "" {
+		return
+	}
+	m.openArea(c.Area)
+	if c.Tab != "" {
+		m.tabs[c.Area] = c.Tab
+	}
+	m.zone, m.pathArea = tui.ZonePath, false
+	if m.choiceForm() {
+		m.zone = tui.ZoneTabs
+		if c.Tab != "" {
+			m.zone = tui.ZoneSubtabs
+		}
+	}
 }

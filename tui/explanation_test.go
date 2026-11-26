@@ -2,6 +2,7 @@ package tui
 
 import (
 	"net/url"
+	"slices"
 	"strings"
 	"testing"
 
@@ -283,7 +284,7 @@ func TestExplanationPage(t *testing.T) {
 	e := newSampleExplanation(t, sampleExplanation(), i18n.English)
 	view, targets := e.View(st, 60, 20)
 	assertSize(t, view, 60, 20)
-	if !strings.HasPrefix(view, "Bed") || len(targets) == 0 || targets[len(targets)-1].Action != "open" {
+	if !strings.HasPrefix(view, "Bed") || !slices.ContainsFunc(targets, func(t Target) bool { return t.Action == "open" }) {
 		t.Errorf("the page lacks its title or the target of the address: %+v\n%s", targets, view)
 	}
 	if strings.Contains(strings.Join(texts(e.keys.Hints(e.Hints(), InputNavigation, e.text)), " "), "scroll") {

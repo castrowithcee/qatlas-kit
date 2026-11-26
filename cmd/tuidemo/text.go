@@ -27,9 +27,16 @@ const (
 	textKeyIcons        tui.TextID = "demo.key.icons"
 	textKeyMouse        tui.TextID = "demo.key.mouse"
 	textKeyCount        tui.TextID = "demo.key.count"
+	textKeyNavigation   tui.TextID = "demo.key.navigation"
+	textSettingNav      tui.TextID = "demo.setting.navigation"
+	textNavTabs         tui.TextID = "demo.navigation.tabs"
+	textNavPathLine     tui.TextID = "demo.navigation.pathline"
+	textNavHeader       tui.TextID = "demo.navigation.header"
+	textNavChoice       tui.TextID = "demo.navigation.choice"
 
 	textHintStep tui.TextID = "demo.hint.step"
 	textHintZone tui.TextID = "demo.hint.zone"
+	textHintOpen tui.TextID = "demo.hint.open"
 
 	textAreaOverview tui.TextID = "demo.area.overview"
 	textAreaFrame    tui.TextID = "demo.area.frame"
@@ -262,9 +269,16 @@ func catalog() i18n.Catalogs[tui.TextID] {
 			textKeyIcons:        "switch icons",
 			textKeyMouse:        "switch mouse",
 			textKeyCount:        "count",
+			textKeyNavigation:   "switch navigation",
+			textSettingNav:      "navigation",
+			textNavTabs:         "tabs",
+			textNavPathLine:     "path line",
+			textNavHeader:       "path in header",
+			textNavChoice:       "choice in header",
 
 			textHintStep: "step",
 			textHintZone: "focus",
+			textHintOpen: "open",
 
 			textAreaOverview: "Overview",
 			textAreaFrame:    "Frame",
@@ -302,7 +316,7 @@ func catalog() i18n.Catalogs[tui.TextID] {
 			textMouseCount:   "Count: %d",
 			textMouseButton:  "Count",
 
-			textSettingsLookBody:  "Theme and icons change at once. Pick a value with left and right or a click, or press the key of a switch.",
+			textSettingsLookBody:  "Theme, icons and navigation change at once. Pick a value with left and right or a click, or press the key of a switch.",
 			textSettingsInputBody: "Language and mouse change at once. Pick a value with left and right or a click, or press the key of a switch. Switched off, the mouse comes back only with M.",
 
 			textStatusTheme:    "theme: %s",
@@ -378,7 +392,7 @@ func catalog() i18n.Catalogs[tui.TextID] {
 			textNoteListFilter: "{search} types a filter, {filter} moves to the filter bar: {left} and {right} change a value, " +
 				"{enter} opens its values. {enter} or a click on the marked row opens it.",
 			textNoteListGroups: "{left} and {right} fold a group, so do {enter} and a click on its row. {search} types a filter; " +
-				"a filter opens the groups with hits.",
+				"a filter opens the groups with hits. A click on an entry opens it at once.",
 			textNoteListTicks: "Typing filters. {toggle} ticks the marked row, a group or the row of all; a click on a box does the same. " +
 				"{back} clears the filter.",
 
@@ -511,9 +525,16 @@ func catalog() i18n.Catalogs[tui.TextID] {
 			textKeyIcons:        "Icons wechseln",
 			textKeyMouse:        "Maus umschalten",
 			textKeyCount:        "zählen",
+			textKeyNavigation:   "Navigation wechseln",
+			textSettingNav:      "Navigation",
+			textNavTabs:         "Reiter",
+			textNavPathLine:     "Pfadzeile",
+			textNavHeader:       "Pfad in der Kopfzeile",
+			textNavChoice:       "Auswahl in der Kopfzeile",
 
 			textHintStep: "wechseln",
 			textHintZone: "Fokus",
+			textHintOpen: "öffnen",
 
 			textAreaOverview: "Übersicht",
 			textAreaFrame:    "Rahmen",
@@ -551,7 +572,7 @@ func catalog() i18n.Catalogs[tui.TextID] {
 			textMouseCount:   "Zähler: %d",
 			textMouseButton:  "Zählen",
 
-			textSettingsLookBody:  "Theme und Icons wechseln sofort. Wähle einen Wert mit links und rechts oder per Klick, oder drücke die Taste eines Schalters.",
+			textSettingsLookBody:  "Theme, Icons und Navigation wechseln sofort. Wähle einen Wert mit links und rechts oder per Klick, oder drücke die Taste eines Schalters.",
 			textSettingsInputBody: "Sprache und Maus wechseln sofort. Wähle einen Wert mit links und rechts oder per Klick, oder drücke die Taste eines Schalters. Ist die Maus aus, kommt sie nur mit M zurück.",
 
 			textStatusTheme:    "Theme: %s",
@@ -627,7 +648,7 @@ func catalog() i18n.Catalogs[tui.TextID] {
 			textNoteListFilter: "{search} tippt einen Filter, {filter} geht zur Filterleiste: {left} und {right} ändern einen Wert, " +
 				"{enter} öffnet seine Werte. {enter} oder ein Klick auf die markierte Zeile öffnet sie.",
 			textNoteListGroups: "{left} und {right} falten eine Gruppe, ebenso {enter} und ein Klick auf ihre Zeile. {search} tippt einen Filter; " +
-				"ein Filter öffnet die Gruppen mit Treffern.",
+				"ein Filter öffnet die Gruppen mit Treffern. Ein Klick auf einen Eintrag öffnet ihn sofort.",
 			textNoteListTicks: "Tippen filtert. {toggle} kreuzt die markierte Zeile, eine Gruppe oder die Zeile für alle an; ein Klick auf ein Kästchen tut dasselbe. " +
 				"{back} löscht den Filter.",
 
