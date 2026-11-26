@@ -244,6 +244,17 @@ func (k *Keymap) Actions() []Action {
 	return out
 }
 
+// SecondWays returns the actions whose SecondWayOf is id, in table order; an empty id has none.
+func (k *Keymap) SecondWays(id ActionID) []ActionID {
+	var ids []ActionID
+	for _, a := range k.actions {
+		if id != "" && a.SecondWayOf == id {
+			ids = append(ids, a.ID)
+		}
+	}
+	return ids
+}
+
 // Keys returns a copy of the key names bound to an action now, in binding order. An unknown action has none.
 func (k *Keymap) Keys(id ActionID) []string {
 	i, ok := k.index[id]

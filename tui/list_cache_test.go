@@ -124,19 +124,19 @@ func TestListColumnsWidenWithNewEntriesAndGroups(t *testing.T) {
 // The modal asks for a row more per new entry, new group and kept group.
 func TestListModalHeightFollowsEntriesAndKeptGroups(t *testing.T) {
 	l := groupedList(t, nil)
-	before := l.wanted()
+	before := l.wanted(80, Styles{})
 	items := append(samplePlants(), ListItem{ID: "tulip", Cells: []string{"tulip", "resting", "3", ""}, Group: "bulbs"})
 	if err := l.SetItems(items); err != nil {
 		t.Fatal(err)
 	}
-	if got := l.wanted(); got != before+2 {
+	if got := l.wanted(80, Styles{}); got != before+2 {
 		t.Errorf("SetItems: %d, want %d", got, before+2)
 	}
 	groups := append(sampleGroups(), ListGroup{Key: "seeds", Title: "Seed trays", Keep: true}, ListGroup{Key: "bulbs", Keep: true})
 	if err := l.SetGroups(groups); err != nil {
 		t.Fatal(err)
 	}
-	if got := l.wanted(); got != before+3 {
+	if got := l.wanted(80, Styles{}); got != before+3 {
 		t.Errorf("SetGroups with Keep: %d, want %d", got, before+3)
 	}
 }

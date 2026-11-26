@@ -287,7 +287,7 @@ func TestTickRowsSitUnderAllAndAboveGroupsFlatToo(t *testing.T) {
 	if got := ticks(l); got != "basil,mint,oak,thyme,fern" {
 		t.Errorf("all ticked %q", got)
 	}
-	if got, want := l.wanted(), 1+2+5+1+2; got != want {
+	if got, want := l.wanted(80, Styles{}), 1+2+5+1+2; got != want {
 		t.Errorf("wanted = %d, want %d", got, want)
 	}
 }

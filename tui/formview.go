@@ -652,6 +652,13 @@ func (f *Form) block(i, width, labelCol int, boxed bool, styles Styles) formBloc
 	if valueW < 2*minFlatValue {
 		indent = "    "
 	}
+	if focused && field.Kind == FieldPath {
+		rows, targets := field.line.rows(max(width-len(indent), 1), styles)
+		b.targets = append(b.targets, OffsetTargets(targets, len(indent), len(b.lines))...)
+		for _, r := range rows {
+			b.lines = append(b.lines, indent+r)
+		}
+	}
 	if focused && field.Hint != "" && field.Kind != FieldReadOnly {
 		for _, l := range Wrap(Escape(f.text.Lookup(field.Hint)), max(width-len(indent), 1)) {
 			b.lines = append(b.lines, indent+styles.Render(StyleHint, l))
@@ -676,7 +683,7 @@ func (f *Form) valueRows(i, width int, styles Styles) ([]string, []Target) {
 	}
 	text := field.line.String()
 	switch field.Kind {
-	case FieldText:
+	case FieldText, FieldPath:
 		switch {
 		case focused:
 			return []string{field.line.view(width, styles, true, "")}, nil

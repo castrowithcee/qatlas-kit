@@ -112,6 +112,11 @@ const (
 	TextFormBlockTooLongNext TextID = "tui.form.blocktoolongnext"
 	TextKeyNewLine           TextID = "tui.key.newline"
 
+	TextFormPathEndTime    TextID = "tui.form.pathendtime"
+	TextFormPathEndEntries TextID = "tui.form.pathendentries"
+	TextFormPathEndMatches TextID = "tui.form.pathendmatches"
+	TextFormPathEndCancel  TextID = "tui.form.pathendcancel"
+
 	TextFormSectionClosed TextID = "tui.form.sectionclosed"
 	TextFormDateFormat    TextID = "tui.form.dateformat"
 	TextFormDateNoSuch    TextID = "tui.form.datenosuch"
@@ -133,6 +138,7 @@ const (
 	TextHelpScroll     TextID = "tui.help.scroll"
 	TextHelpPage       TextID = "tui.help.page"
 	TextHelpClose      TextID = "tui.help.close"
+	TextHelpMore       TextID = "tui.help.more"
 	TextInfoLink       TextID = "tui.info.link"
 	TextInfoOpenLink   TextID = "tui.info.openlink"
 
@@ -319,6 +325,10 @@ func ModuleCatalog() i18n.Catalogs[TextID] {
 			TextFormBlockTooLong:     "The value would be longer than %d KiB.",
 			TextFormBlockTooLongNext: "Nothing was changed; use a shorter value.",
 			TextKeyNewLine:           "new line",
+			TextFormPathEndTime:      "Search ended after %d s, give the start path more precisely",
+			TextFormPathEndEntries:   "Search ended after %d entries, give the start path more precisely",
+			TextFormPathEndMatches:   "Only the first %d matches shown, give more of the name",
+			TextFormPathEndCancel:    "Search canceled",
 			TextFormKeyPress:         "press the new key",
 			TextFormSectionClosed:    "(closed)",
 			TextFormDateFormat:       "not a date",
@@ -341,6 +351,7 @@ func ModuleCatalog() i18n.Catalogs[TextID] {
 			TextHelpScroll:     "scroll",
 			TextHelpPage:       "page",
 			TextHelpClose:      "close",
+			TextHelpMore:       "More",
 			TextInfoLink:       "Documentation:",
 			TextInfoOpenLink:   "open link",
 
@@ -548,6 +559,10 @@ func ModuleCatalog() i18n.Catalogs[TextID] {
 			TextFormBlockTooLong:     "Der Wert wäre länger als %d KiB.",
 			TextFormBlockTooLongNext: "Nichts wurde geändert; verwenden Sie einen kürzeren Wert.",
 			TextKeyNewLine:           "Neue Zeile",
+			TextFormPathEndTime:      "Suche nach %d s beendet, Startpfad genauer angeben",
+			TextFormPathEndEntries:   "Suche nach %d Einträgen beendet, Startpfad genauer angeben",
+			TextFormPathEndMatches:   "Nur die ersten %d Treffer gezeigt, mehr vom Namen angeben",
+			TextFormPathEndCancel:    "Suche abgebrochen",
 			TextFormKeyPress:         "neue Taste drücken",
 			TextFormSectionClosed:    "(zu)",
 			TextFormDateFormat:       "kein Datum",
@@ -570,6 +585,7 @@ func ModuleCatalog() i18n.Catalogs[TextID] {
 			TextHelpScroll:     "Scrollen",
 			TextHelpPage:       "Seite",
 			TextHelpClose:      "Schließen",
+			TextHelpMore:       "Mehr dazu",
 			TextInfoLink:       "Dokumentation:",
 			TextInfoOpenLink:   "Link öffnen",
 

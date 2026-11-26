@@ -258,6 +258,8 @@ type List struct {
 	searching bool
 	focused   bool
 	empty     string
+	notice    string
+	noteWarn  bool
 	drawn     listSel
 }
 
@@ -517,6 +519,12 @@ func (l *List) SetFocused(on bool) { l.focused = on }
 // arguments and key placeholders included. The list escapes, dims and wraps it as it does ListSpec.Empty; an
 // empty text restores ListSpec.Empty. The sentence of a filter without match stays the list's own.
 func (l *List) SetEmpty(text string) { l.empty = text }
+
+// SetNote sets a note that stays above the column titles, under the search line, in View and Overlay
+// while it is set, whatever the list shows below it. text is the finished sentence of the application, as
+// with SetEmpty; control characters are escaped and it wraps to the width. With warn the note reads as a
+// warning, in the warning style behind the warning sign; otherwise it is dimmed. Empty text removes it.
+func (l *List) SetNote(text string, warn bool) { l.notice, l.noteWarn = text, warn }
 
 // SetGrouped shows the entries under their groups or as one flat list.
 func (l *List) SetGrouped(on bool) {
@@ -901,6 +909,7 @@ func (l *List) view(styles Styles, width, height int, modal bool) (string, []Tar
 		}
 		lines = append(lines, l.searchField(width, styles))
 	}
+	lines = append(lines, l.fixedNote(width, styles)...)
 	indent, allAt := "", ""
 	if l.grouped {
 		indent, allAt = groupIndent, allIndent
@@ -1019,6 +1028,28 @@ func (l *List) note(text string, width int, styles Styles) []string {
 	lines := Wrap(Escape(text), max(width-2, 1))
 	for i, line := range lines {
 		lines[i] = "  " + styles.Render(StyleHint, line)
+	}
+	return lines
+}
+
+// fixedNote draws the note of SetNote in width cells; the lines after the first of a warning stand under
+// its text, not under the sign, like the question of a dialog.
+func (l *List) fixedNote(width int, styles Styles) []string {
+	if l.notice == "" {
+		return nil
+	}
+	if !l.noteWarn {
+		return l.note(l.notice, width, styles)
+	}
+	lead := styles.Render(StyleWarn, styles.Glyph(GlyphWarning)) + " "
+	lw := 2 + lipgloss.Width(lead)
+	lines := Wrap(Escape(l.notice), max(width-lw, 1))
+	for i, line := range lines {
+		prefix := strings.Repeat(" ", lw)
+		if i == 0 {
+			prefix = "  " + lead
+		}
+		lines[i] = prefix + styles.Render(StyleWarn, line)
 	}
 	return lines
 }
@@ -1777,9 +1808,9 @@ func (l *List) buttonRows(width int, styles Styles) ([]string, []Target) {
 	return flowButtons(cells, width)
 }
 
-// wanted is the height the list asks for in the modal: the search line, the titles with their rule and every row without a
-// filter, so the frame keeps its size while a filter is typed.
-func (l *List) wanted() int {
+// wanted is the height the list asks for in the modal: the search line, the note, the titles with their rule
+// and every row without a filter, so the frame keeps its size while a filter is typed.
+func (l *List) wanted(inner int, styles Styles) int {
 	rows := len(l.items)
 	if l.grouped {
 		rows += len(l.byGroup)
@@ -1797,7 +1828,7 @@ func (l *List) wanted() int {
 			rows++
 		}
 	}
-	return 1 + 2 + max(rows, 2)
+	return 1 + len(l.fixedNote(inner, styles)) + 2 + max(rows, 2)
 }
 
 // Overlay draws the list with styles over screen, the drawn screen of width by height cells, in the way of
@@ -1805,8 +1836,8 @@ func (l *List) wanted() int {
 // line, the list, the buttons and the key line of Hints that no button stands for, centred in room, the part
 // of the screen it may cover. The list scrolls in the height that is left and keeps the marked row in view.
 // The targets are the modal's alone, so the screen behind it takes no click. ok is false where room is too
-// small for the search line, the titles, one row, the buttons and the key line; the application then draws
-// View in the workspace and Hints in the footer.
+// small for the search line, the note, the titles, one row, the buttons and the key line; the application
+// then draws View in the workspace and Hints in the footer.
 func (l *List) Overlay(styles Styles, screen string, width, height int, room Rect) (view string, targets []Target, ok bool) {
 	inner := min(dialogMaxInner, room.Width-8)
 	if inner < dialogMinInner {
@@ -1823,8 +1854,9 @@ func (l *List) Overlay(styles Styles, screen string, width, height int, room Rec
 		fixed += len(rows) + 1
 	}
 	avail := room.Height - 2 - fixed
-	listH := min(l.wanted(), avail)
-	if listH < 4 {
+	noteH := len(l.fixedNote(inner, styles))
+	listH := min(l.wanted(inner, styles), avail)
+	if listH < 4+noteH {
 		return "", nil, false
 	}
 	body, ts := l.view(styles, inner, listH, true)

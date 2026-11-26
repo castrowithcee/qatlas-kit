@@ -1,6 +1,9 @@
 package main
 
 import (
+	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -129,5 +132,142 @@ func TestDateFieldsOpenOnTheClockAndBoundHarvest(t *testing.T) {
 		if !strings.Contains(view, "March 2040") {
 			t.Fatalf("the calendar of %s did not open on the clock month:\n%s", id, view)
 		}
+	}
+}
+
+// pathsForm opens the path form of the demo with the focus on its first field.
+func pathsForm(t *testing.T) (*model, *tui.Form) {
+	t.Helper()
+	m := testModel(t, uiprefs.IconsNone)
+	m.run(actArea, "7")
+	for _, k := range []tea.KeyPressMsg{{Code: tea.KeyTab}, {Code: tea.KeyRight}, {Code: tea.KeyRight}, {Code: tea.KeyTab}} {
+		m.Update(k)
+	}
+	b, ok := m.live().(*formBlock)
+	if !ok || m.zone != tui.ZoneForm {
+		t.Fatalf("live %T, zone %q, want the form of the paths tab with the focus", m.live(), m.zone)
+	}
+	return m, b.form
+}
+
+// ask sets the text of a path field as the application would and returns the answer, not yet delivered.
+func ask(t *testing.T, m *model, form *tui.Form, id tui.FieldID, text string) tea.Cmd {
+	t.Helper()
+	form.Focus(id)
+	if err := form.SetValue(id, tui.FormValue{Text: text}); err != nil {
+		t.Fatal(err)
+	}
+	cmd := m.pathsLoad()
+	if cmd == nil {
+		t.Fatal("the change asked for no entries")
+	}
+	return cmd
+}
+
+// deliver runs the answer of cmd and hands it to the model, as the program would.
+func deliver(m *model, cmd tea.Cmd) {
+	m.Update(cmd())
+}
+
+func formText(m *model, form *tui.Form) string {
+	view, _ := form.View(m.styles, 200, 40)
+	return view
+}
+
+func TestPathFieldShowsTheEntriesOfALevel(t *testing.T) {
+	root := t.TempDir()
+	for _, d := range []string{"alpha-bed", "alpha-pond", "beta"} {
+		if err := os.Mkdir(filepath.Join(root, d), 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(root, "alpha.txt"), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	m, form := pathsForm(t)
+	deliver(m, ask(t, m, form, fieldFolder, filepath.Join(root, "al")))
+	view := formText(m, form)
+	if !strings.Contains(view, "alpha-bed") || !strings.Contains(view, "alpha-pond") || strings.Contains(view, "beta") {
+		t.Errorf("folder level:\n%s", view)
+	}
+	if strings.Contains(view, "alpha.txt") {
+		t.Errorf("the folder field offers a file:\n%s", view)
+	}
+	deliver(m, ask(t, m, form, fieldFile, filepath.Join(root, "al")))
+	if view = formText(m, form); !strings.Contains(view, "alpha.txt") || !strings.Contains(view, "alpha-bed") {
+		t.Errorf("file level:\n%s", view)
+	}
+	// A level that cannot be read answers without entries.
+	deliver(m, ask(t, m, form, fieldFile, filepath.Join(root, "missing", "x")))
+}
+
+func TestPathFieldShowsTheMatchesOfASearch(t *testing.T) {
+	root := t.TempDir()
+	deep := filepath.Join(root, "one", "two", "needle-dir")
+	if err := os.MkdirAll(deep, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "one", "needle.txt"), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	m, form := pathsForm(t)
+	deliver(m, ask(t, m, form, fieldFolder, root+"*needle"))
+	view := formText(m, form)
+	if !strings.Contains(view, "needle-dir") || strings.Contains(view, "needle.txt") {
+		t.Errorf("folder search:\n%s", view)
+	}
+	deliver(m, ask(t, m, form, fieldFile, root+"*needle"))
+	if view = formText(m, form); !strings.Contains(view, "needle-dir") || !strings.Contains(view, "needle.txt") {
+		t.Errorf("file search:\n%s", view)
+	}
+	// A start that cannot be read, and a search without text, answer without entries and do not fail.
+	deliver(m, ask(t, m, form, fieldFile, filepath.Join(root, "missing")+"*needle"))
+	deliver(m, ask(t, m, form, fieldFile, root+"*"))
+}
+
+func TestPathFieldDropsAStaleAnswerAndCancelsTheSearch(t *testing.T) {
+	root := t.TempDir()
+	for _, d := range []string{"old-one", "new-one"} {
+		if err := os.Mkdir(filepath.Join(root, d), 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	m, form := pathsForm(t)
+	first := ask(t, m, form, fieldFolder, filepath.Join(root, "old"))
+	second := ask(t, m, form, fieldFolder, filepath.Join(root, "new"))
+	deliver(m, second)
+	deliver(m, first) // the answer of the earlier text arrives last
+	view := formText(m, form)
+	if !strings.Contains(view, "new-one") || strings.Contains(view, "old-one") {
+		t.Errorf("a stale answer changed the entries:\n%s", view)
+	}
+}
+
+func TestPathSearchEndsCanceledWithItsContext(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "a", "needle"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	res := answerPath(ctx, tui.PathLoad{Typed: root + "*needle", Search: true, Kind: tui.PathDirs, Token: 7})
+	if res.Token != 7 || res.End != tui.PathEndCanceled {
+		t.Errorf("answer %+v, want token 7 and a canceled end", res)
+	}
+}
+
+func TestPathFormCancelsTheRunningSearchOnANewRequest(t *testing.T) {
+	m, form := pathsForm(t)
+	root := t.TempDir()
+	ask(t, m, form, fieldFolder, root+"*a")
+	b := m.live().(*formBlock)
+	if b.cancel == nil {
+		t.Fatal("no cancel function kept for the search")
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	b.cancel = cancel
+	ask(t, m, form, fieldFolder, root+"*ab")
+	if ctx.Err() == nil {
+		t.Error("the new request did not cancel the running one")
 	}
 }

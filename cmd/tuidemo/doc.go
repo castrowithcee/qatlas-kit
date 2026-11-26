@@ -29,7 +29,7 @@
 // values, which take effect at once, and enter or a click opens the list of values. In the theme field, left
 // is the step back. The form shows the value a switch sets elsewhere; a switch of the language builds the form
 // again and keeps the field in focus. The Dialogs tab opens a question with a destroying answer (a), an input
-// (r) and a notice (o); the Help tab shows the help (?), the explanation of the sample data (i) and the command
+// (r) and a notice (o); the Help tab shows the help (? or F1, the Markdown pages in help/ in the language of the switch, the page of the open tab first), the explanation of the sample data (i) and the command
 // line (:), which runs commands by name, such as the tabs and the switches. The command line stands over the
 // dimmed screen, at the top and centred, with a key line of its own; where the terminal is too small for that
 // it fills the workspace and its keys stand in the footer. Esc closes whatever stands over the screen, and

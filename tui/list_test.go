@@ -2305,6 +2305,181 @@ func TestRowClickOpensAtOnceWithOption(t *testing.T) {
 	}
 }
 
+const noteText = "Bound to this host only."
+
+// noteAbove reports whether the note stands in the plain rows of view above the column titles, or above the
+// empty sentence when there are none.
+func noteAbove(t *testing.T, view, note, below string) {
+	t.Helper()
+	rows := strings.Split(ansi.Strip(view), "\n")
+	at, under := -1, -1
+	for i, r := range rows {
+		if at < 0 && strings.Contains(r, note) {
+			at = i
+		}
+		if under < 0 && strings.Contains(r, below) {
+			under = i
+		}
+	}
+	if at < 0 || under < 0 || at >= under {
+		t.Errorf("note at %d, %q at %d:\n%s", at, below, under, view)
+	}
+}
+
+func TestListNoteStandsAboveTitlesInViewAndOverlay(t *testing.T) {
+	st := looks(t)["noneascii"]
+	l := newModalList(t, st, 40, nil)
+	l.SetNote(noteText, true)
+	room := Rect{Y: 3, Width: 100, Height: 26}
+	check := func(label string) {
+		t.Helper()
+		view, _ := l.View(st, 60, 12)
+		noteAbove(t, view, noteText, "NAME")
+		ov, _, ok := l.Overlay(st, sampleScreen(100, 30), 100, 30, room)
+		if !ok {
+			t.Fatalf("%s: no overlay", label)
+		}
+		noteAbove(t, ov, noteText, "NAME")
+	}
+	check("top")
+	keysTo(l, "end")
+	check("last entry")
+	typeList(l, "plant1")
+	check("filter")
+	typeList(l, "zzz")
+	view, _ := l.View(st, 60, 12)
+	noteAbove(t, view, noteText, "NAME")
+	ov, _, ok := l.Overlay(st, sampleScreen(100, 30), 100, 30, room)
+	if !ok {
+		t.Fatal("no overlay without match")
+	}
+	noteAbove(t, ov, noteText, "NAME")
+	if !strings.Contains(ansi.Strip(ov), "zzz") {
+		t.Errorf("no sentence of the filter without match:\n%s", ov)
+	}
+}
+
+func TestListNoteStandsAboveEmptySentence(t *testing.T) {
+	st := looks(t)["noneascii"]
+	l := newModalList(t, st, 0, nil)
+	if err := l.SetItems(nil); err != nil {
+		t.Fatal(err)
+	}
+	l.SetNote(noteText, false)
+	view, _ := l.View(st, 60, 8)
+	noteAbove(t, view, noteText, "No plants yet")
+	ov, _, ok := l.Overlay(st, sampleScreen(100, 30), 100, 30, Rect{Y: 3, Width: 100, Height: 26})
+	if !ok {
+		t.Fatal("no overlay")
+	}
+	noteAbove(t, ov, noteText, "No plants yet")
+}
+
+func TestListNoteSmallestOverlayShowsItWhole(t *testing.T) {
+	st := looks(t)["noneascii"]
+	l := newModalList(t, st, 10, nil)
+	long := strings.Repeat("Bound to this host only. ", 4)
+	l.SetNote(long, true)
+	screen := sampleScreen(100, 40)
+	smallest := 0
+	for h := 1; h <= 30; h++ {
+		if _, _, ok := l.Overlay(st, screen, 100, 40, Rect{Width: 100, Height: h}); ok {
+			smallest = h
+			break
+		}
+	}
+	if smallest == 0 {
+		t.Fatal("the overlay never fits")
+	}
+	view, _, _ := l.Overlay(st, screen, 100, 40, Rect{Width: 100, Height: smallest})
+	var inFrame []string
+	for _, r := range strings.Split(ansi.Strip(view), "\n") {
+		if end := strings.LastIndex(r, "|"); end > 0 {
+			if from := strings.LastIndex(r[:end], "|"); from >= 0 && strings.Contains(r[from:end], "host") {
+				inFrame = append(inFrame, strings.TrimPrefix(strings.TrimSpace(r[from+1:end]), "!"))
+			}
+		}
+	}
+	if flat := strings.Join(strings.Fields(strings.Join(inFrame, " ")), " "); flat != strings.TrimSpace(long) {
+		t.Errorf("note not whole at height %d:\n%s", smallest, view)
+	}
+	if _, _, ok := l.Overlay(st, screen, 100, 40, Rect{Width: 100, Height: smallest - 1}); ok {
+		t.Errorf("height %d still fits", smallest-1)
+	}
+	// without the note the same room needs fewer rows
+	l.SetNote("", false)
+	if _, _, ok := l.Overlay(st, screen, 100, 40, Rect{Width: 100, Height: smallest - 1}); !ok {
+		t.Errorf("height %d does not fit without the note", smallest-1)
+	}
+}
+
+func TestListNoteKeepsFrameHeightWhileFiltering(t *testing.T) {
+	st := looks(t)["noneascii"]
+	l := newModalList(t, st, 10, nil)
+	l.SetNote(strings.Repeat("Bound to this host only. ", 3), false)
+	room := Rect{Y: 0, Width: 100, Height: 30}
+	height := func() int {
+		v, _, ok := l.Overlay(st, sampleScreen(100, 30), 100, 30, room)
+		if !ok {
+			t.Fatal("no overlay")
+		}
+		_, top, bottom := frameRows(v)
+		return bottom - top
+	}
+	before := height()
+	typeList(l, "plant0")
+	if h := height(); h != before {
+		t.Errorf("frame height %d, was %d", h, before)
+	}
+}
+
+func TestListNoteWarnAndHintStyles(t *testing.T) {
+	st := looks(t)["dark"]
+	l := filledList(t, nil)
+	l.SetNote(noteText, true)
+	view, _ := l.View(st, 60, 10)
+	sign := st.Render(StyleWarn, st.Glyph(GlyphWarning))
+	if !strings.Contains(view, sign) || !strings.Contains(view, st.Render(StyleWarn, noteText)) {
+		t.Errorf("warn note lacks sign or style:\n%s", view)
+	}
+	l.SetNote(noteText, false)
+	view, _ = l.View(st, 60, 10)
+	if strings.Contains(view, sign) || !strings.Contains(view, st.Render(StyleHint, noteText)) {
+		t.Errorf("plain note is not the hint style:\n%s", view)
+	}
+	ascii := looks(t)["noneascii"]
+	l.SetNote(noteText, true)
+	view, _ = l.View(ascii, 60, 10)
+	if !strings.Contains(ansi.Strip(view), "  ! "+noteText) {
+		t.Errorf("no ASCII warning sign:\n%s", view)
+	}
+}
+
+func TestListNoteEscapesControlCharacters(t *testing.T) {
+	st := looks(t)["noneascii"]
+	l := filledList(t, nil)
+	l.SetNote("bad \x1b[31mred\x07 text", true)
+	view, _ := l.View(st, 60, 10)
+	if strings.ContainsAny(view, "\x1b\x07") || !strings.Contains(view, Escape("bad \x1b[31mred\x07 text")) {
+		t.Errorf("control characters not escaped:\n%q", view)
+	}
+}
+
+func TestListNoteEmptyRemovesIt(t *testing.T) {
+	st := looks(t)["noneascii"]
+	l := newModalList(t, st, 10, nil)
+	room := Rect{Width: 100, Height: 26}
+	plain, _ := l.View(st, 60, 12)
+	ov, _, _ := l.Overlay(st, sampleScreen(100, 30), 100, 30, room)
+	l.SetNote(noteText, true)
+	l.SetNote("", true)
+	again, _ := l.View(st, 60, 12)
+	ov2, _, _ := l.Overlay(st, sampleScreen(100, 30), 100, 30, room)
+	if again != plain || ov2 != ov {
+		t.Error("an emptied note changes the output")
+	}
+}
+
 // entryRows are the IDs of the shown entry rows in their order.
 func entryRows(l *List) []ItemID {
 	ids := []ItemID{}
