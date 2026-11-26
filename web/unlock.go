@@ -3,7 +3,6 @@ package web
 import (
 	"bytes"
 	"errors"
-	"fmt"
 	"html/template"
 	"net/http"
 	"sync"
@@ -21,14 +20,13 @@ const (
 	// enough that a session left open does not reach the field.
 	unlockRecent = 2 * time.Minute
 
-	defaultVaultIdle = 5 * time.Minute
-	maxPassphrase    = 1024 // bytes; a longer value is refused without a call
+	maxPassphrase = 1024 // bytes; a longer value is refused without a call
 )
 
 const (
 	// VaultUnlocked, VaultUnlockFailed and VaultUnlockThrottled report an attempt to unlock; a throttled
-	// attempt is refused without calling the application. VaultLocked reports the lock, whether by idle
-	// time, Lock or Close; its Remote is empty then.
+	// attempt is refused without calling the application. VaultLocked reports the lock by Lock or
+	// Close; its Remote is empty then.
 	VaultUnlocked        LoginEventKind = "vault-unlock"
 	VaultUnlockFailed    LoginEventKind = "vault-unlock-failed"
 	VaultUnlockThrottled LoginEventKind = "vault-unlock-throttled"
@@ -41,11 +39,10 @@ type UnlockOptions struct {
 	// vaultproc process. Any error means the passphrase was not accepted. It must not log the
 	// passphrase, put it in an error, or keep it. Required.
 	Unlock func(passphrase string) error
-	// Lock locks the vault again. It runs when the vault was not used for Idle, on Lock and on Close. If it
-	// fails, the Unlocker keeps the vault as unlocked and tries again after Idle. Required.
+	// Lock locks the vault again. It runs only on Lock and on Close, never by itself: when the vault locks
+	// otherwise is up to the application. If it fails, the Unlocker keeps the vault as unlocked, returns
+	// the error and does not retry. Required.
 	Lock func() error
-	// Idle is how long the vault may stay unlocked without use; 0 means 5 minutes. Use is a call of Touch.
-	Idle time.Duration
 	// Window is how long a failed attempt counts; 0 means 10 minutes.
 	Window time.Duration
 	// Attempts is the failed attempts from all addresses together per Window; 0 means 5. It is separate
@@ -55,26 +52,23 @@ type UnlockOptions struct {
 	Audit LoginAudit
 }
 
-// Unlocker offers the unlocking of a vault in the browser and locks it again after idle time. Make one with
-// NewUnlocker, mount Routes next to those of the pages, and call Close when the server ends.
+// Unlocker offers the unlocking of a vault in the browser. It has no lock time of its own and locks only
+// when told to. Make one with NewUnlocker, mount Routes next to those of the pages, and call Close when
+// the server ends.
 type Unlocker struct {
 	pages  *Pages
 	unlock func(string) error
 	lock   func() error
-	idle   time.Duration
 	audit  LoginAudit
 
-	// now and after are replaced by tests.
-	now   func() time.Time
-	after func(d time.Duration, f func()) (stop func())
+	// now is replaced by tests.
+	now func() time.Time
 
 	failed *ratelimit.Counter
 
-	attempt sync.Mutex // serializes unlock, lock and the idle check; taken before mu
-	mu      sync.Mutex // guards the fields below
+	attempt sync.Mutex // serializes unlock and lock; taken before mu
+	mu      sync.Mutex // guards open
 	open    bool
-	last    time.Time
-	stop    func()
 }
 
 // NewUnlocker checks opts. It needs the Pages of the server, which ask for a fresh sign-in.
@@ -82,14 +76,7 @@ func NewUnlocker(pages *Pages, opts UnlockOptions) (*Unlocker, error) {
 	if pages == nil || opts.Unlock == nil || opts.Lock == nil {
 		return nil, errors.New("web: an Unlocker needs Pages, Unlock and Lock")
 	}
-	u := &Unlocker{pages: pages, unlock: opts.Unlock, lock: opts.Lock, idle: opts.Idle, audit: opts.Audit,
-		now: time.Now, after: func(d time.Duration, f func()) func() {
-			t := time.AfterFunc(d, f)
-			return func() { t.Stop() }
-		}}
-	if u.idle <= 0 {
-		u.idle = defaultVaultIdle
-	}
+	u := &Unlocker{pages: pages, unlock: opts.Unlock, lock: opts.Lock, audit: opts.Audit, now: time.Now}
 	win, n := opts.Window, opts.Attempts
 	if win <= 0 {
 		win = 10 * time.Minute
@@ -122,17 +109,6 @@ func (u *Unlocker) Unlocked() bool {
 	return u.open
 }
 
-// Touch reports that the vault was used, which postpones the idle lock. Only a call counts: a request to
-// the page of the Unlocker is no use, so reloading it does not keep the vault open. A tool calls Touch
-// wherever it reads the vault for a request. It does nothing while the vault is locked.
-func (u *Unlocker) Touch() {
-	u.mu.Lock()
-	defer u.mu.Unlock()
-	if u.open {
-		u.last = u.now()
-	}
-}
-
 // Lock locks the vault now, if it is unlocked, and reports the lock.
 func (u *Unlocker) Lock() error {
 	u.attempt.Lock()
@@ -140,45 +116,22 @@ func (u *Unlocker) Lock() error {
 	return u.lockLocked()
 }
 
-// Close locks the vault if it is unlocked and stops the timer. Call it after Serve returns, so the vault
+// Close locks the vault if it is unlocked. Call it after Serve returns, so the vault
 // does not outlive the server. The Unlocker is not meant for use afterwards.
 func (u *Unlocker) Close() error { return u.Lock() }
 
 func (u *Unlocker) lockLocked() error {
-	u.mu.Lock()
-	open, stop := u.open, u.stop
-	u.mu.Unlock()
-	if !open {
+	if !u.Unlocked() {
 		return nil
 	}
-	if stop != nil {
-		stop()
-	}
 	if err := u.lock(); err != nil {
-		u.mu.Lock()
-		u.stop = u.after(u.idle, u.expire)
-		u.mu.Unlock()
 		return err
 	}
 	u.mu.Lock()
-	u.open, u.stop = false, nil
+	u.open = false
 	u.mu.Unlock()
 	u.record(VaultLocked, "")
 	return nil
-}
-
-// expire runs when the timer fires. A use since the timer was set moves the lock later.
-func (u *Unlocker) expire() {
-	u.attempt.Lock()
-	defer u.attempt.Unlock()
-	u.mu.Lock()
-	if wait := u.idle - u.now().Sub(u.last); u.open && wait > 0 {
-		u.stop = u.after(wait, u.expire)
-		u.mu.Unlock()
-		return
-	}
-	u.mu.Unlock()
-	_ = u.lockLocked() // a failure is retried by lockLocked; the next request sees no difference
 }
 
 func (u *Unlocker) record(kind LoginEventKind, remote string) {
@@ -201,7 +154,7 @@ var unlockPage = template.Must(template.New("unlock").Parse(`<!doctype html>
 <body>
 <main>
 <h1>Unlock vault</h1>
-{{if .Open}}<p>The vault is unlocked. It locks again after {{.Idle}} without use.</p>
+{{if .Open}}<p>The vault is unlocked.</p>
 <p><a href="{{.Home}}">Back</a></p>
 {{else}}<p class="hint" id="hint">Enter the passphrase of the vault. The browser is asked not to save or fill it, and the program does not keep it. A browser extension can still read what you type here, so unlock only in a browser you trust.</p>
 <form method="post" action="{{.Action}}" autocomplete="off">
@@ -220,9 +173,9 @@ var unlockPage = template.Must(template.New("unlock").Parse(`<!doctype html>
 func (u *Unlocker) render(w http.ResponseWriter, r *http.Request, status int, failed bool) {
 	var buf bytes.Buffer
 	err := unlockPage.Execute(&buf, struct {
-		Nonce, Field, Action, Token, Idle, Home string
-		Open, Failed                            bool
-	}{Nonce(r), CSRFField, u.UnlockPath(), CSRFToken(r), spanText(u.idle), u.pages.home, u.Unlocked(), failed})
+		Nonce, Field, Action, Token, Home string
+		Open, Failed                      bool
+	}{Nonce(r), CSRFField, u.UnlockPath(), CSRFToken(r), u.pages.home, u.Unlocked(), failed})
 	if err != nil {
 		Error(w, http.StatusInternalServerError)
 		return
@@ -232,16 +185,6 @@ func (u *Unlocker) render(w http.ResponseWriter, r *http.Request, status int, fa
 	h.Set("Cache-Control", "no-store")
 	w.WriteHeader(status)
 	_, _ = w.Write(buf.Bytes())
-}
-
-func spanText(d time.Duration) string {
-	if d == time.Minute {
-		return "1 minute"
-	}
-	if d%time.Minute == 0 {
-		return fmt.Sprintf("%d minutes", int(d/time.Minute))
-	}
-	return fmt.Sprintf("%d seconds", int(d.Round(time.Second)/time.Second))
 }
 
 func (u *Unlocker) show(w http.ResponseWriter, r *http.Request) {
@@ -278,8 +221,7 @@ func (u *Unlocker) submit(w http.ResponseWriter, r *http.Request) {
 	}
 	res.Release()
 	u.mu.Lock()
-	u.open, u.last = true, u.now()
-	u.stop = u.after(u.idle, u.expire)
+	u.open = true
 	u.mu.Unlock()
 	u.record(VaultUnlocked, remote)
 	_ = Redirect(w, r, u.UnlockPath(), http.StatusSeeOther)

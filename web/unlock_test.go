@@ -13,12 +13,6 @@ import (
 	"time"
 )
 
-type fakeTimer struct {
-	d       time.Duration
-	f       func()
-	stopped bool
-}
-
 type unlockFixture struct {
 	*pagesFixture
 	u      *Unlocker
@@ -30,7 +24,6 @@ type unlockFixture struct {
 		locks   int
 		lockErr error
 	}
-	timers []*fakeTimer
 }
 
 // newUnlockFixture serves the pages and an Unlocker with a fake vault that accepts one made-up passphrase.
@@ -71,30 +64,11 @@ func newUnlockFixture(t *testing.T, po PagesOptions, uo UnlockOptions) *unlockFi
 		t.Fatal(err)
 	}
 	f.u.now = f.clock.now
-	f.u.after = func(d time.Duration, fn func()) func() {
-		tm := &fakeTimer{d: d, f: fn}
-		f.timers = append(f.timers, tm)
-		return func() { tm.stopped = true }
-	}
 	f.server = newServer(t, Options{Sessions: cs, Log: f.log, Routes: append(append(f.pages.Routes(),
 		Route{Pattern: "GET /token", Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			_, _ = w.Write([]byte(CSRFToken(r)))
 		})}), f.u.Routes()...)})
 	return f
-}
-
-// fire runs the newest timer that was not stopped, as the clock would.
-func (f *unlockFixture) fire(t *testing.T) *fakeTimer {
-	t.Helper()
-	for i := len(f.timers) - 1; i >= 0; i-- {
-		if tm := f.timers[i]; !tm.stopped {
-			tm.stopped = true
-			tm.f()
-			return tm
-		}
-	}
-	t.Fatal("no timer is set")
-	return nil
 }
 
 func (f *unlockFixture) attempts() []string {
@@ -226,8 +200,8 @@ func TestWrongPassphraseIsRefusedWithoutEchoingIt(t *testing.T) {
 	if rec.Header().Get("Cache-Control") != "no-store" {
 		t.Error("page may be cached")
 	}
-	if f.u.Unlocked() || len(f.timers) != 0 {
-		t.Error("a wrong passphrase unlocked or armed a timer")
+	if f.u.Unlocked() {
+		t.Error("a wrong passphrase unlocked")
 	}
 	if k := f.audit.kinds(); len(k) != 1 || k[0] != VaultUnlockFailed {
 		t.Errorf("protocol %v", k)
@@ -287,7 +261,7 @@ func TestSuccessCallsTheVaultOnceAndShowsNoField(t *testing.T) {
 	}
 	page := do(f.server, getWith("/unlock", c))
 	body := page.Body.String()
-	if !strings.Contains(body, "The vault is unlocked. It locks again after 5 minutes without use.") || strings.Contains(body, "<input") {
+	if !strings.Contains(body, "The vault is unlocked.") || strings.Contains(body, "<input") {
 		t.Errorf("page of an unlocked vault: %q", body)
 	}
 	// A second post does not ask the vault again.
@@ -300,66 +274,66 @@ func TestSuccessCallsTheVaultOnceAndShowsNoField(t *testing.T) {
 	f.noSecret(t, "success", dump(rec, rec.Body.String()), dump(page, body))
 }
 
-func TestVaultLocksAfterIdleTime(t *testing.T) {
-	f := newUnlockFixture(t, PagesOptions{}, UnlockOptions{Idle: 5 * time.Minute})
+func TestVaultNeverLocksByItself(t *testing.T) {
+	f := newUnlockFixture(t, PagesOptions{}, UnlockOptions{})
 	c := signedIn(t, f.pagesFixture)
 	do(f.server, f.post(t, c, f.secret))
-	if len(f.timers) != 1 || f.timers[0].d != 5*time.Minute {
-		t.Fatalf("timers %+v", f.timers)
-	}
 	f.audit.events = nil
-	f.clock.t = f.clock.t.Add(4 * time.Minute)
-	f.u.Touch()
-	do(f.server, getWith("/unlock", c)) // the page itself is no use
-	f.clock.t = f.clock.t.Add(4 * time.Minute)
-	if tm := f.fire(t); f.locks() != 0 || !f.u.Unlocked() {
-		t.Fatalf("locked after %v, only 4 minutes after the last use", tm.d)
+	f.clock.t = f.clock.t.Add(48 * time.Hour)
+	do(f.server, getWith("/unlock", c))
+	if f.locks() != 0 || !f.u.Unlocked() || len(f.audit.kinds()) != 0 {
+		t.Fatalf("locks %d, unlocked %v, protocol %v", f.locks(), f.u.Unlocked(), f.audit.kinds())
 	}
-	if last := f.timers[len(f.timers)-1]; last.d != time.Minute || last.stopped {
-		t.Fatalf("the lock was not moved: %+v", last)
-	}
-	f.clock.t = f.clock.t.Add(time.Minute)
-	f.fire(t)
-	if f.locks() != 1 || f.u.Unlocked() {
-		t.Fatalf("locks %d, unlocked %v", f.locks(), f.u.Unlocked())
+}
+
+func TestLockLocksAndReports(t *testing.T) {
+	f := newUnlockFixture(t, PagesOptions{}, UnlockOptions{})
+	c := signedIn(t, f.pagesFixture)
+	do(f.server, f.post(t, c, f.secret))
+	f.audit.events = nil
+	if err := f.u.Lock(); err != nil || f.locks() != 1 || f.u.Unlocked() {
+		t.Fatalf("Lock: %v, %d locks, unlocked %v", err, f.locks(), f.u.Unlocked())
 	}
 	if k := f.audit.kinds(); len(k) != 1 || k[0] != VaultLocked {
 		t.Errorf("protocol %v", k)
 	}
-	// Touch does nothing now, and the page asks for the passphrase again.
-	f.u.Touch()
 	do(f.server, reauthPost(t, f.pagesFixture, c, f.code.Generate(), "/unlock"))
 	if body := do(f.server, getWith("/unlock", c)).Body.String(); !strings.Contains(body, `type="password"`) {
 		t.Error("page of a locked vault has no field")
 	}
 }
 
-func TestCloseLocksAndStopsTheTimer(t *testing.T) {
+func TestCloseLocks(t *testing.T) {
 	f := newUnlockFixture(t, PagesOptions{}, UnlockOptions{})
 	if err := f.u.Close(); err != nil || f.locks() != 0 {
 		t.Fatalf("a locked vault is locked again: %v, %d", err, f.locks())
 	}
 	c := signedIn(t, f.pagesFixture)
 	do(f.server, f.post(t, c, f.secret))
-	if err := f.u.Close(); err != nil || f.locks() != 1 || f.u.Unlocked() || !f.timers[0].stopped {
+	if err := f.u.Close(); err != nil || f.locks() != 1 || f.u.Unlocked() {
 		t.Fatalf("Close: %v, %d locks, unlocked %v", err, f.locks(), f.u.Unlocked())
 	}
 }
 
-func TestFailedLockIsRetried(t *testing.T) {
-	f := newUnlockFixture(t, PagesOptions{}, UnlockOptions{Idle: time.Minute})
+func TestFailedLockKeepsTheVaultUnlockedWithoutRetry(t *testing.T) {
+	f := newUnlockFixture(t, PagesOptions{}, UnlockOptions{})
 	c := signedIn(t, f.pagesFixture)
 	do(f.server, f.post(t, c, f.secret))
+	f.audit.events = nil
 	f.vault.lockErr = errors.New("busy")
-	f.clock.t = f.clock.t.Add(time.Minute)
-	f.fire(t)
-	if !f.u.Unlocked() || f.locks() != 1 {
-		t.Fatalf("unlocked %v, %d locks", f.u.Unlocked(), f.locks())
+	if err := f.u.Lock(); err == nil || !f.u.Unlocked() || f.locks() != 1 {
+		t.Fatalf("Lock: %v, unlocked %v, %d locks", err, f.u.Unlocked(), f.locks())
+	}
+	if err := f.u.Close(); err == nil || !f.u.Unlocked() || f.locks() != 2 {
+		t.Fatalf("Close: %v, unlocked %v, %d locks", err, f.u.Unlocked(), f.locks())
+	}
+	f.clock.t = f.clock.t.Add(time.Hour)
+	if f.locks() != 2 || len(f.audit.kinds()) != 0 {
+		t.Errorf("%d locks, protocol %v", f.locks(), f.audit.kinds())
 	}
 	f.vault.lockErr = nil
-	f.fire(t)
-	if f.u.Unlocked() || f.locks() != 2 {
-		t.Errorf("unlocked %v, %d locks", f.u.Unlocked(), f.locks())
+	if err := f.u.Close(); err != nil || f.u.Unlocked() || f.locks() != 3 {
+		t.Errorf("Close: %v, unlocked %v, %d locks", err, f.u.Unlocked(), f.locks())
 	}
 }
 
