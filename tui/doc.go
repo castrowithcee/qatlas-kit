@@ -46,35 +46,42 @@
 // cut or padded to its rows, with the message under it; and the footer in the last row, or the last two.
 // Workspace gives the room the content has, less the rows the footer takes, and Render returns the click
 // targets of the drawn keys and tabs for that frame only. The header stays one line within the width: each
-// status mark gives way in the order of its MarkRank, and the header keys go before the back button. A tab
-// line that runs short closes its gaps and then shrinks the inactive tabs to their digit; the active tab stays
-// whole. A Tab with GroupStart has a separator before it on the sub-tab line, which is no tab and no target
-// and goes where only the active sub-tab fits. FrameSpec.ModeTab shows the application outside every area,
-// such as a guided setup: no area is active, the text stands after the areas as the active tab, whole at every
-// level and no target, and the sub-tab line stays empty so the workspace keeps its height. FrameSpec.Icon
-// stands before the product name and Area.Icon before the title of its tab, each as "icon name". The tab line
-// gives up its icons before it closes any gap, and the digit-only level holds none; no icon is drawn in an
-// ASCII terminal. The application chooses the icon set; the kit knows none. Nerd Font glyphs measure one cell,
-// but a font that draws them wider is the application's risk. FrameSpec.Nav chooses the form of the
-// navigation: NavTabs, the zero value, is the tab line with sub-tabs; NavPathLine replaces both by one line
-// that names the current place as "Area ▾ › Tab ▾", the tab only where the area has more than one, and gives
-// the freed row to the workspace. Each section is a click target of ZonePath that carries the area, and the
-// tab for the last, so the application handles it like a tab click; the focus mark stands at the line and the
-// section named by FrameSpec.PathFocusArea, else the last, is drawn as the focused tab. A line that runs short
-// takes the mark from all sections but the last, then keeps the last section alone and cuts its name; ModeTab
-// stands as the only section, without mark and target. NavPathHeader draws the same path in the header, after
-// the product name and before the status marks, and no navigation line at all: the workspace takes the rows of
-// the tab line, the sub-tab line and the path line. Its targets, focus and mode tab are those of the path
-// line, the focus drawn as the focused tab without the focus mark. The header fills its room in this order:
-// the name and the marks that always stand, the marks before keys, the widest block at the right, and the
-// normal marks, as before, with the path as the current section alone standing at every width. The rest of the
-// room widens the path to the widest form of the path line that fits with the normal marks in their shortest
-// forms, and the marks take the longest forms that fit beside it. Where the product name and the current
-// section do not fit, the product name gives way down to nothing and the section is cut, keeping its mark. A
-// screen reports ZonePath instead of ZoneTabs and ZoneSubtabs. The focus zones have a fixed order that
-// CycleZone walks with wrap-around, as StepArea and StepTab do for the tabs. StepZoneLevel steps vertically
-// between the tab line, the sub-tab line or the path line and the work area, skips a missing line and does not
-// wrap.
+// status mark gives way in the order of its MarkRank, and the header keys go before the back button. A tab line
+// that runs short closes its gaps and then shrinks the inactive tabs to their digit; the active tab stays
+// whole. A Tab with GroupStart has a separator before it on the sub-tab line, which is no tab and no target and
+// goes where only the active sub-tab fits. FrameSpec.ModeTab shows the application outside every area, such as
+// a guided setup: no area is active, the text stands after the areas as the active tab, whole at every level
+// and no target, and the sub-tab line stays empty so the workspace keeps its height. FrameSpec.Icon stands
+// before the product name and Area.Icon before the title of its tab, each as "icon name". The tab line gives up
+// its icons before it closes any gap, and the digit-only level holds none; no icon is drawn in an ASCII
+// terminal. The application chooses the icon set; the kit knows none. Nerd Font glyphs measure one cell, but a
+// font that draws them wider is the application's risk. FrameSpec.Nav chooses the form of the navigation:
+// NavTabs, the zero value, is the tab line with sub-tabs; NavPathLine replaces both by one line that names the
+// current place as "Area ▾ › Tab ▾", the tab only where the area has more than one, and gives the freed row to
+// the workspace. Each section is a click target of ZonePath that carries the area, and the tab for the last, so
+// the application handles it like a tab click; the focus mark stands at the line and the section named by
+// FrameSpec.PathFocusArea, else the last, is drawn as the focused tab. A line that runs short takes the mark
+// from all sections but the last, then keeps the last section alone and cuts its name; ModeTab stands as the
+// only section, without mark and target. NavPathHeader draws the same path in the header, after the product
+// name and before the status marks, and no navigation line at all: the workspace takes the rows of the tab
+// line, the sub-tab line and the path line. Its targets, focus and mode tab are those of the path line, the
+// focus drawn as the focused tab without the focus mark. The header fills its room in this order: the name and
+// the marks that always stand, the marks before keys, the widest block at the right, and the normal marks, as
+// before, with the path as the current section alone standing at every width. The rest of the room widens the
+// path to the widest form of the path line that fits with the normal marks in their shortest forms, and the
+// marks take the longest forms that fit beside it. Where the product name and the current section do not fit,
+// the product name gives way down to nothing and the section is cut, keeping its mark. NavHeaderChoice puts
+// only the current area in the header, after the product name, as a choice field "Icon Area ▾" with the icon of
+// the area as on the tab line, and draws no tab line; the sub-tab line of the area stays below the header as
+// with NavTabs, and an area with one tab has none. The field is a click target of ZoneTabs that carries the
+// area, it is drawn as the focused tab while ZoneTabs has the focus, it shortens as the section of
+// NavPathHeader does, and the mode tab stands in it as text without mark and target. A screen with this form
+// reports ZoneTabs for the field and ZoneSubtabs for the sub-tab line, so the application runs left and right
+// at ZoneTabs as a step through the areas and StepZoneLevel walks field, sub-tab line and work area; it opens
+// PathNav.OpenAreas for enter and for a click on the field. A screen with a path form reports ZonePath instead
+// of ZoneTabs and ZoneSubtabs. The focus zones have a fixed order that CycleZone walks with wrap-around, as
+// StepArea and StepTab do for the tabs. StepZoneLevel steps vertically between the tab line, the sub-tab line
+// or the path line and the work area, skips a missing line and does not wrap.
 //
 // Header and footer show hints. Keymap.Hints resolves each hint to the keys of its action that act in the
 // input focus of the screen, so a line never names a key that does nothing, and folds hints whose labels
@@ -532,8 +539,8 @@
 //
 //   - FrameSpec.ProductShort, Icon, ModeTab, Back and Message: the short product name, the logo glyph, the
 //     text of the mode tab, the back button and the message line. Default: empty or nil, each is left out.
-//   - FrameSpec.Nav: the form of the navigation, NavTabs, NavPathLine or NavPathHeader. Default: NavTabs, the
-//     tab line with sub-tabs.
+//   - FrameSpec.Nav: the form of the navigation, NavTabs, NavPathLine, NavPathHeader or NavHeaderChoice.
+//     Default: NavTabs, the tab line with sub-tabs.
 //   - FrameSpec.PathFocusArea: puts the focus of ZonePath on the area section. Default: false, the section of
 //     the current place.
 //   - FrameSpec.Input: the input focus of the screen, which decides what the hints show. Default: InputText.

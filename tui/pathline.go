@@ -18,6 +18,10 @@ const (
 	// NavPathHeader puts the path in the header after the product name and draws no navigation line: the
 	// tab line, the sub-tab line and the path line all give their rows to the workspace.
 	NavPathHeader
+	// NavHeaderChoice puts the current area in the header after the product name as a choice field "Area ▾"
+	// and draws no tab line; the sub-tab line of the area stays below the header. The field is the focus
+	// zone ZoneTabs, and a click on it carries the active area.
+	NavHeaderChoice
 )
 
 // pathSection is one part of the path line. A section without target is the mode text.
@@ -44,7 +48,11 @@ func (f *frameRun) pathSections(spec FrameSpec) []pathSection {
 	if !found {
 		return nil
 	}
-	out := []pathSection{{name: Escape(lookup(f.text, area.Title)), area: area.ID, target: true}}
+	name := Escape(lookup(f.text, area.Title))
+	if icon := f.icon(area.Icon); icon != "" && spec.Nav == NavHeaderChoice {
+		name = icon + " " + name
+	}
+	out := []pathSection{{name: name, area: area.ID, target: true}}
 	if len(area.Tabs) > 1 {
 		for _, t := range area.Tabs {
 			if t.ID == spec.ActiveTab {
@@ -112,7 +120,11 @@ func (f *frameRun) pathChipsFit(all []pathSection, mode bool, room int) []pathCh
 // drawPathChips draws chips from column x, the focused one as the focused tab of the tab line, and returns
 // the click targets of ZonePath of the sections with a target, clipped at width.
 func (f *frameRun) drawPathChips(spec FrameSpec, chips []pathChip, x, width int) (string, []Target) {
-	focused := spec.Focus == ZonePath
+	zone := ZonePath
+	if spec.Nav == NavHeaderChoice {
+		zone = ZoneTabs
+	}
+	focused := spec.Focus == zone
 	sep := f.styles.Glyph(GlyphPathSeparator)
 	focus := len(chips) - 1
 	if spec.PathFocusArea {
@@ -139,7 +151,7 @@ func (f *frameRun) drawPathChips(spec FrameSpec, chips []pathChip, x, width int)
 		b.WriteString(style.Render(text))
 		cells := lipgloss.Width(text)
 		if r, ok := clipRect(Rect{X: x, Width: cells, Height: 1}, width); ok && c.sec.target {
-			targets = append(targets, Target{Rect: r, Zone: ZonePath, Area: c.sec.area, Tab: c.sec.tab})
+			targets = append(targets, Target{Rect: r, Zone: zone, Area: c.sec.area, Tab: c.sec.tab})
 		}
 		x += cells
 	}

@@ -424,13 +424,40 @@ func TestNavigationSwitchesByCommandAndKey(t *testing.T) {
 	expect(t, term, "Overview ▾")
 	gone(t, term, "1 Overview")
 	command(t, term, "navigation", "navigation: header")
+	command(t, term, "navigation", "navigation: choice")
+	expect(t, term, "Overview ▾")
 	command(t, term, "navigation", "navigation: tabs")
 	expect(t, term, "1 Overview")
 	act(t, term, "N", "navigation: pathline")
 	gone(t, term, "1 Overview")
 	act(t, term, "N", "navigation: header")
+	act(t, term, "N", "navigation: choice")
+	gone(t, term, "1 Overview")
 	act(t, term, "N", "navigation: tabs")
 	expect(t, term, "1 Overview")
+}
+
+// The choice field names the area in the header and opens the list of the areas by enter and by click; a choice
+// in it opens that area, and the sub-tab line stays below the header.
+func TestChoiceFieldOpensTheListOfAreas(t *testing.T) {
+	term := startDemo(t, "-icons none -navigation choice")
+	expect(t, term, "Overview ▾")
+	expect(t, term, "About")
+	gone(t, term, "1 Overview")
+	hintsOf(t, term, "m menu")
+	act(t, term, "\r", "All areas") // enter on the field
+	act(t, term, "s", lookBody)     // the key of an area chooses it at once
+	gone(t, term, "All areas")
+	expect(t, term, "Settings ▾")
+	expect(t, term, "Look")
+	clickOn(t, term, "Settings ▾", "All areas") // a click on the field
+	clickOn(t, term, "Frame", tabsBody)
+	gone(t, term, "All areas")
+	act(t, term, "\x1b[B\x1b[C", probeBody) // down to the sub-tab line, right steps the tab
+	act(t, term, "\x1b[A\x1b[C", lookBody)  // up to the field, right opens the next area
+	act(t, term, "m", "All areas")
+	act(t, term, "\x1b", lookBody)
+	gone(t, term, "All areas")
 }
 
 func TestNavigationSwitchesInTheSettingsForm(t *testing.T) {

@@ -55,8 +55,8 @@ func (m *model) up() {
 	m.zone = tui.StepZoneLevel(m.zones(), m.zone, -1)
 }
 
-// enter leads from a tab line into the work area, opens the overlay of the focused section of the path, and
-// triggers the focused button.
+// enter leads from a tab line into the work area, opens the overlay of the focused section of the path or the
+// list of the areas of the choice field, and triggers the focused button.
 func (m *model) enter() {
 	switch {
 	case m.onButtons():
@@ -65,6 +65,8 @@ func (m *model) enter() {
 		}
 	case m.zone == tui.ZonePath:
 		m.pathnav.OpenFocused(m.frameSpec())
+	case m.onChoice():
+		m.pathnav.OpenAreas(m.frameSpec())
 	case m.onNavLine():
 		if z := m.workZone(); z != "" {
 			m.zone = z
@@ -99,7 +101,7 @@ func (m *model) navHints() []tui.Hint {
 	if m.zone != m.top() {
 		hints = append(hints, tui.Hint{Action: actUp, Label: tui.TextKeyUp, Kind: tui.HintNavigation})
 	}
-	if m.zone == tui.ZonePath {
+	if m.zone == tui.ZonePath || m.onChoice() {
 		hints = append(hints, tui.Hint{Action: actEnter, Label: textHintOpen, Kind: tui.HintNavigation})
 	} else if m.onButtons() || m.workZone() != "" {
 		hints = append(hints, tui.Hint{Action: actEnter, Label: tui.TextKeyEnter, Kind: tui.HintNavigation})

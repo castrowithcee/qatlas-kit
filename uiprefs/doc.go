@@ -5,18 +5,18 @@
 //
 // The file is a flat YAML mapping. Keys this version does not know, action IDs under keys included, are
 // ignored, so a later version can add fields. The keys section holds only the bindings that differ from the
-// default. The editor is an optional command line for the exteditor package; a file without it loads as
-// before, and a save leaves it out while it is empty. The navigation is the form of tui.NavForm, the tab
-// line, the path line or the path in the header. A file without the key loads as before, and a save leaves
-// the key out while the value is empty. Validate is the check of Save on its own, for preferences taken from
-// flags or held only in memory.
+// default. The editor is an optional command line for the exteditor package; a file without it loads as before,
+// and a save leaves it out while it is empty. The navigation is the form of tui.NavForm: the tab line, the path
+// line, the path in the header or the choice field in the header. A file without the key loads as before, and a
+// save leaves the key out while the value is empty. Validate is the check of Save on its own, for preferences
+// taken from flags or held only in memory.
 //
 // # Always enforced
 //
-// An invalid Schema is refused by Load, Validate and Save: the themes must include tui.ThemeTerminal, theme
-// and area names are not empty or listed twice, DefaultArea is one of the areas, every navigation is one of
-// NavigationTabs, NavigationPathLine and NavigationPathHeader, and DefaultNavigation is one of the offered
-// navigations and empty where there are none.
+// An invalid Schema is refused by Load, Validate and Save: the themes must include tui.ThemeTerminal, theme and
+// area names are not empty or listed twice, DefaultArea is one of the areas, every navigation is one of
+// NavigationTabs, NavigationPathLine, NavigationPathHeader and NavigationHeaderChoice, and DefaultNavigation is
+// one of the offered navigations and empty where there are none.
 //
 // Load never fails. A missing file yields the defaults. An unreadable or malformed file yields the defaults
 // and a warning. A value that is not valid yields the default for that part and a warning that names it:

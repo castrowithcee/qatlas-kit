@@ -667,3 +667,50 @@ func TestPathFormFooterNamesTheKeysWhereTheyAct(t *testing.T) {
 		t.Error("path of a tab with a block: want down and the side keys, no up")
 	}
 }
+
+func TestChoiceFormFocusZonesAndKeys(t *testing.T) {
+	m := testModel(t, uiprefs.IconsNone)
+	m.setNavigation(uiprefs.NavigationHeaderChoice)
+	m.openArea("settings")
+	m.refresh()
+	if got := m.zones(); got[0] != tui.ZoneTabs || got[1] != tui.ZoneSubtabs || m.zone != tui.ZoneTabs {
+		t.Fatalf("zones %v, focus %s", got, m.zone)
+	}
+	press(m, tea.KeyDown)
+	if m.zone != tui.ZoneSubtabs {
+		t.Errorf("down leads to %s", m.zone)
+	}
+	press(m, tea.KeyRight)
+	if m.tab() != "input" || m.area != "settings" {
+		t.Errorf("right on the sub-tabs: %s/%s", m.area, m.tab())
+	}
+	press(m, tea.KeyUp)
+	press(m, tea.KeyRight)
+	if m.area != "dialogs" || m.zone != tui.ZoneTabs {
+		t.Errorf("right on the field: area %s, zone %s", m.area, m.zone)
+	}
+	press(m, tea.KeyEnter)
+	if !m.pathnav.Open() {
+		t.Fatal("enter on the field opens no list")
+	}
+	press(m, tea.KeyDown)
+	press(m, tea.KeyEnter)
+	if m.pathnav.Open() || m.area != "help" || m.zone != tui.ZoneTabs {
+		t.Errorf("a choice leaves area %s, zone %s, open %v", m.area, m.zone, m.pathnav.Open())
+	}
+	// A click on the field opens the list, not the area; the digits still open an area.
+	m.refresh()
+	if !clickWhere(m, func(r tui.MouseResult) bool { return r.Zone == tui.ZoneTabs && r.Area == "help" }) || !m.pathnav.Open() {
+		t.Error("a click on the field opens no list")
+	}
+	m.pathnav.Close()
+	press(m, '2')
+	if m.area != "frame" {
+		t.Errorf("digit 2 opens %s", m.area)
+	}
+	// m opens the overview as on the path forms.
+	press(m, 'm')
+	if !m.pathnav.Open() {
+		t.Error("m opens no overview")
+	}
+}
