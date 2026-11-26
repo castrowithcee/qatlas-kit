@@ -248,3 +248,49 @@ func TestPathNavCloseOutside(t *testing.T) {
 		t.Errorf("without the option: %+v %v open %v", c, h, off.Open())
 	}
 }
+
+func TestCommandLineCloseOutside(t *testing.T) {
+	keys := sampleKeymap(t, CharsetUnicode)
+	build := func(on bool) *CommandLine {
+		spec := CommandLineSpec{Commands: sampleCommands(), Keys: sampleCommandKeys, CloseOutside: on}
+		c, err := NewCommandLine(spec, keys, newTranslator(t, i18n.English, commandCatalogs(), keys))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return c
+	}
+	frame, m := checkOutside(t, 100, 40, func(on bool) (string, []Target, bool) {
+		return build(on).Overlay(looks(t)["dark"], sampleScreen(100, 40), 100, 40, Rect{Y: 2, Width: 100, Height: 37})
+	})
+	c := build(true)
+	if _, done := c.Click(blankAt(m, frame)); done {
+		t.Error("click inside without target closed")
+	}
+	if _, done := c.Click(outsideAt(m, frame)); !done {
+		t.Error("click outside did not close")
+	}
+	if _, done := build(false).Click(MouseResult{Zone: ZoneOutside, Handled: true}); done {
+		t.Error("without the option the click closed")
+	}
+}
+
+func TestExplanationCloseOutside(t *testing.T) {
+	keys := explanationKeymap(t)
+	build := func(on bool) *Explanation {
+		e, err := NewExplanation(ExplanationSpec{Item: sampleExplanation(), Keys: sampleExplanationKeys(), CloseOutside: on},
+			keys, newTranslator(t, i18n.English, nil, keys))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return e
+	}
+	frame, m := checkOutside(t, 100, 40, func(on bool) (string, []Target, bool) {
+		return build(on).Overlay(looks(t)["dark"], sampleScreen(100, 40), 100, 40, Rect{Y: 2, Width: 100, Height: 37})
+	})
+	if a, ok := build(true).Click(outsideAt(m, frame)); a != "back" || !ok {
+		t.Errorf("click outside: %q %v", a, ok)
+	}
+	if a, ok := build(false).Click(MouseResult{Zone: ZoneOutside, Handled: true}); a != "" || ok {
+		t.Errorf("without the option: %q %v", a, ok)
+	}
+}

@@ -59,6 +59,9 @@ type CommandLineKeys struct {
 type CommandLineSpec struct {
 	Commands []Command
 	Keys     CommandLineKeys
+	// CloseOutside closes the line on a click outside its frame, as Keys.Back does. The default leaves such a
+	// click without effect.
+	CloseOutside bool
 }
 
 // maxCommandRows is the most matches the command line shows at once; the list scrolls with the choice.
@@ -72,6 +75,7 @@ const commandPrompt = ": "
 type CommandLine struct {
 	commands []Command
 	nav      CommandLineKeys
+	outside  bool
 	keys     *Keymap
 	text     Translator
 
@@ -161,7 +165,7 @@ func NewCommandLine(spec CommandLineSpec, keys *Keymap, text Translator) (*Comma
 	if err := errors.Join(errs...); err != nil {
 		return nil, err
 	}
-	return &CommandLine{commands: list, nav: nav, keys: keys, text: text}, nil
+	return &CommandLine{commands: list, nav: nav, outside: spec.CloseOutside, keys: keys, text: text}, nil
 }
 
 func commandName(n string) bool {
@@ -274,6 +278,13 @@ func (c *CommandLine) Click(r MouseResult) (cmd Command, done bool) {
 	if !r.Handled {
 		return Command{}, false
 	}
+	if r.Zone == ZoneOutside {
+		if !c.outside {
+			return Command{}, false
+		}
+		c.Reset()
+		return Command{}, true
+	}
 	matches := c.Matches()
 	if r.Zone != ZoneRows {
 		switch r.Action {
@@ -359,7 +370,8 @@ func (c *CommandLine) Overlay(styles Styles, screen string, width, height int, r
 		return "", nil, false
 	}
 	left := room.X + (room.Width-inner-4)/2
-	return overlay(screen, box, width, height, room.Y, left, styles), OffsetTargets(ts, left+2, room.Y+1), true
+	ts = withOutside(c.outside, OffsetTargets(ts, left+2, room.Y+1), width, height, Rect{X: left, Y: room.Y, Width: inner + 4, Height: len(box)})
+	return overlay(screen, box, width, height, room.Y, left, styles), ts, true
 }
 
 // content is the lines inside the frame: the input line, the matches that fit in room lines, the position
