@@ -489,6 +489,30 @@ func (l *List) Ticked() []ItemID {
 	return ids
 }
 
+// Shown is the IDs of the entries the filter lets through, in the order they show and without group rows or
+// the row of all. Entries of a folded group count, at the place of their group. The slice is a copy.
+func (l *List) Shown() []ItemID {
+	matches := l.matcher()
+	ids := []ItemID{}
+	if !l.grouped {
+		for _, it := range l.items {
+			if matches(it) {
+				ids = append(ids, it.ID)
+			}
+		}
+		return ids
+	}
+	groups, members := l.groupOrder()
+	for _, g := range groups {
+		for _, i := range members[g] {
+			if matches(l.items[i]) {
+				ids = append(ids, l.items[i].ID)
+			}
+		}
+	}
+	return ids
+}
+
 // SetTicked replaces the ticks. It rejects an ID that names no entry and then changes nothing. A partial
 // selection a group remembers is forgotten.
 func (l *List) SetTicked(ids []ItemID) error {
