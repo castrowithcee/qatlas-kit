@@ -196,7 +196,8 @@
 // widths come from every entry and described group, so they stay while a filter is typed. An empty list shows
 // the application's sentence with the next step, which SetEmpty sets for each state, and a filter without match
 // names the key that clears it. Shown names the entries the filter lets through in the order they show, also
-// those of folded groups.
+// those of folded groups. Drawing costs only the visible rows and the groups; SetItems and each change of the
+// filter run once over all entries.
 //
 // The search field of a List, also the one in a filter bar, is a tinted field over its whole width that shows
 // its placeholder while empty; where there is no colour but attributes it is underlined, and without both it
