@@ -25,7 +25,7 @@ func testModel(t *testing.T, icons string) *model {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = os.RemoveAll(root) })
-	m, err := newModel(prefs, tui.ProfileNone, tui.CharsetUnicode, root)
+	m, err := newModel(prefs, tui.ProfileNone, tui.CharsetUnicode, root, sampleToday)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -180,7 +180,7 @@ func TestEveryGroupDrawsInEveryTabAtEverySize(t *testing.T) {
 
 func TestArgumentsAreChecked(t *testing.T) {
 	for _, args := range [][]string{{"extra"}, {"-icons", "emoji"}, {"-language", "fr"}, {"-theme", "nope"}, {"-navigation", "nope"}, {"-bogus"}} {
-		err := run(args, io.Discard, nil)
+		err := run(args, io.Discard, nil, sampleToday)
 		var usage usageError
 		if !errors.As(err, &usage) {
 			t.Errorf("%v: error %v, want a usage error", args, err)
@@ -190,7 +190,7 @@ func TestArgumentsAreChecked(t *testing.T) {
 
 func TestFlagValuesAreChecked(t *testing.T) {
 	for _, args := range [][]string{{"-theme", "nope"}, {"-language", "fr"}, {"-icons", "emoji"}, {"-navigation", "nope"}} {
-		err := run(args, io.Discard, nil)
+		err := run(args, io.Discard, nil, sampleToday)
 		var usage usageError
 		if !errors.As(err, &usage) || !strings.Contains(err.Error(), args[1]) {
 			t.Errorf("%v: error %v, want a usage error naming the value", args, err)
@@ -207,7 +207,7 @@ func TestFlagValuesAreChecked(t *testing.T) {
 		case "-icons":
 			prefs.Icons = f[1]
 		}
-		if _, err := newModel(prefs, tui.ProfileNone, tui.CharsetUnicode, ""); err != nil {
+		if _, err := newModel(prefs, tui.ProfileNone, tui.CharsetUnicode, "", sampleToday); err != nil {
 			t.Errorf("%s: %v", args, err)
 		}
 	}

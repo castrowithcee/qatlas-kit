@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 
@@ -14,7 +15,7 @@ import (
 )
 
 func main() {
-	if err := run(os.Args[1:], os.Stdout, os.Environ()); err != nil {
+	if err := run(os.Args[1:], os.Stdout, os.Environ(), time.Now); err != nil {
 		fmt.Fprintln(os.Stderr, "tuidemo:", err)
 		var usage usageError
 		if errors.As(err, &usage) {
@@ -33,7 +34,7 @@ func schema() uiprefs.Schema {
 
 type usageError struct{ error }
 
-func run(args []string, out io.Writer, environ []string) error {
+func run(args []string, out io.Writer, environ []string, now func() time.Time) error {
 	flags := flag.NewFlagSet("tuidemo", flag.ContinueOnError)
 	prefs := uiprefs.Default(schema())
 	flags.StringVar(&prefs.Theme, "theme", prefs.Theme, "start theme")
@@ -52,7 +53,7 @@ func run(args []string, out io.Writer, environ []string) error {
 		return err
 	}
 	defer func() { _ = os.RemoveAll(root) }() // the folder is the program's own, removed on every way out
-	m, err := newModel(prefs, tui.DetectColorProfile(out, environ), tui.DetectCharsetMode(environ), root)
+	m, err := newModel(prefs, tui.DetectColorProfile(out, environ), tui.DetectCharsetMode(environ), root, now)
 	if err != nil {
 		return err
 	}
