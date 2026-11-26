@@ -32,7 +32,7 @@ func TestFixedHeadersCarryANoncePerResponse(t *testing.T) {
 			t.Errorf("CSP %q is not strict", csp)
 		}
 		for name, want := range map[string]string{"X-Content-Type-Options": "nosniff",
-			"Referrer-Policy": "no-referrer", "Cross-Origin-Resource-Policy": "same-origin"} {
+			"Referrer-Policy": "same-origin", "Cross-Origin-Resource-Policy": "same-origin"} {
 			if got := h.Get(name); got != want {
 				t.Errorf("%s = %q, want %q", name, got, want)
 			}

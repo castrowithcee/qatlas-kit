@@ -9,6 +9,17 @@
 // WebSocket serves a WebSocket endpoint of the application on a GET route; without it the server speaks no
 // WebSocket.
 //
+// CookieSessions is the Sessions implementation: a random ID that only the server issues, in a cookie, with
+// the state in a SessionStore, in memory by default, and a tool may supply its own. Issue starts a session
+// after a sign-in, End ends it on the server and deletes the cookie.
+//
+// Authenticator turns a LoginMethod into a session, throttles failed attempts and reports sign-ins,
+// sign-outs, failures and throttled attempts to a LoginAudit, for example for auditlog. OnceCode is the
+// first method: the application calls Generate and shows the code in its terminal.
+//
+// Pages serves the sign-in page and the sign-out for these. Sign-out takes POST only, so a tool adds a form
+// that posts to LogoutPath.
+//
 // Static serves the files of an fs.FS such as an embed.FS for GET and HEAD, mounted as a route like
 // "GET /". It reads the files once and answers only for a path that names one of them.
 //
@@ -18,8 +29,8 @@
 // # Always enforced
 //
 // Before a route runs, the server sets a strict Content Security Policy with a fresh nonce per response
-// (read with Nonce), nosniff, no referrer and a same-origin resource policy, and grants no CORS access.
-// Handlers keep the fixed headers they receive. Static files cannot carry the CSP nonce.
+// (read with Nonce), nosniff, a same-origin referrer policy and a same-origin resource policy, and grants
+// no CORS access. Handlers keep the fixed headers they receive. Static files cannot carry the CSP nonce.
 //
 // The server refuses a Host header other than localhost, 127.0.0.1 or [::1] with any port, or on the
 // network the hosts of the allowed origins, which stops DNS rebinding. An unsafe request from another
@@ -49,6 +60,28 @@
 // WebSocket library stays on besides. The route decides about the session as for any route. A received
 // message is bounded in size and the wait for the next one in time, a write has a fixed deadline, the
 // connection ends when the server shuts down, and messages are not compressed.
+//
+// A session ID is 256 random bits that only the server issues, and the store keeps it under a hash of the
+// ID. An unknown or expired ID is refused and never creates a session. Issue gives a new ID after a sign-in
+// and ends one the request brought along. The cookie is always HttpOnly, SameSite=Strict, Path=/ and
+// without Domain. It has the __Host- prefix and Secure, except on a Server that binds to loopback alone,
+// which speaks plain HTTP: Safari does not store Secure cookies there and Chrome before version 138
+// refuses __Host-. That choice follows the Server and never a request header, and anything but such a
+// Server, including a network server behind a proxy that terminates TLS, gets the strict form. Other
+// local programs can read cookies of a loopback server whatever their form, which only IDs the server
+// issued, the refusal of unknown IDs and the new ID after sign-in answer.
+//
+// A one-time code is eight symbols without look-alikes, valid once, compared in constant time, replaced only
+// by Generate and never by a request; a wrong guess does not use it up. Failed attempts, wrong or throttled,
+// count against a limit per peer address and one for all addresses, using ratelimit; a refusal looks the
+// same either way. On loopback every client shares one address, so the limit for all addresses is the one
+// that holds, and a local program can lock the sign-in for one window by failing on purpose. A LoginAudit
+// entry holds the kind, the time and the peer host, never a code or an ID.
+//
+// The pages are plain, accessible markup with the CSP nonce, one-time-code autocomplete that never blocks
+// pasting, and an error that names the field. A sign-in ends in a redirect to a fixed path of the
+// application, never one from the request. With Pages, a GET or HEAD request without a session for a route
+// that is not Public goes to the sign-in page, and any other method gets 401.
 //
 // Static answers no directory listing, no redirect, no path outside the file system and no file or
 // directory whose name starts with a dot. The Content-Type is fixed by extension, application/octet-stream
@@ -81,6 +114,18 @@
 //     Default: 64 KiB.
 //   - WebSocketOptions.IdleTimeout: the wait for the next message before the connection closes. Default: 60
 //     seconds.
+//   - SessionOptions.Store: keeps the sessions. Default: in memory.
+//   - SessionOptions.Idle: ends a session that was not used for this long. Default: 30 minutes.
+//   - SessionOptions.Absolute: ends a session this long after it began, however active. Default: 8 hours.
+//   - OnceCodeOptions.Lifetime: how long a code stays valid. Default: 5 minutes.
+//   - OnceCodeOptions.Redactor: learns every code, so a code that reaches a log is removed. Default: none.
+//   - AuthOptions.Audit: receives the sign-in events. Default: no protocol.
+//   - AuthOptions.Window: how long a failed attempt counts. Default: 10 minutes.
+//   - AuthOptions.PerAddress: the failed attempts one peer address may make per Window. Default: 5.
+//   - AuthOptions.Global: the failed attempts from all addresses together per Window. Default: 20.
+//   - PagesOptions.Prefix: a path put before the paths of the pages, such as "/auth" for "/auth/login".
+//     Default: none, so the pages are /login and /logout.
+//   - PagesOptions.Home: the fixed path a browser goes to after signing in. Default: "/".
 //   - Options.Log: receives refusals and the errors of the HTTP server. Default: they are discarded.
 //   - Options.Redactor: removes known secrets from every log line. Default: the text is logged as it is.
 package web
