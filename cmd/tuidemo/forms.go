@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"strings"
 	"time"
 
@@ -30,6 +31,8 @@ type formBlock struct {
 	// before runs at every drawing and after at every key, click and action, for a form whose values the
 	// workbench keeps in step with its own state; see settingsBlocks.
 	before, after func(m *model, b *formBlock)
+	// cancel ends the path search the form last started, see takeLoad.
+	cancel context.CancelFunc
 }
 
 // sampleToday is the invented day of the sample data of the log and the chat.
@@ -67,13 +70,20 @@ func formBlocks(m *model) (map[tui.TabID]block, error) {
 				Date: tui.DateField{Time: true, Min: min, Max: max, Now: m.now}}, // bounded to a year either side of today
 		}}, m.keys, m.text)
 	}}
-	for _, b := range []*formBlock{fields, dates} {
+	paths := &formBlock{note: textNoteFormPaths, check: checkPaths, build: func() (*tui.Form, error) {
+		return tui.NewForm(tui.FormSpec{Title: textFormPathsTitle, Keys: formKeys(), Buttons: formButtons(), Fields: []tui.FormField{
+			{ID: fieldFolder, Kind: tui.FieldPath, Label: textFormFolder, Hint: textFormFolderHint,
+				Path: tui.PathSpec{Kind: tui.PathDirs, Priority: pathPriority()}},
+			{ID: fieldFile, Kind: tui.FieldPath, Label: textFormFile, Hint: textFormFileHint, Path: tui.PathSpec{Kind: tui.PathFiles}},
+		}}, m.keys, m.text)
+	}}
+	for _, b := range []*formBlock{fields, dates, paths} {
 		var err error
 		if b.form, err = b.build(); err != nil {
 			return nil, err
 		}
 	}
-	return map[tui.TabID]block{"fields": fields, "dates": dates}, nil
+	return map[tui.TabID]block{"fields": fields, "dates": dates, "paths": paths}, nil
 }
 
 func problem(m *model, field tui.FieldID, cause, next tui.TextID) tui.FormProblem {
