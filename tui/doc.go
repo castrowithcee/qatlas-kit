@@ -26,7 +26,7 @@
 // in the catalog; an application adds them to its table with one append. The overlay levels may repeat their
 // keys, and ctrl+s stays free as the second way of the save action.
 //
-// A one-line text field, the input of a Dialog, the text, masked and date fields of a Form, the search of a
+// A one-line text field, the input of a Dialog, the text, masked, date and path fields of a Form, the search of a
 // LogView, the filter of a List and the input of a CommandLine edit with a fixed set of keys. A screen asks
 // its own actions first, so a Form, a LogView and a List keep theirs for left, right, home and end, and a
 // second way of an action wins over an edit. The Paste of each of these parts and a suggestion a Dialog
@@ -320,6 +320,29 @@
 // stays in the form on that field. DateField.Now is the clock of the field, time.Now where nil, and gives
 // the calendar its today.
 //
+// A path field (FieldPath) is a file or folder path typed as text, with the kind PathDirs or PathFiles in
+// FormField.Path. While it has the focus, a list of up to five entries stands under it, scrolling with the
+// mark. The entries are the application's: it never gets the file system from tui. Every change of the text,
+// and the focus entering the field, makes a request (PathLoad: the field, the typed text, whether it holds
+// "*", the kind and a token) that the application takes with TakePathLoad after each key, paste, click,
+// SetValue and move of focus, answers asynchronously, as the file browser's FileLoad is answered, with
+// SetPath (PathResult: the token, the entries and, for a search, why it ended), and may cancel when the next
+// request comes. An answer whose token is not the latest is dropped, so typing never waits and a late answer
+// never shows. The priority entries of PathSpec stand first, those that start with the typed text, each
+// marked; an answered entry equal to one of them is shown once. Up and down mark an entry and stop at the
+// ends, up from the first takes the mark away and otherwise move between the fields as in a text field; tab
+// takes the marked entry where it differs from the text and otherwise goes to the next field, shift+tab never
+// takes; a click on an entry takes it. A folder ends with a separator when taken, so the next level follows at
+// once: every entry of PathDirs, and an entry that Continues of PathFiles; the application puts the path
+// separator of its system at the end of its entries, otherwise "/" is added. A text with "*" asks for a search
+// over several levels: the entries are the matches with their full path, and a search that ended by a limit
+// shows a line under them with the reason from the answer and a text of the catalog. Entries and the end line
+// are foreign text and are drawn escaped; a taken entry is cleaned as pasted text. The form checks no
+// path: whether it exists is the application's check when it saves. The hints name up, down and, with a marked
+// entry, tab as the key that takes it. With a projectpath.Suggester an application answers a request without
+// Search with its Suggest, and with Search with projectpath.SplitSearch and projectpath.Search, converting
+// each entry to a Suggestion and the end of the search to PathEnd.
+//
 // Enter, or a click on the calendar symbol at the right end of the value, opens a month view below the field,
 // above it where it does not fit. Left and right move the day, up and down the week, page up and page down
 // the month, first goes to today, enter takes the day and back closes it unchanged; the keys are the form
@@ -480,7 +503,7 @@
 // binding only ctrl+c and esc act; in an embedded terminal no key does. No action of a key table may hold
 // ctrl+enter, which the chat uses to send.
 //
-// Text editing. A one-line text field, the input of a Dialog, the text, masked and date fields of a Form, the
+// Text editing. A one-line text field, the input of a Dialog, the text, masked, date and path fields of a Form, the
 // search of a LogView, the filter of a List and the input of a CommandLine edit with keys that no action may
 // hold: the arrows, home, end, ctrl+a, ctrl+e, ctrl+b and ctrl+f move by a character and to the ends; ctrl or
 // alt with an arrow, alt+b and alt+f by a word; backspace, delete, ctrl+h, ctrl+d, ctrl+w, alt+d,
@@ -500,7 +523,8 @@
 // masked input starts empty and has no suggestions. A List has a first column that is never free text or
 // optional, at most one free text column, a text for its empty state, AllRow only with Ticks and
 // TickWhileTyping only with Ticks and SearchAsTyped. A Form refuses an unknown field kind, a missing or
-// repeated ID and an ID with a control character. A CommandLine refuses names that are not lower-case words,
+// repeated ID, an ID with a control character, and path settings with an unknown kind or an empty or
+// control-character priority entry, or on a field that is no path field. A CommandLine refuses names that are not lower-case words,
 // two commands that do the same and an icon that fails CheckIcon. An Explanation accepts only an absolute http
 // or https address of printable ASCII, so the address cannot end the link sequence. CheckAreas holds areas to
 // what the tab line can draw and refuses an entry key (Area.Key, Tab.Key) used twice in the overview, which
@@ -638,6 +662,8 @@
 //     to false.
 //   - DateField.Time, Min, Max, Now: adds the time of day, bounds the value and sets the clock. Default:
 //     false, no bound, time.Now; FormField.Date applies to a FieldDate only.
+//   - PathSpec.Kind and Priority: whether a path field takes folders only or files too, and the entries it
+//     always offers first. Default: PathDirs, none; FormField.Path applies to a FieldPath only.
 //   - Form.SetFocused, List.SetFocused, FileBrowser.SetFocused: draw without any sign of focus while the focus
 //     lies elsewhere. Default: focused.
 //   - Command.Aliases, Icon, DescriptionArgs, Key, Hidden: further names, a glyph, arguments of the

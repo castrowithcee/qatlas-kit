@@ -43,17 +43,27 @@ const (
 	// FieldDate is a date, or a date with the time of day where FormField.Date says so, typed as
 	// YYYY-MM-DD or YYYY-MM-DD HH:MM in the local time zone of the process. It may be empty.
 	FieldDate FieldKind = "date"
+	// FieldPath is a file or folder path typed as text. While it has the focus, a list under it shows the
+	// entries the application answers for the text, after the priority entries of FormField.Path: up and down
+	// mark one, tab takes the marked one where it differs from the text and otherwise goes to the next field,
+	// and a click takes one. A folder ends with a separator when taken, so the entries of the next level
+	// follow. A "*" in the text asks for a search over several levels instead. The form reads no file
+	// system: the application answers each PathLoad of TakePathLoad with SetPath, and checks the path when it
+	// saves. The value is the text.
+	FieldPath FieldKind = "path"
 )
 
 func (k FieldKind) known() bool {
 	switch k {
-	case FieldText, FieldChoice, FieldMultiple, FieldMasked, FieldMaskedBlock, FieldKey, FieldList, FieldReadOnly, FieldDate:
+	case FieldText, FieldChoice, FieldMultiple, FieldMasked, FieldMaskedBlock, FieldKey, FieldList, FieldReadOnly, FieldDate, FieldPath:
 		return true
 	}
 	return false
 }
 
-func (k FieldKind) typed() bool { return k == FieldText || k == FieldMasked || k == FieldDate }
+func (k FieldKind) typed() bool {
+	return k == FieldText || k == FieldMasked || k == FieldDate || k == FieldPath
+}
 
 // secret reports whether the kind hides its value and may stand for a stored one.
 func (k FieldKind) secret() bool { return k == FieldMasked || k == FieldMaskedBlock }
@@ -109,7 +119,7 @@ func (d DateField) set() bool { return d.Time || !d.Min.IsZero() || !d.Max.IsZer
 // FormField is one field of a form. Section names the section it stands in; Hint is the dimmed line under
 // the focused field, and the note in the row of a read-only field. Stored says that a masked field has a
 // value already, which an empty field keeps; the form is never handed that value. Date belongs to a date
-// field only.
+// field only, Path to a path field.
 type FormField struct {
 	ID      FieldID
 	Section SectionID
@@ -120,6 +130,7 @@ type FormField struct {
 	Hint    TextID
 	Stored  bool
 	Date    DateField
+	Path    PathSpec
 }
 
 // FormSection is a section of a form. Lead is the line under its title where the sections stand as a list.
@@ -188,7 +199,7 @@ const (
 // formField is a field with what the form holds for it while it is edited.
 type formField struct {
 	FormField
-	line    textLine
+	line    suggestLine
 	choice  int
 	cursor  int
 	ticked  []bool
@@ -228,6 +239,9 @@ type Form struct {
 	capture bool
 	// outside is FormSpec.CloseOutside.
 	outside bool
+	// tokens numbers the requests of the path fields, load is the one the application has not taken yet.
+	tokens uint64
+	load   *PathLoad
 	// docs hold the value each field shows, for the selection with the mouse.
 	docs []selDoc
 }
@@ -339,12 +353,17 @@ func NewForm(spec FormSpec, keys *Keymap, text Translator) (*Form, error) {
 	slices.SortStableFunc(fields, func(a, b FormField) int { return order[a.Section] - order[b.Section] })
 	for _, field := range fields {
 		field.Choices = slices.Clone(field.Choices)
+		field.Path.Priority = slices.Clone(field.Path.Priority)
 		ff := formField{FormField: field}
 		ff.set(field.Value)
 		ff.initial = ff.value()
 		f.fields = append(f.fields, ff)
 	}
+	f.wirePaths()
 	f.focus = f.firstTaking()
+	if l := f.pathLine(); l != nil {
+		l.refresh()
+	}
 	return f, nil
 }
 
@@ -383,6 +402,9 @@ func fieldErrors(f FormField, v FormValue) []error {
 		fail("a date field holds a time, no text")
 	case strings.IndexFunc(v.Text, unicode.IsControl) >= 0:
 		fail("a one-line value holds no control character")
+	}
+	for _, e := range pathErrors(f) {
+		fail("%s", e)
 	}
 	if f.Kind == FieldDate {
 		d := f.Date
@@ -424,12 +446,12 @@ func fieldErrors(f FormField, v FormValue) []error {
 
 // set makes v the value of the field.
 func (f *formField) set(v FormValue) {
-	f.line = newTextLine(v.Text)
+	f.line.reset(v.Text)
 	if f.Kind == FieldDate {
 		f.date, f.issue = time.Time{}, dateOK
 		if !v.Time.IsZero() {
 			f.date = f.Date.norm(v.Time)
-			f.line = newTextLine(f.Date.format(f.date))
+			f.line.reset(f.Date.format(f.date))
 		}
 	}
 	f.choice = 0
@@ -571,10 +593,14 @@ func (f *Form) wrap(by int) {
 }
 
 func (f *Form) setFocus(i int) {
-	if i != f.focus || f.btn >= 0 {
+	moved := i != f.focus || f.btn >= 0
+	if moved {
 		f.open, f.capture, f.cal = false, false, false
 	}
 	f.focus, f.btn = i, -1
+	if l := f.pathLine(); moved && l != nil {
+		l.refresh()
+	}
 }
 
 // onButton reports whether a button has the focus.
@@ -721,7 +747,7 @@ func (f *Form) Update(msg tea.KeyPressMsg) (act ActionID, handled bool) {
 			return "", false
 		}
 		field := &f.fields[f.focus]
-		field.line = newTextLine(KeyName(msg))
+		field.line.reset(KeyName(msg))
 		f.changed(f.focus)
 		return "", true
 	}
@@ -758,7 +784,7 @@ func (f *Form) editBlock(msg tea.KeyPressMsg) bool {
 	field := &f.fields[f.focus]
 	switch {
 	case (msg.Code == tea.KeyBackspace || msg.Code == tea.KeyDelete) && msg.Mod == 0:
-		field.line = newTextLine("")
+		field.line.reset("")
 		f.changed(f.focus)
 		return true
 	case msg.Text != "" && msg.Mod&^tea.ModShift == 0:
@@ -789,7 +815,7 @@ func (f *Form) addToBlock(text string, replace bool) bool {
 		f.problems[field.ID] = []FormProblem{{Cause: f.text.Lookup(TextFormBlockTooLong, maxBlockBytes>>10), NextStep: f.text.Lookup(TextFormBlockTooLongNext)}}
 		return false
 	}
-	field.line = newTextLine(value)
+	field.line.reset(value)
 	f.changed(f.focus)
 	return true
 }
@@ -888,13 +914,20 @@ func (f *Form) Act(id ActionID) (act ActionID, handled bool) {
 		field.ticked[field.cursor] = !field.ticked[field.cursor]
 		f.changed(f.focus)
 	case k.Up:
+		if f.pathMove(-1) {
+			return "", true
+		}
 		return "", f.step(-1)
 	case k.Prev:
 		f.wrap(-1)
 	case k.Down:
-		f.step(1)
+		if !f.pathMove(1) {
+			f.step(1)
+		}
 	case k.Next:
-		f.wrap(1)
+		if !f.complete() {
+			f.wrap(1)
+		}
 	case k.Left, k.Right:
 		by := 1
 		if id == k.Left {
@@ -906,7 +939,7 @@ func (f *Form) Act(id ActionID) (act ActionID, handled bool) {
 			f.changed(f.focus)
 		case FieldMultiple:
 			field.cursor = wrap(field.cursor+by, len(field.Choices))
-		case FieldText, FieldMasked, FieldDate:
+		case FieldText, FieldMasked, FieldDate, FieldPath:
 			field.line.move(field.line.cursor + by)
 		default:
 			return "", false
@@ -1013,6 +1046,8 @@ func (f *Form) Click(r MouseResult) (act ActionID, handled bool) {
 			return f.Act(f.keys.Enter)
 		}
 		return "", true
+	case strings.HasPrefix(r.Item, formPathRef):
+		return "", f.clickPath(r.Item)
 	case strings.HasPrefix(r.Item, formTickRef):
 		id, value, _ := strings.Cut(strings.TrimPrefix(r.Item, formTickRef), "\x00")
 		i := f.index(FieldID(id))
@@ -1092,7 +1127,7 @@ func (f *Form) Wheel(steps int) {
 
 // Hints are the keys of the focused field for the footer: what enter does there, toggle on a multiple
 // choice, save, and the moves between fields; in an open list of values its moves, enter and back; while a
-// key is taken, back.
+// key is taken, back. In a path field with entries, up and down and tab as the key that takes the marked entry.
 func (f *Form) Hints() []Hint {
 	k := f.keys
 	nav := []Hint{{Action: k.Next, Label: TextKeyNext, Kind: HintNavigation}, {Action: k.Prev, Label: TextKeyPrevious, Kind: HintNavigation}}
@@ -1108,6 +1143,9 @@ func (f *Form) Hints() []Hint {
 	case f.open:
 		return []Hint{{Action: k.Enter, Label: TextKeyChoose}, {Action: k.Back, Label: TextKeyBack},
 			{Action: k.Up, Label: TextKeyUp, Kind: HintNavigation}, {Action: k.Down, Label: TextKeyDown, Kind: HintNavigation}}
+	}
+	if f.canComplete() {
+		nav[0].Label = TextKeyComplete
 	}
 	var hints []Hint
 	if f.btn >= 0 {
@@ -1134,6 +1172,10 @@ func (f *Form) fieldHints() []Hint {
 		hints = append(hints, Hint{Action: k.Enter, Label: TextKeyCalendar})
 	case FieldMaskedBlock:
 		hints = append(hints, Hint{Action: k.Enter, Label: TextKeyNewLine})
+	case FieldPath:
+		if f.pathLine().shown() {
+			hints = append(hints, Hint{Action: k.Up, Label: TextKeyUp, Kind: HintNavigation}, Hint{Action: k.Down, Label: TextKeyDown, Kind: HintNavigation})
+		}
 	}
 	return hints
 }

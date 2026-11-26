@@ -56,7 +56,7 @@ func retype(f *Form, text string) {
 
 // setText puts text into the focused date field as one edit, so the value before it stays the last valid one.
 func setText(f *Form, text string) {
-	f.fields[f.focus].line = newTextLine(text)
+	f.fields[f.focus].line.reset(text)
 	f.changed(f.focus)
 }
 
