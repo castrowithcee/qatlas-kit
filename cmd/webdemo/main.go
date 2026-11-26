@@ -55,7 +55,8 @@ button { font: inherit; min-height: 2.75rem; padding: .5rem 1.5rem; }
 <p>This private page needs a session. The session began at {{.Since}}.</p>
 <p><a href="/sensitive">Sensitive step</a>, which asks for the code again when the sign-in is older than five minutes.</p>
 <p><a href="{{.Unlock}}">Unlock the demo vault</a>, which asks for the code again when the sign-in is older than two minutes.</p>
-<form method="post" action="{{.Logout}}"><input type="hidden" name="{{.Field}}" value="{{.Token}}"><button type="submit">Sign out</button></form>
+{{if .Unlocked}}<form method="post" action="/lock"><input type="hidden" name="{{.Field}}" value="{{.Token}}"><button type="submit">Lock the demo vault</button></form>
+{{end}}<form method="post" action="{{.Logout}}"><input type="hidden" name="{{.Field}}" value="{{.Token}}"><button type="submit">Sign out</button></form>
 </main>
 </body>
 </html>
@@ -102,7 +103,6 @@ func (p *printer) Record(e web.LoginEvent) {
 func run(ctx context.Context, args []string, in io.Reader, stdout io.Writer) error {
 	flags := flag.NewFlagSet("webdemo", flag.ContinueOnError)
 	port := flags.Int("port", 0, "loopback port; 0 picks a free one")
-	idle := flags.Duration("vault-idle", 0, "idle time after which the demo vault locks; 0 means 5 minutes")
 	if err := flags.Parse(args); err != nil {
 		return usageError{err}
 	}
@@ -128,7 +128,6 @@ func run(ctx context.Context, args []string, in io.Reader, stdout io.Writer) err
 	passphrase := strings.ToLower(base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(raw[:]))
 	red.Add(passphrase)
 	unlocker, err := web.NewUnlocker(pages, web.UnlockOptions{
-		Idle:  *idle,
 		Audit: out,
 		Unlock: func(p string) error {
 			if subtle.ConstantTimeCompare([]byte(p), []byte(passphrase)) != 1 {
@@ -148,8 +147,19 @@ func run(ctx context.Context, args []string, in io.Reader, stdout io.Writer) err
 		sess, _ := web.SessionFrom(r)
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.Header().Set("Cache-Control", "no-store")
-		_ = homePage.Execute(w, struct{ Nonce, Since, Logout, Field, Token, Unlock string }{
-			web.Nonce(r), sess.Created.Format(time.TimeOnly), pages.LogoutPath(), web.CSRFField, web.CSRFToken(r), unlockPath})
+		_ = homePage.Execute(w, struct {
+			Nonce, Since, Logout, Field, Token, Unlock string
+			Unlocked                                   bool
+		}{web.Nonce(r), sess.Created.Format(time.TimeOnly), pages.LogoutPath(), web.CSRFField, web.CSRFToken(r), unlockPath,
+			unlocker.Unlocked()})
+	})
+	// The CSRF token is checked before the handler runs, as for the pages of the kit.
+	lock := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := unlocker.Lock(); err != nil {
+			web.Error(w, http.StatusInternalServerError)
+			return
+		}
+		_ = web.Redirect(w, r, "/", http.StatusSeeOther)
 	})
 	sensitive := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		sess, _ := web.SessionFrom(r)
@@ -159,6 +169,7 @@ func run(ctx context.Context, args []string, in io.Reader, stdout io.Writer) err
 	})
 	srv, err := web.Listen(web.Options{Port: *port, Sessions: sessions, Redactor: &red, Log: out,
 		Routes: append(append(pages.Routes(), unlocker.Routes()...), web.Route{Pattern: "GET /{$}", Handler: home},
+			web.Route{Pattern: "POST /lock", Handler: lock},
 			web.Route{Pattern: "GET /sensitive", Handler: pages.RequireRecent(sensitive)})})
 	if err != nil {
 		return err

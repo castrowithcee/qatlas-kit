@@ -134,12 +134,19 @@ func TestUnlockDemoVault(t *testing.T) {
 	stdin, feed := io.Pipe()
 	out := &syncBuffer{}
 	done := make(chan error, 1)
-	go func() { done <- run(ctx, []string{"-vault-idle", "1s"}, stdin, out) }()
-	t.Cleanup(func() {
+	go func() { done <- run(ctx, nil, stdin, out) }()
+	stopped := false
+	stop := func() {
+		stopped = true
 		cancel()
 		feed.Close()
 		if err := <-done; err != nil {
 			t.Errorf("run: %v", err)
+		}
+	}
+	t.Cleanup(func() {
+		if !stopped {
+			stop()
 		}
 	})
 	base := waitFor(t, out, regexp.MustCompile(`Open (http://localhost:\d+)`))[1]
@@ -182,9 +189,30 @@ func TestUnlockDemoVault(t *testing.T) {
 		t.Errorf("unlock: %q", body)
 	}
 	waitFor(t, out, regexp.MustCompile(`demo vault: (unlocked)`))
-	waitFor(t, out, regexp.MustCompile(`demo vault: (locked)`))
-	for _, w := range []string{"vault-unlock-failed", "vault-unlock", "vault-lock"} {
+	for _, w := range []string{"vault-unlock-failed", "vault-unlock"} {
 		waitFor(t, out, regexp.MustCompile(`protocol: (`+w+`) from`))
+	}
+	if strings.Contains(out.String(), "demo vault: locked") {
+		t.Error("the demo vault locked before it was told to")
+	}
+	home := read(client.Get(base + "/"))
+	if !strings.Contains(home, "Lock the demo vault") {
+		t.Fatalf("no lock form while unlocked: %q", home)
+	}
+	read(client.PostForm(base+"/lock", url.Values{"csrf_token": {token(home)}}))
+	waitFor(t, out, regexp.MustCompile(`demo vault: (locked)`))
+	waitFor(t, out, regexp.MustCompile(`protocol: (vault-lock) from`))
+	if home = read(client.Get(base + "/")); strings.Contains(home, "Lock the demo vault") {
+		t.Error("lock form while locked")
+	}
+	if form = read(client.Get(base + "/unlock")); !strings.Contains(form, `type="password"`) {
+		t.Fatalf("no passphrase field after the lock: %q", form)
+	}
+	// Unlock again and end the program: Close locks the vault.
+	read(client.PostForm(base+"/unlock", url.Values{"csrf_token": {token(form)}, "passphrase": {pass}}))
+	stop()
+	if n := strings.Count(out.String(), "demo vault: locked"); n != 2 {
+		t.Errorf("%d locks, want the one from the page and the one at the end: %q", n, out.String())
 	}
 	if strings.Count(out.String(), pass) != 1 {
 		t.Errorf("the passphrase is printed other than once: %q", out.String())
