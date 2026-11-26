@@ -24,6 +24,12 @@
 // may send it in CSRFHeader instead. RequireRecent marks a route that is not public as one for sensitive
 // steps, which runs only after a recent sign-in or a confirmation on the page at ReauthPath.
 //
+// Unlocker offers the unlocking of a vault in the browser and exists only if the application makes one with
+// NewUnlocker; without it there is no route and no way to unlock. The application passes the function that
+// takes the passphrase and unlocks, for example through vault.Unlock or vaultproc, and the function that
+// locks; the package imports neither. The application calls Touch when it uses the vault. Lock and Close
+// lock at once; call Close after Serve returns so the vault does not outlive the server.
+//
 // Static serves the files of an fs.FS such as an embed.FS for GET and HEAD, mounted as a route like
 // "GET /". It reads the files once and answers only for a path that names one of them.
 //
@@ -108,6 +114,19 @@
 // keeps the session ID and renews only the time. LoginAudit receives reauth and reauth-failed. Without a
 // session a marked route is refused.
 //
+// The page and the POST of an Unlocker run only with a sign-in at most two minutes old, or ReauthWithin if
+// that is shorter. The field is type=password with autocomplete=new-password, so a browser has no saved
+// passphrase to fill, and carries no value; the form carries the CSRF token of the session. The passphrase
+// is read from the form body only, handed to the function once and never logged, echoed in a response, put
+// in a URL or in an entry of LoginAudit, which receives vault-unlock, vault-unlock-failed,
+// vault-unlock-throttled and vault-lock. Any error of the function counts as a refusal. Failed attempts are
+// throttled by their own counter using ratelimit, apart from the sign-in throttle; a throttled attempt looks
+// like a wrong one and does not call the function. Its page is served with Cache-Control: no-store. The vault
+// locks after the idle time without use, and use is a call of Touch only, so a tool that forgets it fails
+// closed, and a request to the page of the Unlocker is no use. The browser cannot be forced not to offer to
+// save a field, and an extension can read what is typed, which is why there is no Unlocker unless the
+// application makes one.
+//
 // Static answers no directory listing, no redirect, no path outside the file system and no file or
 // directory whose name starts with a dot. The Content-Type is fixed by extension, application/octet-stream
 // for an unknown one, next to the fixed nosniff header. Each file has an ETag of its content with
@@ -155,6 +174,12 @@
 //   - PagesOptions.Home: the fixed path a browser goes to after signing in. Default: "/".
 //   - PagesOptions.ReauthWithin: how recent the sign-in or its confirmation must be for a route marked with
 //     RequireRecent. Default: 5 minutes.
+//   - NewUnlocker: offers the unlocking of a vault in the browser. Default: no Unlocker, so a vault cannot
+//     be unlocked in the browser.
+//   - UnlockOptions.Idle: how long the vault may stay unlocked without use. Default: 5 minutes.
+//   - UnlockOptions.Window: how long a failed unlock attempt counts. Default: 10 minutes.
+//   - UnlockOptions.Attempts: the failed unlock attempts from all addresses together per Window. Default: 5.
+//   - UnlockOptions.Audit: receives the unlock and lock events. Default: no protocol.
 //   - Options.Log: receives refusals and the errors of the HTTP server. Default: they are discarded.
 //   - Options.Redactor: removes known secrets from every log line. Default: the text is logged as it is.
 package web

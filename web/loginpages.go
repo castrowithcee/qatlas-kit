@@ -9,15 +9,8 @@ import (
 	"time"
 )
 
-var loginPage = template.Must(template.New("login").Parse(`<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="color-scheme" content="light dark">
-<title>{{.Title}}</title>
-<style nonce="{{.Nonce}}">
-:root { --bg: #fff; --text: #1a1a1a; --muted: #4a4a4a; --border: #767676; --accent: #0b5cad; --on-accent: #fff; --error: #a4000f; }
+// pageCSS is shared by the pages of this package, so they keep one look.
+const pageCSS = `:root { --bg: #fff; --text: #1a1a1a; --muted: #4a4a4a; --border: #767676; --accent: #0b5cad; --on-accent: #fff; --error: #a4000f; }
 @media (prefers-color-scheme: dark) {
   :root { --bg: #121212; --text: #ececec; --muted: #b8b8b8; --border: #8a8a8a; --accent: #8ab4f8; --on-accent: #0b1220; --error: #ff9a9a; }
 }
@@ -33,7 +26,17 @@ input[aria-invalid="true"] { border-color: var(--error); }
 button { min-width: 2.75rem; margin-top: 1rem; padding: .5rem 1.5rem; border: 2px solid var(--accent); background: var(--accent); color: var(--on-accent); font-weight: 600; cursor: pointer; }
 :focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
 .error { margin: .5rem 0 0; color: var(--error); font-weight: 600; }
-</style>
+`
+
+var loginPage = template.Must(template.New("login").Parse(`<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>{{.Title}}</title>
+<style nonce="{{.Nonce}}">
+` + pageCSS + `</style>
 </head>
 <body>
 <main>
