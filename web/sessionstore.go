@@ -9,6 +9,9 @@ import (
 type SessionRecord struct {
 	// Created is when the session was issued.
 	Created time.Time
+	// SignedIn is when the person last proved who they are: the sign-in, or a later confirmation. A record
+	// without it counts as long ago.
+	SignedIn time.Time
 	// Expires is the instant after which the session is no longer valid. A store may drop the record then.
 	Expires time.Time
 }
@@ -21,6 +24,9 @@ type SessionStore interface {
 	// Touch sets Expires of the record under key and reports whether there was one. It must be atomic
 	// and never create a record, so a session ended meanwhile stays ended.
 	Touch(key string, expires time.Time) (ok bool, err error)
+	// MarkSignIn sets SignedIn of the record under key and reports whether there was one. Like Touch it
+	// must be atomic and never create a record.
+	MarkSignIn(key string, at time.Time) (ok bool, err error)
 	// Get returns the record under key; ok is false if there is none.
 	Get(key string) (rec SessionRecord, ok bool, err error)
 	// Delete removes the record under key; a missing key is not an error.
@@ -69,6 +75,17 @@ func (m *MemorySessionStore) Touch(key string, expires time.Time) (bool, error) 
 	rec, ok := m.recs[key]
 	if ok {
 		rec.Expires = expires
+		m.recs[key] = rec
+	}
+	return ok, nil
+}
+
+func (m *MemorySessionStore) MarkSignIn(key string, at time.Time) (bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	rec, ok := m.recs[key]
+	if ok {
+		rec.SignedIn = at
 		m.recs[key] = rec
 	}
 	return ok, nil

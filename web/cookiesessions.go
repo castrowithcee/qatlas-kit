@@ -28,9 +28,12 @@ type SessionOptions struct {
 	Idle time.Duration
 	// Absolute ends a session this long after it was issued, however active; 0 means 8 hours.
 	Absolute time.Duration
+	// Audit receives the requests refused for a missing or wrong CSRF token; nil keeps no protocol.
+	Audit LoginAudit
 }
 
-// CookieSessions implements Sessions with a random ID in a cookie and the session state on the server.
+// CookieSessions implements Sessions with a random ID in a cookie and the session state on the server. It
+// also refuses an unsafe request without the CSRF token of its session.
 //
 // The cookie is always HttpOnly, SameSite=Strict, Path=/ and without Domain. It carries the __Host- prefix
 // and Secure except when the Server binds to loopback only, which it serves over plain HTTP: browsers
@@ -40,13 +43,14 @@ type CookieSessions struct {
 	store     SessionStore
 	idle, abs time.Duration
 	now       func() time.Time
+	audit     LoginAudit
 	loginPath string // set by NewPages
 }
 
 // NewCookieSessions returns CookieSessions for Options.Sessions. Call Issue after a successful sign-in
 // and End on sign-out.
 func NewCookieSessions(opts SessionOptions) *CookieSessions {
-	c := &CookieSessions{store: opts.Store, idle: opts.Idle, abs: opts.Absolute, now: time.Now}
+	c := &CookieSessions{store: opts.Store, idle: opts.Idle, abs: opts.Absolute, now: time.Now, audit: opts.Audit}
 	if c.store == nil {
 		c.store = NewMemorySessionStore()
 	}
@@ -63,7 +67,10 @@ func NewCookieSessions(opts SessionOptions) *CookieSessions {
 type Session struct {
 	// Created is when the session was issued.
 	Created time.Time
-	key     string
+	// SignedIn is when the person last signed in or confirmed the sign-in again.
+	SignedIn time.Time
+	key      string
+	csrf     string
 }
 
 type sessionCtxKey struct{}
@@ -106,7 +113,12 @@ func (c *CookieSessions) Session(w http.ResponseWriter, r *http.Request) (*http.
 		c.clear(w, strict)
 		return c.deny(w, r)
 	}
-	ctx := context.WithValue(r.Context(), sessionCtxKey{}, Session{Created: rec.Created, key: key})
+	csrf := csrfOf("session", id)
+	if unsafeMethod(r) && !csrfMatches(r, csrf) {
+		c.refuseCSRF(w, r)
+		return nil, false
+	}
+	ctx := context.WithValue(r.Context(), sessionCtxKey{}, Session{Created: rec.Created, SignedIn: rec.SignedIn, key: key, csrf: csrf})
 	return r.WithContext(ctx), true
 }
 
@@ -132,11 +144,21 @@ func (c *CookieSessions) Issue(w http.ResponseWriter, r *http.Request) error {
 	_, _ = rand.Read(b[:]) // never fails since Go 1.24; it crashes the program instead
 	id := base64.RawURLEncoding.EncodeToString(b[:])
 	now := c.now()
-	if err := c.store.Put(keyOf(id), SessionRecord{Created: now, Expires: c.deadline(now, now)}); err != nil {
+	if err := c.store.Put(keyOf(id), SessionRecord{Created: now, SignedIn: now, Expires: c.deadline(now, now)}); err != nil {
 		return err
 	}
 	http.SetCookie(w, cookie(id, strict))
 	return nil
+}
+
+// markSignIn records that the person proved themselves again now. A session that ended meanwhile stays
+// ended.
+func (c *CookieSessions) markSignIn(s Session) error {
+	ok, err := c.store.MarkSignIn(s.key, c.now())
+	if err == nil && !ok {
+		return ErrSignInRefused
+	}
+	return err
 }
 
 // End ends the session of the request on the server and deletes its cookie. It is safe without a session.
@@ -195,8 +217,12 @@ func cookieName(strict bool) string {
 }
 
 func cookie(value string, strict bool) *http.Cookie {
+	return namedCookie(cookieName(strict), value, strict)
+}
+
+func namedCookie(name, value string, strict bool) *http.Cookie {
 	return &http.Cookie{
-		Name: cookieName(strict), Value: value, Path: "/",
+		Name: name, Value: value, Path: "/",
 		HttpOnly: true, SameSite: http.SameSiteStrictMode, Secure: strict,
 	}
 }
