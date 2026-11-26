@@ -119,6 +119,20 @@
 // over a dialog whose details scroll reports ZoneDetail, which the application hands to Dialog.Wheel; beside
 // the dialog it reports no zone, so nothing scrolls.
 //
+// A click outside the frame of an open modal does nothing by default. DialogSpec.CloseOutside (the answer
+// Esc gives), HelpSpec.CloseOutside, FormSpec.CloseOutside, ListSpec.CloseOutside and
+// PathNavKeys.CloseOutside turn on that it acts as Esc, the back key of the overlay, does: the overlay then
+// adds targets of ZoneOutside, which cover the screen around the frame and none of the frame itself, to the
+// targets its Overlay returns, and Click reads a MouseResult of that zone. A click inside the frame that hits
+// no target never closes, since it lies beside those targets. A dialog with a Danger ignores the option and
+// no target is added, so a click beside a destructive question never answers it. A form reports Keys.Back
+// with handled false, as Esc does, so the application asks before it discards a changed form, and an open
+// list of values or calendar closes first. A list acts as Back does through Act: it clears a filter and
+// otherwise comes back unhandled, which the application closes the modal on as on the key. A click on the
+// footer or the header behind the modal is outside as well and runs nothing. Explanation closes on a click
+// outside its keys and address already and has no option; the View drawn in a terminal too small for an
+// overlay has no frame and no such targets.
+//
 // Mouse reports never become text. An InputFilter, installed with tea.WithFilter and attached to the program,
 // drops the pieces of a report that a terminal behind SSH or tmux delivered in more than one read, so a text
 // or passphrase field never receives them, and merges a wheel notch the terminal reports twice. Characters

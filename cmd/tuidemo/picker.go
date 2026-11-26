@@ -20,14 +20,14 @@ func (p pickModal) Update(msg tea.KeyPressMsg) (tui.ActionID, bool) {
 	return "", handled
 }
 
-// Click answers enter for an opened row or the choose button, and back for the back key of the key line,
-// which the list leaves to the application.
+// Click answers enter for an opened row or the choose button, and back for the back key of the key line and
+// for a click outside the frame, which the list leaves to the application once no filter is left to clear.
 func (p pickModal) Click(r tui.MouseResult) (tui.ActionID, bool) {
 	open, handled := p.list.Click(r)
 	switch {
 	case open != "":
 		return actEnter, true
-	case !handled && r.Action == actBack:
+	case !handled && (r.Action == actBack || r.Zone == tui.ZoneOutside):
 		return actBack, true
 	}
 	return "", handled
@@ -58,7 +58,7 @@ func (m *model) openPicker() {
 	keys := tui.ListKeys{Up: actUp, Down: actDown, PageUp: actPageUp, PageDown: actPageDown, First: actFirst, Last: actLast,
 		Left: actLeft, Right: actRight, Enter: actEnter, Back: actBack}
 	list, err := tui.NewList(tui.ListSpec{Columns: []tui.Column{{Title: textSampleBed}}, Keys: keys,
-		Search: tui.SearchAsTyped, Wrap: true, Empty: textListEmpty, Title: textPickTitle,
+		Search: tui.SearchAsTyped, Wrap: true, Empty: textListEmpty, Title: textPickTitle, CloseOutside: true,
 		Buttons: []tui.FormButton{{Action: actEnter, Label: tui.TextKeyChoose, Primary: true}}}, m.keys, m.text)
 	if err == nil {
 		err = list.SetItems(bedItems())
@@ -107,6 +107,8 @@ func (m *model) openSuggest() {
 		Answers:  []tui.Answer{{Action: actEnter, Label: textOK}, {Action: actBack, Label: tui.TextKeyBack}},
 		Default:  actEnter,
 		Keys:     keys,
+		// A click beside the input answers back, as esc does.
+		CloseOutside: actBack,
 	}, m.keys, m.text)
 	if err == nil {
 		m.dialog = d

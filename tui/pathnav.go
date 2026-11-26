@@ -15,6 +15,9 @@ type PathNavKeys struct {
 	// Left and Right fold and unfold an area of the overview.
 	Left, Right ActionID
 	Enter, Back ActionID
+	// CloseOutside closes an overlay without a choice on a click outside its frame, as Back does. The
+	// default leaves such a click to do nothing.
+	CloseOutside bool
 }
 
 // PathChoice is what a choice in an overlay of the path line names: the area and, where the area has tabs,
@@ -56,7 +59,7 @@ func (p *PathNav) newList(title TextID) (*List, error) {
 		Columns: []Column{{Title: TextPathNavColumn}},
 		Keys: ListKeys{Up: k.Up, Down: k.Down, PageUp: k.PageUp, PageDown: k.PageDown, First: k.First,
 			Last: k.Last, Left: k.Left, Right: k.Right, Enter: k.Enter, Back: k.Back},
-		Search: SearchNone, Wrap: true, Outline: true, Empty: TextPathNavEmpty, Title: title,
+		Search: SearchNone, Wrap: true, Outline: true, Empty: TextPathNavEmpty, Title: title, CloseOutside: k.CloseOutside,
 	}, p.km, p.text)
 }
 
@@ -195,6 +198,12 @@ func (p *PathNav) Update(msg tea.KeyPressMsg) (choice PathChoice, handled bool) 
 func (p *PathNav) Click(r MouseResult) (choice PathChoice, handled bool) {
 	if p.list == nil || !r.Handled {
 		return PathChoice{}, false
+	}
+	if r.Zone == ZoneOutside {
+		if !p.keys.CloseOutside {
+			return PathChoice{}, false
+		}
+		return p.act(p.keys.Back)
 	}
 	if r.Item == "" && r.Action != "" {
 		return p.act(r.Action)

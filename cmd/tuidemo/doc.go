@@ -33,7 +33,11 @@
 // line (:), which runs commands by name, such as the tabs and the switches. The command line stands over the
 // dimmed screen, at the top and centred, with a key line of its own; where the terminal is too small for that
 // it fills the workspace and its keys stand in the footer. Esc closes whatever stands over the screen, and
-// nothing behind it takes a key or a click meanwhile.
+// nothing behind it takes a key or a click meanwhile. The workbench turns on the CloseOutside option of the
+// kit, so a click beside the input and the notice of the Dialogs tab, the reveal question of the Views tab
+// (it answers no), the help, the list of beds, the sample paths and the path overlays closes them as Esc
+// does, without running what stands behind. The question with the destroying answer ignores it and stays
+// open; the explanation keeps its own way of closing.
 //
 // The Lists tab shows a list with a filter bar, a grouped list that folds and a list with tick boxes. The Forms
 // tab shows a form that adds a bed (text, choice, tick boxes and a masked field) and one with date fields and

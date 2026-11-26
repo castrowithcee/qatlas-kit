@@ -39,6 +39,9 @@ type HelpSpec struct {
 	// text of every topic, without scrolling. It stands only where at least helpMinText text rows remain below
 	// it; otherwise it is left out whole and never cut. Empty shows none.
 	Note TextID
+	// CloseOutside closes the help on a click outside its frame, as Back does. The default leaves such a
+	// click to do nothing.
+	CloseOutside bool
 }
 
 // helpMaxInner is the widest text of the help drawn over the screen.
@@ -224,6 +227,12 @@ func (h *Help) Click(r MouseResult) (act ActionID, handled bool) {
 	if !r.Handled {
 		return "", false
 	}
+	if r.Zone == ZoneOutside {
+		if !h.spec.CloseOutside {
+			return "", false
+		}
+		return h.spec.Keys.Back, true
+	}
 	if name, ok := strings.CutPrefix(r.Item, helpTopicRef); ok {
 		return "", h.SetTopic(name)
 	}
@@ -400,7 +409,8 @@ func (h *Help) Overlay(styles Styles, screen string, width, height int, room Rec
 	box := styles.Panel(h.text.Lookup(TextHelpTitle), "", lines, inner+4, len(lines)+2, true)
 	top := room.Y + (room.Height-len(box))/2
 	left := room.X + (room.Width-inner-4)/2
-	return overlay(screen, box, width, height, top, left, styles), OffsetTargets(ts, left+2, top+1), true
+	targets = withOutside(h.spec.CloseOutside, OffsetTargets(ts, left+2, top+1), width, height, Rect{X: left, Y: top, Width: inner + 4, Height: len(box)})
+	return overlay(screen, box, width, height, top, left, styles), targets, true
 }
 
 // View draws the help with styles as the content of a workspace of width by height cells, for a terminal too

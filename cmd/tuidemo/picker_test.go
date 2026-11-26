@@ -192,6 +192,19 @@ func TestPickerModelChoosesByEnterAndByTheButton(t *testing.T) {
 	}
 }
 
+func TestPickerClosesOnAClickOutsideAsBackDoes(t *testing.T) {
+	m := testModel(t, uiprefs.IconsNone)
+	m.run(actArea, "8")
+	m.handle(tea.KeyPressMsg{Code: 'p', Text: "p"})
+	m.refresh()
+	if !clickWhere(m, func(r tui.MouseResult) bool { return r.Zone == tui.ZoneOutside }) {
+		t.Fatal("the picker has no target outside its frame")
+	}
+	if m.modal != nil || m.bed == "Pot 3" {
+		t.Fatalf("a click outside left the picker open or chose: modal %v bed %q", m.modal, m.bed)
+	}
+}
+
 func TestFilesTakeNeverLeavesTheRoot(t *testing.T) {
 	m := testModel(t, uiprefs.IconsNone)
 	m.run(actArea, "8")

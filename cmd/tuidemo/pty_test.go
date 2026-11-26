@@ -243,6 +243,29 @@ func TestInputDialogKeepsAnEmptyNameAndTakesANewOne(t *testing.T) {
 	act(t, term, "\x1b", "Cancelled")
 }
 
+// A click beside a popup closes it as esc does, unless its answer destroys; the screen behind takes none.
+func TestClickBesideAPopupClosesItAsEscDoes(t *testing.T) {
+	term := startDemo(t, "-icons none")
+	act(t, term, "r", "Name of the garden journal:")
+	column, row := find(t, term, "3 Settings")
+	send(t, term, click(column+1, row)) // beside the dialog: back, and the tab behind stays unread
+	expect(t, term, "Cancelled")
+	gone(t, term, "Name of the garden journal:")
+	expect(t, term, "[1 Overview]")
+
+	act(t, term, "a", "Reset the counter?")
+	send(t, term, click(column+1, row)) // a destroying question ignores it
+	send(t, term, "t")                  // a key that would reach the screen behind goes nowhere
+	expect(t, term, "Reset the counter?")
+	act(t, term, "n", "Cancelled")
+	gone(t, term, "Reset the counter?")
+
+	act(t, term, "o", "This is a calm message without a question.")
+	send(t, term, click(column+1, row))
+	gone(t, term, "This is a calm message")
+	expect(t, term, "[1 Overview]")
+}
+
 func TestNoticeClosesByKey(t *testing.T) {
 	term := startDemo(t, "-icons none")
 	act(t, term, "o", "This is a calm message without a question.")
@@ -481,11 +504,13 @@ func TestPathOverlaysOpenAndChooseByClick(t *testing.T) {
 			}
 			gone(t, term, "PLACE")
 			expect(t, term, section)
-			// A click behind the overlay does nothing, and a click on the overlay's key line closes it.
+			// A click on the overlay's key line closes it, and so does one beside it, without running what stands
+			// behind: the info key of the footer would open the explanation.
+			act(t, term, "m", "All areas")
+			clickOn(t, term, "esc back", lookBody)
+			gone(t, term, "PLACE")
 			act(t, term, "m", "All areas")
 			clickOnly(t, term, "[i] info")
-			expect(t, term, "All areas")
-			clickOn(t, term, "esc back", lookBody)
 			gone(t, term, "PLACE")
 			gone(t, term, "Raised bed:")
 		})

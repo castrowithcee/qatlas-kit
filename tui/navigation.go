@@ -21,6 +21,10 @@ const (
 	ZoneFilters FocusZone = "filters"
 )
 
+// ZoneOutside is what a click outside the frame of an open modal reports, for a modal whose spec turns on
+// CloseOutside. It is no focus zone: it stands in no screen and not in the zone order.
+const ZoneOutside FocusZone = "outside"
+
 var zoneOrder = [...]FocusZone{ZoneTabs, ZoneSubtabs, ZonePath, ZoneRows, ZoneForm, ZoneDetail, ZoneFilters}
 
 // workZones are the zones of the work area, below the navigation lines.

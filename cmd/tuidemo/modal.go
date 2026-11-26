@@ -79,6 +79,8 @@ func (m *model) openInput() {
 		Answers:  []tui.Answer{{Action: actEnter, Label: textOK}, {Action: actBack, Label: tui.TextKeyBack}},
 		Default:  actEnter,
 		Keys:     dialogKeys(false),
+		// A click beside the input answers back, as esc does.
+		CloseOutside: actBack,
 	}, m.keys, m.text)
 	if err == nil {
 		m.dialog = d
@@ -97,6 +99,8 @@ func (m *model) openNotice() {
 		Answers:  []tui.Answer{{Action: actEnter, Label: textOK}},
 		Default:  actEnter,
 		Keys:     dialogKeys(true),
+		// A click beside the notice closes it. The question of the Dialogs tab sets none: its answer destroys.
+		CloseOutside: actEnter,
 	}, m.keys, m.text)
 	if err == nil {
 		m.dialog = d
@@ -116,7 +120,7 @@ func (m *model) openHelp() {
 		Topics: topics, Screen: m.footerHints(), Global: []tui.ActionID{actQuit, actHelp, actCommands, actInfo},
 		Keys: tui.HelpKeys{Left: actLeft, Right: actRight, Next: actZoneNext, Prev: actZonePrev, Up: actUp, Down: actDown,
 			PageUp: actPageUp, PageDown: actPageDown, First: actFirst, Last: actLast, Back: actBack, Help: actHelp},
-		Note: textHelpNote,
+		Note: textHelpNote, CloseOutside: true,
 	}, m.keys, m.text)
 	if err == nil {
 		m.show(h, nil, kindHelp, tui.InputNavigation)
