@@ -32,7 +32,7 @@ One line per package, in alphabetical order. The package documentation holds the
 - [`manpage`](manpage): adds help topics to a manpage generated from a command tree.
 - [`notify`](notify): delivers notifications over a signed webhook, Slack, Telegram and SMTP with retries, spacing and redaction, receives replies to a Telegram bot by long polling, and verifies webhook signatures.
 - [`output`](output): renders ordered results in the CLI output formats and defines the shared error codes.
-- [`projectpath`](projectpath): expands, resolves and compares paths, finds Git working tree roots and suggests completions for a typed path.
+- [`projectpath`](projectpath): expands, resolves and compares paths, finds Git working tree roots, suggests completions for a typed path and searches below a start path for a name part.
 - [`ptytest`](ptytest): runs a program at a pseudo-terminal or pseudo console in tests, types input and waits for its output.
 - [`ratelimit`](ratelimit): spaces the requests of one credential, holds them when the remote side asks to wait, and counts units per key in a sliding or daily window.
 - [`redact`](redact): replaces registered secret values, also quoted or JSON-escaped, in text, errors and writers.
