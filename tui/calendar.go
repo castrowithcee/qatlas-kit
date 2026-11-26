@@ -164,7 +164,7 @@ func (f *Form) takeDay(day time.Time) {
 	case dateLate:
 		t = d.norm(d.Max)
 	}
-	field.line = newTextLine(d.format(t))
+	field.line.reset(d.format(t))
 	f.changed(f.focus)
 }
 
