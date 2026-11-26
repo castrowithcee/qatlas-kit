@@ -22,6 +22,8 @@ const (
 	// LoginThrottled is an attempt refused by the throttle without checking the credentials.
 	LoginThrottled LoginEventKind = "login-throttled"
 	LogoutDone     LoginEventKind = "logout"
+	// CSRFRefused is a request refused for a missing or wrong CSRF token, on the sign-in page or in a session.
+	CSRFRefused LoginEventKind = "csrf-refused"
 )
 
 // LoginEvent is one entry for the protocol. It holds no credential and no session ID.

@@ -28,9 +28,12 @@ type SessionOptions struct {
 	Idle time.Duration
 	// Absolute ends a session this long after it was issued, however active; 0 means 8 hours.
 	Absolute time.Duration
+	// Audit receives the requests refused for a missing or wrong CSRF token; nil keeps no protocol.
+	Audit LoginAudit
 }
 
-// CookieSessions implements Sessions with a random ID in a cookie and the session state on the server.
+// CookieSessions implements Sessions with a random ID in a cookie and the session state on the server. It
+// also refuses an unsafe request without the CSRF token of its session.
 //
 // The cookie is always HttpOnly, SameSite=Strict, Path=/ and without Domain. It carries the __Host- prefix
 // and Secure except when the Server binds to loopback only, which it serves over plain HTTP: browsers
@@ -40,13 +43,14 @@ type CookieSessions struct {
 	store     SessionStore
 	idle, abs time.Duration
 	now       func() time.Time
+	audit     LoginAudit
 	loginPath string // set by NewPages
 }
 
 // NewCookieSessions returns CookieSessions for Options.Sessions. Call Issue after a successful sign-in
 // and End on sign-out.
 func NewCookieSessions(opts SessionOptions) *CookieSessions {
-	c := &CookieSessions{store: opts.Store, idle: opts.Idle, abs: opts.Absolute, now: time.Now}
+	c := &CookieSessions{store: opts.Store, idle: opts.Idle, abs: opts.Absolute, now: time.Now, audit: opts.Audit}
 	if c.store == nil {
 		c.store = NewMemorySessionStore()
 	}
@@ -64,6 +68,7 @@ type Session struct {
 	// Created is when the session was issued.
 	Created time.Time
 	key     string
+	csrf    string
 }
 
 type sessionCtxKey struct{}
@@ -106,7 +111,12 @@ func (c *CookieSessions) Session(w http.ResponseWriter, r *http.Request) (*http.
 		c.clear(w, strict)
 		return c.deny(w, r)
 	}
-	ctx := context.WithValue(r.Context(), sessionCtxKey{}, Session{Created: rec.Created, key: key})
+	csrf := csrfOf("session", id)
+	if unsafeMethod(r) && !csrfMatches(r, csrf) {
+		c.refuseCSRF(w, r)
+		return nil, false
+	}
+	ctx := context.WithValue(r.Context(), sessionCtxKey{}, Session{Created: rec.Created, key: key, csrf: csrf})
 	return r.WithContext(ctx), true
 }
 
@@ -195,8 +205,12 @@ func cookieName(strict bool) string {
 }
 
 func cookie(value string, strict bool) *http.Cookie {
+	return namedCookie(cookieName(strict), value, strict)
+}
+
+func namedCookie(name, value string, strict bool) *http.Cookie {
 	return &http.Cookie{
-		Name: cookieName(strict), Value: value, Path: "/",
+		Name: name, Value: value, Path: "/",
 		HttpOnly: true, SameSite: http.SameSiteStrictMode, Secure: strict,
 	}
 }

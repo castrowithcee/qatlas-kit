@@ -55,6 +55,20 @@
 // tool adds a form that posts to LogoutPath. With Pages, a GET or HEAD request without a session for a
 // route that is not Public goes to the sign-in page, and any other method gets 401.
 //
+// The CSRF token adds to the origin check and never replaces it. CookieSessions refuses an unsafe request of
+// a session whose token is missing, wrong or from another or ended session, with 403. CSRFToken returns the
+// token of the session of a request for a form, in the field CSRFField; a script may send it in CSRFHeader
+// instead. It is 256 bits derived from the session ID, so it differs per session and changes with every
+// sign-in, it is compared in constant time and read from the header or the form body, never from the URL.
+// Reading the body consumes a multipart form, so a handler of one should use a header. A request sent by an
+// HTML form needs the field; the sign-out of Pages takes it too when a session exists. The sign-in page has
+// no session to bind to: it sets a cookie with the attributes of the session cookie, and its form carries a
+// token derived from that cookie's secret, which POST to the sign-in path must return before the code is
+// looked at. A refusal does not use up the throttle and shows the page again with a new token. Every refused
+// token goes to LoginAudit as csrf-refused, with the peer host only, if SessionOptions.Audit (for sessions)
+// or the Authenticator (for the sign-in page) has one. A public route other than those of Pages carries no
+// token check of its own.
+//
 // Static serves the files of an fs.FS such as an embed.FS for GET and HEAD, mounted as a route like
 // "GET /". It reads the files once and answers only for a path that names one of them: no directory
 // listing, no redirect, no path outside the file system and no file or directory whose name starts with a

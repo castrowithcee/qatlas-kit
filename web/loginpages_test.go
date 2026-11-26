@@ -20,7 +20,7 @@ type pagesFixture struct {
 func newPagesFixture(t *testing.T, opts PagesOptions) *pagesFixture {
 	t.Helper()
 	f := &pagesFixture{code: NewOnceCode(OnceCodeOptions{}), audit: &recordingAudit{}}
-	cs := NewCookieSessions(SessionOptions{})
+	cs := NewCookieSessions(SessionOptions{Audit: f.audit})
 	var err error
 	f.auth, err = NewAuthenticator(AuthOptions{Sessions: cs, Method: f.code, Audit: f.audit})
 	if err != nil {
@@ -32,7 +32,10 @@ func newPagesFixture(t *testing.T, opts PagesOptions) *pagesFixture {
 	}
 	private := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(http.StatusNoContent) })
 	routes := append(f.pages.Routes(),
-		Route{Pattern: "GET /private", Handler: private}, Route{Pattern: "POST /private", Handler: private})
+		Route{Pattern: "GET /private", Handler: private}, Route{Pattern: "POST /private", Handler: private},
+		Route{Pattern: "GET /token", Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			_, _ = w.Write([]byte(CSRFToken(r)))
+		})})
 	f.server = newServer(t, Options{Sessions: cs, Routes: routes})
 	return f
 }
@@ -44,6 +47,19 @@ func formPost(path string, v url.Values, cookies ...*http.Cookie) *http.Request 
 		r.AddCookie(c)
 	}
 	return r
+}
+
+var tokenInPage = regexp.MustCompile(`name="csrf_token" value="([^"]+)"`)
+
+// loginForm fetches the sign-in page like a browser and returns the form with its token and cookie.
+func loginForm(t *testing.T, f *pagesFixture, code string) *http.Request {
+	t.Helper()
+	page := do(f.server, get("/login"))
+	m := tokenInPage.FindStringSubmatch(page.Body.String())
+	if m == nil {
+		t.Fatal("sign-in page carries no token")
+	}
+	return formPost("/login", url.Values{CodeField: {code}, CSRFField: {m[1]}}, setCookie(t, page))
 }
 
 func TestLoginPageMarkup(t *testing.T) {
@@ -79,8 +95,9 @@ func TestLoginRedirectsToFixedTarget(t *testing.T) {
 	f := newPagesFixture(t, PagesOptions{Home: "/private"})
 	code := f.code.Generate()
 	// A target in the request means nothing.
-	rec := do(f.server, formPost("/login?next=https://evil.example.test", url.Values{CodeField: {code},
-		"next": {"https://evil.example.test"}}))
+	req := loginForm(t, f, code)
+	req.URL.RawQuery = "next=https://evil.example.test"
+	rec := do(f.server, req)
 	if rec.Code != http.StatusSeeOther || rec.Header().Get("Location") != "/private" {
 		t.Fatalf("status %d, Location %q", rec.Code, rec.Header().Get("Location"))
 	}
@@ -102,7 +119,7 @@ func browserOrigin(policy, page string) string {
 func TestSignInByFormFromTheLoginPage(t *testing.T) {
 	f := newPagesFixture(t, PagesOptions{Home: "/private"})
 	page := do(f.server, get("/login"))
-	req := formPost("/login", url.Values{CodeField: {f.code.Generate()}})
+	req := loginForm(t, f, f.code.Generate())
 	req.Header.Set("Sec-Fetch-Site", "same-origin")
 	req.Header.Set("Origin", browserOrigin(page.Header().Get("Referrer-Policy"), "http://localhost"))
 	rec := do(f.server, req)
@@ -110,7 +127,7 @@ func TestSignInByFormFromTheLoginPage(t *testing.T) {
 		t.Fatalf("status %d, Location %q", rec.Code, rec.Header().Get("Location"))
 	}
 
-	req = formPost("/login", url.Values{CodeField: {f.code.Generate()}})
+	req = loginForm(t, f, f.code.Generate())
 	req.Header.Set("Sec-Fetch-Site", "same-origin")
 	req.Header.Set("Origin", "null")
 	if got := do(f.server, req); got.Code != http.StatusForbidden || len(got.Result().Cookies()) != 0 {
@@ -122,11 +139,11 @@ func TestWrongAndThrottledAnswerTheSame(t *testing.T) {
 	f := newPagesFixture(t, PagesOptions{})
 	code := f.code.Generate()
 	secret := "ZZZZ-9999"
-	wrong := do(f.server, formPost("/login", url.Values{CodeField: {secret}}))
+	wrong := do(f.server, loginForm(t, f, secret))
 	for range 5 {
-		do(f.server, formPost("/login", url.Values{CodeField: {secret}}))
+		do(f.server, loginForm(t, f, secret))
 	}
-	throttled := do(f.server, formPost("/login", url.Values{CodeField: {code}}))
+	throttled := do(f.server, loginForm(t, f, code))
 	if wrong.Code != http.StatusForbidden || throttled.Code != wrong.Code || noNonce(throttled.Body.String()) != noNonce(wrong.Body.String()) {
 		t.Fatalf("answers differ: %d/%d", wrong.Code, throttled.Code)
 	}
@@ -146,7 +163,7 @@ func TestWrongAndThrottledAnswerTheSame(t *testing.T) {
 
 func TestLogoutByPostEndsSession(t *testing.T) {
 	f := newPagesFixture(t, PagesOptions{})
-	c := setCookie(t, do(f.server, formPost("/login", url.Values{CodeField: {f.code.Generate()}})))
+	c := setCookie(t, do(f.server, loginForm(t, f, f.code.Generate())))
 
 	if got := do(f.server, getWith("/logout", c)); got.Code != http.StatusMethodNotAllowed {
 		t.Errorf("GET /logout: status %d", got.Code)
@@ -154,7 +171,13 @@ func TestLogoutByPostEndsSession(t *testing.T) {
 	if got := do(f.server, getWith("/private", c)).Code; got != http.StatusNoContent {
 		t.Fatalf("GET /logout ended the session: status %d", got)
 	}
-	rec := do(f.server, formPost("/logout", nil, c))
+	if got := do(f.server, formPost("/logout", nil, c)).Code; got != http.StatusForbidden {
+		t.Errorf("POST /logout without token: status %d", got)
+	}
+	if got := do(f.server, getWith("/private", c)).Code; got != http.StatusNoContent {
+		t.Fatalf("a refused sign-out ended the session: status %d", got)
+	}
+	rec := do(f.server, formPost("/logout", url.Values{CSRFField: {privateToken(t, f, c)}}, c))
 	if rec.Code != http.StatusSeeOther || rec.Header().Get("Location") != "/login" {
 		t.Errorf("status %d, Location %q", rec.Code, rec.Header().Get("Location"))
 	}
@@ -198,5 +221,17 @@ func TestNewPagesChecksOptions(t *testing.T) {
 	}
 }
 
-// noNonce removes the nonce, which differs per response.
-func noNonce(s string) string { return regexp.MustCompile(`nonce="[^"]*"`).ReplaceAllString(s, "") }
+// noNonce removes the nonce and the token, which differ per response.
+func noNonce(s string) string {
+	return tokenInPage.ReplaceAllString(regexp.MustCompile(`nonce="[^"]*"`).ReplaceAllString(s, ""), "")
+}
+
+// privateToken returns the CSRF token of the session in c, as a page of the application would embed it.
+func privateToken(t *testing.T, f *pagesFixture, c *http.Cookie) string {
+	t.Helper()
+	rec := do(f.server, getWith("/token", c))
+	if rec.Code != http.StatusOK || rec.Body.Len() < 43 {
+		t.Fatalf("token: status %d, body %q", rec.Code, rec.Body.String())
+	}
+	return rec.Body.String()
+}

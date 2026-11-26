@@ -39,9 +39,11 @@ button { min-width: 2.75rem; margin-top: 1rem; padding: .5rem 1.5rem; border: 2p
 <h1>Sign in</h1>
 <p class="hint" id="hint">Enter the one-time code shown in the terminal where the program runs.</p>
 <form method="post" action="{{.Action}}">
+<input type="hidden" name="{{.Field}}" value="{{.Token}}">
 <label for="code">One-time code</label>
 <input id="code" name="code" type="text" autocomplete="one-time-code" autocapitalize="characters" spellcheck="false" autofocus required aria-describedby="hint{{if .Failed}} error{{end}}"{{if .Failed}} aria-invalid="true"{{end}}>
 {{if .Failed}}<p class="error" id="error" role="alert">The code was not accepted. Check it, or ask for a new one in the terminal, and try again.</p>
+{{end}}{{if .Expired}}<p class="error" id="expired" role="alert">This page was out of date. Enter the code again.</p>
 {{end}}<button type="submit">Sign in</button>
 </form>
 </main>
@@ -108,22 +110,40 @@ func (p *Pages) Routes() []Route {
 }
 
 func (p *Pages) showLogin(w http.ResponseWriter, r *http.Request) {
-	p.render(w, r, http.StatusOK, false)
+	p.render(w, r, http.StatusOK, false, false)
+}
+
+// loginSecret returns the secret of the page's cookie, or "" if the request has none of the right form.
+func loginSecret(r *http.Request, strict bool) string {
+	if ck, err := r.Cookie(loginCookieName(strict)); err == nil && len(ck.Value) == idLen {
+		return ck.Value
+	}
+	return ""
 }
 
 func (p *Pages) submitLogin(w http.ResponseWriter, r *http.Request) {
+	// Checked before the credentials, so a forged form neither uses up the throttle nor tests a code.
+	if sec := loginSecret(r, strictFor(r)); sec == "" || !csrfMatches(r, csrfOf("login", sec)) {
+		p.auth.record(CSRFRefused, remoteHost(r))
+		p.render(w, r, http.StatusForbidden, false, true)
+		return
+	}
 	switch err := p.auth.SignIn(w, r); {
 	case err == nil:
 		_ = Redirect(w, r, p.home, http.StatusSeeOther)
 	case errors.Is(err, ErrSignInRefused):
 		// Wrong and throttled attempts look the same.
-		p.render(w, r, http.StatusForbidden, true)
+		p.render(w, r, http.StatusForbidden, true, false)
 	default:
 		Error(w, http.StatusInternalServerError)
 	}
 }
 
 func (p *Pages) logout(w http.ResponseWriter, r *http.Request) {
+	if id, ok := p.auth.sessions.cookieID(r, strictFor(r)); ok && !csrfMatches(r, csrfOf("session", id)) {
+		p.auth.sessions.refuseCSRF(w, r)
+		return
+	}
 	if err := p.auth.SignOut(w, r); err != nil {
 		Error(w, http.StatusInternalServerError)
 		return
@@ -131,13 +151,19 @@ func (p *Pages) logout(w http.ResponseWriter, r *http.Request) {
 	_ = Redirect(w, r, p.LoginPath(), http.StatusSeeOther)
 }
 
-// render never puts the submitted code on the page.
-func (p *Pages) render(w http.ResponseWriter, r *http.Request, status int, failed bool) {
+// render never puts the submitted code on the page. The token is bound to a cookie of the page itself.
+func (p *Pages) render(w http.ResponseWriter, r *http.Request, status int, failed, expired bool) {
+	strict := strictFor(r)
+	sec := loginSecret(r, strict)
+	if sec == "" {
+		sec = newLoginSecret()
+		http.SetCookie(w, namedCookie(loginCookieName(strict), sec, strict))
+	}
 	var buf bytes.Buffer
 	err := loginPage.Execute(&buf, struct {
-		Nonce, Action string
-		Failed        bool
-	}{Nonce(r), p.LoginPath(), failed})
+		Nonce, Action, Field, Token string
+		Failed, Expired             bool
+	}{Nonce(r), p.LoginPath(), CSRFField, csrfOf("login", sec), failed, expired})
 	if err != nil {
 		Error(w, http.StatusInternalServerError)
 		return

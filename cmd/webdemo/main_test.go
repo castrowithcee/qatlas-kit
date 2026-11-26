@@ -71,30 +71,54 @@ func TestSignInAndOut(t *testing.T) {
 		return resp.StatusCode, string(b)
 	}
 
-	if _, body := status(client.Get(base + "/")); !strings.Contains(body, "One-time code") {
+	tokenRe := regexp.MustCompile(`name="csrf_token" value="([^"]+)"`)
+	token := func(body string) string {
+		t.Helper()
+		m := tokenRe.FindStringSubmatch(body)
+		if m == nil {
+			t.Fatalf("no token in %q", body)
+		}
+		return m[1]
+	}
+	// signIn posts the form of the sign-in page the way a browser does.
+	signIn := func(code string) (int, string) {
+		_, page := status(client.Get(base + "/login"))
+		return status(client.PostForm(base+"/login", url.Values{"code": {code}, "csrf_token": {token(page)}}))
+	}
+
+	_, body := status(client.Get(base + "/"))
+	if !strings.Contains(body, "One-time code") {
 		t.Fatalf("an unsigned-in visit does not end at the sign-in page: %q", body)
 	}
-	if got, _ := status(client.PostForm(base+"/login", url.Values{"code": {"2222-2222"}})); got != http.StatusForbidden {
+	if got, _ := status(client.PostForm(base+"/login", url.Values{"code": {code}})); got != http.StatusForbidden {
+		t.Errorf("sign-in without token: status %d", got)
+	}
+	if got, _ := signIn("2222-2222"); got != http.StatusForbidden {
 		t.Errorf("wrong code: status %d", got)
 	}
-	if got, body := status(client.PostForm(base+"/login", url.Values{"code": {code}})); got != http.StatusOK || !strings.Contains(body, "Signed in") ||
+	got, body := signIn(code)
+	if got != http.StatusOK || !strings.Contains(body, "Signed in") ||
 		!strings.Contains(body, `action="/logout"`) {
 		t.Fatalf("sign-in: status %d, body %q", got, body)
 	}
-	if got, _ := status(client.PostForm(base+"/login", url.Values{"code": {code}})); got != http.StatusForbidden {
+	home := token(body)
+	if got, _ := signIn(code); got != http.StatusForbidden {
 		t.Errorf("a used code: status %d", got)
 	}
 
 	feed.Write([]byte("\n"))
 	waitFor(t, out, regexp.MustCompile(`New one-time code: ([0-9A-Z]{4}-[0-9A-Z]{4})`))
 
-	if _, body := status(client.PostForm(base+"/logout", nil)); !strings.Contains(body, "One-time code") {
+	if got, _ := status(client.PostForm(base+"/logout", nil)); got != http.StatusForbidden {
+		t.Errorf("sign-out without token: status %d", got)
+	}
+	if _, body := status(client.PostForm(base+"/logout", url.Values{"csrf_token": {home}})); !strings.Contains(body, "One-time code") {
 		t.Errorf("sign-out does not end at the sign-in page")
 	}
 	if _, body := status(client.Get(base + "/")); strings.Contains(body, "Signed in") {
 		t.Error("session survives the sign-out")
 	}
-	for _, w := range []string{"login-failed", "login from", "logout"} {
+	for _, w := range []string{"login-failed", "login from", "logout", "csrf-refused"} {
 		waitFor(t, out, regexp.MustCompile(`protocol: (`+w+`)`))
 	}
 	if strings.Count(out.String(), code) != 1 {

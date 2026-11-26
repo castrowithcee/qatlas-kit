@@ -50,7 +50,7 @@ button { font: inherit; min-height: 2.75rem; padding: .5rem 1.5rem; }
 <main>
 <h1>Signed in</h1>
 <p>This private page needs a session. The session began at {{.Since}}.</p>
-<form method="post" action="{{.Logout}}"><button type="submit">Sign out</button></form>
+<form method="post" action="{{.Logout}}"><input type="hidden" name="{{.Field}}" value="{{.Token}}"><button type="submit">Sign out</button></form>
 </main>
 </body>
 </html>
@@ -86,7 +86,7 @@ func run(ctx context.Context, args []string, in io.Reader, stdout io.Writer) err
 
 	var red redact.Redactor
 	code := web.NewOnceCode(web.OnceCodeOptions{Redactor: &red})
-	sessions := web.NewCookieSessions(web.SessionOptions{})
+	sessions := web.NewCookieSessions(web.SessionOptions{Audit: out})
 	auth, err := web.NewAuthenticator(web.AuthOptions{Sessions: sessions, Method: code, Audit: out})
 	if err != nil {
 		return err
@@ -99,8 +99,8 @@ func run(ctx context.Context, args []string, in io.Reader, stdout io.Writer) err
 		sess, _ := web.SessionFrom(r)
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.Header().Set("Cache-Control", "no-store")
-		_ = homePage.Execute(w, struct{ Nonce, Since, Logout string }{
-			web.Nonce(r), sess.Created.Format(time.TimeOnly), pages.LogoutPath()})
+		_ = homePage.Execute(w, struct{ Nonce, Since, Logout, Field, Token string }{
+			web.Nonce(r), sess.Created.Format(time.TimeOnly), pages.LogoutPath(), web.CSRFField, web.CSRFToken(r)})
 	})
 	srv, err := web.Listen(web.Options{Port: *port, Sessions: sessions, Redactor: &red, Log: out,
 		Routes: append(pages.Routes(), web.Route{Pattern: "GET /{$}", Handler: home})})
