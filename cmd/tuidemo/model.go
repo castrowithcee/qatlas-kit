@@ -24,7 +24,9 @@ const (
 type model struct {
 	prefs uiprefs.Prefs
 	// now is the clock of the date fields; the program gets the real one, tests a fixed one.
-	now     func() time.Time
+	now func() time.Time
+	// send delivers a message to the program from another goroutine; the answer of a search comes by it.
+	send    func(tea.Msg)
 	groups  []group
 	themes  *tui.ThemeSet
 	keys    *tui.Keymap
@@ -185,6 +187,8 @@ func (m *model) handle(msg tea.Msg) tea.Cmd {
 			cmds = append(cmds, m.handle(one))
 		}
 		return tea.Batch(cmds...)
+	case searchDone:
+		msg.block.answer(msg)
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
 	case tea.ForegroundColorMsg:
