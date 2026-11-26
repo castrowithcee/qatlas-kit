@@ -68,6 +68,10 @@ type model struct {
 	// blocks hold the live blocks of the tabs that show one, see block.
 	blocks map[blockKey]block
 
+	// The overlays of the path and, on the path forms, whether the area section has the focus.
+	pathnav  *tui.PathNav
+	pathArea bool
+
 	mouse *tui.MouseMap
 	view  string
 }
@@ -86,7 +90,7 @@ func newModel(prefs uiprefs.Prefs, profile tui.ColorProfile, charset tui.Charset
 	if err != nil {
 		return nil, err
 	}
-	if err := uiprefs.Validate(prefs, uiprefs.Schema{Themes: themes.Names(), Areas: ids, DefaultArea: ids[0]}); err != nil {
+	if err := uiprefs.Validate(prefs, withAreas(schema(), themes.Names(), ids)); err != nil {
 		return nil, usageError{err}
 	}
 	keys, err := tui.NewKeymap(keyTable(len(gs)), charset)
@@ -94,10 +98,11 @@ func newModel(prefs uiprefs.Prefs, profile tui.ColorProfile, charset tui.Charset
 		return nil, err
 	}
 	m := &model{prefs: prefs, groups: gs, themes: themes, keys: keys, profile: profile, charset: charset, root: root,
-		area: gs[0].area.ID, tabs: map[tui.AreaID]tui.TabID{}, zone: tui.ZoneTabs}
+		area: gs[0].area.ID, tabs: map[tui.AreaID]tui.TabID{}}
 	if err := m.rebuildText(); err != nil {
 		return nil, err
 	}
+	m.zone = m.top()
 	m.restyle()
 	return m, nil
 }
@@ -126,7 +131,12 @@ func (m *model) rebuildText() error {
 	if err != nil {
 		return err
 	}
-	m.text, m.frame, m.cmdline = text, tui.NewFrame(m.keys, text), line
+	nav, err := tui.NewPathNav(tui.PathNavKeys{Up: actUp, Down: actDown, PageUp: actPageUp, PageDown: actPageDown,
+		First: actFirst, Last: actLast, Left: actLeft, Right: actRight, Enter: actEnter, Back: actBack}, m.keys, text)
+	if err != nil {
+		return err
+	}
+	m.text, m.frame, m.cmdline, m.pathnav = text, tui.NewFrame(m.keys, text), line, nav
 	return m.rebuildBlocks()
 }
 
@@ -188,6 +198,8 @@ func (m *model) handle(msg tea.Msg) tea.Cmd {
 			return m.commandKey(msg)
 		case m.modal != nil:
 			return m.modalKey(msg)
+		case m.pathnav.Open():
+			return m.pathKey(msg)
 		}
 		if b := m.inBlock(m.zone); b != nil && b.key(m, msg) {
 			return nil
@@ -201,6 +213,8 @@ func (m *model) handle(msg tea.Msg) tea.Cmd {
 			return m.commandClick(msg)
 		case m.modal != nil:
 			return m.modalClick(msg)
+		case m.pathnav.Open():
+			return m.pathClick(msg)
 		}
 		return m.click(msg)
 	}
@@ -238,6 +252,9 @@ func (m *model) click(msg tea.MouseMsg) tea.Cmd {
 		b.click(m, res)
 	case res.Action != "":
 		return m.run(res.Action, "")
+	case m.pathForm() && res.Zone == tui.ZonePath && res.Area != "":
+		m.zone, m.pathArea = tui.ZonePath, res.Tab == ""
+		m.pathnav.OpenClick(m.frameSpec(), res)
 	case res.Area != "":
 		m.openArea(res.Area)
 		if res.Tab != "" {
@@ -285,6 +302,13 @@ func (m *model) run(action tui.ActionID, key string) tea.Cmd {
 		m.step(-1)
 	case actRight:
 		m.step(1)
+	case actNavigate:
+		forms := schema().Navigations
+		m.setNavigation(forms[(slices.Index(forms, m.prefs.Navigation)+1)%len(forms)])
+	case actMenu:
+		if m.pathForm() {
+			m.pathnav.OpenOverview(m.frameSpec())
+		}
 	case actZoneNext:
 		m.zone = tui.CycleZone(m.zones(), m.zone, 1)
 	case actZonePrev:
@@ -307,7 +331,7 @@ func (m *model) run(action tui.ActionID, key string) tea.Cmd {
 	case actCount:
 		m.count++
 	case actBack:
-		// Back goes up from a block to the sub-tab line; a block that needs it took the key before.
+		// Back goes up from a block to the line above it; a block that needs it took the key before.
 		m.zone = tui.StepZoneLevel(m.zones(), m.zone, -1)
 	case actHelp:
 		m.openHelp()
@@ -355,6 +379,18 @@ func (m *model) setLanguage(language string) {
 func (m *model) setIcons(icons string) {
 	m.prefs.Icons = icons
 	m.changed(tui.TextSettingIcons, m.prefs.Icons)
+}
+
+// setNavigation switches the form; a focus on the navigation goes to the line of the new form, a focus in
+// the work area stays there.
+func (m *model) setNavigation(form string) {
+	onLine := m.onNavLine()
+	m.prefs.Navigation = form
+	m.pathArea = false
+	if onLine {
+		m.zone = m.top()
+	}
+	m.changed(textSettingNav, m.prefs.Navigation)
 }
 
 func (m *model) setMouse(on bool) {
