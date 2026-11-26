@@ -90,6 +90,34 @@ func TestLoginRedirectsToFixedTarget(t *testing.T) {
 	}
 }
 
+// browserOrigin is the Origin a browser sends when it posts a form of a page served under policy:
+// no-referrer turns it into null even for the page's own origin.
+func browserOrigin(policy, page string) string {
+	if policy == "no-referrer" {
+		return "null"
+	}
+	return page
+}
+
+func TestSignInByFormFromTheLoginPage(t *testing.T) {
+	f := newPagesFixture(t, PagesOptions{Home: "/private"})
+	page := do(f.server, get("/login"))
+	req := formPost("/login", url.Values{CodeField: {f.code.Generate()}})
+	req.Header.Set("Sec-Fetch-Site", "same-origin")
+	req.Header.Set("Origin", browserOrigin(page.Header().Get("Referrer-Policy"), "http://localhost"))
+	rec := do(f.server, req)
+	if rec.Code != http.StatusSeeOther || rec.Header().Get("Location") != "/private" {
+		t.Fatalf("status %d, Location %q", rec.Code, rec.Header().Get("Location"))
+	}
+
+	req = formPost("/login", url.Values{CodeField: {f.code.Generate()}})
+	req.Header.Set("Sec-Fetch-Site", "same-origin")
+	req.Header.Set("Origin", "null")
+	if got := do(f.server, req); got.Code != http.StatusForbidden || len(got.Result().Cookies()) != 0 {
+		t.Errorf("Origin: null: status %d, cookies %v", got.Code, got.Result().Cookies())
+	}
+}
+
 func TestWrongAndThrottledAnswerTheSame(t *testing.T) {
 	f := newPagesFixture(t, PagesOptions{})
 	code := f.code.Generate()

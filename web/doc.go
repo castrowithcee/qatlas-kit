@@ -6,14 +6,13 @@
 // with declared proxies, for the origins it names and with Sessions; X-Forwarded-* and Forwarded headers
 // are removed unless a declared proxy sent them, and without TLS only a proxy is served.
 //
-// Before a route runs, the server sets a strict Content Security Policy with a fresh nonce per response
-// (read with Nonce), nosniff, no referrer and a same-origin resource policy, and grants no CORS access. It
-// refuses a Host header other than localhost, 127.0.0.1 or [::1] with any port, or on the network the
-// hosts of the allowed origins, which stops DNS rebinding. An unsafe request from another origin is
-// refused through Sec-Fetch-Site and Origin; Origin: null never passes, and a request without either
-// header comes from a client that is not a browser and passes. Headers and bodies are bounded in size and
-// time; a long-lived response other than an event stream clears its own deadlines with
-// http.ResponseController.
+// Before a route runs, the server sets a strict Content Security Policy with a fresh nonce per response (read
+// with Nonce), nosniff, a same-origin referrer policy and a same-origin resource policy, and grants no CORS
+// access. It refuses a Host header other than localhost, 127.0.0.1 or [::1] with any port, or on the network
+// the hosts of the allowed origins, which stops DNS rebinding. An unsafe request from another origin is
+// refused through Sec-Fetch-Site and Origin; Origin: null never passes, and a request without either header
+// comes from a client that is not a browser and passes. Headers and bodies are bounded in size and time; a
+// long-lived response other than an event stream clears its own deadlines with http.ResponseController.
 //
 // Events serves a text/event-stream from a Source of the application and resumes it after the
 // Last-Event-ID the browser sends back, which is bounded in length and passed on unchanged. The handshake
