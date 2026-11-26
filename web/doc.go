@@ -22,6 +22,13 @@
 // deadline per write, a bounded event size and lifetime, and a bounded number of open streams per handler;
 // it ends when the server shuts down. An event ID or type with a line break or NUL ends the stream.
 //
+// WebSocket serves a WebSocket endpoint of the application as an explicit option; without it the server
+// speaks no WebSocket. Every handshake must carry exactly one Origin that is the allowed origin, and
+// Origin: null, a missing Origin and a Sec-Fetch-Site other than same-origin or none never pass. The
+// check of the WebSocket library stays on besides. The route decides about the session as for any route.
+// A received message is bounded in size and the wait for the next one in time, with safe defaults, and
+// the connection ends when the server shuts down. Messages are not compressed.
+//
 // Every route pattern names its method, so a handler that changes state is not reached by GET. A route
 // that is not Public needs a session: Sessions decides, and without it such routes are refused. LoginOff
 // serves them without a session and is accepted only on loopback. Handlers keep the fixed headers they
