@@ -1,8 +1,8 @@
 package vault
 
 import (
+	"errors"
 	"fmt"
-	"os"
 	"path/filepath"
 )
 
@@ -50,7 +50,9 @@ func (v *Vault) Encrypt(passphrase string) error {
 }
 
 // Decrypt turns an encrypted vault into an unencrypted one. passphrase is verified fresh, every pending
-// entry must merge, and the sealed files are removed with the key. It needs Files.Plain.
+// entry must merge, and the sealed files are removed with the key. Once the plain document is written the
+// switch is done: a file that cannot be removed is reported but stops nothing, and a merged pending entry
+// left behind is not reported. It needs Files.Plain.
 func (v *Vault) Decrypt(passphrase string) error {
 	if v.opts.Files.Plain == "" {
 		return ErrUnencryptedDisabled
@@ -105,21 +107,24 @@ func (v *Vault) Decrypt(passphrase string) error {
 		return err
 	}
 	v.forget()
-	for _, name := range done {
-		if err := v.removeEntry(os.Remove, filepath.Join(v.pendingPath(), name), false); err != nil && !isNotExist(err) {
-			return err
-		}
-	}
-	paths := []string{}
+	// The switch is done once the plain document is written, so no removal stops it: every encrypted file is
+	// tried, the key first, and the failures are reported together.
+	paths := []string{v.keyPath(), v.recipientPath(), v.documentPath()}
 	for _, name := range v.opts.Files.Sealed {
 		paths = append(paths, v.path(name))
 	}
-	paths = append(paths, v.documentPath(), v.keyPath(), v.recipientPath())
-	if err := v.removeAll(paths...); err != nil {
-		return err
+	var failed []error
+	for _, path := range paths {
+		if err := v.retry(func() error { return v.remove(path) }); err != nil && !isNotExist(err) {
+			failed = append(failed, err)
+		}
+	}
+	// An entry left behind is encrypted to the recipient and already merged. RemovePending removes it.
+	for _, name := range done {
+		_ = v.removeEntry(v.remove, filepath.Join(v.pendingPath(), name), false)
 	}
 	_ = v.removeAll(v.pendingPath())
-	return nil
+	return errors.Join(failed...)
 }
 
 // ChangePassphrase wraps the vault key with newPassphrase after verifying oldPassphrase fresh against the

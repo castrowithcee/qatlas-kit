@@ -23,20 +23,26 @@
 //
 // A vault is encrypted unless the application enables the unencrypted mode. Then CreateUnencrypted stores the
 // document as plain JSON, and Encrypt and Decrypt switch between the modes. Decrypt verifies the passphrase,
-// merges every pending entry and removes the sealed files with the key.
+// merges every pending entry and removes the sealed files with the key. From the written plain document on the
+// switch is done: a pending entry that cannot be removed stays unreadable and still counts in Status.Pending,
+// and RemovePending removes it.
 //
 // # Unlocking
 //
 // ReadPassphrase reads the passphrase without echo from the controlling terminal. ReadHidden does the same
 // for a secret typed while something else may answer first: as soon as ctx ends it gives the terminal its
 // echo back and returns ctx.Err(). ReadConfirm asks a yes-or-no question. A Vault holds the
-// key and the decrypted document in memory until Forget; Snapshot hands both to a process that keeps the
-// vault open, and OpenWithIdentity reopens it from the key alone.
+// key and the decrypted document in memory until Forget; the undo of CreateWithUndo holds the key beyond
+// Forget until it has taken effect or the application lets it go. Snapshot hands the key and the document
+// to a process that keeps the vault open, and OpenWithIdentity reopens it from the key alone.
 // ReadSealedWithIdentity reads one sealed file with the key alone and never touches the document, so a
 // damaged document does not stop it. Checkpoint records the vault files and pending entries and returns a
 // function that restores them without the passphrase, also an entry merged since. Update and WriteWithUndo
 // return the undo of their own change, encrypted or unencrypted: it puts back the document file and the
 // pending files that operation removed, byte for byte, and leaves every other entry pending.
+// CreateWithUndo and CreateUnencryptedWithUndo return an undo that takes the created document out of the
+// document on disk through Options.Revert, also after Forget and without the passphrase, and leaves the
+// vault, its pending entries and every change since; it holds no plaintext.
 //
 // # Always enforced
 //
@@ -46,7 +52,9 @@
 // created 0700 and every file 0600, or with an ACL for the user alone, and every write replaces its target
 // atomically through a temporary file beside it. A Create, Encrypt or Unlock that is interrupted leaves
 // the previous state readable: the key file is written after the document, and pending files are removed
-// only after the merged document is written.
+// only after the merged document is written. A Decrypt that is interrupted after it wrote the plain
+// document leaves the unencrypted state, with whatever encrypted files it had not removed yet; it reports
+// the files it failed to remove together.
 //
 // The document must be a JSON object whose integer member "schema" is one of Options.Schemas. Every read and
 // write refuses any other. A document file of 0 bytes, plain or decrypted, is ErrDamaged unless
@@ -106,7 +114,9 @@
 //     Default: writes are serialized within one Vault value alone, and Checkpoint's restore removes every
 //     pending entry it did not record, also one another process added.
 //   - Options.Revert: with Files.Lock, takes this value's change out of a document another writer changed
-//     since, for an undo or a restore. Default: those fail with ErrConflict and write nothing.
+//     since, for an undo or a restore. The undo of CreateWithUndo and CreateUnencryptedWithUndo always uses
+//     it, so both need it and Files.Lock and otherwise fail with ErrCreateUndoNeedsRevert and write nothing.
+//     Default: those fail with ErrConflict and write nothing.
 //   - Options.Merge: merges pending entries into the document on unlock. Default: a vault with pending entries
 //     does not unlock.
 //   - Options.SwitchFilter: receives the document on Encrypt and Decrypt and returns what is carried over, so

@@ -130,7 +130,7 @@ func (v *Vault) UpdateWithOptions(change UpdateFunc, options ...UpdateOption) (u
 		return nil, err
 	}
 	if v.locking() {
-		onDisk, err := v.documentOf(saved)
+		onDisk, err := v.documentOf(v.identity, saved)
 		if err != nil {
 			clear(saved.data)
 			return nil, err

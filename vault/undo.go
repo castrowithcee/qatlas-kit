@@ -90,7 +90,7 @@ func clearSaved(files []savedFile, wrote savedFile) {
 // undoRevert takes one write out of the document file another writer changed since and puts back the
 // pending files it removed. The caller holds the mutex and the write lock.
 func (v *Vault) undoRevert(files []savedFile, current, wrote savedFile, document, exempt bool) error {
-	doc, data, err := v.revertWrites([]docWrite{{found: files[0], wrote: wrote}}, current)
+	doc, data, err := v.revertWrites(v.identity, []docWrite{{found: files[0], wrote: wrote}}, current)
 	if err != nil {
 		return err
 	}
@@ -110,18 +110,18 @@ func (v *Vault) undoRevert(files []savedFile, current, wrote savedFile, document
 
 // revertWrites takes writes, oldest first, out of current, the document file on disk, newest first through
 // Options.Revert, and returns the checked document and the bytes to write. It writes nothing. An encrypted
-// document needs this value unlocked with the key the files on disk belong to. The caller holds the mutex
-// and the write lock.
-func (v *Vault) revertWrites(writes []docWrite, current savedFile) (doc, data []byte, err error) {
+// document needs id, the key the files on disk belong to; nil is ErrLocked. The caller holds the mutex and
+// the write lock.
+func (v *Vault) revertWrites(id *identity, writes []docWrite, current savedFile) (doc, data []byte, err error) {
 	if v.opts.Revert == nil {
 		return nil, nil, ErrConflict
 	}
 	encrypted := current.path == v.documentPath()
 	if encrypted {
-		if !v.unlocked {
+		if id == nil {
 			return nil, nil, ErrLocked
 		}
-		if err := v.checkHeld(); err != nil {
+		if err := v.checkHeld(id); err != nil {
 			return nil, nil, err
 		}
 	} else if !current.exists {
@@ -133,7 +133,7 @@ func (v *Vault) revertWrites(writes []docWrite, current savedFile) (doc, data []
 		case !f.exists:
 			return nil, nil
 		case encrypted:
-			return v.documentOf(f)
+			return v.documentOf(id, f)
 		}
 		return v.readDocument(f.path, slices.Clone(f.data))
 	}
@@ -170,7 +170,7 @@ func (v *Vault) revertWrites(writes []docWrite, current savedFile) (doc, data []
 	if !encrypted {
 		return doc, slices.Clone(doc), nil
 	}
-	if data, err = encryptTo(doc, v.identity.recipient); err != nil {
+	if data, err = encryptTo(doc, id.recipient); err != nil {
 		clear(doc)
 		return nil, nil, err
 	}
@@ -181,7 +181,7 @@ func (v *Vault) revertWrites(writes []docWrite, current savedFile) (doc, data []
 // with the held key locks this value, so it never holds a document that differs from the file. The caller
 // holds the mutex.
 func (v *Vault) reloadHeld(f savedFile) error {
-	doc, err := v.documentOf(f)
+	doc, err := v.documentOf(v.identity, f)
 	if err != nil {
 		v.forget()
 		return err
@@ -191,12 +191,12 @@ func (v *Vault) reloadHeld(f savedFile) error {
 	return nil
 }
 
-// documentOf decrypts and checks the saved document file with the held key; a missing file is nil.
-func (v *Vault) documentOf(f savedFile) ([]byte, error) {
+// documentOf decrypts and checks the saved document file with id; a missing file is nil.
+func (v *Vault) documentOf(id *identity, f savedFile) ([]byte, error) {
 	if !f.exists {
 		return nil, nil
 	}
-	plain, err := decryptFrom(f.data, v.identity.key)
+	plain, err := decryptFrom(f.data, id.key)
 	if err != nil {
 		return nil, decryptFailure(f.path, f.data, err)
 	}
