@@ -305,6 +305,12 @@ func (c *CommandLine) Click(r MouseResult) (cmd Command, done bool) {
 	return Command{}, false
 }
 
+// Wheel moves the choice by the notches of the wheel and stops at the first and the last match, where the
+// arrow keys wrap round.
+func (c *CommandLine) Wheel(steps int) {
+	c.cursor, c.msg = WheelStep(c.cursor, len(c.Matches()), steps), ""
+}
+
 // Hints are the keys of the open command line for a key line, for the input focus InputText.
 func (c *CommandLine) Hints() []Hint {
 	return []Hint{
