@@ -212,7 +212,7 @@ func TestCheckBindingRejectsWithReason(t *testing.T) {
 		{"help", "9", "digits"},
 		{"info", "f5", "terminals take"},
 		{"lock", "f10", "terminals take"},
-		{"lock", "f1", "reserved for the standard action help.f1"},
+		{"lock", "f1", "reserved by IDEs and terminal applications"},
 		{"info", "f21", "F1 to F20"},
 		{"info", "f0", "F1 to F20"},
 		{"info", "ctrl+a", "free are ctrl+l, ctrl+x, ctrl+] and ctrl+\\"},
@@ -406,7 +406,7 @@ func TestKeymapsAreIndependent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	table[0].DefaultKeys[0] = "f9"
+	table[0].DefaultKeys[0] = "f19"
 	got := k.Actions()
 	got[1].DefaultKeys[0] = "!"
 	if k.Label("save") != "F2" || k.Label("help") != "?" {

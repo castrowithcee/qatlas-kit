@@ -532,7 +532,7 @@ func TestFilterModalControlsAreTargets(t *testing.T) {
 	actions := LogViewActions()
 	for i := range actions {
 		actions[i].Level, actions[i].Rebind = LevelGlobal, RebindReplace
-		actions[i].DefaultKeys = []string{[]string{"f3", "f4", "f6", "f7", "f9", "f15"}[i]}
+		actions[i].DefaultKeys = []string{[]string{"f3", "f4", "f6", "f7", "f19", "f15"}[i]}
 	}
 	keys, err := NewKeymap(append(sampleActions(), actions...), CharsetUnicode)
 	if err != nil {

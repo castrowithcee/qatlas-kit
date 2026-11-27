@@ -30,7 +30,7 @@ var takenKeys = func() map[string]string {
 	add("switches a zellij mode", "ctrl+g", "ctrl+n", "ctrl+o", "ctrl+p", "ctrl+t")
 	add("is taken by the VS Code terminal", "ctrl+f", "ctrl+k")
 	add("is the same as tab, enter or backspace", "ctrl+i", "ctrl+m", "ctrl+h")
-	add("is taken by many terminals", "f1", "f5", "f10", "f11", "f12")
+	add("is taken by many terminals", "f5", "f10", "f11", "f12")
 	add("is a zellij action", "alt+f", "alt+n", "alt+i", "alt+o", "alt+p", "alt+h", "alt+j", "alt+k", "alt+l",
 		"alt+left", "alt+right", "alt+up", "alt+down", "alt+[", "alt+]", "alt+=", "alt+-", "alt++")
 	add("is no meta key on macOS and taken by GNOME Terminal",
@@ -40,6 +40,12 @@ var takenKeys = func() map[string]string {
 	add("sends the text of a text area", textAreaSend)
 	return m
 }()
+
+// neverKeys are the keys no action may hold, not even as the second way of another and on an overlay level.
+// They are not in takenKeys, which allows a second way, and no option lifts them.
+var neverKeys = map[string]string{
+	"f1": "is reserved by IDEs and terminal applications for their own help; no action may hold it",
+}
 
 // reservedKeys maps each key of a standard action to the ID of that action, its only owner. The map comes
 // from StandardActions, so the keys have one source.
@@ -136,7 +142,7 @@ var refusedCtrlPunct = map[string]string{
 }
 
 // interceptedF are the function keys terminals and window systems take for themselves.
-var interceptedF = map[int]bool{1: true, 5: true, 10: true, 11: true, 12: true}
+var interceptedF = map[int]bool{5: true, 10: true, 11: true, 12: true}
 
 var arrowGlyphs = map[string]string{"up": "↑", "down": "↓", "left": "←", "right": "→"}
 
@@ -357,12 +363,15 @@ func checkKeyRules(a Action, key string) (string, error) {
 		}
 		return key, nil
 	}
+	if reason, ok := neverKeys[key]; ok {
+		return refuse("%s", reason)
+	}
 	if n, ok := functionKey(key); ok {
 		switch {
 		case n < 1 || n > 20:
 			return refuse("function keys go from F1 to F20")
 		case interceptedF[n]:
-			return refuse("terminals take F1, F5, F10, F11 and F12 for themselves")
+			return refuse("terminals take F5, F10, F11 and F12 for themselves")
 		}
 		return key, nil
 	}
