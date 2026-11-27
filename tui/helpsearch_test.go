@@ -32,7 +32,7 @@ func searchSpec(lang i18n.Lang) HelpSpec {
 
 func newSearchHelp(t *testing.T, lang i18n.Lang) *Help {
 	t.Helper()
-	keys := f1Keymap(t)
+	keys := f9Keymap(t)
 	h, err := NewHelp(searchSpec(lang), keys, newTranslator(t, lang, helpCatalogs(), keys))
 	if err != nil {
 		t.Fatal(err)
@@ -332,8 +332,8 @@ func TestHelpSearchBackAndHelpKey(t *testing.T) {
 	if act, handled := helpKeysTo(h, "?"); act != "" || !handled || h.search.query.String() != "?" {
 		t.Errorf("? in the search: %q %v, typed %q", act, handled, h.search.query.String())
 	}
-	if act, handled := h.Update(pressF1); act != "help" || !handled {
-		t.Errorf("f1 in the search: %q %v", act, handled)
+	if act, handled := h.Update(pressF9); act != "help" || !handled {
+		t.Errorf("f9 in the search: %q %v", act, handled)
 	}
 	// Left and right move the cursor of the input, and the other keys edit it.
 	h.search.query.clear()
@@ -421,7 +421,7 @@ func TestHelpSearchOverlayAndHints(t *testing.T) {
 
 // Over topics the key does nothing and no key line names it, and the other keys still work.
 func TestHelpSearchKeyIsInertOverTopics(t *testing.T) {
-	keys := f1Keymap(t)
+	keys := f9Keymap(t)
 	spec := sampleHelpSpec()
 	spec.Keys.Search, spec.Keys.Enter = "search", "enter"
 	h, err := NewHelp(spec, keys, newTranslator(t, i18n.English, helpCatalogs(), keys))
@@ -442,7 +442,7 @@ func TestHelpSearchKeyIsInertOverTopics(t *testing.T) {
 }
 
 func TestNewHelpChecksTheSearchKeys(t *testing.T) {
-	keys := f1Keymap(t)
+	keys := f9Keymap(t)
 	text := newTranslator(t, i18n.English, helpCatalogs(), keys)
 	for name, edit := range map[string]func(*HelpKeys){
 		"no enter": func(k *HelpKeys) { k.Enter = "" },

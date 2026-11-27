@@ -193,7 +193,7 @@ func (v *Vault) restoreJournal(j *journal, c *checkpoint) (failed []error, refus
 		}
 		if j.clean && sameFile(current, j.writes[len(j.writes)-1].wrote) {
 			paths = []string{path}
-		} else if reverted, data, err = v.revertWrites(j.writes, current); err != nil {
+		} else if reverted, data, err = v.revertWrites(v.identity, j.writes, current); err != nil {
 			clear(current.data)
 			return nil, err
 		}
@@ -262,7 +262,7 @@ func (v *Vault) restoreJournal(j *journal, c *checkpoint) (failed []error, refus
 	case paths != nil && c.unlocked:
 		v.holdRecorded(c, nil)
 		saved, ok := c.saved[v.documentPath()]
-		doc, err := v.documentOf(savedFile{path: v.documentPath(), data: saved, exists: ok})
+		doc, err := v.documentOf(v.identity, savedFile{path: v.documentPath(), data: saved, exists: ok})
 		if err != nil {
 			v.forget()
 			failed = append(failed, err)
@@ -274,7 +274,7 @@ func (v *Vault) restoreJournal(j *journal, c *checkpoint) (failed []error, refus
 		v.holdRecorded(c, nil)
 		current, err := v.saveFile(v.documentPath())
 		if err == nil {
-			v.doc, err = v.documentOf(current)
+			v.doc, err = v.documentOf(v.identity, current)
 			clear(current.data)
 		}
 		if err != nil {

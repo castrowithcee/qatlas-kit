@@ -8,7 +8,7 @@ func RuleKeys() []string {
 			keys = append(keys, k)
 		}
 	}
-	for _, set := range []map[string]string{takenKeys, fixedKeys, arrowGlyphs} {
+	for _, set := range []map[string]string{takenKeys, neverKeys, fixedKeys, arrowGlyphs} {
 		for k := range set {
 			keys = append(keys, k)
 		}

@@ -277,9 +277,9 @@ func TestHelpOpensAndClosesByKeyAndByClick(t *testing.T) {
 	term := startDemo(t, "-icons none")
 	act(t, term, "?", "About the workbench")
 	act(t, term, "\x1b[C", "An area groups related tabs")
-	send(t, term, "\x1bOP") // f1 closes it as the help key does
+	send(t, term, "\x1b[20~") // f9 closes it as the help key does
 	gone(t, term, "An area groups related tabs")
-	act(t, term, "\x1bOP", "About the workbench") // and opens it
+	act(t, term, "\x1b[20~", "About the workbench") // and opens it
 }
 
 func TestHelpClosesByClickOnItsKeyLine(t *testing.T) {
