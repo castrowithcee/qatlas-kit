@@ -245,7 +245,7 @@ func (f *Form) valueList(styles Styles, width int) ([]string, []Target) {
 	labels := make([]string, len(field.Choices))
 	inner := 0
 	for j, c := range field.Choices {
-		labels[j] = Escape(f.text.Lookup(c.Label))
+		labels[j] = Escape(c.shown(f.text))
 		inner = max(inner, lipgloss.Width(labels[j])+2)
 	}
 	inner = max(min(inner, width-4), 1)
@@ -716,7 +716,7 @@ func (f *Form) valueRows(i, width int, styles Styles) ([]string, []Target) {
 		}
 		return hint(TextFormEmpty), nil
 	case FieldChoice:
-		label := Escape(f.text.Lookup(field.Choices[field.choice].Label))
+		label := Escape(field.Choices[field.choice].shown(f.text))
 		room := max(width-2, 1)
 		return []string{Pad(styles.Truncate(label, room), room) + " " + styles.Glyph(GlyphExpanded)}, nil
 	case FieldMultiple:
@@ -776,7 +776,7 @@ func (f *Form) ticks(i, width int, styles Styles) ([]string, []Target) {
 		if f.showsFocus(i) && j == field.cursor {
 			lead = styles.Render(StyleActive, ">")
 		}
-		part := lead + styles.TickBox(field.ticked[j]) + " " + Escape(f.text.Lookup(c.Label))
+		part := lead + styles.TickBox(field.ticked[j]) + " " + Escape(c.shown(f.text))
 		w := lipgloss.Width(part)
 		if x > 0 && x+1+w > width {
 			lines, line, x = append(lines, line), "", 0
