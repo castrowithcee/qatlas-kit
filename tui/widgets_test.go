@@ -210,6 +210,21 @@ func TestClipNeverSplitsAnEscapeSequence(t *testing.T) {
 	}
 }
 
+// A CSI with more parameters than a parser holds is still kept whole.
+func TestClipKeepsACsiWithManyParameters(t *testing.T) {
+	seq := "\x1b[" + strings.Repeat("1;", 40) + "m"
+	text := seq + "abcdef"
+	for width := 1; width <= 7; width++ {
+		got := Clip(text, width)
+		if !strings.HasPrefix(got, seq) {
+			t.Errorf("Clip width %d split the sequence: %q", width, got)
+		}
+		if w := ansi.StringWidth(got); w != min(width, 6) {
+			t.Errorf("Clip width %d: %d cells", width, w)
+		}
+	}
+}
+
 // The selected row is marked by a character, not only by its fill: "▌" on the fill, ">" without one.
 func TestRowMarksTheSelectionWithoutColor(t *testing.T) {
 	for look, st := range looks(t) {

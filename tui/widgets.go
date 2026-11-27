@@ -347,11 +347,10 @@ func Clip(text string, width int) string {
 		return ""
 	}
 	var b strings.Builder
-	parser := ansi.NewParser()
 	state := byte(ansi.NormalState)
 	used, styled := 0, false
 	for rest := text; rest != ""; {
-		seq, w, n, next := ansi.DecodeSequence(rest, state, parser)
+		seq, w, n, next := ansi.DecodeSequence(rest, state, nil)
 		state = next
 		switch {
 		case w == 0 && ansi.HasCsiPrefix(seq) && strings.HasSuffix(seq, "m"):

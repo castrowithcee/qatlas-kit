@@ -172,6 +172,8 @@ func (k *Keymap) actionErrors(a Action) []error {
 			fail("key %q is not a key name; names are lower case except single characters, and a space is \"space\"", key)
 		case slices.Contains(a.DefaultKeys[:i], key):
 			fail("key %q is listed twice", key)
+		case neverKeys[key] != "":
+			fail("key %q %s", key, neverKeys[key])
 		case reservedKeys[key] != "" && reservedKeys[key] != a.ID && !a.Level.overlay():
 			fail("key %q is reserved for the standard action %q", key, reservedKeys[key])
 		case takenKeys[key] != "" && a.SecondWayOf == "":

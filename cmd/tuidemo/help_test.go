@@ -46,15 +46,15 @@ func TestHelpFollowsTheLanguageOfTheDemo(t *testing.T) {
 	}
 }
 
-func TestHelpAnswersToF1AndOpensFromAnywhere(t *testing.T) {
+func TestHelpAnswersToF9AndOpensFromAnywhere(t *testing.T) {
 	m := testModel(t, uiprefs.IconsNone)
-	m.Update(tea.KeyPressMsg{Code: tea.KeyF1})
+	m.Update(tea.KeyPressMsg{Code: tea.KeyF9})
 	if m.kind != kindHelp {
-		t.Fatalf("f1 opens kind %d, want the help", m.kind)
+		t.Fatalf("f9 opens kind %d, want the help", m.kind)
 	}
-	m.Update(tea.KeyPressMsg{Code: tea.KeyF1})
+	m.Update(tea.KeyPressMsg{Code: tea.KeyF9})
 	if m.modal != nil {
-		t.Error("f1 does not close the open help")
+		t.Error("f9 does not close the open help")
 	}
 	m.Update(tea.KeyPressMsg{Code: '?', Text: "?"})
 	m.Update(tea.KeyPressMsg{Code: '?', Text: "?"})

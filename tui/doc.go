@@ -24,10 +24,11 @@
 //
 // StandardActions returns the actions every tool shares, each with a level, one default key and a help text
 // in the catalog; an application adds them to its table with one append. The overlay levels may repeat their
-// keys, and ctrl+s stays free as the second way of the save action. ActionHelpF1 is the second way of the
-// help action on f1, which reaches the help from a text field where "?" types a character; the Help closes
+// keys, and ctrl+s stays free as the second way of the save action. ActionHelpF9 is the second way of the
+// help action on f9, which reaches the help from a text field where "?" types a character; the Help closes
 // on it as on the help key, and Keymap.SecondWays finds such actions. A table without the help action leaves
-// it out as well. A Form or Dialog does not handle f1.
+// it out as well. A Form or Dialog does not handle f9. No action may hold f1, as a default key, as a second
+// way or on an overlay level, because IDEs and terminal applications reserve it for their own help.
 //
 // A one-line text field, the input of a Dialog, the text, masked, date and path fields of a Form, the search
 // of a LogView, the filter of a List, the search of a Help and the input of a CommandLine edit with a fixed
@@ -169,11 +170,12 @@
 // only where Available says its trigger acts, in the Context the application sets when it opens the line;
 // anywhere else the line stays open with the typed text and the reason. The line reads keys where text is
 // typed, so a letter is always text; it edits its text as a text line does and moves the choice with the
-// actions of CommandLineKeys. View draws a panel with an optional icon before each name, in a Unicode terminal
-// only, and the key in force beside it, rows that scroll with the choice and one target per row. Overlay draws
-// it at the top of the room it may cover, centred across it, over the dimmed screen, with a key line of its
-// own from Hints whose keys a click answers like the keys do; where the room is too small it returns ok false,
-// and the application draws View in the workspace and Hints in the footer.
+// actions of CommandLineKeys and with the wheel, which stops at the first and the last match. View draws a
+// panel with an optional icon before each name, in a Unicode terminal only, and the key in force beside it,
+// rows that scroll with the choice and one target per row. Overlay draws it at the top of the room it may
+// cover, centred across it, over the dimmed screen, with a key line of its own from Hints whose keys a click
+// answers like the keys do; where the room is too small it returns ok false, and the application draws View
+// in the workspace and Hints in the footer.
 //
 // A List shows the entries an application hands it, each with a stable ItemID, its cells and a group key, as a
 // table under bold upper-case column titles with a rule below them, "─" or "-" in an ASCII terminal. The
@@ -296,9 +298,9 @@
 // single button with the number of fields off their first value takes their place, always, with the search field
 // beside it or, with little room, only the search key. The button is one stop of the focus. Enter or a click
 // opens a modal with all fields one under the other: up and down choose a field, left and right change its
-// value, enter takes all changes at once and back drops them all; pressing an action field there takes them
-// first, then reports the action. The modal takes every key and is drawn over the screen where it fits, else in
-// the workspace with its keys in the footer.
+// value, enter takes all changes at once and back drops them all, and a click on a key of its key line acts as
+// the key; pressing an action field there takes them first, then reports the action. The modal takes every key
+// and is drawn over the screen where it fits, else in the workspace with its keys in the footer.
 //
 // A Form shows the fields an application hands it, each with a stable ID, a kind, a label and a value, and
 // knows no schema: the application checks the values when the save key is pressed, from any field, and hands
@@ -431,7 +433,7 @@
 // choose a hit, enter or a click opens its page and, for a match in the text, scrolls to the first place of
 // it; back closes only the search, the help key the whole help. The application's table should give the key
 // to ActionSearch. While the input takes text, Help.Input is InputText, so the application reads keys under
-// that focus: the help key "?" then types, and its second way, such as f1, still closes. Help.Paste inserts
+// that focus: the help key "?" then types, and its second way, such as f9, still closes. Help.Paste inserts
 // into the input. Over topics the key does nothing and no key line names it. Outside the overview and the
 // search, back and the help key close the help. A click on a line of the key list
 // yields its action, and the application closes the help and then runs it. An Explanation shows a title, the
