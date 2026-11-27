@@ -23,7 +23,9 @@
 //
 // A vault is encrypted unless the application enables the unencrypted mode. Then CreateUnencrypted stores the
 // document as plain JSON, and Encrypt and Decrypt switch between the modes. Decrypt verifies the passphrase,
-// merges every pending entry and removes the sealed files with the key.
+// merges every pending entry and removes the sealed files with the key. From the written plain document on the
+// switch is done: a pending entry that cannot be removed stays unreadable and still counts in Status.Pending,
+// and RemovePending removes it.
 //
 // # Unlocking
 //
@@ -50,7 +52,9 @@
 // created 0700 and every file 0600, or with an ACL for the user alone, and every write replaces its target
 // atomically through a temporary file beside it. A Create, Encrypt or Unlock that is interrupted leaves
 // the previous state readable: the key file is written after the document, and pending files are removed
-// only after the merged document is written.
+// only after the merged document is written. A Decrypt that is interrupted after it wrote the plain
+// document leaves the unencrypted state, with whatever encrypted files it had not removed yet; it reports
+// the files it failed to remove together.
 //
 // The document must be a JSON object whose integer member "schema" is one of Options.Schemas. Every read and
 // write refuses any other. A document file of 0 bytes, plain or decrypted, is ErrDamaged unless

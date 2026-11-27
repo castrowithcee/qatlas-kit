@@ -539,12 +539,14 @@ func (b *FilterBar) clickModal(r MouseResult) ([]FilterField, bool) {
 		}
 		return nil, false
 	}
-	switch r.Action {
-	case b.nav.Enter:
-		return b.apply(), true
-	case b.nav.Back:
-		b.modal = false
-		return nil, true
+	if r.Item != "" || r.Action == "" {
+		return nil, false
+	}
+	// A key of the key line, drawn in the modal or in the footer, runs the way its key does.
+	for _, key := range []ActionID{b.nav.Enter, b.nav.Back, b.nav.Up, b.nav.Down, b.nav.Left, b.nav.Right} {
+		if r.Action == key {
+			return b.updateModal(func(id ActionID) bool { return id == key }), true
+		}
 	}
 	return nil, false
 }
