@@ -807,6 +807,8 @@ func (b *FilterBar) ValueList(styles Styles, width, height int) (string, []Targe
 		labels[j] = Escape(b.text.Lookup(o.Label))
 		inner = max(inner, lipgloss.Width(labels[j])+2+lipgloss.Width(blank))
 	}
+	prompt := Escape(b.text.Lookup(TextSearchPrompt))
+	inner = max(inner, lipgloss.Width(prompt)+2)
 	inner = max(min(inner, width-4), 1)
 	// The rows below the search line: the values, or the wrapped sentence of a search without match.
 	var sentence []string
@@ -825,7 +827,7 @@ func (b *FilterBar) ValueList(styles Styles, width, height int) (string, []Targe
 	}
 	query := Pad(Clip("  "+b.query.view(max(inner-2, 0), styles, true, ""), inner), inner)
 	if len(b.query.runes) == 0 {
-		query = Pad("  "+styles.Render(StyleHint, styles.Truncate(Escape(b.text.Lookup(TextSearchPrompt)), max(inner-2, 0))), inner)
+		query = Pad("  "+styles.Render(StyleHint, styles.Truncate(prompt, max(inner-2, 0))), inner)
 	}
 	lines := []string{query}
 	var targets []Target
