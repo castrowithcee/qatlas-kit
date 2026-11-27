@@ -981,6 +981,52 @@ func TestTheOverlayShowsPositionAndErrors(t *testing.T) {
 	}
 }
 
+// The wheel moves the choice and stops at both ends where the arrow keys wrap round; the window and its
+// position follow, a standing message goes, and without a match the choice stays on the first place.
+func TestCommandLineWheelStopsAtTheEnds(t *testing.T) {
+	var many []Command
+	for i := range 20 {
+		many = append(many, Command{Name: fmt.Sprintf("entry %02d", i), Description: "cmd.help", Area: AreaID(fmt.Sprint("a", i)), Available: Always})
+	}
+	st := looks(t)["noneascii"]
+	c, _ := sampleCommandLine(t, i18n.English, many)
+	c.Wheel(-1)
+	if c.cursor != 0 {
+		t.Fatalf("the wheel wrapped round at the top: %d", c.cursor)
+	}
+	c.Wheel(3)
+	if c.cursor != 3 {
+		t.Fatalf("three notches moved to %d", c.cursor)
+	}
+	c.Wheel(1000)
+	view, _, _ := overlayIn(c, st, 100, 30, Context{})
+	if c.cursor != 19 || !strings.Contains(view, "9-20 of 20") {
+		t.Fatalf("the wheel at the end: choice %d\n%s", c.cursor, view)
+	}
+	c.Wheel(1)
+	if c.cursor != 19 {
+		t.Fatalf("the wheel wrapped round at the bottom: %d", c.cursor)
+	}
+	c.Wheel(-1000)
+	view, _, _ = overlayIn(c, st, 100, 30, Context{})
+	if c.cursor != 0 || !strings.Contains(view, "1-12 of 20") {
+		t.Fatalf("the wheel at the top: choice %d\n%s", c.cursor, view)
+	}
+	updateIn(c, upKey, Context{})
+	if c.cursor != 19 {
+		t.Fatalf("up no longer wraps round: %d", c.cursor)
+	}
+
+	c, _ = sampleCommandLine(t, i18n.English, sampleCommands())
+	typeInto(c, "nonsense")
+	updateIn(c, enterKey, Context{})
+	c.Wheel(2)
+	view, _ = viewIn(c, st, 70, 12, Context{})
+	if c.cursor != 0 || strings.Contains(ansi.Strip(view), "unknown command") {
+		t.Errorf("without a match: choice %d\n%s", c.cursor, view)
+	}
+}
+
 func TestTheOverlayEscapesText(t *testing.T) {
 	c, _ := sampleCommandLine(t, i18n.English, argCommand("A\x1b[31mB\a"))
 	typeInto(c, "go")
