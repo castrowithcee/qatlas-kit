@@ -178,7 +178,8 @@
 // A List shows the entries an application hands it, each with a stable ItemID, its cells and a group key, as a
 // table under bold upper-case column titles with a rule below them, "─" or "-" in an ASCII terminal. The
 // selection follows the ID, never the position, when the entries, the filter or the grouping change; it is
-// always on screen, and the scroll position stays while the selection is on the page. The filter reads the
+// always on screen, and where the height is short the rule, the titles, the note and the search line give way
+// in this order; the scroll position stays while the selection is on the page. The filter reads the
 // cells and the search text of an entry, ignores case, and only decides what shows: it removes nothing and
 // keeps the order. A list whose letters are actions starts the filter with its search key; a pure choice list
 // filters with every typed character. The filter is a text line: the actions of the list move the rows, and

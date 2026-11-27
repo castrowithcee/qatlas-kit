@@ -887,9 +887,11 @@ func (l *List) Wheel(steps int) { l.cursor = WheelStep(l.cursor, len(l.rows), st
 
 // View draws the list with styles in width by height cells: the search line where the list has one, the
 // bold column titles over a rule, and the rows that fit, the selection always among them; an empty list shows its
-// sentence, a filter without match names the text and the key that clears it. The scroll position stays while
-// the selection is on the page. It returns a target for the free area of the rows, one per drawn row and one
-// for the search line, counted from the top left of the list.
+// sentence, a filter without match names the text and the key that clears it. Where the height is short, the
+// rule gives way first, then the titles, then the note, last the search line, so that one line stays for the
+// rows or the sentence. The scroll position stays while the selection is on the page. It returns a target for
+// the free area of the rows, one per drawn row and one for the search line, counted from the top left of the
+// list.
 func (l *List) View(styles Styles, width, height int) (string, []Target) {
 	return l.view(styles, width, height, false)
 }
@@ -902,14 +904,35 @@ func (l *List) view(styles Styles, width, height int, modal bool) (string, []Tar
 		return "", nil
 	}
 	targets := []Target{{Rect: Rect{Width: width, Height: height}, Zone: ZoneRows}}
+	search := l.searchLine() || modal && l.spec.Search == SearchAsTyped
+	note := l.fixedNote(width, styles)
+	table := len(l.items) > 0
+	// With too little height the head gives way until one line is left for the rows or their sentence: first
+	// the rule, then the column titles, then the note, last the search line.
+	showRule, showTitle, showNote, showSearch := table, table, len(note) > 0, search
+	over := len(note) + 2*b2i(table) + b2i(search) - (height - 1)
+	if over > 0 && showRule {
+		showRule, over = false, over-1
+	}
+	if over > 0 && showTitle {
+		showTitle, over = false, over-1
+	}
+	if over > 0 && showNote {
+		showNote, over = false, over-len(note)
+	}
+	if over > 0 {
+		showSearch = false
+	}
 	var lines []string
-	if l.searchLine() || modal && l.spec.Search == SearchAsTyped {
+	if showSearch {
 		if l.spec.Keys.Search != "" {
 			targets = append(targets, Target{Rect: Rect{Y: len(lines), Width: width, Height: 1}, Zone: ZoneRows, Action: l.spec.Keys.Search})
 		}
 		lines = append(lines, l.searchField(width, styles))
 	}
-	lines = append(lines, l.fixedNote(width, styles)...)
+	if showNote {
+		lines = append(lines, note...)
+	}
 	indent, allAt := "", ""
 	if l.grouped {
 		indent, allAt = groupIndent, allIndent
@@ -921,7 +944,7 @@ func (l *List) view(styles Styles, width, height int, modal bool) (string, []Tar
 	room := max(width-2-len(indent)-tick, 0)
 	layout := l.layout(room, styles)
 	switch {
-	case len(l.items) == 0:
+	case !table:
 		empty := l.empty
 		if empty == "" {
 			empty = l.text.Lookup(l.spec.Empty)
@@ -929,8 +952,12 @@ func (l *List) view(styles Styles, width, height int, modal bool) (string, []Tar
 		lines = append(lines, l.note(empty, width, styles)...)
 	default:
 		lead := "  " + indent + strings.Repeat(" ", tick)
-		lines = append(lines, lead+styles.Render(StyleTitle, l.header(layout, styles)),
-			lead+styles.Render(StyleHint, strings.Repeat(styles.Glyph(GlyphRule), min(tableWidth(layout.widths), room))))
+		if showTitle {
+			lines = append(lines, lead+styles.Render(StyleTitle, l.header(layout, styles)))
+		}
+		if showRule {
+			lines = append(lines, lead+styles.Render(StyleHint, strings.Repeat(styles.Glyph(GlyphRule), min(tableWidth(layout.widths), room))))
+		}
 		if len(l.rows) == 0 {
 			lines = append(lines, l.note(l.text.Lookup(TextListNoMatch, l.query.String(), l.keys.Label(l.spec.Keys.Back)), width, styles)...)
 		}
@@ -1886,4 +1913,11 @@ func (l *List) Overlay(styles Styles, screen string, width, height int, room Rec
 	left := room.X + (room.Width-inner-4)/2
 	ts = withOutside(l.spec.CloseOutside, OffsetTargets(ts, left+2, top+1), width, height, Rect{X: left, Y: top, Width: inner + 4, Height: len(box)})
 	return overlay(screen, box, width, height, top, left, styles), ts, true
+}
+
+func b2i(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
 }

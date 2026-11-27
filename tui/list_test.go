@@ -2561,3 +2561,111 @@ func TestShownIsACopy(t *testing.T) {
 		t.Errorf("a change to the result reached the list: %v, rows %s", again, shownRows(l))
 	}
 }
+
+// refOf is the target item the marked row answers to.
+func refOf(l *List) string {
+	r := l.rows[l.cursor]
+	switch {
+	case r.all:
+		return allRef
+	case r.isTick:
+		return tickRowRef + r.tick
+	case r.item < 0:
+		return groupRef + r.group
+	}
+	return string(l.items[r.item].ID)
+}
+
+// In a short list the marked row is always drawn with its target, and the head gives way in the order rule,
+// titles, note, search line, down to one line for the rows.
+func TestShortListKeepsTheSelection(t *testing.T) {
+	const note = "Mind the frost."
+	typing := func(l *List) { l.Update(press("/")) }
+	cases := []struct {
+		name   string
+		list   func() *List
+		search bool
+		note   bool
+	}{
+		{"plain", func() *List { return filledList(t, nil) }, false, false},
+		{"held filter", func() *List {
+			l := filledList(t, nil)
+			typing(l)
+			typeList(l, "a")
+			l.Update(press("enter"))
+			return l
+		}, true, false},
+		{"typing", func() *List { l := filledList(t, nil); typing(l); return l }, true, false},
+		{"as typed", func() *List { return searchedGroupList(t, Styles{}) }, true, false},
+		{"note", func() *List { l := filledList(t, nil); l.SetNote(note, false); return l }, false, true},
+		{"note and search", func() *List { l := searchedGroupList(t, Styles{}); l.SetNote(note, false); return l }, true, true},
+		{"groups", func() *List { return groupedList(t, func(s *ListSpec) {}) }, false, false},
+		{"ticks and all", func() *List {
+			l := tickList(t, func(s *ListSpec) { s.AllRow = true })
+			if err := l.SetTickRows(restingRows(nil)); err != nil {
+				t.Fatal(err)
+			}
+			return l
+		}, false, false},
+	}
+	for _, tt := range cases {
+		t.Run(tt.name, func(t *testing.T) {
+			l := tt.list()
+			for h := 1; h <= 4; h++ {
+				for c := 0; c < len(l.rows); c++ {
+					l.cursor = c
+					view, targets := l.View(Styles{}, 60, h)
+					if got := strings.Count(view, "\n") + 1; got != h {
+						t.Fatalf("height %d: %d lines", h, got)
+					}
+					found := false
+					for _, tg := range targets {
+						if tg.Item == refOf(l) && tg.Rect.Y < h {
+							found = true
+						}
+					}
+					if !found {
+						t.Fatalf("height %d, row %d: no target for %q in\n%s", h, c, refOf(l), view)
+					}
+					if !strings.Contains(view, "\n>") && !strings.HasPrefix(view, ">") {
+						t.Errorf("height %d, row %d: the marked row is not drawn:\n%s", h, c, view)
+					}
+				}
+				// Every head part is one line, so the room beyond the first row goes to search, note, titles, rule in turn.
+				l.cursor = 0
+				view, _ := l.View(Styles{}, 60, h)
+				present := []bool{tt.search, tt.note, true, true}
+				tall, _ := l.View(Styles{}, 60, 30)
+				marks := []string{"-", note, "NAME", "------"}
+				if tt.search {
+					marks[0] = strings.TrimSpace(strings.SplitN(tall, "\n", 2)[0])
+				}
+				left := h - 1
+				for i, mark := range marks {
+					want := present[i] && left > 0
+					if want {
+						left--
+					}
+					if got := strings.Contains(view, mark); present[i] && got != want {
+						t.Errorf("height %d: %q drawn %v, want %v:\n%s", h, mark, got, want, view)
+					}
+				}
+			}
+		})
+	}
+}
+
+// A filter without match keeps its sentence in place of the selection at height 1 and 2, and an empty list its own.
+func TestShortListKeepsTheSentenceWithoutMatch(t *testing.T) {
+	l := filledList(t, nil)
+	l.SetFilter("zzz")
+	for h := 1; h <= 2; h++ {
+		if view, _ := l.View(Styles{}, 80, h); !strings.Contains(view, `No entry matches "zzz"; esc clears the filter.`) {
+			t.Errorf("height %d, filter without match:\n%s", h, view)
+		}
+	}
+	empty, _ := newSampleList(t, Styles{}, i18n.English, nil)
+	if view, _ := empty.View(Styles{}, 60, 1); !strings.Contains(view, "No plants yet; n adds one.") {
+		t.Errorf("height 1, empty list:\n%s", view)
+	}
+}
