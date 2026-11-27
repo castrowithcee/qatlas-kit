@@ -1,10 +1,12 @@
 package tui
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/castrowithcee/qatlas-kit/i18n"
 )
@@ -188,5 +190,98 @@ func TestGoldenActionBar(t *testing.T) {
 			spec.Height = 9
 			checkGolden(t, tt.name, first(f.Render(spec))+"\n")
 		})
+	}
+}
+
+// Text reads on every fill of a button and the key on its pad, in every theme the kit ships, light and dark,
+// at the contrast the palette demands of text. Fills and key move towards the text only as far as that needs.
+func TestKeyButtonContrast(t *testing.T) {
+	set := exampleSet(t)
+	terms := []*TerminalColors{
+		{Foreground: "#d0d0d0", Background: "#101010"},
+		{Foreground: "#202020", Background: "#f4f4f4"},
+	}
+	for _, name := range set.Names() {
+		for _, term := range terms {
+			p := resolve(t, set, name, ProfileTrueColor, term).Palette()
+			for _, c := range []struct {
+				fg, bg Color
+				what   string
+			}{
+				{p.Text, p.Surface, "text on the button"},
+				{p.Base, reachContrast(p.Accent, p.Base, p.Text), "text on primary"},
+				{p.Base, reachContrast(p.Fail, p.Base, p.Text), "text on danger"},
+				{reachContrast(p.Accent, p.Panel, p.Text), p.Panel, "key on the pad"},
+			} {
+				fg, okFg := rgbOfColor(c.fg)
+				bg, okBg := rgbOfColor(c.bg)
+				if !okFg || !okBg {
+					continue
+				}
+				if got := contrast(fg, bg); got < textContrast {
+					t.Errorf("%s on %s: %s is %.2f:1", name, term.Background, c.what, got)
+				}
+			}
+		}
+	}
+}
+
+// A button is a filled block without brackets: a pad for the key and a fill for the label. Without colour
+// the label is reversed and the key bold before it; without any style only the characters tell.
+func TestKeyButtonLooks(t *testing.T) {
+	l := looks(t)
+	p := l["dark"].Palette()
+	sgr := func(c Color) string { v := hexRGB(t, c); return fmt.Sprintf("48;2;%d;%d;%d", v.r, v.g, v.b) }
+	normal := l["dark"].KeyButton(ButtonNormal, "F2", "Save")
+	for _, want := range []string{sgr(p.Panel), sgr(p.Surface)} {
+		if !strings.Contains(normal, want) {
+			t.Errorf("normal button lacks the fill %q: %q", want, normal)
+		}
+	}
+	if got := ansi.Strip(normal); got != " F2  Save " {
+		t.Errorf("text %q", got)
+	}
+	for kind, fill := range map[ButtonKind]Color{ButtonPrimary: p.Accent, ButtonDanger: p.Fail} {
+		out := l["dark"].KeyButton(kind, "F2", "Save")
+		v := hexRGB(t, reachContrast(fill, p.Base, p.Text))
+		if want := fmt.Sprintf("48;2;%d;%d;%d", v.r, v.g, v.b); !strings.Contains(out, want) || !strings.Contains(out, sgr(p.Panel)) {
+			t.Errorf("kind %d: fill %q or pad missing: %q", kind, want, out)
+		}
+	}
+	mono := l["mono"].KeyButton(ButtonNormal, "F2", "Save")
+	noColorSequence(t, "mono", mono)
+	if i, j := strings.Index(mono, "\x1b[1m"), strings.Index(mono, "7m"); i < 0 || j < i {
+		t.Errorf("mono: key not bold before the reversed label: %q", mono)
+	}
+	if danger := l["mono"].KeyButton(ButtonDanger, "F2", "Save"); !strings.Contains(danger, "1;7m") {
+		t.Errorf("mono danger is not bold and reversed: %q", danger)
+	}
+	if got := l["noneascii"].KeyButton(ButtonDanger, "F2", "Speichern"); got != "[ F2 Speichern ]" {
+		t.Errorf("none: %q", got)
+	}
+}
+
+// A click on the pad and on the label of a filled button runs its action.
+func TestActionBarFilledButtonClickTargets(t *testing.T) {
+	f, _ := sampleFrame(t, looks(t)["dark"], i18n.English)
+	spec := barSpec(100)
+	out, targets := f.Render(spec)
+	y := f.Workspace(spec).Y - 1
+	row := plainRows(out)[y]
+	m := NewMouseMap(targets, true)
+	for _, probe := range []string{"F2", "save", "n", "New"} {
+		x := strings.Index(row, probe)
+		want := ActionID("save")
+		if probe == "n" || probe == "New" {
+			want = "new"
+		}
+		if res := m.Handle(tea.MouseClickMsg{Button: tea.MouseLeft, X: x, Y: y}); res.Action != want {
+			t.Errorf("click on %q: %+v", probe, res)
+		}
+	}
+	// The first cell of the pad and the last cell of the label are inside the target.
+	x := strings.Index(row, "F2") - 1
+	if res := m.Handle(tea.MouseClickMsg{Button: tea.MouseLeft, X: x, Y: y}); res.Action != "save" {
+		t.Errorf("click on the edge of the pad: %+v", res)
 	}
 }

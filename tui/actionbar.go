@@ -25,24 +25,55 @@ type barButton struct {
 	key, label string
 }
 
-func (b barButton) width() int { return lipgloss.Width("[ " + b.key + " " + b.label + " ]") }
-
-// KeyButton draws a button as "[ key label ]": the key in the footer key style, the label in the style of a
-// button of kind. Without colour the place tells key and label apart, as in the footer. A primary or danger
-// button is not filled, so the key keeps its colour: primary is bold, danger takes the colour of failure.
-func (s Styles) KeyButton(kind ButtonKind, key, label string) string {
-	key, label = Escape(key), Escape(label)
-	style, ok := s.buttonStyle(kind)
-	if !ok {
-		return "[ " + key + " " + label + " ]"
+// reachContrast is c moved towards the colour toward, in steps of a twentieth, until it reads against other
+// at textContrast; a colour that already does, or that is no hex value, stays. At toward itself it reads,
+// since the text does on every ground of the palette.
+func reachContrast(c, other, toward Color) Color {
+	a, okA := rgbOfColor(c)
+	o, okO := rgbOfColor(other)
+	t, okT := rgbOfColor(toward)
+	if !c.isHex() || !okA || !okO || !okT {
+		return c
 	}
-	if kind != ButtonNormal {
-		style = style.UnsetBackground().UnsetForeground()
-		if kind == ButtonDanger && !s.profile.Colorless() && s.palette.Fail != "" {
-			style = style.Foreground(lipgloss.Color(string(s.palette.Fail)))
+	for step := 0; step <= 20; step++ {
+		if v := mix(a, t, float64(step)/20); contrast(v, o) >= textContrast {
+			return v.hex()
 		}
 	}
-	return style.Render("[ ") + s.Render(StyleFooterKey, key) + style.Render(" "+label+" ]")
+	return t.hex()
+}
+
+// width is the cells of the button as the styles draw it: the plain form "[ key label ]" is wider than the
+// filled one.
+func (b barButton) width(s Styles) int { return lipgloss.Width(s.KeyButton(b.kind, b.key, b.label)) }
+
+// KeyButton draws a button as a filled block: the key in its own pad, the same in every kind, in the footer
+// key style, then the label on the fill of kind: a neutral fill with the text colour, the accent fill for
+// primary and the failure fill for danger, each of those bold on the base colour. Without colour the label
+// is reversed and the key stands bold before it, not reversed; primary and danger add bold. A palette that
+// lacks a fill draws as without colour, and ProfileNone draws "[ key label ]".
+func (s Styles) KeyButton(kind ButtonKind, key, label string) string {
+	key, label = Escape(key), Escape(label)
+	if s.profile == ProfileNone || s.profile > ProfileTrueColor {
+		return "[ " + key + " " + label + " ]"
+	}
+	p := s.palette
+	fill, text := p.Surface, p.Text
+	switch kind {
+	case ButtonPrimary:
+		fill, text = p.Accent, p.Base
+	case ButtonDanger:
+		fill, text = p.Fail, p.Base
+	}
+	bold := kind != ButtonNormal
+	if s.profile.Colorless() || fill == "" || p.Panel == "" || text == "" {
+		return s.Render(StyleFooterKey, " "+key+" ") + lipgloss.NewStyle().Reverse(true).Bold(bold).Render(" "+label+" ")
+	}
+	fill = reachContrast(fill, text, p.Text)
+	keyColor := reachContrast(p.Accent, p.Panel, p.Text)
+	pad := s.Style(StyleFooterKey).Background(lipgloss.Color(string(p.Panel))).Foreground(lipgloss.Color(string(keyColor)))
+	body := lipgloss.NewStyle().Bold(bold).Background(lipgloss.Color(string(fill))).Foreground(lipgloss.Color(string(text)))
+	return pad.Render(" "+key+" ") + body.Render(" "+label+" ")
 }
 
 // actionBar resolves the actions of the bar of spec: an action without a key that acts in the input focus
@@ -59,7 +90,7 @@ func (f *frameRun) actionBar(spec FrameSpec) []barButton {
 			continue
 		}
 		b := barButton{a.Action, a.Kind, Escape(key), label}
-		w := b.width()
+		w := b.width(f.styles)
 		if len(out) > 0 {
 			w += len(barGap)
 		}
@@ -98,7 +129,7 @@ func (f *frameRun) barLine(buttons []barButton, width int) (string, []Target) {
 		if i > 0 {
 			total += len(barGap)
 		}
-		total += btn.width()
+		total += btn.width(f.styles)
 	}
 	var b strings.Builder
 	var targets []Target
@@ -107,8 +138,9 @@ func (f *frameRun) barLine(buttons []barButton, width int) (string, []Target) {
 	for i := len(buttons) - 1; i >= 0; i-- {
 		btn := buttons[i]
 		b.WriteString(f.styles.KeyButton(btn.kind, btn.key, btn.label))
-		targets = append(targets, Target{Rect: Rect{X: x, Width: btn.width(), Height: 1}, Action: btn.action})
-		x += btn.width()
+		w := btn.width(f.styles)
+		targets = append(targets, Target{Rect: Rect{X: x, Width: w, Height: 1}, Action: btn.action})
+		x += w
 		if i > 0 {
 			b.WriteString(barGap)
 			x += len(barGap)

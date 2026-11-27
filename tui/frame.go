@@ -136,11 +136,12 @@ type FrameSpec struct {
 	Workspace string
 	Message   *Message
 	Footer    []Hint
-	// Bar is the action bar: the most important actions of the page in the order of their weight, as buttons
-	// "[ key label ]" in one fixed row directly below the rule, right-aligned: the first action stands at the
-	// right end, the next ones left of it. The bar keeps the actions that fit the width from the front, so
-	// the last ones leave at the left, and never wraps; what does not fit stands in Footer as before, and an action
-	// that stands in the bar is left out of the footer. Without a button there is no row. Default: empty.
+	// Bar is the action bar: the most important actions of the page in the order of their weight, as filled
+	// buttons with a key pad in one fixed row directly below the rule, right-aligned: the first action
+	// stands at the right end, the next ones left of it. The bar keeps the actions that fit the width from
+	// the front, so the last ones leave at the left, and never wraps; what does not fit stands in Footer as
+	// before, and an action that stands in the bar is left out of the footer. Without a button there is no
+	// row. Default: empty.
 	Bar []BarAction
 	// Position is the position in a list, such as "3/12", dimmed at the right end of the footer.
 	Position string
