@@ -1132,6 +1132,35 @@ func TestFilterBarValueListNoMatch(t *testing.T) {
 	}
 }
 
+// Short values leave room for the whole search prompt, in both languages, and a narrow room cuts it.
+func TestFilterBarValueListShowsTheWholePrompt(t *testing.T) {
+	st := looks(t)["noneascii"]
+	for lang, prompt := range map[i18n.Lang]string{i18n.English: "Type to search", i18n.German: "Zum Suchen tippen"} {
+		b := sampleBar(t, sampleKeymap(t, CharsetASCII), lang, nil)
+		b.Focus(false)
+		keysTo2(b, "enter")
+		view, _ := b.ValueList(st, 60, 24)
+		if plain := ansi.Strip(view); !strings.Contains(plain, prompt) {
+			t.Errorf("%s: the prompt is cut:\n%s", lang, plain)
+		}
+		width, height := 14, 5
+		view, _ = b.ValueList(st, width, height)
+		plain := ansi.Strip(view)
+		if strings.Contains(plain, prompt) || !strings.Contains(plain, prompt[:3]) {
+			t.Errorf("%s: the prompt is not cut in %d cells:\n%s", lang, width, plain)
+		}
+		lines := strings.Split(view, "\n")
+		if len(lines) > height {
+			t.Errorf("%s: %d lines in %d", lang, len(lines), height)
+		}
+		for _, l := range lines {
+			if lipgloss.Width(l) > width {
+				t.Errorf("%s: a line of %d cells in %d", lang, lipgloss.Width(l), width)
+			}
+		}
+	}
+}
+
 // Back closes without change, also with a search typed.
 func TestFilterBarValueListBack(t *testing.T) {
 	b, _ := longBar(t, i18n.English, pagedKeys())
