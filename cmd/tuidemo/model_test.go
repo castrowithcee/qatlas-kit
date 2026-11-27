@@ -332,6 +332,34 @@ func TestCommandLineClicksRunAMatchAndCloseOnBack(t *testing.T) {
 	}
 }
 
+// The wheel over the open command line, on it or beside it, moves its choice and leaves the screen behind as
+// it was.
+func TestCommandLineTakesTheWheel(t *testing.T) {
+	m := testModel(t, uiprefs.IconsNone)
+	m.run(actCommands, "")
+	m.refresh()
+	area, tab, zone, wheel := m.area, m.tabs[m.area], m.zone, m.wheel
+	wheelAt := func(x, y int, button tea.MouseButton) {
+		m.handle(tea.MouseWheelMsg{X: x, Y: y, Button: button})
+		m.refresh()
+	}
+	for range 30 {
+		wheelAt(m.width/2, 6, tea.MouseWheelDown)
+	}
+	if !strings.Contains(m.view, "12-23 of 23") {
+		t.Fatalf("the wheel did not move the choice to the end:\n%s", m.view)
+	}
+	for range 30 {
+		wheelAt(0, m.height-3, tea.MouseWheelUp)
+	}
+	if !strings.Contains(m.view, "1-12 of 23") {
+		t.Fatalf("the wheel beside the line did not move the choice to the top:\n%s", m.view)
+	}
+	if !m.cmdOpen || m.area != area || m.tabs[m.area] != tab || m.zone != zone || m.wheel != wheel {
+		t.Errorf("the screen behind moved: open %v, area %q, tab %q, zone %q, wheel %d", m.cmdOpen, m.area, m.tabs[m.area], m.zone, m.wheel)
+	}
+}
+
 func TestCommandLineFillsTheWorkspaceInASmallTerminal(t *testing.T) {
 	m := testModel(t, uiprefs.IconsNone)
 	m.Update(tea.WindowSizeMsg{Width: minWidth, Height: minHeight})
