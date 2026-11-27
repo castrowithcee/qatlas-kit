@@ -80,10 +80,33 @@ type SectionID string
 // ChoiceID is the stable, untranslated ID of a value of a choice field or of a field of a filter bar.
 type ChoiceID string
 
-// Choice is one value of a choice field or of a field of a filter bar.
+// Choice is one value of a choice field or of a field of a filter bar. It carries exactly one of Label, a
+// text ID the Translator looks up, and Text, a finished text of the application, such as a value from foreign
+// data. Text is never looked up and never has placeholders replaced, and is drawn masked, so it may hold any
+// characters.
 type Choice struct {
 	ID    ChoiceID
 	Label TextID
+	Text  string
+}
+
+// shown is the text of c before masking: Text as it is, else the Label looked up.
+func (c Choice) shown(text Translator) string {
+	if c.Text != "" {
+		return c.Text
+	}
+	return text.Lookup(c.Label)
+}
+
+// problem says what is wrong with the text of c, or is empty.
+func (c Choice) problem() string {
+	switch {
+	case c.Label == "" && c.Text == "":
+		return "has no label and no text"
+	case c.Label != "" && c.Text != "":
+		return "has both a label and a text"
+	}
+	return ""
 }
 
 // FormValue is the value of a field: Text for text, masked, key, list and read-only fields, Choice for a
@@ -424,8 +447,8 @@ func fieldErrors(f FormField, v FormValue) []error {
 			fail("choice %q is listed twice", c.ID)
 		}
 		ids[c.ID] = true
-		if c.Label == "" {
-			fail("choice %q has no label", c.ID)
+		if p := c.problem(); p != "" {
+			fail("choice %q %s", c.ID, p)
 		}
 	}
 	if v.Choice != "" && !ids[v.Choice] {

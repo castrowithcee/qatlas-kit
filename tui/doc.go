@@ -24,10 +24,11 @@
 //
 // StandardActions returns the actions every tool shares, each with a level, one default key and a help text
 // in the catalog; an application adds them to its table with one append. The overlay levels may repeat their
-// keys, and ctrl+s stays free as the second way of the save action. ActionHelpF1 is the second way of the
-// help action on f1, which reaches the help from a text field where "?" types a character; the Help closes
+// keys, and ctrl+s stays free as the second way of the save action. ActionHelpF9 is the second way of the
+// help action on f9, which reaches the help from a text field where "?" types a character; the Help closes
 // on it as on the help key, and Keymap.SecondWays finds such actions. A table without the help action leaves
-// it out as well. A Form or Dialog does not handle f1.
+// it out as well. A Form or Dialog does not handle f9. No action may hold f1, as a default key, as a second
+// way or on an overlay level, because IDEs and terminal applications reserve it for their own help.
 //
 // A one-line text field, the input of a Dialog, the text, masked, date and path fields of a Form, the search
 // of a LogView, the filter of a List, the search of a Help and the input of a CommandLine edit with a fixed
@@ -195,7 +196,8 @@
 // A List shows the entries an application hands it, each with a stable ItemID, its cells and a group key, as a
 // table under bold upper-case column titles with a rule below them, "─" or "-" in an ASCII terminal. The
 // selection follows the ID, never the position, when the entries, the filter or the grouping change; it is
-// always on screen, and the scroll position stays while the selection is on the page. The filter reads the
+// always on screen, and where the height is short the rule, the titles, the note and the search line give way
+// in this order; the scroll position stays while the selection is on the page. The filter reads the
 // cells and the search text of an entry, ignores case, and only decides what shows: it removes nothing and
 // keeps the order. A list whose letters are actions starts the filter with its search key; a pure choice list
 // filters with every typed character. The filter is a text line: the actions of the list move the rows, and
@@ -312,15 +314,19 @@
 // single button with the number of fields off their first value takes their place, always, with the search field
 // beside it or, with little room, only the search key. The button is one stop of the focus. Enter or a click
 // opens a modal with all fields one under the other: up and down choose a field, left and right change its
-// value, enter takes all changes at once and back drops them all; pressing an action field there takes them
-// first, then reports the action. The modal takes every key and is drawn over the screen where it fits, else in
-// the workspace with its keys in the footer.
+// value, enter takes all changes at once and back drops them all, and a click on a key of its key line acts as
+// the key; pressing an action field there takes them first, then reports the action. The modal takes every key
+// and is drawn over the screen where it fits, else in the workspace with its keys in the footer. A value
+// carries a TextID in Label or a finished text of the application in Text, such as a value from foreign data:
+// Text is drawn masked, searched as shown and never looked up or filled with placeholders.
 //
 // A Form shows the fields an application hands it, each with a stable ID, a kind, a label and a value, and
 // knows no schema: the application checks the values when the save key is pressed, from any field, and hands
 // the problems back with SetProblems. Enter never saves: it goes to the next field, opens the values of a
 // choice, starts taking a key, or yields the enter key on a list field, whose editor the application opens. A
 // choice holds known values only, a multiple choice ticks them, and the values a form returns are stable IDs.
+// A value of a choice carries a TextID or a finished text of the application, which is drawn masked and never
+// looked up.
 // FormSpec.Buttons add buttons below the fields, each an action of the key table and a label drawn behind the
 // key in force. Tab and shift+tab cycle through the fields and then the buttons, from the last button to the
 // first field and back; the focused button reads "> label <" without colour. Enter on a button, its click and
@@ -447,7 +453,7 @@
 // choose a hit, enter or a click opens its page and, for a match in the text, scrolls to the first place of
 // it; back closes only the search, the help key the whole help. The application's table should give the key
 // to ActionSearch. While the input takes text, Help.Input is InputText, so the application reads keys under
-// that focus: the help key "?" then types, and its second way, such as f1, still closes. Help.Paste inserts
+// that focus: the help key "?" then types, and its second way, such as f9, still closes. Help.Paste inserts
 // into the input. Over topics the key does nothing and no key line names it. Outside the overview and the
 // search, back and the help key close the help. A click on a line of the key list
 // yields its action, and the application closes the help and then runs it. An Explanation shows a title, the

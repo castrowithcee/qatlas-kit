@@ -186,8 +186,8 @@ func optionProblems(options []Choice) []string {
 			out = append(out, fmt.Sprintf("value %q is listed twice", o.ID))
 		}
 		seen[o.ID] = true
-		if o.Label == "" {
-			out = append(out, fmt.Sprintf("value %q has no label", o.ID))
+		if p := o.problem(); p != "" {
+			out = append(out, fmt.Sprintf("value %q %s", o.ID, p))
 		}
 	}
 	return out
@@ -433,7 +433,7 @@ func (b *FilterBar) matches() []int {
 	needle := strings.ToLower(b.query.String())
 	var out []int
 	for j, o := range f.Options {
-		if needle == "" || strings.Contains(strings.ToLower(b.text.Lookup(o.Label)), needle) {
+		if needle == "" || strings.Contains(strings.ToLower(Escape(o.shown(b.text))), needle) {
 			out = append(out, j)
 		}
 	}
@@ -539,12 +539,14 @@ func (b *FilterBar) clickModal(r MouseResult) ([]FilterField, bool) {
 		}
 		return nil, false
 	}
-	switch r.Action {
-	case b.nav.Enter:
-		return b.apply(), true
-	case b.nav.Back:
-		b.modal = false
-		return nil, true
+	if r.Item != "" || r.Action == "" {
+		return nil, false
+	}
+	// A key of the key line, drawn in the modal or in the footer, runs the way its key does.
+	for _, key := range []ActionID{b.nav.Enter, b.nav.Back, b.nav.Up, b.nav.Down, b.nav.Left, b.nav.Right} {
+		if r.Action == key {
+			return b.updateModal(func(id ActionID) bool { return id == key }), true
+		}
 	}
 	return nil, false
 }
@@ -622,7 +624,7 @@ func (b *FilterBar) label(i int) (label, value string) {
 	if f.Action != "" {
 		return Escape(b.text.Lookup(f.Label)), Escape(f.Text)
 	}
-	return Escape(b.text.Lookup(f.Label)), Escape(b.text.Lookup(f.Options[b.selected(i)].Label))
+	return Escape(b.text.Lookup(f.Label)), Escape(f.Options[b.selected(i)].shown(b.text))
 }
 
 // fieldText is a field of at most width cells, " label: value ▾ ", the value cut where it does not fit.
@@ -804,7 +806,7 @@ func (b *FilterBar) ValueList(styles Styles, width, height int) (string, []Targe
 	inner := lipgloss.Width(Escape(title)) + lipgloss.Width(noteOf(len(match), len(match))) + 6
 	labels := make([]string, len(f.Options))
 	for j, o := range f.Options {
-		labels[j] = Escape(b.text.Lookup(o.Label))
+		labels[j] = Escape(o.shown(b.text))
 		inner = max(inner, lipgloss.Width(labels[j])+2+lipgloss.Width(blank))
 	}
 	prompt := Escape(b.text.Lookup(TextSearchPrompt))
@@ -876,7 +878,7 @@ func (b *FilterBar) modalRows(styles Styles, width int) ([]string, []Target) {
 	for i, f := range b.fields {
 		labels[i], values[i] = b.label(i)
 		if f.Action == "" {
-			values[i] = Escape(b.text.Lookup(f.Options[b.draft[i]].Label))
+			values[i] = Escape(f.Options[b.draft[i]].shown(b.text))
 		}
 		lw = max(lw, lipgloss.Width(labels[i]))
 	}
@@ -908,7 +910,7 @@ func (b *FilterBar) modalWidth(styles Styles) (want, least int) {
 			vw = max(vw, lipgloss.Width(text))
 		}
 		for _, o := range f.Options {
-			vw = max(vw, lipgloss.Width(Escape(b.text.Lookup(o.Label))))
+			vw = max(vw, lipgloss.Width(Escape(o.shown(b.text))))
 		}
 	}
 	head, tail := fieldFrame(styles, strings.Repeat(" ", lw))

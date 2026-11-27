@@ -361,6 +361,23 @@ func TestFilterBarModalClicks(t *testing.T) {
 	if changed, handled := b.Click(mm.Handle(click(enter.Rect.X, enter.Rect.Y))); len(changed) != 1 || changed[0].Selected != "on" || !handled || b.modal {
 		t.Errorf("a click on enter takes the changes: %+v", changed)
 	}
+	// Every key of the key line acts as the key, also where the key line stands in the footer.
+	b.Click(m.Handle(click(4, 0)))
+	value, start := b.Value("state"), b.draft[1]
+	press := func(a ActionID) bool {
+		_, handled := b.Click(MouseResult{Action: a, Handled: true})
+		return handled
+	}
+	if !press("up") || b.mfocus != 0 || !press("down") || b.mfocus != 1 || !press("down") || b.mfocus != 1 {
+		t.Errorf("a click on up or down does not move the focus as the key: focus %d", b.mfocus)
+	}
+	if !press("right") || b.draft[1] != (start+1)%3 || !press("left") || !press("left") || b.draft[1] != (start+2)%3 {
+		t.Errorf("a click on left or right does not step the value as the key: draft %v", b.draft)
+	}
+	if !b.modal || b.Value("state") != value {
+		t.Error("a click on a key of the key line took the changes or closed the modal")
+	}
+	b.Click(MouseResult{Action: "back", Handled: true})
 	// A value list never opens from a button click, and a button target of an older frame does nothing wide.
 	wide := sampleBar(t, sampleKeymap(t, st.Charset()), i18n.English, nil)
 	if _, handled := wide.Click(MouseResult{Item: buttonRef, Handled: true}); handled {
@@ -911,7 +928,7 @@ func TestFilterBarActionFieldTextIsMasked(t *testing.T) {
 func TestFilterBarActionFieldInModal(t *testing.T) {
 	st := looks(t)["noneascii"]
 	screen := strings.TrimRight(strings.Repeat(strings.Repeat("x", 80)+"\n", 24), "\n")
-	for _, key := range []string{"enter", "left", "right", "click"} {
+	for _, key := range []string{"enter", "left", "right", "click", "click enter", "click left", "click right"} {
 		b := dateBar(t, st, nil)
 		b.View(st, 12)
 		if !b.compact {
@@ -928,7 +945,9 @@ func TestFilterBarActionFieldInModal(t *testing.T) {
 		}
 		keysTo2(b, "up")
 		var changed []FilterField
-		if key == "click" {
+		if pressed, ok := strings.CutPrefix(key, "click "); ok {
+			changed, _ = b.Click(MouseResult{Action: ActionID(pressed), Handled: true})
+		} else if key == "click" {
 			for _, tg := range targets {
 				if tg.Item == modalValueRef+"date" {
 					changed, _ = b.Click(NewMouseMap([]Target{tg}, true).Handle(click(tg.Rect.X, tg.Rect.Y)))
@@ -1327,6 +1346,71 @@ func TestNewFilterBarChecksPageKeys(t *testing.T) {
 		edit(&nav)
 		if _, err := NewFilterBar(FilterBarSpec{Fields: sampleFields(), Keys: nav}, keys, text); err == nil {
 			t.Errorf("%s: accepted", name)
+		}
+	}
+}
+
+func literalChoices() []Choice {
+	return []Choice{{ID: "a", Text: "{back}"}, {ID: "b", Text: "tui.key.back"}, {ID: "c", Text: "x\x1by"}}
+}
+
+func TestFilterBarLiteralChoice(t *testing.T) {
+	st := looks(t)["noneascii"]
+	keys := sampleKeymap(t, st.Charset())
+	fields := []FilterField{{ID: "src", Label: "bar.group", Options: literalChoices()}}
+	b, err := NewFilterBar(FilterBarSpec{Fields: fields, Keys: sampleFilterKeys}, keys, newTranslator(t, i18n.English, listCatalogs(), keys))
+	if err != nil {
+		t.Fatal(err)
+	}
+	b.Focus(false)
+	for i, want := range []string{"{back}", "tui.key.back", `x\x1by`} {
+		if view, _ := b.View(st, 80); !strings.Contains(ansi.Strip(view), want) || strings.Contains(view, "\x1b") {
+			t.Errorf("bar %d: %q lacks %q", i, view, want)
+		}
+		keysTo2(b, "right")
+	}
+	keysTo2(b, "right", "enter")
+	list, _ := b.ValueList(st, 80, 24)
+	for _, want := range []string{"{back}", "tui.key.back", `x\x1by`} {
+		if !strings.Contains(ansi.Strip(list), want) || strings.Contains(list, "\x1b") {
+			t.Errorf("list lacks %q: %q", want, list)
+		}
+	}
+	for needle, count := range map[string]int{"{back}": 1, "tui.key": 1, `\x1b`: 1, "x1by": 1, "back": 2} {
+		b.query.clear()
+		for _, r := range needle {
+			b.Update(tea.KeyPressMsg{Code: r, Text: string(r)})
+		}
+		if got := len(b.matches()); got != count {
+			t.Errorf("search %q: %d matches, want %d", needle, got, count)
+		}
+	}
+	for sel, want := range map[ChoiceID]string{"a": "Group: {back}", "c": `Group: x\x1by`} {
+		fields[0].Selected = sel
+		m, err := NewFilterBar(FilterBarSpec{Fields: fields, Keys: sampleFilterKeys}, keys, newTranslator(t, i18n.English, listCatalogs(), keys))
+		if err != nil {
+			t.Fatal(err)
+		}
+		m.View(st, 10)
+		m.Focus(false)
+		keysTo2(m, "enter")
+		if modal, _ := m.ModalView(st, 80, 24); !strings.Contains(ansi.Strip(modal), want) || strings.Contains(modal, "\x1b") {
+			t.Errorf("modal lacks %q: %q", want, modal)
+		}
+	}
+}
+
+func TestFilterBarRejectsChoiceWithoutOrWithBothLabelAndText(t *testing.T) {
+	keys := sampleKeymap(t, CharsetUnicode)
+	text := newTranslator(t, i18n.English, listCatalogs(), keys)
+	for name, c := range map[string]Choice{"none": {ID: "a"}, "both": {ID: "a", Label: "bar.state.on", Text: "on"}} {
+		f := []FilterField{{ID: "src", Label: "bar.group", Options: []Choice{c}}}
+		if _, err := NewFilterBar(FilterBarSpec{Fields: f, Keys: sampleFilterKeys}, keys, text); err == nil {
+			t.Errorf("%s: NewFilterBar accepted", name)
+		}
+		b := sampleBar(t, keys, i18n.English, nil)
+		if err := b.SetOptions("state", []Choice{{ID: "all", Label: "bar.state.all"}, c}); err == nil {
+			t.Errorf("%s: SetOptions accepted", name)
 		}
 	}
 }
