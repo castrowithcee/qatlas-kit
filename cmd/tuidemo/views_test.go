@@ -8,6 +8,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
+	"github.com/castrowithcee/qatlas-kit/ptytest"
 	"github.com/castrowithcee/qatlas-kit/tui"
 	"github.com/castrowithcee/qatlas-kit/uiprefs"
 )
@@ -171,6 +172,15 @@ func clipboard(t *testing.T, output string) []string {
 	return got
 }
 
+// waitClipboard waits until the output holds more clipboard texts than before. The status message is drawn
+// before the clipboard sequence is written, so the message alone does not show that the copy arrived.
+func waitClipboard(t *testing.T, term *ptytest.Terminal, before int) {
+	t.Helper()
+	if err := term.WaitFor(wait, func(out string) bool { return len(clipboard(t, out)) > before }); err != nil {
+		t.Fatalf("no clipboard text arrived: %v", err)
+	}
+}
+
 func TestViewsTextDragCopiesContentOnly(t *testing.T) {
 	term := startDemo(t, "-icons none")
 	act(t, term, "9", "Sample configuration")
@@ -184,6 +194,7 @@ func TestViewsTextDragCopiesContentOnly(t *testing.T) {
 		t.Fatalf("a click handed %q to the clipboard", got)
 	}
 	send(t, term, drag(x, y, endX+len("retries: 3")-1, endY))
+	waitClipboard(t, term, 0)
 	expect(t, term, "Handed to the terminal for the clipboard")
 	got := clipboard(t, term.Output())
 	if len(got) != 1 {
@@ -205,7 +216,9 @@ func TestViewsLogDragCopiesContentOnly(t *testing.T) {
 	act(t, term, "9", "Text")
 	clickOn(t, term, "Log", "period: all")
 	x, y := find(t, term, "pump started")
+	before := len(clipboard(t, term.Output()))
 	send(t, term, drag(x, y, x+len("pump started")-1, y))
+	waitClipboard(t, term, before)
 	expect(t, term, "Handed to the terminal for the clipboard")
 	if got := clipboard(t, term.Output()); len(got) != 1 || got[0] != "pump started" {
 		t.Errorf("clipboard texts = %q, want the dragged part of the line only", got)
