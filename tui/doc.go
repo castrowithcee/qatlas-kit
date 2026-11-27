@@ -95,6 +95,22 @@
 // two lines run short, navigation and position go first, then the normal hints by priority; a hint that
 // always stays, such as help, is never dropped, and the answers of an open question are shortened instead.
 //
+// FrameSpec.Bar is the action bar: the most important actions of a page, in the order of their weight, as one
+// fixed row directly below the rule in every form of the navigation, right-aligned, so Workspace is one row
+// lower while the bar has a button. The first action is the most important and stands at the right end, the
+// next ones left of it. Each BarAction draws through Styles.KeyButton as a filled button without brackets:
+// first a pad with the first key of the action that acts in the input focus of the screen, as the footer
+// spells it and so after a rebinding the new one, in the footer key colour, then the label on the fill of its
+// kind: a neutral fill, the accent for primary and the failure colour for danger. The fills and the key move
+// towards the text colour as far as readable text needs. Without colour the label is reversed and the key
+// stands bold before it, primary and danger add bold; ProfileNone shows "[ key label ]". An action without
+// such a key, an unknown one and one without a label do not appear. The bar never wraps: it keeps the actions
+// that fit the width from the front, so the last ones give way at the left, and without a button there is no
+// row. Render folds the footer by action ID: a hint whose action stands in the bar is left out, so no action
+// stands in both, and an action the bar cut stays in the footer. Each button is a click target with its
+// action over its whole width, pad included, and no focus zone; the keys stay the way to every action without
+// a mouse.
+//
 // The mouse is a second way to the same actions and never stronger than a key. Render and the other drawing
 // parts return the targets they drew; a MouseMap holds the targets of one drawn frame. A click reports the
 // action, area, tab or item of the target it hit, which the application runs exactly as it runs the key or the
@@ -512,7 +528,9 @@
 // A FileBrowser shows the folders and files below a root from entries the application hands it; it reads no
 // file system. A folder is a list of name parts below the root, never a joined string. It asks
 // for a folder with a FileLoad and shows only the answer to the last one; actions come back as a FileAction.
-// The application still joins the parts below its own root and checks the result, and runs every action.
+// The application still joins the parts below its own root and checks the result, and runs every action. The
+// actions of the application stand in the action bar of the frame: BarActions gives them for FrameSpec.Bar, and a
+// click on a button comes back as MouseResult.Action, which the application runs with Act as its key.
 // A filter that starts with "*" and goes on is no filter but a search below the shown folder at any depth:
 // the browser asks with a FileSearch and shows the FileFound it gets in place of the entries, as paths below
 // the shown folder with a line under the list that names why a search stopped early; the application runs the
@@ -623,15 +641,16 @@
 // Drawing. A profile without colour, set by NO_COLOR with any non-empty value or by a missing terminal, wins
 // over every theme; ProfileNone also drops bold, faint and reverse. Meaning never depends on colour alone:
 // status marks keep their word, the selected row its mark, the default of a dialog its key, the active tab its
-// brackets and a focused frame its double line without colour, a message status names its state by a glyph and
-// a word, and every glyph has an ASCII form for a terminal without UTF-8. NewThemeSet rejects an invalid or
-// repeated theme name, a theme with both or neither of Profiles and Scheme, a colour that is not of its
-// profile's form, a hand-picked palette whose text does not reach 4.5:1 on its ground and fills or whose dimmed
-// text does not reach 3:1, and a scheme that cannot be derived. A filled syntax role of a Palette must read
-// 4.5:1 on the base and the panel, a comment 3:1. The mouse acts on a press of the left button and on the wheel
-// only, and a MouseMap holds the targets of one drawn frame, so a target no longer on screen cannot act; a
-// click is never stronger than the key it stands for. A dialog with a Danger ignores CloseOutside and adds no
-// target outside its frame, so a click beside a destructive question never answers it.
+// brackets, a bar button its bold key and reversed label and a focused frame its double line without colour, a
+// message status names its state by a glyph and a word, and every glyph has an ASCII form for a terminal
+// without UTF-8. NewThemeSet rejects an invalid or repeated theme name, a theme with both or neither of
+// Profiles and Scheme, a colour that is not of its profile's form, a hand-picked palette whose text does not
+// reach 4.5:1 on its ground and fills or whose dimmed text does not reach 3:1, and a scheme that cannot be
+// derived. A filled syntax role of a Palette must read 4.5:1 on the base and the panel, a comment 3:1. The
+// mouse acts on a press of the left button and on the wheel only, and a MouseMap holds the targets of one
+// drawn frame, so a target no longer on screen cannot act; a click is never stronger than the key it stands
+// for. A dialog with a Danger ignores CloseOutside and adds no target outside its frame, so a click beside a
+// destructive question never answers it.
 //
 // Boundary. The package holds neither application content nor package state and reads no file system. It
 // protects against foreign text driving the terminal, against secrets showing on screen and against a key
@@ -668,6 +687,8 @@
 //   - FrameSpec.PathFocusArea: puts the focus of ZonePath on the area section. Default: false, the section of
 //     the current place.
 //   - FrameSpec.Input: the input focus of the screen, which decides what the hints show. Default: InputText.
+//   - FrameSpec.Bar: the actions of the action bar, each with its text and ButtonKind. Default: empty, no bar
+//     row.
 //   - FrameSpec.HeaderKeys, Footer and Position: the header keys, the footer hints and the position text.
 //     Default: none.
 //   - Area.Icon, Tab.GroupStart: an icon before the tab title and a separator before a sub-tab. Default: none.
@@ -760,8 +781,8 @@
 //   - TextViewKeys.First, Last, Reveal: jump to the ends and ask to uncover masked sections. Default: empty,
 //     no key; the application calls SetRevealed.
 //   - ChatSpec.Actions, Now: quick replies and the clock. Default: none, time.Now.
-//   - FileBrowserSpec.Actions, RootLabel, FileBrowserKeys.Reload: the buttons on the marked entry, the label of
-//     the root and the reload key. Default: none, TextFileRoot, none.
+//   - FileBrowserSpec.Actions, RootLabel, FileBrowserKeys.Reload: the actions on the marked entry, which
+//     BarActions gives to the action bar, the label of the root and the reload key. Default: none, TextFileRoot, none.
 //   - FileFound.End, Limit: why a search stopped and the limit it hit, for the line under the matches. Default:
 //     FileSearchComplete, no line; a limit of zero or less shows the text without a number.
 //

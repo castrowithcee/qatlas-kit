@@ -30,6 +30,17 @@ type block interface {
 	hints(zone tui.FocusZone) []tui.Hint
 }
 
+// barer is a block that brings its own actions to the action bar of the frame.
+type barer interface{ bar() []tui.BarAction }
+
+// barActions are the actions of the action bar of the open tab: the block's, else those of the group.
+func (m *model) barActions() []tui.BarAction {
+	if b, ok := m.live().(barer); ok {
+		return b.bar()
+	}
+	return m.group().bar[m.tab()]
+}
+
 // blockKey names the tab a block belongs to.
 type blockKey struct {
 	area tui.AreaID
