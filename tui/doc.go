@@ -296,9 +296,9 @@
 // single button with the number of fields off their first value takes their place, always, with the search field
 // beside it or, with little room, only the search key. The button is one stop of the focus. Enter or a click
 // opens a modal with all fields one under the other: up and down choose a field, left and right change its
-// value, enter takes all changes at once and back drops them all; pressing an action field there takes them
-// first, then reports the action. The modal takes every key and is drawn over the screen where it fits, else in
-// the workspace with its keys in the footer.
+// value, enter takes all changes at once and back drops them all, and a click on a key of its key line acts as
+// the key; pressing an action field there takes them first, then reports the action. The modal takes every key
+// and is drawn over the screen where it fits, else in the workspace with its keys in the footer.
 //
 // A Form shows the fields an application hands it, each with a stable ID, a kind, a label and a value, and
 // knows no schema: the application checks the values when the save key is pressed, from any field, and hands
