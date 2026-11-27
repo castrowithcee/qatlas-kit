@@ -30,13 +30,17 @@
 // ReadPassphrase reads the passphrase without echo from the controlling terminal. ReadHidden does the same
 // for a secret typed while something else may answer first: as soon as ctx ends it gives the terminal its
 // echo back and returns ctx.Err(). ReadConfirm asks a yes-or-no question. A Vault holds the
-// key and the decrypted document in memory until Forget; Snapshot hands both to a process that keeps the
-// vault open, and OpenWithIdentity reopens it from the key alone.
+// key and the decrypted document in memory until Forget; the undo of CreateWithUndo holds the key beyond
+// Forget until it has taken effect or the application lets it go. Snapshot hands the key and the document
+// to a process that keeps the vault open, and OpenWithIdentity reopens it from the key alone.
 // ReadSealedWithIdentity reads one sealed file with the key alone and never touches the document, so a
 // damaged document does not stop it. Checkpoint records the vault files and pending entries and returns a
 // function that restores them without the passphrase, also an entry merged since. Update and WriteWithUndo
 // return the undo of their own change, encrypted or unencrypted: it puts back the document file and the
 // pending files that operation removed, byte for byte, and leaves every other entry pending.
+// CreateWithUndo and CreateUnencryptedWithUndo return an undo that takes the created document out of the
+// document on disk through Options.Revert, also after Forget and without the passphrase, and leaves the
+// vault, its pending entries and every change since; it holds no plaintext.
 //
 // # Always enforced
 //
@@ -106,7 +110,9 @@
 //     Default: writes are serialized within one Vault value alone, and Checkpoint's restore removes every
 //     pending entry it did not record, also one another process added.
 //   - Options.Revert: with Files.Lock, takes this value's change out of a document another writer changed
-//     since, for an undo or a restore. Default: those fail with ErrConflict and write nothing.
+//     since, for an undo or a restore. The undo of CreateWithUndo and CreateUnencryptedWithUndo always uses
+//     it, so both need it and Files.Lock and otherwise fail with ErrCreateUndoNeedsRevert and write nothing.
+//     Default: those fail with ErrConflict and write nothing.
 //   - Options.Merge: merges pending entries into the document on unlock. Default: a vault with pending entries
 //     does not unlock.
 //   - Options.SwitchFilter: receives the document on Encrypt and Decrypt and returns what is carried over, so
