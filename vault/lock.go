@@ -41,10 +41,10 @@ func (v *Vault) lockWrites(create bool) (release func(), err error) {
 	}, nil
 }
 
-// checkHeld refuses with ErrSwitched once the files on disk no longer belong to the key this unlocked value
-// holds, so a write never lands beside a plain document or encrypted to a key nobody holds any more. The
-// caller holds the write lock.
-func (v *Vault) checkHeld() error {
+// checkHeld refuses with ErrSwitched once the files on disk no longer belong to id, the key a write holds,
+// so a write never lands beside a plain document or encrypted to a key nobody holds any more. The caller
+// holds the write lock.
+func (v *Vault) checkHeld(id *identity) error {
 	if v.opts.Files.Plain != "" {
 		if exists, err := v.fileExists(v.plainPath()); err != nil {
 			return err
@@ -68,7 +68,7 @@ func (v *Vault) checkHeld() error {
 	if err != nil {
 		return err
 	}
-	if recipient.String() != v.identity.recipient.String() {
+	if recipient.String() != id.recipient.String() {
 		return ErrSwitched
 	}
 	return nil
@@ -82,7 +82,7 @@ func (v *Vault) writeState() (State, error) {
 		return "", err
 	}
 	if state == StateUnlocked && v.locking() {
-		if err := v.checkHeld(); err != nil {
+		if err := v.checkHeld(v.identity); err != nil {
 			return "", err
 		}
 	}
