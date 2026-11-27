@@ -47,8 +47,8 @@ func (s Styles) KeyButton(kind ButtonKind, key, label string) string {
 
 // actionBar resolves the actions of the bar of spec: an action without a key that acts in the input focus
 // of the screen, a repeated action and a label that is empty leave out; of the rest as many stand, in the
-// order given, as fit the width, and the first that does not fit ends the bar, so an action never stands
-// before one that came ahead of it.
+// order given, as fit the width, and the first that does not fit ends the list, so the actions that give way
+// are the last ones, which draw leftmost.
 func (f *frameRun) actionBar(spec FrameSpec) []barButton {
 	var out []barButton
 	width, seen := 0, map[ActionID]bool{}
@@ -90,19 +90,29 @@ func (k *Keymap) barKey(id ActionID, focus InputFocus) (string, bool) {
 	return k.KeyNameLabel(keys[0]), true
 }
 
-// barLine draws the buttons as one line and returns one click target for each.
-func (f *frameRun) barLine(buttons []barButton) (string, []Target) {
+// barLine draws the buttons as one line of the given width and returns one click target for each. The
+// first button, the most important, stands at the right end and the next ones left of it.
+func (f *frameRun) barLine(buttons []barButton, width int) (string, []Target) {
+	total := 0
+	for i, btn := range buttons {
+		if i > 0 {
+			total += len(barGap)
+		}
+		total += btn.width()
+	}
 	var b strings.Builder
 	var targets []Target
-	x := 0
-	for i, btn := range buttons {
+	x := max(width-total, 0)
+	b.WriteString(strings.Repeat(" ", x))
+	for i := len(buttons) - 1; i >= 0; i-- {
+		btn := buttons[i]
+		b.WriteString(f.styles.KeyButton(btn.kind, btn.key, btn.label))
+		targets = append(targets, Target{Rect: Rect{X: x, Width: btn.width(), Height: 1}, Action: btn.action})
+		x += btn.width()
 		if i > 0 {
 			b.WriteString(barGap)
 			x += len(barGap)
 		}
-		b.WriteString(f.styles.KeyButton(btn.kind, btn.key, btn.label))
-		targets = append(targets, Target{Rect: Rect{X: x, Width: btn.width(), Height: 1}, Action: btn.action})
-		x += btn.width()
 	}
 	return b.String(), targets
 }

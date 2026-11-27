@@ -355,7 +355,7 @@ func TestFileBrowserActionsStandInTheBarNotInTheFooter(t *testing.T) {
 	spec, out, _ := fileScreen(f, b, 100, 14)
 	rows := plainRows(out)
 	ws := f.Workspace(spec)
-	if got := strings.TrimRight(rows[ws.Y-2], " "); got != "[ n New ] [ d Remove ]" && got != "[ n new ] [ d delete ]" {
+	if got := strings.TrimSpace(rows[ws.Y-1]); got != "[ d Remove ] [ n New ]" && got != "[ d delete ] [ n new ]" {
 		t.Errorf("bar = %q", got)
 	}
 	if foot := strings.Join(rows[ws.Y+ws.Height:], "\n"); strings.Contains(foot, "new") || strings.Contains(foot, "delete") {
@@ -386,7 +386,7 @@ func TestFileBrowserActionsByKeyAndClickAreEqual(t *testing.T) {
 		keyRes, handled := byKey.Update(press(tt.key))
 
 		spec, out, targets := fileScreen(f, byClickBrowser, 100, 14)
-		y := f.Workspace(spec).Y - 2
+		y := f.Workspace(spec).Y - 1
 		hit := MouseResult{}
 		for _, tg := range targets {
 			if tg.Action == tt.action && tg.Rect.Y == y {

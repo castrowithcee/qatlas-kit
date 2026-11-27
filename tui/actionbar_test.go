@@ -21,24 +21,25 @@ func barSpec(width int) FrameSpec {
 
 func barRow(f styledFrame, spec FrameSpec) string {
 	rows := plainRows(first(f.Render(spec)))
-	return rows[f.Workspace(spec).Y-2]
+	return rows[f.Workspace(spec).Y-1]
 }
 
-// The bar keeps the actions that fit from the front, never wraps and ends at the first that does not fit.
-func TestActionBarCutsFromTheBack(t *testing.T) {
+// The bar is right-aligned with the first action at the right end. Where the width runs short the last
+// actions of the application, at the left, give way; it never wraps.
+func TestActionBarCutsFromTheLeft(t *testing.T) {
 	f, _ := sampleFrame(t, looks(t)["noneascii"], i18n.English)
 	for _, tt := range []struct {
 		width int
 		want  string
 	}{
-		{100, "[ F2 save ] [ n New ] [ F8 Remove ]"},
-		{35, "[ F2 save ] [ n New ] [ F8 Remove ]"},
-		{34, "[ F2 save ] [ n New ]"},
-		{21, "[ F2 save ] [ n New ]"},
+		{100, "[ F8 Remove ] [ n New ] [ F2 save ]"},
+		{35, "[ F8 Remove ] [ n New ] [ F2 save ]"},
+		{34, "[ n New ] [ F2 save ]"},
+		{21, "[ n New ] [ F2 save ]"},
 		{20, "[ F2 save ]"},
 		{11, "[ F2 save ]"},
 	} {
-		if got := strings.TrimRight(barRow(f, barSpec(tt.width)), " "); got != tt.want {
+		if got := barRow(f, barSpec(tt.width)); got != strings.Repeat(" ", tt.width-len(tt.want))+tt.want {
 			t.Errorf("width %d: %q, want %q", tt.width, got, tt.want)
 		}
 	}
@@ -54,7 +55,7 @@ func TestActionBarKeepsTheOrderOfTheApplication(t *testing.T) {
 	f, _ := sampleFrame(t, looks(t)["noneascii"], i18n.English)
 	spec := barSpec(100)
 	spec.Bar[0], spec.Bar[2] = spec.Bar[2], spec.Bar[0]
-	if got := strings.TrimRight(barRow(f, spec), " "); got != "[ F8 Remove ] [ n New ] [ F2 save ]" {
+	if got := strings.TrimSpace(barRow(f, spec)); got != "[ F2 save ] [ n New ] [ F8 Remove ]" {
 		t.Errorf("got %q", got)
 	}
 }
@@ -67,7 +68,7 @@ func TestActionBarActionsLeaveTheFooter(t *testing.T) {
 	if foot := footerOf(f, spec); strings.Contains(foot, "save") || strings.Contains(foot, "New") || strings.Contains(foot, "Remove") {
 		t.Errorf("an action of the bar stands in the footer:\n%s", foot)
 	}
-	spec.Width = 21 // the bar keeps save and new, remove goes to the footer
+	spec.Width = 21 // the bar keeps save and new, remove at the left goes to the footer
 	foot := footerOf(f, spec)
 	if strings.Contains(foot, "save") || strings.Contains(foot, "New") || !strings.Contains(foot, "Remove") {
 		t.Errorf("the footer of a cut bar:\n%s", foot)
@@ -85,7 +86,7 @@ func TestActionBarShowsTheRebinding(t *testing.T) {
 	if err := keys.Bind(map[ActionID]string{"save": "f3"}); err != nil {
 		t.Fatal(err)
 	}
-	if got := barRow(f, barSpec(100)); !strings.HasPrefix(got, "[ F3 save ]") {
+	if got := barRow(f, barSpec(100)); !strings.HasSuffix(got, "[ F3 save ]") {
 		t.Errorf("got %q", got)
 	}
 }
@@ -96,12 +97,12 @@ func TestActionBarLeavesOutAnActionWithoutKey(t *testing.T) {
 	f, _ := sampleFrame(t, looks(t)["noneascii"], i18n.English)
 	spec := barSpec(100)
 	spec.Bar = []BarAction{{Action: "new", Label: "ex.new"}, {Action: "nothing", Label: "ex.open"}, {Action: "save", Label: "ex.save"}}
-	if got := strings.TrimRight(barRow(f, spec), " "); got != "[ n New ] [ F2 save ]" {
+	if got := strings.TrimSpace(barRow(f, spec)); got != "[ F2 save ] [ n New ]" {
 		// in InputNavigation the letter key acts
 		t.Errorf("navigation: %q", got)
 	}
 	spec.Input = InputText // the letter key types text there
-	if got := strings.TrimRight(barRow(f, spec), " "); got != "[ F2 save ]" {
+	if got := strings.TrimSpace(barRow(f, spec)); got != "[ F2 save ]" {
 		t.Errorf("text: %q", got)
 	}
 	spec.Bar = []BarAction{{Action: "new", Label: "ex.new"}}
@@ -117,7 +118,7 @@ func TestActionBarButtonsAreClickTargets(t *testing.T) {
 	f, _ := sampleFrame(t, looks(t)["noneascii"], i18n.English)
 	spec := barSpec(100)
 	out, targets := f.Render(spec)
-	y := f.Workspace(spec).Y - 2
+	y := f.Workspace(spec).Y - 1
 	row := plainRows(out)[y]
 	m := NewMouseMap(targets, true)
 	for action, label := range map[ActionID]string{"save": "F2 save", "new": "n New", "remove": "F8 Remove"} {
@@ -134,8 +135,8 @@ func TestActionBarButtonsAreClickTargets(t *testing.T) {
 	}
 }
 
-// The bar takes one row from the workspace in every form of the navigation and stands between the
-// navigation and the rule.
+// The bar takes one row from the workspace in every form of the navigation and is the first row below the
+// rule.
 func TestActionBarTakesOneRowInEveryNavForm(t *testing.T) {
 	f, _ := sampleFrame(t, looks(t)["noneascii"], i18n.English)
 	for _, nav := range []NavForm{NavTabs, NavPathLine, NavPathHeader, NavHeaderChoice} {
@@ -150,7 +151,7 @@ func TestActionBarTakesOneRowInEveryNavForm(t *testing.T) {
 		}
 		spec.Bar = bar
 		rows := plainRows(first(f.Render(spec)))
-		if len(rows) != spec.Height || !strings.HasPrefix(rows[with.Y-2], "[ F2 save ]") || !strings.HasPrefix(rows[with.Y-1], "---") {
+		if len(rows) != spec.Height || !strings.HasSuffix(rows[with.Y-1], "[ F2 save ]") || !strings.HasPrefix(rows[with.Y-2], "---") {
 			t.Errorf("nav %d: bar and rule misplaced:\n%s", nav, strings.Join(rows, "\n"))
 		}
 	}

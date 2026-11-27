@@ -10,12 +10,12 @@ import (
 	"github.com/castrowithcee/qatlas-kit/uiprefs"
 )
 
-// barRow is the row of the screen above the rule that holds the action bar, and its footer.
+// barRow is the row of the screen below the rule that holds the action bar, and its footer.
 func barRow(m *model) (bar, footer string) {
 	rows := strings.Split(strings.TrimRight(m.view, "\n"), "\n")
 	for i, r := range rows {
 		if strings.HasPrefix(r, "---") || strings.HasPrefix(r, "───") {
-			return strings.TrimRight(rows[i-1], " "), strings.Join(rows[len(rows)-2:], "\n")
+			return strings.TrimSpace(rows[i+1]), strings.Join(rows[len(rows)-2:], "\n")
 		}
 	}
 	return "", ""
@@ -29,7 +29,7 @@ func TestActionBarOfTheFilesPageRunsLikeItsKey(t *testing.T) {
 	m.zone = tui.ZoneRows
 	m.refresh()
 	bar, _ := barRow(m)
-	if bar != "[ g choose file ] [ x clear chosen file ]" {
+	if bar != "[ x clear chosen file ] [ g choose file ]" {
 		t.Fatalf("bar = %q\n%s", bar, m.view)
 	}
 	if strings.Count(m.view, "choose file") != 1 {
@@ -55,7 +55,7 @@ func TestActionBarOfTheFilesPageRunsLikeItsKey(t *testing.T) {
 	}
 }
 
-// At a narrow width the bar keeps the first button and cuts from the back, and the cut action keeps its hint
+// At a narrow width the bar keeps the first button at the right end and cuts from the left, and the cut action keeps its hint
 // in the footer.
 func TestActionBarCutsAtANarrowWidth(t *testing.T) {
 	m := testModel(t, uiprefs.IconsNone)
