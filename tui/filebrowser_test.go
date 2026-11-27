@@ -2,12 +2,12 @@ package tui
 
 import (
 	"errors"
+	"maps"
 	"slices"
 	"strings"
 	"testing"
 	"time"
 
-	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/castrowithcee/qatlas-kit/i18n"
@@ -144,7 +144,7 @@ func TestFileBrowserCannotLeaveTheRoot(t *testing.T) {
 		t.Errorf("Act(back) at the root = %+v, %v", r, handled)
 	}
 	// A part of the path line that does not exist, or lies below the shown folder, leads nowhere.
-	for _, item := range []string{fileCrumbRef + "-1", fileCrumbRef + "2", fileCrumbRef + "x", fileUpRef} {
+	for _, item := range []string{fileCrumbRef + "-1", fileCrumbRef + "2", fileCrumbRef + "x"} {
 		if r, _ := b.Click(MouseResult{Item: item, Handled: true}); r.Load != nil {
 			t.Errorf("click on %q asks to load %v", item, r.Load.Dir)
 		}
@@ -153,11 +153,6 @@ func TestFileBrowserCannotLeaveTheRoot(t *testing.T) {
 	_, targets := b.View(looks(t)["noneascii"], 60, 12)
 	if r, _ := b.Click(clickOn(t, targets, 3, 0)); r.Load != nil {
 		t.Errorf("click on the root at the root loads %v", r.Load.Dir)
-	}
-	for _, tg := range targets {
-		if strings.HasPrefix(tg.Item, fileUpRef) {
-			t.Error("the root has a button that goes up")
-		}
 	}
 
 	// One folder down, back and the path line end at the root and never beyond.
@@ -296,33 +291,113 @@ func TestFileBrowserReloadKeepsTheMarkedEntry(t *testing.T) {
 	}
 }
 
-// A key and a click on its button report the same action on the same entry and folder.
+// fileFrame is a frame and a browser that read one key table, with the texts of both.
+func fileFrame(t *testing.T, st Styles, lang i18n.Lang) (styledFrame, *FileBrowser) {
+	t.Helper()
+	keys := sampleKeymap(t, st.Charset())
+	catalogs := frameCatalogs()
+	for l, texts := range fileCatalog() {
+		maps.Copy(catalogs[l], texts)
+	}
+	text := newTranslator(t, lang, catalogs, keys)
+	b, err := NewFileBrowser(fileSpec(), keys, text)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return styledFrame{NewFrame(keys, text), st}, b
+}
+
+// fileScreen is the browser in the frame, with its actions in the bar and its hints in the footer.
+func fileScreen(f styledFrame, b *FileBrowser, width, height int) (FrameSpec, string, []Target) {
+	spec := sampleSpec(width, height)
+	spec.Bar, spec.Footer = b.BarActions(), b.Hints()
+	ws := f.Workspace(spec)
+	spec.Workspace, _ = b.View(f.styles, ws.Width, ws.Height)
+	out, targets := f.Render(spec)
+	return spec, out, targets
+}
+
+// The browser draws no button below the list: every row below the path line is a row of the table.
+func TestFileBrowserDrawsNoButtonsBelowTheList(t *testing.T) {
+	for _, dir := range [][]string{nil, {"beds"}} {
+		b := loaded(t, i18n.English, dir, mixedEntries())
+		view, targets := b.View(looks(t)["noneascii"], 80, 14)
+		for _, word := range []string{"[", "new", "delete", "up"} {
+			if strings.Contains(view, word) {
+				t.Errorf("dir %q: %q in\n%s", dir, word, view)
+			}
+		}
+		for _, tg := range targets {
+			if slices.Contains([]ActionID{"new", "delete", "back"}, tg.Action) || tg.Rect.Y >= 8 {
+				t.Errorf("dir %q: target %+v is no part of the path or a row", dir, tg)
+			}
+		}
+	}
+}
+
+// BarActions gives the actions of the spec in its order and the primary one as a primary button.
+func TestFileBrowserBarActionsFollowTheSpec(t *testing.T) {
+	b := newFileBrowser(t, i18n.English)
+	want := []BarAction{{Action: "new", Label: "app.new", Kind: ButtonPrimary}, {Action: "delete", Label: "app.delete"}}
+	if got := b.BarActions(); !slices.Equal(got, want) {
+		t.Errorf("BarActions = %+v, want %+v", got, want)
+	}
+	b.BarActions()[0].Action = "changed"
+	if got := b.BarActions(); got[0].Action != "new" {
+		t.Error("BarActions hands out the state of the browser")
+	}
+}
+
+// In the frame the actions stand in the bar and leave the footer, in the order of the spec.
+func TestFileBrowserActionsStandInTheBarNotInTheFooter(t *testing.T) {
+	f, b := fileFrame(t, looks(t)["noneascii"], i18n.English)
+	b.Load([]string{"beds"})
+	spec, out, _ := fileScreen(f, b, 100, 14)
+	rows := plainRows(out)
+	ws := f.Workspace(spec)
+	if got := strings.TrimSpace(rows[ws.Y-1]); got != "[ d Remove ] [ n New ]" && got != "[ d delete ] [ n new ]" {
+		t.Errorf("bar = %q", got)
+	}
+	if foot := strings.Join(rows[ws.Y+ws.Height:], "\n"); strings.Contains(foot, "new") || strings.Contains(foot, "delete") {
+		t.Errorf("an action of the bar stands in the footer:\n%s", foot)
+	}
+	for _, h := range b.Hints() {
+		if h.Action == "" {
+			t.Errorf("hint %+v carries no action", h)
+		}
+	}
+}
+
+// A key and a click on its button of the bar report the same action on the same entry and folder.
 func TestFileBrowserActionsByKeyAndClickAreEqual(t *testing.T) {
 	for _, tt := range []struct {
 		key    string
 		action ActionID
 	}{{"n", "new"}, {"d", "delete"}} {
-		byKey := loaded(t, i18n.English, []string{"beds"}, mixedEntries())
-		byKey.Update(press("down"))
-		byKey.Update(press("down"))
-		byKey.Update(press("down"))
-		keyRes, handled := byKey.Update(press(tt.key))
-
-		byClick := loaded(t, i18n.English, []string{"beds"}, mixedEntries())
-		byClick.Update(press("down"))
-		byClick.Update(press("down"))
-		byClick.Update(press("down"))
-		view, targets := byClick.View(looks(t)["noneascii"], 80, 14)
-		x, y := -1, -1
-		for _, tg := range targets {
-			if tg.Action == tt.action && strings.HasPrefix(tg.Item, fileButtonRef) {
-				x, y = tg.Rect.X+1, tg.Rect.Y
+		f, byKey := fileFrame(t, looks(t)["noneascii"], i18n.English)
+		_, byClickBrowser := fileFrame(t, looks(t)["noneascii"], i18n.English)
+		for _, b := range []*FileBrowser{byKey, byClickBrowser} {
+			res := b.Load([]string{"beds"})
+			b.SetEntries(*res.Load, mixedEntries())
+			for range 3 {
+				b.Update(press("down"))
 			}
 		}
-		if x < 0 {
-			t.Fatalf("%s: no button target in\n%s", tt.action, view)
+		keyRes, handled := byKey.Update(press(tt.key))
+
+		spec, out, targets := fileScreen(f, byClickBrowser, 100, 14)
+		y := f.Workspace(spec).Y - 1
+		hit := MouseResult{}
+		for _, tg := range targets {
+			if tg.Action == tt.action && tg.Rect.Y == y {
+				hit = clickOn(t, targets, tg.Rect.X+1, y)
+			}
 		}
-		clickRes, clicked := byClick.Click(clickOn(t, targets, x, y))
+		if hit.Action != tt.action {
+			t.Fatalf("%s: no button in the bar of\n%s", tt.action, out)
+		}
+		// The click comes back as MouseResult.Action, which the application runs as the key.
+		clickRes, clicked := byClickBrowser.Act(hit.Action)
 		if !handled || !clicked || keyRes.Action == nil || clickRes.Action == nil {
 			t.Fatalf("%s: key %+v %v, click %+v %v", tt.action, keyRes, handled, clickRes, clicked)
 		}
@@ -340,40 +415,24 @@ func TestFileBrowserActionsByKeyAndClickAreEqual(t *testing.T) {
 	if res, _ := b.Update(press("n")); res.Action == nil || res.Action.HasEntry {
 		t.Errorf("new in an empty folder = %+v", res)
 	}
-	// The up button is the back key.
+	// Back goes up one folder as before, by key and as an action.
 	b = loaded(t, i18n.English, []string{"beds"}, mixedEntries())
-	_, targets := b.View(looks(t)["noneascii"], 80, 14)
-	for _, tg := range targets {
-		if tg.Item == fileUpRef {
-			if res, ok := b.Click(clickOn(t, targets, tg.Rect.X, tg.Rect.Y)); !ok || res.Load == nil || len(res.Load.Dir) != 0 {
-				t.Errorf("click on up = %+v, %v", res, ok)
-			}
-			return
-		}
+	if res, ok := b.Act("back"); !ok || res.Load == nil || len(res.Load.Dir) != 0 {
+		t.Errorf("Act(back) = %+v, %v", res, ok)
 	}
-	t.Error("a folder below the root has no button that goes up")
 }
 
-// Every visible control of the browser is a click target.
+// Every control the browser draws is a click target: the parts of the path and the rows.
 func TestFileBrowserEveryControlIsAClickTarget(t *testing.T) {
 	b := loaded(t, i18n.English, []string{"beds"}, mixedEntries())
-	view, targets := b.View(looks(t)["noneascii"], 80, 14)
-	for _, word := range []string{"n new", "d delete", "esc up"} {
-		line := slices.IndexFunc(strings.Split(ansi.Strip(view), "\n"), func(l string) bool { return strings.Contains(l, word) })
-		if line < 0 {
-			t.Errorf("no %q in\n%s", word, view)
-			continue
-		}
-		col := lipgloss.Width(strings.Split(ansi.Strip(view), "\n")[line][:strings.Index(strings.Split(ansi.Strip(view), "\n")[line], word)])
-		if res := NewMouseMap(targets, true).Handle(click(col+1, line)); !res.Handled || res.Item == "" {
-			t.Errorf("%q has no target: %+v", word, res)
-		}
-	}
-	// Every shown row has one too.
+	_, targets := b.View(looks(t)["noneascii"], 80, 14)
 	for row := 3; row < 8; row++ {
 		if res := NewMouseMap(targets, true).Handle(click(4, row)); res.Item == "" {
 			t.Errorf("row %d has no target", row)
 		}
+	}
+	if res := NewMouseMap(targets, true).Handle(click(3, 0)); res.Item == "" {
+		t.Error("the path line has no target")
 	}
 }
 
@@ -489,5 +548,30 @@ func TestGoldenFileBrowser(t *testing.T) {
 				checkGolden(t, name, out+"\n")
 			})
 		}
+	}
+}
+
+func TestGoldenFileBrowserBar(t *testing.T) {
+	for _, tt := range []struct {
+		name, look string
+		lang       i18n.Lang
+		width      int
+	}{
+		{"filebrowser.bar.wide.golden", "light256", i18n.English, 100},
+		{"filebrowser.bar.wide.dark.golden", "dark", i18n.English, 100},
+		{"filebrowser.bar.wide.de.golden", "light256", i18n.German, 100},
+		{"filebrowser.bar.wide.de.dark.golden", "dark", i18n.German, 100},
+		{"filebrowser.bar.narrow.golden", "light256", i18n.English, 40},
+		{"filebrowser.bar.narrow.dark.golden", "dark", i18n.English, 40},
+		{"filebrowser.bar.narrow.de.golden", "light256", i18n.German, 40},
+		{"filebrowser.bar.narrow.de.dark.golden", "dark", i18n.German, 40},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			f, b := fileFrame(t, looks(t)[tt.look], tt.lang)
+			res := b.Load([]string{"beds", "spring"})
+			b.SetEntries(*res.Load, mixedEntries())
+			_, out, _ := fileScreen(f, b, tt.width, 16)
+			checkGolden(t, tt.name, out+"\n")
+		})
 	}
 }

@@ -50,6 +50,7 @@ const (
 	actPick     tui.ActionID = "pick"
 	actSuggest  tui.ActionID = "suggest"
 	actTake     tui.ActionID = "take"
+	actClear    tui.ActionID = "clear"
 
 	// The quick replies of the chat; the other actions of the views are the kit's own, see tui.LogViewActions.
 	actChatThanks tui.ActionID = "chat.thanks"
@@ -101,6 +102,7 @@ func keyTable(areas int) []tui.Action {
 		act(actPick, tui.LevelLetter, textKeyPick, "p"),
 		act(actSuggest, tui.LevelLetter, textKeySuggest, "s"),
 		act(actTake, tui.LevelLetter, textFileTake, "g"),
+		act(actClear, tui.LevelLetter, textFileClear, "x"),
 		act(actInfo, tui.LevelLetter, tui.TextKeyInfo, "i"),
 		act(actAsk, tui.LevelLetter, textKeyAsk, "a"),
 		act(actRename, tui.LevelLetter, tui.TextKeyRename, "r"),

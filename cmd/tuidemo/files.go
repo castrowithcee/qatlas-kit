@@ -30,7 +30,8 @@ func pickBlocks(m *model) (map[tui.TabID]block, error) {
 	k := tui.FileBrowserKeys{Up: actUp, Down: actDown, PageUp: actPageUp, PageDown: actPageDown, First: actFirst, Last: actLast,
 		Left: actLeft, Right: actRight, Enter: actEnter, Search: actSearch, Back: actBack}
 	br, err := tui.NewFileBrowser(tui.FileBrowserSpec{Keys: k, RootLabel: m.text.Lookup(textFileRoot),
-		Actions: []tui.FormButton{{Action: actTake, Label: textFileTake, Primary: true}}}, m.keys, m.text)
+		Actions: []tui.FormButton{{Action: actTake, Label: textFileTake, Primary: true},
+			{Action: actClear, Label: textFileClear}}}, m.keys, m.text)
 	if err != nil {
 		return nil, err
 	}
@@ -95,7 +96,8 @@ func btoi(v bool) int {
 	return 0
 }
 
-// run does what the browser asked: list a folder, search below it, or take the marked file.
+// run does what the browser asked: list a folder, search below it, take the marked file, or forget the chosen
+// one.
 func (b *filesBlock) run(m *model, res tui.FileResult) {
 	if res.Load != nil {
 		b.list(*res.Load)
@@ -107,6 +109,10 @@ func (b *filesBlock) run(m *model, res tui.FileResult) {
 		b.stopSearch()
 	}
 	a := res.Action
+	if a != nil && a.Action == actClear {
+		b.chosen = ""
+		return
+	}
 	if a == nil || (a.Action != actEnter && a.Action != actTake) {
 		return
 	}
@@ -130,6 +136,7 @@ func (b *filesBlock) wheel(res tui.MouseResult) {
 		b.browser.Wheel(res.WheelSteps)
 	}
 }
+func (b *filesBlock) bar() []tui.BarAction           { return b.browser.BarActions() }
 func (b *filesBlock) paste(string)                   {}
 func (b *filesBlock) hints(tui.FocusZone) []tui.Hint { return b.browser.Hints() }
 

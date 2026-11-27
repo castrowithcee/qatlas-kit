@@ -369,14 +369,14 @@ func hintsOf(t *testing.T, term *ptytest.Terminal, want string, all ...string) {
 
 func TestFooterShowsTheKeysOfTheOpenTabOnly(t *testing.T) {
 	term := startDemo(t, "-icons none")
-	dialogs := []string{"a ask question", "r rename", "o show notice", "+ count"}
+	dialogs := []string{"a  ask question", "r  rename", "o  show notice", "+ count"}
 	act(t, term, "4", "A question over the screen")
-	hintsOf(t, term, "a ask question", dialogs...)
+	hintsOf(t, term, "a  ask question", dialogs...)
 	act(t, term, "\t", "[Question]")
 	act(t, term, "\x1b[C", "A short input")
-	hintsOf(t, term, "r rename", dialogs...)
+	hintsOf(t, term, "r  rename", dialogs...)
 	act(t, term, "\x1b[C", "A calm message")
-	hintsOf(t, term, "o show notice", dialogs...)
+	hintsOf(t, term, "o  show notice", dialogs...)
 	act(t, term, "2", tabsBody)
 	hintsOf(t, term, "q quit", dialogs...)
 	act(t, term, "\x1b[C", probeBody) // the focus stays on the sub-tab line
