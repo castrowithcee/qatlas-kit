@@ -169,11 +169,12 @@
 // only where Available says its trigger acts, in the Context the application sets when it opens the line;
 // anywhere else the line stays open with the typed text and the reason. The line reads keys where text is
 // typed, so a letter is always text; it edits its text as a text line does and moves the choice with the
-// actions of CommandLineKeys. View draws a panel with an optional icon before each name, in a Unicode terminal
-// only, and the key in force beside it, rows that scroll with the choice and one target per row. Overlay draws
-// it at the top of the room it may cover, centred across it, over the dimmed screen, with a key line of its
-// own from Hints whose keys a click answers like the keys do; where the room is too small it returns ok false,
-// and the application draws View in the workspace and Hints in the footer.
+// actions of CommandLineKeys and with the wheel, which stops at the first and the last match. View draws a
+// panel with an optional icon before each name, in a Unicode terminal only, and the key in force beside it,
+// rows that scroll with the choice and one target per row. Overlay draws it at the top of the room it may
+// cover, centred across it, over the dimmed screen, with a key line of its own from Hints whose keys a click
+// answers like the keys do; where the room is too small it returns ok false, and the application draws View
+// in the workspace and Hints in the footer.
 //
 // A List shows the entries an application hands it, each with a stable ItemID, its cells and a group key, as a
 // table under bold upper-case column titles with a rule below them, "─" or "-" in an ASCII terminal. The
@@ -295,11 +296,11 @@
 // single button with the number of fields off their first value takes their place, always, with the search field
 // beside it or, with little room, only the search key. The button is one stop of the focus. Enter or a click
 // opens a modal with all fields one under the other: up and down choose a field, left and right change its
-// value, enter takes all changes at once and back drops them all; pressing an action field there takes them
-// first, then reports the action. The modal takes every key and is drawn over the screen where it fits, else in
-// the workspace with its keys in the footer. A value carries a TextID in Label or a finished text of the
-// application in Text, such as a value from foreign data: Text is drawn masked, searched as shown and never
-// looked up or filled with placeholders.
+// value, enter takes all changes at once and back drops them all, and a click on a key of its key line acts as
+// the key; pressing an action field there takes them first, then reports the action. The modal takes every key
+// and is drawn over the screen where it fits, else in the workspace with its keys in the footer. A value
+// carries a TextID in Label or a finished text of the application in Text, such as a value from foreign data:
+// Text is drawn masked, searched as shown and never looked up or filled with placeholders.
 //
 // A Form shows the fields an application hands it, each with a stable ID, a kind, a label and a value, and
 // knows no schema: the application checks the values when the save key is pressed, from any field, and hands

@@ -361,6 +361,23 @@ func TestFilterBarModalClicks(t *testing.T) {
 	if changed, handled := b.Click(mm.Handle(click(enter.Rect.X, enter.Rect.Y))); len(changed) != 1 || changed[0].Selected != "on" || !handled || b.modal {
 		t.Errorf("a click on enter takes the changes: %+v", changed)
 	}
+	// Every key of the key line acts as the key, also where the key line stands in the footer.
+	b.Click(m.Handle(click(4, 0)))
+	value, start := b.Value("state"), b.draft[1]
+	press := func(a ActionID) bool {
+		_, handled := b.Click(MouseResult{Action: a, Handled: true})
+		return handled
+	}
+	if !press("up") || b.mfocus != 0 || !press("down") || b.mfocus != 1 || !press("down") || b.mfocus != 1 {
+		t.Errorf("a click on up or down does not move the focus as the key: focus %d", b.mfocus)
+	}
+	if !press("right") || b.draft[1] != (start+1)%3 || !press("left") || !press("left") || b.draft[1] != (start+2)%3 {
+		t.Errorf("a click on left or right does not step the value as the key: draft %v", b.draft)
+	}
+	if !b.modal || b.Value("state") != value {
+		t.Error("a click on a key of the key line took the changes or closed the modal")
+	}
+	b.Click(MouseResult{Action: "back", Handled: true})
 	// A value list never opens from a button click, and a button target of an older frame does nothing wide.
 	wide := sampleBar(t, sampleKeymap(t, st.Charset()), i18n.English, nil)
 	if _, handled := wide.Click(MouseResult{Item: buttonRef, Handled: true}); handled {
@@ -911,7 +928,7 @@ func TestFilterBarActionFieldTextIsMasked(t *testing.T) {
 func TestFilterBarActionFieldInModal(t *testing.T) {
 	st := looks(t)["noneascii"]
 	screen := strings.TrimRight(strings.Repeat(strings.Repeat("x", 80)+"\n", 24), "\n")
-	for _, key := range []string{"enter", "left", "right", "click"} {
+	for _, key := range []string{"enter", "left", "right", "click", "click enter", "click left", "click right"} {
 		b := dateBar(t, st, nil)
 		b.View(st, 12)
 		if !b.compact {
@@ -928,7 +945,9 @@ func TestFilterBarActionFieldInModal(t *testing.T) {
 		}
 		keysTo2(b, "up")
 		var changed []FilterField
-		if key == "click" {
+		if pressed, ok := strings.CutPrefix(key, "click "); ok {
+			changed, _ = b.Click(MouseResult{Action: ActionID(pressed), Handled: true})
+		} else if key == "click" {
 			for _, tg := range targets {
 				if tg.Item == modalValueRef+"date" {
 					changed, _ = b.Click(NewMouseMap([]Target{tg}, true).Handle(click(tg.Rect.X, tg.Rect.Y)))

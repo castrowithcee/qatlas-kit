@@ -289,9 +289,13 @@ func (m *model) commandKey(msg tea.KeyPressMsg) tea.Cmd {
 	return m.commandDone(cmd, done)
 }
 
-// commandClick gives a click to the open command line, which runs a match, the enter key or closes on the
-// back key itself.
+// commandClick gives a click or the wheel to the open command line, which runs a match, the enter key or
+// closes on the back key itself, and moves its choice by the wheel anywhere on the screen.
 func (m *model) commandClick(msg tea.MouseMsg) tea.Cmd {
+	if _, ok := msg.(tea.MouseWheelMsg); ok {
+		m.cmdline.Wheel(m.mouse.Handle(msg).WheelSteps)
+		return nil
+	}
 	if _, ok := msg.(tea.MouseClickMsg); !ok {
 		return nil
 	}
