@@ -42,7 +42,7 @@ func (f *Form) shownValue(i int, rows []string) (text string, masked, ok bool) {
 	case FieldDate:
 		return Escape(value), false, value != "" && !focused
 	case FieldChoice:
-		return Escape(f.text.Lookup(field.Choices[field.choice].Label)), false, true
+		return Escape(field.Choices[field.choice].shown(f.text)), false, true
 	case FieldMasked:
 		has := (value != "" || field.Stored) && !focused
 		return strings.TrimRight(ansi.Strip(rows[0]), " "), true, has

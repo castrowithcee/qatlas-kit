@@ -300,13 +300,17 @@
 // opens a modal with all fields one under the other: up and down choose a field, left and right change its
 // value, enter takes all changes at once and back drops them all, and a click on a key of its key line acts as
 // the key; pressing an action field there takes them first, then reports the action. The modal takes every key
-// and is drawn over the screen where it fits, else in the workspace with its keys in the footer.
+// and is drawn over the screen where it fits, else in the workspace with its keys in the footer. A value
+// carries a TextID in Label or a finished text of the application in Text, such as a value from foreign data:
+// Text is drawn masked, searched as shown and never looked up or filled with placeholders.
 //
 // A Form shows the fields an application hands it, each with a stable ID, a kind, a label and a value, and
 // knows no schema: the application checks the values when the save key is pressed, from any field, and hands
 // the problems back with SetProblems. Enter never saves: it goes to the next field, opens the values of a
 // choice, starts taking a key, or yields the enter key on a list field, whose editor the application opens. A
 // choice holds known values only, a multiple choice ticks them, and the values a form returns are stable IDs.
+// A value of a choice carries a TextID or a finished text of the application, which is drawn masked and never
+// looked up.
 // FormSpec.Buttons add buttons below the fields, each an action of the key table and a label drawn behind the
 // key in force. Tab and shift+tab cycle through the fields and then the buttons, from the last button to the
 // first field and back; the focused button reads "> label <" without colour. Enter on a button, its click and

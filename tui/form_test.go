@@ -1168,3 +1168,47 @@ func TestFormMaskedFieldsShowNoWordBoundaryAndNoText(t *testing.T) {
 		}
 	}
 }
+
+func TestFormLiteralChoice(t *testing.T) {
+	lit := []Choice{{ID: "a", Text: "{back}"}, {ID: "b", Text: "tui.key.back"}, {ID: "c", Text: "x\x1by"}}
+	f := newSampleForm(t, i18n.English, func(s *FormSpec) {
+		s.Fields[1].Choices = lit
+		s.Fields[3].Choices, s.Fields[3].Value.Selected = lit, nil
+	})
+	want := []string{"{back}", "tui.key.back", `x\x1by`}
+	f.Focus("kind")
+	for i, w := range want {
+		view, _ := f.View(Styles{}, 60, 30)
+		if !strings.Contains(view, w) || strings.Contains(view, "\x1b") {
+			t.Errorf("choice %d: %q lacks %q", i, view, w)
+		}
+		formKeys(f, "right")
+	}
+	formKeys(f, "enter")
+	view, _ := f.View(Styles{}, 60, 30)
+	for _, w := range want {
+		if !strings.Contains(view, w) {
+			t.Errorf("open values lack %q:\n%s", w, view)
+		}
+	}
+	formKeys(f, "esc")
+	f.Focus("water")
+	view, _ = f.View(Styles{}, 60, 30)
+	for _, w := range want {
+		if !strings.Contains(view, w) {
+			t.Errorf("multiple choice lacks %q:\n%s", w, view)
+		}
+	}
+}
+
+func TestFormRejectsChoiceWithoutOrWithBothLabelAndText(t *testing.T) {
+	keys := sampleKeymap(t, CharsetUnicode)
+	for name, c := range map[string]Choice{"none": {ID: "a"}, "both": {ID: "a", Label: "c.herb", Text: "herb"}} {
+		spec := sampleFormSpec()
+		spec.Fields[1].Choices = []Choice{c}
+		_, err := NewForm(spec, keys, newTranslator(t, i18n.English, formCatalogs(), keys))
+		if err == nil || !strings.Contains(err.Error(), "label") {
+			t.Errorf("%s: %v", name, err)
+		}
+	}
+}

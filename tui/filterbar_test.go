@@ -1349,3 +1349,68 @@ func TestNewFilterBarChecksPageKeys(t *testing.T) {
 		}
 	}
 }
+
+func literalChoices() []Choice {
+	return []Choice{{ID: "a", Text: "{back}"}, {ID: "b", Text: "tui.key.back"}, {ID: "c", Text: "x\x1by"}}
+}
+
+func TestFilterBarLiteralChoice(t *testing.T) {
+	st := looks(t)["noneascii"]
+	keys := sampleKeymap(t, st.Charset())
+	fields := []FilterField{{ID: "src", Label: "bar.group", Options: literalChoices()}}
+	b, err := NewFilterBar(FilterBarSpec{Fields: fields, Keys: sampleFilterKeys}, keys, newTranslator(t, i18n.English, listCatalogs(), keys))
+	if err != nil {
+		t.Fatal(err)
+	}
+	b.Focus(false)
+	for i, want := range []string{"{back}", "tui.key.back", `x\x1by`} {
+		if view, _ := b.View(st, 80); !strings.Contains(ansi.Strip(view), want) || strings.Contains(view, "\x1b") {
+			t.Errorf("bar %d: %q lacks %q", i, view, want)
+		}
+		keysTo2(b, "right")
+	}
+	keysTo2(b, "right", "enter")
+	list, _ := b.ValueList(st, 80, 24)
+	for _, want := range []string{"{back}", "tui.key.back", `x\x1by`} {
+		if !strings.Contains(ansi.Strip(list), want) || strings.Contains(list, "\x1b") {
+			t.Errorf("list lacks %q: %q", want, list)
+		}
+	}
+	for needle, count := range map[string]int{"{back}": 1, "tui.key": 1, `\x1b`: 1, "x1by": 1, "back": 2} {
+		b.query.clear()
+		for _, r := range needle {
+			b.Update(tea.KeyPressMsg{Code: r, Text: string(r)})
+		}
+		if got := len(b.matches()); got != count {
+			t.Errorf("search %q: %d matches, want %d", needle, got, count)
+		}
+	}
+	for sel, want := range map[ChoiceID]string{"a": "Group: {back}", "c": `Group: x\x1by`} {
+		fields[0].Selected = sel
+		m, err := NewFilterBar(FilterBarSpec{Fields: fields, Keys: sampleFilterKeys}, keys, newTranslator(t, i18n.English, listCatalogs(), keys))
+		if err != nil {
+			t.Fatal(err)
+		}
+		m.View(st, 10)
+		m.Focus(false)
+		keysTo2(m, "enter")
+		if modal, _ := m.ModalView(st, 80, 24); !strings.Contains(ansi.Strip(modal), want) || strings.Contains(modal, "\x1b") {
+			t.Errorf("modal lacks %q: %q", want, modal)
+		}
+	}
+}
+
+func TestFilterBarRejectsChoiceWithoutOrWithBothLabelAndText(t *testing.T) {
+	keys := sampleKeymap(t, CharsetUnicode)
+	text := newTranslator(t, i18n.English, listCatalogs(), keys)
+	for name, c := range map[string]Choice{"none": {ID: "a"}, "both": {ID: "a", Label: "bar.state.on", Text: "on"}} {
+		f := []FilterField{{ID: "src", Label: "bar.group", Options: []Choice{c}}}
+		if _, err := NewFilterBar(FilterBarSpec{Fields: f, Keys: sampleFilterKeys}, keys, text); err == nil {
+			t.Errorf("%s: NewFilterBar accepted", name)
+		}
+		b := sampleBar(t, keys, i18n.English, nil)
+		if err := b.SetOptions("state", []Choice{{ID: "all", Label: "bar.state.all"}, c}); err == nil {
+			t.Errorf("%s: SetOptions accepted", name)
+		}
+	}
+}
