@@ -24,10 +24,11 @@
 //
 // StandardActions returns the actions every tool shares, each with a level, one default key and a help text
 // in the catalog; an application adds them to its table with one append. The overlay levels may repeat their
-// keys, and ctrl+s stays free as the second way of the save action. ActionHelpF1 is the second way of the
-// help action on f1, which reaches the help from a text field where "?" types a character; the Help closes
+// keys, and ctrl+s stays free as the second way of the save action. ActionHelpF9 is the second way of the
+// help action on f9, which reaches the help from a text field where "?" types a character; the Help closes
 // on it as on the help key, and Keymap.SecondWays finds such actions. A table without the help action leaves
-// it out as well. A Form or Dialog does not handle f1.
+// it out as well. A Form or Dialog does not handle f9. No action may hold f1, as a default key, as a second
+// way or on an overlay level, because IDEs and terminal applications reserve it for their own help.
 //
 // A one-line text field, the input of a Dialog, the text, masked, date and path fields of a Form, the search
 // of a LogView, the filter of a List, the search of a Help and the input of a CommandLine edit with a fixed
@@ -430,7 +431,7 @@
 // choose a hit, enter or a click opens its page and, for a match in the text, scrolls to the first place of
 // it; back closes only the search, the help key the whole help. The application's table should give the key
 // to ActionSearch. While the input takes text, Help.Input is InputText, so the application reads keys under
-// that focus: the help key "?" then types, and its second way, such as f1, still closes. Help.Paste inserts
+// that focus: the help key "?" then types, and its second way, such as f9, still closes. Help.Paste inserts
 // into the input. Over topics the key does nothing and no key line names it. Outside the overview and the
 // search, back and the help key close the help. A click on a line of the key list
 // yields its action, and the application closes the help and then runs it. An Explanation shows a title, the

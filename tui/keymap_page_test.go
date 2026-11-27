@@ -140,10 +140,10 @@ func TestBindingReachesRegisterAndViews(t *testing.T) {
 		t.Errorf("Label = %q", a.Label("a.run"))
 	}
 	// A bind through the register shows in the view that was made before.
-	if err := k.Bind(map[ActionID]string{"b.run": "f9"}); err != nil {
+	if err := k.Bind(map[ActionID]string{"b.run": "f19"}); err != nil {
 		t.Fatal(err)
 	}
-	if got := b.Label("b.run"); got != "F9" {
+	if got := b.Label("b.run"); got != "F19" {
 		t.Errorf("b.Label = %q", got)
 	}
 	if got := a.Label("a.run"); got != "F3" {

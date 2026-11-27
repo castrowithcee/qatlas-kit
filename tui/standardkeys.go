@@ -4,7 +4,7 @@ package tui
 const (
 	ActionSave      ActionID = "save"
 	ActionHelp      ActionID = "help"
-	ActionHelpF1    ActionID = "help.f1"
+	ActionHelpF9    ActionID = "help.f9"
 	ActionCommand   ActionID = "command"
 	ActionLock      ActionID = "lock"
 	ActionBack      ActionID = "back"
@@ -26,15 +26,15 @@ const (
 
 // StandardActions returns the standard actions, each with one default key, so that every tool feels the
 // same. An application adds them to its table with append(StandardActions(), own...); it may leave some out,
-// but no other action may hold their keys, see NewKeymap. ActionHelpF1 is the second way of ActionHelp, so a
+// but no other action may hold their keys, see NewKeymap. ActionHelpF9 is the second way of ActionHelp, so a
 // table that leaves out the help leaves it out too. Every call returns a new copy.
 func StandardActions() []Action {
 	return []Action{
 		{ID: ActionSave, Level: LevelGlobal, DefaultKeys: []string{"f2"}, Help: TextKeySave, Rebind: RebindReplace},
 		{ID: ActionHelp, Level: LevelGlobal, DefaultKeys: []string{"?"}, Help: TextKeyHelp, Rebind: RebindReplace},
-		// f1 reaches the help from a text field, where "?" types a character; it is a separate action because
+		// f9 reaches the help from a text field, where "?" types a character; it is a separate action because
 		// a replaceable action has exactly one key, and it is not rebindable.
-		{ID: ActionHelpF1, Level: LevelGlobal, DefaultKeys: []string{"f1"}, Help: TextKeyHelp, SecondWayOf: ActionHelp},
+		{ID: ActionHelpF9, Level: LevelGlobal, DefaultKeys: []string{"f9"}, Help: TextKeyHelp, SecondWayOf: ActionHelp},
 		{ID: ActionCommand, Level: LevelGlobal, DefaultKeys: []string{":"}, Help: TextKeyCommands, Rebind: RebindReplace},
 		{ID: ActionLock, Level: LevelGlobal, DefaultKeys: []string{"ctrl+l"}, Help: TextKeyLock, Rebind: RebindReplace},
 		{ID: ActionBack, Level: LevelGlobal, DefaultKeys: []string{"esc"}, Help: TextKeyBack},

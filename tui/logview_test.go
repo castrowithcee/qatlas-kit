@@ -629,7 +629,7 @@ func TestLogViewButtonsNameTheKeyAndTheState(t *testing.T) {
 	actions := LogViewActions()
 	for i := range actions {
 		actions[i].Level, actions[i].Rebind = LevelGlobal, RebindReplace
-		actions[i].DefaultKeys = []string{[]string{"f3", "f4", "f6", "f7", "f9", "f15"}[i]}
+		actions[i].DefaultKeys = []string{[]string{"f3", "f4", "f6", "f7", "f19", "f15"}[i]}
 	}
 	keys, err := NewKeymap(append(sampleActions(), actions...), CharsetUnicode)
 	if err != nil {
@@ -653,7 +653,7 @@ func TestLogViewButtonsNameTheKeyAndTheState(t *testing.T) {
 	typeText(l, "hit")
 	l.Act("enter")
 	row, _ := statusTargets(t, l, 200, 8)
-	for _, want := range []string{"[ F13 paused ]", "[ F14 wrap lines off ]", "[ F9 timestamps off ]", "[ F16 period: all ]", "[ F6 previous match ]", "[ F4 next match ]"} {
+	for _, want := range []string{"[ F13 paused ]", "[ F14 wrap lines off ]", "[ F19 timestamps off ]", "[ F16 period: all ]", "[ F6 previous match ]", "[ F4 next match ]"} {
 		if !strings.Contains(row, want) {
 			t.Errorf("%q missing in %q", want, row)
 		}
@@ -668,7 +668,7 @@ func TestLogViewButtonsNameTheKeyAndTheState(t *testing.T) {
 	}
 	// Without labels the keys stay and the state is still in words.
 	row, _ = statusTargets(t, l, 110, 8)
-	if !strings.Contains(row, "[ F14 on ]") || !strings.Contains(row, "[ F9 off ]") {
+	if !strings.Contains(row, "[ F14 on ]") || !strings.Contains(row, "[ F19 off ]") {
 		t.Errorf("short form: %q", row)
 	}
 	// Match jumps need a search with matches.

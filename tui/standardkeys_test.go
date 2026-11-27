@@ -33,7 +33,7 @@ func TestStandardActionsFormAValidTableWithTextsInBothLanguages(t *testing.T) {
 
 func TestStandardActionsAreFreshCopies(t *testing.T) {
 	a := StandardActions()
-	a[0].DefaultKeys[0] = "f9"
+	a[0].DefaultKeys[0] = "f19"
 	a[1].ID = "changed"
 	if b := StandardActions(); b[0].DefaultKeys[0] != "f2" || b[1].ID != ActionHelp {
 		t.Errorf("a caller changed the standard actions: %v", b[:2])
